@@ -40,9 +40,8 @@ never reads or writes session state directly (the route handlers do).
 """
 
 import os
-import json
 import base64
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from webauthn import (
     generate_registration_options,

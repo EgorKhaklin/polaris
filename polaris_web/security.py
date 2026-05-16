@@ -44,7 +44,7 @@ import hmac
 import time
 import secrets
 import functools
-from datetime import datetime, timedelta
+from datetime import datetime
 from collections import defaultdict, deque
 
 from flask import (

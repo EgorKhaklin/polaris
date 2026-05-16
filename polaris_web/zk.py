@@ -23,8 +23,6 @@ import json
 import os
 import pathlib
 import subprocess
-import sys
-from typing import Optional
 
 
 def _binary_path() -> str:

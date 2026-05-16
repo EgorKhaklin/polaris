@@ -39,7 +39,6 @@ substrate level, in line with PDF Appendix E.
 from __future__ import annotations
 
 import hashlib
-import json
 from typing import Iterable
 
 
