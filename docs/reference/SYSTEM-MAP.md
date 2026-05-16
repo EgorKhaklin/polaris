@@ -18,7 +18,7 @@ polaris/                          ← repo root
 ├── README.md                     ← portfolio front-page
 ├── MISSION.md                    ← constitution (C1-C10 + cognitive substrate)
 ├── ROADMAP.md                    ← prioritized backlog (R-* items)
-├── CHANGELOG.md                  ← audit-of-record (v8.20; ~32 ships)
+├── CHANGELOG.md                  ← audit-of-record (v9.24 curated last-10; full 136 entries in archive/CHANGELOG-FULL.md)
 ├── CLAUDE.md                     ← agent runbook
 ├── LICENSE / NOTICE              ← legal
 │
@@ -29,6 +29,7 @@ polaris/                          ← repo root
 ├── polaris_sql/        ← schema, procedures, triggers, atlas, migrations
 ├── polaris_hydra/      ← HYDRA centralized intelligence (v9.04 hybrid)
 ├── polaris_swarm/      ← Mycelium decentralized intelligence
+├── polaris_foresight/  ← Foresight surface (v9.12)
 ├── polaris_zk/         ← Plonky2 ZK-SNARK Rust crate
 ├── polaris_cli/        ← CLI utilities
 │
@@ -40,7 +41,8 @@ polaris/                          ← repo root
 ├── sanctum/            ← strategic-consultation records (v8.20 AoR)
 ├── journal/            ← per-day session logs (v8.20 AoR)
 ├── scripts/            ← cognitive (ai-*) + operator (polaris-*) scripts
-├── archives/           ← v9.07 Pheromone archives
+├── archive/            ← frozen history (CHANGELOG-FULL.md + non-ACTIVE sanctum/journal/brain-map snapshots)
+├── archives/           ← runtime output (v9.07 Pheromone archives — not committed)
 ├── assets/             ← branding (logo)
 │
 ├── .git/               ← v9.07 (genesis 2026-05-15; first commit deferred to operator)
@@ -49,8 +51,7 @@ polaris/                          ← repo root
 └── .pre-commit-config.yaml  ← v9.06 — local hooks (link-check, meta, coherence, invariants)
 ```
 
-**32 directories** (excl. caches/venv/.git). **Every directory has a
-README** as of v9.08.
+**17 top-level directories** (excl. caches/venv/.git); **45 subdirs total** (recursive). **Every load-bearing top-level directory has a README** (15 top-level + 4 docs/* subdirs + 4 polaris_swarm/* subdirs; v9.08 showroom invariant enforced by `test_every_top_level_dir_has_readme`).
 
 ---
 
@@ -66,7 +67,7 @@ The actual product — the thing being built.
 
 | Layer-1 dir | What |
 |---|---|
-| [`polaris_web/`](../../polaris_web/) | Flask web app — 60+ routes; 33 schema tables; ZK wrapper; WebAuthn |
+| [`polaris_web/`](../../polaris_web/) | Flask web app — 67 routes; 27 schema tables; ZK wrapper; WebAuthn |
 | [`polaris_sql/`](../../polaris_sql/) | DDL + procedures + triggers + atlas functions + migrations |
 | [`polaris_zk/`](../../polaris_zk/) | Rust crate — Plonky2 ZK-SNARK prover/verifier |
 | [`polaris_cli/`](../../polaris_cli/) | CLI utilities |
@@ -88,9 +89,9 @@ How the agent thinks: scripts, meta-architecture, audit-of-record.
 
 | Layer-3 dir | What |
 |---|---|
-| [`scripts/`](../../scripts/) | 32 ai-* (cognitive) + 16 polaris-* (operator) scripts |
+| [`scripts/`](../../scripts/) | 39 ai-* (cognitive) + 30 polaris-* (operator) scripts |
 | [`meta/`](../../meta/) | Cognitive architecture (cognitive-loop, autonomy, structural, sanctum-protocol, architect persona, per-arc records) |
-| [`sanctum/`](../../sanctum/) | 47+ strategic-consultation sessions (v8.20 AoR) |
+| [`sanctum/`](../../sanctum/) | 59 strategic-consultation sessions (v8.20 AoR) |
 | [`journal/`](../../journal/) | Per-day session logs + Architect briefs + HYDRA briefs (v8.20 AoR) |
 | [`patterns/`](../../patterns/) | 22-pattern software-work catalog |
 | [`proposals/`](../../proposals/) | Long-form proposal drafts |

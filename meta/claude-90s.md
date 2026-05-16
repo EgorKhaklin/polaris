@@ -60,7 +60,7 @@ game-theory framing; pattern-naming when patterns appear.
    in [polaris_web/__version__.py](../polaris_web/__version__.py)
    (single canonical source as of v9.06).
 3. **Verify before claiming done.** `bash scripts/ai-done.sh` runs
-   the 12-check pre-ship gate. Composite of test suite + link-check
+   the 14-check pre-ship gate. Composite of test suite + link-check
    + meta + coherence + brain-map.
 
 ## Where to look

@@ -19,7 +19,7 @@ session start. Ten hard constraints, all enforced at the database
 level (trigger / partial unique index / CHECK constraint), not at the
 policy level:
 
-- **C1** audit-of-record (12 schema instances + 3 filesystem instances)
+- **C1** audit-of-record (9 schema instances + 3 filesystem instances; 12 total)
 - **C2** zero-knowledge (verification graph not reconstructable)
 - **C3** one identity per person (partial unique index)
 - **C4** atomic failed-login counter (no TOCTOU)
@@ -168,8 +168,8 @@ Two remaining honestly-named "accept it never will" items:**
 **Full ai-* + polaris-* script index** (canonical list via
 `./scripts/ai-help.sh`; one-line shorthand below for the META-check):
 
-- `ai-adversary.sh ai-anti-architect.sh ai-architect.sh ai-authz-audit.sh ai-bootstrap.sh ai-brain-map.sh ai-cache-bust.sh ai-context-digest.sh ai-coverage.sh ai-dashboard.sh ai-done.sh ai-foresight.sh ai-help.sh ai-hydra.sh ai-impact.sh ai-journal.sh ai-lattice.sh ai-link-check.sh ai-loop-check.sh ai-meta.sh ai-mission.sh ai-pattern.sh ai-prime.sh ai-propose.sh ai-recall.sh ai-reflect.sh ai-snapshot.sh ai-status.sh ai-swarm-bloom.sh ai-swarm-health.sh ai-swarm-map.sh ai-swarm-validate.sh ai-test-counts.sh ai-test.sh ai-treasury-report.sh ai-watcher-coverage.sh ai-where.sh`
-- `polaris-ant-ranking.sh polaris-archive.sh polaris-backup.sh polaris-concurrency-harness.sh polaris-create-operator.sh polaris-cron-install.sh polaris-ct-monitor.sh polaris-deploy.sh polaris-doctor.sh polaris-generate-recovery-code.sh polaris-generate-secrets.sh polaris-load-test.sh polaris-loadtest-tokens.sh polaris-migrate.sh polaris-oracle-runner.sh polaris-pheromone-archive.sh polaris-pheromone-purge.sh polaris-pqc-status.sh polaris-purge.sh polaris-recover-admin.sh polaris-restore.sh polaris-rotate-logs.sh polaris-rotate-secret.sh polaris-set-webauthn-deadline.sh pre-commit-scope-check.sh`
+- `ai-adversary.sh ai-anti-architect.sh ai-architect.sh ai-authz-audit.sh ai-bootstrap.sh ai-brain-map.sh ai-cache-bust.sh ai-coherence.sh ai-context-digest.sh ai-coverage.sh ai-dashboard.sh ai-done.sh ai-foresight.sh ai-help.sh ai-hydra.sh ai-impact.sh ai-journal.sh ai-lattice.sh ai-link-check.sh ai-loop-check.sh ai-meta.sh ai-mission.sh ai-pattern.sh ai-prime.sh ai-propose.sh ai-recall.sh ai-reflect.sh ai-sanctum.sh ai-snapshot.sh ai-status.sh ai-swarm-bloom.sh ai-swarm-health.sh ai-swarm-map.sh ai-swarm-validate.sh ai-test-counts.sh ai-test.sh ai-treasury-report.sh ai-watcher-coverage.sh ai-where.sh`
+- `polaris-ant-ranking.sh polaris-archive.sh polaris-backup.sh polaris-chaos-test.sh polaris-concurrency-harness.sh polaris-create-operator.sh polaris-cron-install.sh polaris-ct-monitor.sh polaris-deploy.sh polaris-doctor.sh polaris-generate-recovery-code.sh polaris-generate-secrets.sh polaris-idempotency-test.sh polaris-load-test.sh polaris-loadtest-tokens.sh polaris-migrate.sh polaris-oracle-runner.sh polaris-pheromone-archive.sh polaris-pheromone-purge.sh polaris-pqc-status.sh polaris-purge.sh polaris-recover-admin.sh polaris-restore.sh polaris-rotate-logs.sh polaris-rotate-secret.sh polaris-sanctum-scorecard.sh polaris-sanctum-status.sh polaris-set-webauthn-deadline.sh polaris-swarm-killtest.sh polaris-swarm-mttr.sh polaris-swarm-scorecard.sh pre-commit-scope-check.sh`
 
 ---
 

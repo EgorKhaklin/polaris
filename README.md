@@ -126,7 +126,7 @@ Most reference implementations of an identity system are a database schema, an a
 The substrate is named in MISSION.md as four principles. The principles, not the implementation:
 
 1. **The Sanctum protocol.** A formal record of every non-routine decision; 59 entries in `sanctum/` to date, indexed at [`meta/sanctum-index.md`](meta/sanctum-index.md).
-2. **Audit-of-record.** Ten instances across schema and filesystem; the system writes evidence at the moment of decision rather than reconstructing it later. See [`DEVNOTES/audit-of-record.md`](DEVNOTES/audit-of-record.md).
+2. **Audit-of-record.** Twelve instances across schema and filesystem (9 schema + 3 filesystem); the system writes evidence at the moment of decision rather than reconstructing it later. See [`DEVNOTES/audit-of-record.md`](DEVNOTES/audit-of-record.md).
 3. **Risk classes.** Three tiers (LOW / MEDIUM / HIGH) governing what an agent may do autonomously versus what requires explicit human approval. See [`meta/autonomy-architecture.md`](meta/autonomy-architecture.md).
 4. **CM (the meta-constraint).** Six executable self-checks under `scripts/ai-meta.sh` that catch drift between the cognitive layer's claims and the running system.
 

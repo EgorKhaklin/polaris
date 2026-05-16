@@ -1,9 +1,9 @@
 #!/bin/bash
 # =============================================================================
 # scripts/ai-help.sh — index of every ai-* script with one-line purpose
-# (v8.6; v8.37 ai-hydra; v8.52 ai-brain-map; v8.62 ai-swarm-bloom — current count: 30 scripts)
+# (v8.6; v8.37 ai-hydra; v8.52 ai-brain-map; v8.62 ai-swarm-bloom — current count: 39 scripts)
 #
-# Discoverability tool. The cognitive layer accumulated 29 scripts; without
+# Discoverability tool. The cognitive layer accumulated 39 scripts; without
 # this, the agent has to grep or open each to figure out which one does
 # what. This script reads the doc-comment block at the top of each ai-*.sh
 # (or test_implants.sh) and emits a sorted single-screen index.
@@ -158,10 +158,12 @@ print_group "Cognitive lenses" \
     ai-pattern.sh ai-lattice.sh ai-adversary.sh
 
 print_group "Diagnostics" \
-    ai-loop-check.sh ai-coherence.sh ai-coverage.sh ai-test-counts.sh ai-meta.sh
+    ai-loop-check.sh ai-coherence.sh ai-coverage.sh ai-test-counts.sh ai-meta.sh \
+    ai-authz-audit.sh ai-watcher-coverage.sh ai-swarm-health.sh ai-swarm-validate.sh
 
 print_group "Synthesis & reporting" \
-    ai-architect.sh ai-sanctum.sh ai-hydra.sh ai-swarm-bloom.sh
+    ai-architect.sh ai-anti-architect.sh ai-sanctum.sh ai-hydra.sh ai-foresight.sh \
+    ai-swarm-bloom.sh ai-brain-map.sh ai-swarm-map.sh ai-dashboard.sh ai-treasury-report.sh
 
 print_group "Snapshots & meta" \
     ai-snapshot.sh ai-context-digest.sh ai-help.sh test_implants.sh

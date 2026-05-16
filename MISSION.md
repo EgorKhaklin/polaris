@@ -397,15 +397,17 @@ Every primitive that changes state has a schema element + invariants
 that fully reconstruct operation history without a separate event-log
 table. Append-only at the data-content level, with bounded mutation
 (e.g., revocation as a state transition, not a delete). Currently
-**nine schema instances + one filesystem instance**: schema —
+**nine schema instances + three filesystem instances**: schema —
 `TokenLifecycleEvent`, `VerificationEvent`, `RecoveryRequest`,
 `EnrollmentStatusEvent`, `TokenSignature`, `AnchorBatch`,
 `AgencyTrustAttestation`, `TokenStateEpoch`, `DuressEvent` —
 collectively the v2 mission substrate; filesystem — `sanctum/*.md`
-sessions (convention-enforced via `ai-meta.sh` CM check #6). The
-principle is canonicalized in `DEVNOTES/audit-of-record.md`. New
-schema-touching ships extend the catalog; the principle is what
-gates them.
+sessions, `polaris_swarm/civitas/census-roll.json` (Arc E civitas
+registry; v8.66), and `polaris_swarm/civitas/treasury-roll.json`
+(Arc F denarii ledger; v8.68) (convention-enforced via `ai-meta.sh`
+CM check #6). The principle is canonicalized in
+`DEVNOTES/audit-of-record.md`. New schema-touching ships extend the
+catalog; the principle is what gates them.
 
 ### Principle 3 — Risk classes
 

@@ -220,7 +220,7 @@ If a secret was ever committed:
 
 - `POLARIS_DOMAIN` (TLS configuration; not secret)
 - `POLARIS_OPERATOR_EMAIL` (Let's Encrypt; not secret)
-- `POLARIS_GUNICORN_WORKERS` (tuning; not secret)
+- `POLARIS_WORKERS` (gunicorn worker count; not secret)
 - `POLARIS_BACKUP_DIR` (path; not secret)
 - `POLARIS_ZK_BINARY` (path; not secret)
 

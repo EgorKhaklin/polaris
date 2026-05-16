@@ -2,10 +2,10 @@
 
 Two families of scripts live here:
 
-- **`ai-*.sh`** (32 scripts) — the cognitive layer: how the agent
+- **`ai-*.sh`** (39 scripts) — the cognitive layer: how the agent
   primes a session, proposes moves, runs HYDRA, journals decisions,
   reflects at end-of-session. Read by humans + agents alike.
-- **`polaris-*.sh`** (16 scripts) — the operator layer: deploy,
+- **`polaris-*.sh`** (30 scripts) — the operator layer: deploy,
   backup, restore, archive, purge, rotate secrets, generate
   recovery codes. Used by the human running Polaris in production.
 
@@ -25,7 +25,7 @@ Plus a few `*.py` helpers that scripts shell out to (`ai_brain_map.py`,
 | [`ai-hydra.sh`](ai-hydra.sh) | HYDRA swarm synthesis (v9.04: `--full / --actions / --save / --diff`) |
 | [`ai-sanctum.sh`](ai-sanctum.sh) | Open / close strategic-consultation sessions |
 | [`ai-journal.sh`](ai-journal.sh) | Episodic memory: capture decisions / learnings / bugs |
-| [`ai-done.sh`](ai-done.sh) | Pre-ship 12-check gate |
+| [`ai-done.sh`](ai-done.sh) | Pre-ship 14-check gate |
 
 The full inventory is one command away:
 
@@ -36,7 +36,7 @@ bash scripts/ai-help.sh hydra     # full doc for one script
 
 ---
 
-## ai-* scripts (cognitive layer; 32 scripts)
+## ai-* scripts (cognitive layer; 39 scripts)
 
 Grouped by lifecycle (matches `ai-help.sh` output):
 
@@ -49,7 +49,7 @@ Grouped by lifecycle (matches `ai-help.sh` output):
 
 ### Working & shipping
 - [`ai-test.sh`](ai-test.sh) — full test suite (handles env + redis + venv)
-- [`ai-done.sh`](ai-done.sh) — 12-check pre-ship gate
+- [`ai-done.sh`](ai-done.sh) — 14-check pre-ship gate
 - [`ai-cache-bust.sh`](ai-cache-bust.sh) — bump CSS/JS `?v=` hashes
 - [`ai-link-check.sh`](ai-link-check.sh) — Markdown + cross-ref resolution
 - [`ai-impact.sh`](ai-impact.sh) — what depends on this file/symbol?
@@ -72,23 +72,30 @@ Grouped by lifecycle (matches `ai-help.sh` output):
 - [`ai-test-counts.sh`](ai-test-counts.sh) — MISSION.md test-count drift detector
 - [`ai-meta.sh`](ai-meta.sh) — cognitive-layer self-monitor (CM)
 - [`ai-treasury-report.sh`](ai-treasury-report.sh) — Treasury ledger diagnostic
+- [`ai-authz-audit.sh`](ai-authz-audit.sh) — authorization-matrix audit
+- [`ai-watcher-coverage.sh`](ai-watcher-coverage.sh) — HYDRA watcher coverage map
+- [`ai-swarm-health.sh`](ai-swarm-health.sh) — Mycelium swarm health probe
+- [`ai-swarm-validate.sh`](ai-swarm-validate.sh) — swarm structural validation
 
 ### Synthesis & reporting
 - [`ai-architect.sh`](ai-architect.sh) — Architect-persona brief
+- [`ai-anti-architect.sh`](ai-anti-architect.sh) — Anti-Architect contest pass
 - [`ai-sanctum.sh`](ai-sanctum.sh) — Sanctum open/close protocol
 - [`ai-hydra.sh`](ai-hydra.sh) — HYDRA hybrid intelligence
+- [`ai-foresight.sh`](ai-foresight.sh) — Foresight surface brief (v9.12)
 - [`ai-swarm-bloom.sh`](ai-swarm-bloom.sh) — Mycelium pheromone heatmap
+- [`ai-swarm-map.sh`](ai-swarm-map.sh) — Mycelium tier graph
 - [`ai-dashboard.sh`](ai-dashboard.sh) — single-screen dashboard (v9.07)
+- [`ai-brain-map.sh`](ai-brain-map.sh) — regenerate the visual brain-map
 
 ### Snapshots & meta
 - [`ai-snapshot.sh`](ai-snapshot.sh) — full state in one document
 - [`ai-context-digest.sh`](ai-context-digest.sh) — compact state dump
 - [`ai-help.sh`](ai-help.sh) — index of every ai-* script
-- [`ai-brain-map.sh`](ai-brain-map.sh) — regenerate the visual brain-map
 
 ---
 
-## polaris-* scripts (operator layer; 16 scripts)
+## polaris-* scripts (operator layer; 30 scripts)
 
 Grouped by lifecycle stage:
 
@@ -99,6 +106,9 @@ Grouped by lifecycle stage:
 - [`polaris-create-operator.sh`](polaris-create-operator.sh) — admin/operator account
 - [`polaris-generate-recovery-code.sh`](polaris-generate-recovery-code.sh) — printed mnemonic
 - [`polaris-recover-admin.sh`](polaris-recover-admin.sh) — emergency admin recovery
+- [`polaris-doctor.sh`](polaris-doctor.sh) — read-only diagnostic (wraps launcher)
+- [`polaris-cron-install.sh`](polaris-cron-install.sh) — install operator cron jobs
+- [`polaris-set-webauthn-deadline.sh`](polaris-set-webauthn-deadline.sh) — WebAuthn enforcement-date setter
 
 ### Migrate
 - [`polaris-migrate.sh`](polaris-migrate.sh) — schema migrations (v8.95 framework)
@@ -116,9 +126,23 @@ Grouped by lifecycle stage:
 - [`polaris-pheromone-archive.sh`](polaris-pheromone-archive.sh) — Pheromone export-only
 - [`polaris-pheromone-purge.sh`](polaris-pheromone-purge.sh) — sanctioned Pheromone purge
 
-### Monitoring
+### Monitoring + diagnostics
 - [`polaris-ct-monitor.sh`](polaris-ct-monitor.sh) — Certificate Transparency watch
 - [`polaris-load-test.sh`](polaris-load-test.sh) — async load harness wrapper
+- [`polaris-loadtest-tokens.sh`](polaris-loadtest-tokens.sh) — generate load-test tokens
+- [`polaris-concurrency-harness.sh`](polaris-concurrency-harness.sh) — concurrency stress harness
+- [`polaris-chaos-test.sh`](polaris-chaos-test.sh) — chaos-test wrapper (INCONCLUSIVE-aware)
+- [`polaris-idempotency-test.sh`](polaris-idempotency-test.sh) — schema idempotency proof
+- [`polaris-pqc-status.sh`](polaris-pqc-status.sh) — post-quantum-signing status probe
+- [`polaris-oracle-runner.sh`](polaris-oracle-runner.sh) — operator-tier macro probe
+
+### Swarm + Sanctum
+- [`polaris-ant-ranking.sh`](polaris-ant-ranking.sh) — ant ranking diagnostic
+- [`polaris-swarm-killtest.sh`](polaris-swarm-killtest.sh) — kill-test coverage probe
+- [`polaris-swarm-mttr.sh`](polaris-swarm-mttr.sh) — finding MTTR raise/resolve ledger
+- [`polaris-swarm-scorecard.sh`](polaris-swarm-scorecard.sh) — per-ship TP/FP scorecard
+- [`polaris-sanctum-scorecard.sh`](polaris-sanctum-scorecard.sh) — per-Sanctum scorecard
+- [`polaris-sanctum-status.sh`](polaris-sanctum-status.sh) — Sanctum lifecycle + archive sweep
 
 ---
 

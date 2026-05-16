@@ -102,10 +102,10 @@ Polaris has three concentric layers and a fourth perpendicular layer:
 
 ### Layer 1: Data substrate (`polaris_sql/`)
 
-PostgreSQL 16. 27 tables, 14 stored procedures, 12 audit-of-record
-triggers, 13 schema audit-of-record instances counting filesystem
-instances, 29 schema-level guards (G-guards G1-G29). Migrations
-framework (v8.95) records SHA-256 hashes; append-only by trigger.
+PostgreSQL 16. 27 tables, 14 stored procedures, 20 triggers, 12
+audit-of-record instances (9 schema + 3 filesystem), 29 schema-level
+guards (G-guards G1-G29). Migrations framework (v8.95) records
+SHA-256 hashes; append-only by trigger.
 
 The schema is the constitution. The Flask application is a UI on top
 of the schema. The schema can be operated via raw SQL (the
@@ -134,8 +134,8 @@ Key tables (27 total, partial list):
 
 ### Layer 2: Application (`polaris_web/`)
 
-Python 3 / Flask / gunicorn. ~4,100 lines of `app.py`. ~720 lines of
-`security.py`. ~460 lines of `webauthn_auth.py`. Templates use Jinja2.
+Python 3 / Flask / gunicorn. ~4,298 lines of `app.py`. ~851 lines of
+`security.py`. ~459 lines of `webauthn_auth.py`. Templates use Jinja2.
 CSS is hand-rolled (no Tailwind), navy/gold intelligence-report
 aesthetic. JavaScript is external-only (no inline scripts; CSP
 enforces). The atlas globe uses D3 + topojson, no CDN dependency.

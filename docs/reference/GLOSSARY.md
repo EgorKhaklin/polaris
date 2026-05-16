@@ -234,7 +234,7 @@ ledger), `polaris_swarm/civitas/census-roll.json` (Arc E civitas
 registry).
 
 **CHECK constraint** — a row-level invariant declared in the
-schema. Polaris has 41 CHECK constraints across its 25 tables; they
+schema. Polaris has 74 CHECK constraints across its 27 tables; they
 enforce things like "`disclosure_level = 'ZERO_KNOWLEDGE'` implies
 `token_id IS NULL`."
 

@@ -1,6 +1,6 @@
 # DATA-MODEL.md — schema reference
 
-The Polaris schema is **23 tables** organized into six functional groups:
+The Polaris schema is **27 tables** organized into six functional groups:
 
 - **Entities** (Individual, Agency, AppUser, CryptographicAlgorithm,
   VerificationContext) — the things that exist in the world

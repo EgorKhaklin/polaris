@@ -753,7 +753,7 @@ After restore:
 ```bash
 # Run integrity checks
 psql -d polaris_restored -c "SELECT count(*) FROM IdentityToken;"
-psql -d polaris_restored -f polaris_sql/08_tests.sql        # 78 SQL self-tests; expect 0 failures
+psql -d polaris_restored -f polaris_sql/08_tests.sql        # 170 SQL self-tests; expect 0 failures
 psql -d polaris_restored -f polaris_sql/12_v7_constraints.sql
 ```
 
@@ -1042,7 +1042,7 @@ clients, OR rate-limiter Redis latency p95 > 5ms.
 **Recipe (deferred to Phase 2.5):** Redis Sentinel or Redis
 Cluster (operator's choice) replaces the single Redis instance.
 The app's `security.py` rate-limiter selection logic
-auto-discovers Redis via `POLARIS_REDIS_HOST`; point it at the
+auto-discovers Redis via `POLARIS_REDIS_URL`; point it at the
 cluster's read-write endpoint.
 
 Until shipped: a single Redis instance with `maxmemory 256mb`

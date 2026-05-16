@@ -96,7 +96,7 @@ work).
 **Constitutional fit (v8.30).** The four cognitive-substrate
 principles are unchanged. The Architect persona (`meta/architect.md`)
 is unchanged; HYDRA's synthesis voice IS the Architect, just informed
-by N parallel watchers instead of one synthesis pass. The 27 existing
+by N parallel watchers instead of one synthesis pass. The 39 existing
 `ai-*` scripts are unchanged; some of them are read by watchers as
 data sources.
 

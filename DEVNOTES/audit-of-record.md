@@ -71,13 +71,13 @@ A schema element qualifies as an audit-of-record if and only if:
    to a separate event-log table, the element is not an
    audit-of-record.
 
-## The current instances (10 total: 9 schema + 1 filesystem)
+## The current instances (12 total: 9 schema + 3 filesystem)
 
-Count corrected in v8.32 maintenance pass. The table previously had
-8 rows + a paragraph claiming "Eight of the eight" while listing 9
-distinct elements. The schema has nine trigger-enforced or partially-
-enforced audit-of-record tables plus one filesystem-convention
-instance. Listed in the order the principle was applied.
+Count corrected in v8.32 maintenance pass (8 → 10). v8.66 added
+`census-roll.json` (Arc E civitas registry) and v8.68 added
+`treasury-roll.json` (Arc F denarii ledger) as the second and third
+filesystem-AoR instances, bringing the canonical count to 12 (9
+schema + 3 filesystem). Listed in the order the principle was applied.
 
 | # | Element | Operation it records | Bounded mutation | DELETE rule |
 |---|---|---|---|---|
@@ -91,6 +91,8 @@ instance. Listed in the order the principle was applied.
 | 8 | **`TokenStateEpoch`** (v8.23 / R10-1 / M2-1) | Per-epoch Merkle commitment of the active-token set (ZK-SNARK base) | None — fully append-only after closure | Forbidden by `enforce_epoch_immutability` trigger |
 | 9 | **`DuressEvent`** (v8.24 / R11-5 / M2-10) | Detected compulsion signals (silent OOB alert for verifier under coercion) | `oob_notified_at` only — set once when a responder acknowledges (forward-only) | Forbidden by `reject_audit_modification` trigger |
 | 10 | **`sanctum/*.md` sessions** | Strategic agent-operator consultations (OPEN → DECIDED → CLOSED/REJECTED) | §VI Decision, §VII Outcome, `Status` field — filled by `ai-sanctum.sh close` | Convention: not file-system-enforced, but `ai-meta.sh` CM check #6 (v8.20) flags missing/incomplete sessions |
+| 11 | **`polaris_swarm/civitas/census-roll.json`** (v8.66) | Civitas-tier ant + soldier + citizen registry (first-seen / last-seen / legion-at-birth) | Last-seen timestamp updates only; first-seen frozen | Convention: write only via `polaris_swarm/civitas/censor_roll_keeper.py`; structural-invariant tests enforce shape |
+| 12 | **`polaris_swarm/civitas/treasury-roll.json`** (v8.68) | Denarius ledger of trust deposits / withdrawals by ant per evidence | Append-only entry list; balance derives from sum | Convention: write only via `polaris_swarm/civitas/treasury.py`; structural-invariant tests enforce monotonic append |
 
 ### Conformance grading
 
@@ -99,8 +101,11 @@ instance. Listed in the order the principle was applied.
 `TokenSignature`, `AnchorBatch`, `AgencyTrustAttestation`,
 `TokenStateEpoch`, `DuressEvent`). The ninth (`RecoveryRequest`) has
 partial enforcement via partial unique index + procedure discipline.
-The tenth instance (`sanctum/*.md`) is filesystem-level with CM-check
-coverage. This asymmetry is honest, not aspirational:
+The three filesystem instances (`sanctum/*.md`, `census-roll.json`,
+`treasury-roll.json`) are filesystem-level with CM-check coverage
+(`ai-meta.sh` CM check #6) plus structural-invariant tests that
+validate shape and append-only discipline. This asymmetry is honest,
+not aspirational:
 
 - `RecoveryRequest` could be tightened with a dedicated trigger
   similar to `enforce_token_signature_immutability` — a future

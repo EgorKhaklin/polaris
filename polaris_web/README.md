@@ -228,7 +228,7 @@ and means the server can enforce correctness without trusting the client.
 
 ### CRUD scope
 
-The schema has 23 tables (incl. `GenomicAnchor` from M2-4, the
+The schema has 27 tables (incl. `GenomicAnchor` from M2-4, the
 `QuantumObserverBinding` scaffold from M2-5, `IssuerDiscretionPolicy`
 from M2-11, `EnrollmentStatusEvent` from M2-9, `RecoveryRequest`
 from M2-7, `TokenSignature` from M2-6, `AnchorBatch` from M2-2,
@@ -319,7 +319,7 @@ def individuals_new():
   recorded in append-only `AuthAuditLog`
 - Refuses to start in production with default secret key
 
-The `security.py` module is ~710 lines and is the single source of
+The `security.py` module is ~851 lines and is the single source of
 truth for all access controls. Audit it directly rather than reading
 docs. The rate-limiter backend selection lives in `_RateLimiter`
 factory; see also `../DEVNOTES/rate-limiter.md`.
@@ -388,7 +388,7 @@ Supplementary suites:
 - **`test_redaction_property.py`** — M2-12 redaction-adversary tests
   with three adversary classes (UniformGuess, TemporalCorrelation,
   SpatialUniqueness)
-- **`test_structural_invariants.py`** — 22 cognitive-layer invariants
+- **`test_structural_invariants.py`** — 882 cognitive-layer invariants
   covering the constraint lattice, 22-pattern catalog, Fibonacci
   weights, CM meta-constraint, adversary models, the seven
   structural frameworks, and Sanctum integrity (added v8.20: status
@@ -404,8 +404,9 @@ Expected output: `Ran ~342 tests in ~70s. OK` (plus property + structural).
 
 ```
 polaris_web/
-├── app.py                       Flask backend (~2,608 lines)
-├── security.py                  Auth, CSRF, CSP, rate limiter (~710 lines)
+├── app.py                       Flask backend (~4,298 lines)
+├── security.py                  Auth, CSRF, CSP, rate limiter (~851 lines)
+├── webauthn_auth.py             WebAuthn-MFA layer (~459 lines)
 ├── test_app.py                  Integration test suite (342 tests, 50 classes)
 ├── test_invariants_property.py  Hypothesis property tests (C1, C2, C3)
 ├── test_redaction_property.py   M2-12 redaction-adversary tests
@@ -415,10 +416,10 @@ polaris_web/
 ├── docker-init.sh               Postgres init script
 ├── Dockerfile                   Flask app container image
 ├── gunicorn.conf.py             Production WSGI config
-├── templates/                   Jinja2 templates (19 files, incl. atlas.html)
+├── templates/                   Jinja2 templates (35 files, incl. atlas.html)
 └── static/
-    ├── polaris.css              Hand-written stylesheet, navy/gold (~2,660 lines)
-    ├── atlas-globe.js           Viewport-aware d3 globe (~1,320 lines)
+    ├── polaris.css              Hand-written stylesheet, navy/gold (~3,460 lines)
+    ├── atlas-globe.js           Viewport-aware d3 globe (~1,318 lines)
     ├── data/                    countries-110m.json topojson
     └── vendor/                  d3, topojson — no CDN dependency
 ```

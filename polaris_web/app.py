@@ -1767,7 +1767,7 @@ def _health_check_database():
         if latency_ms > 500:
             status = 'degraded'
         if table_count < 20:
-            # We expect 25 tables in a fully-loaded schema; anything below 20
+            # We expect 27 tables in a fully-loaded schema; anything below 20
             # suggests a partial / broken load.
             status = 'unhealthy' if table_count == 0 else 'degraded'
         return {

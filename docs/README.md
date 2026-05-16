@@ -29,7 +29,7 @@ Three documents that together cover the why, the what, and the how. Added v8.59 
 
 | File | When to read |
 |---|---|
-| [DATA-MODEL.md](reference/DATA-MODEL.md) | ER overview + table-by-table prose for the 23 tables (includes M2-1 TokenStateEpoch + Leaf, M2-2 AnchorBatch, M2-5 QuantumObserverBinding, M2-6 TokenSignature, M2-7 RecoveryRequest, M2-8 AgencyTrustAttestation, M2-9 EnrollmentStatusEvent, M2-10 DuressEvent, M2-11 IssuerDiscretionPolicy). The complement to `polaris_sql/01_schema.sql` for readers who want narrative rather than DDL. |
+| [DATA-MODEL.md](reference/DATA-MODEL.md) | ER overview + table-by-table prose for the 27 tables (includes M2-1 TokenStateEpoch + Leaf, M2-2 AnchorBatch, M2-5 QuantumObserverBinding, M2-6 TokenSignature, M2-7 RecoveryRequest, M2-8 AgencyTrustAttestation, M2-9 EnrollmentStatusEvent, M2-10 DuressEvent, M2-11 IssuerDiscretionPolicy). The complement to `polaris_sql/01_schema.sql` for readers who want narrative rather than DDL. |
 | [SCALING.md](reference/SCALING.md) | The v6 scaling architecture. How the 2M+ event capacity actually works (server-side cluster aggregation, viewport-aware fetches, hard caps). |
 | [SECURITY.md](operator/SECURITY.md) | The cybersecurity audit and the controls applied. Pairs with `DEVNOTES/threat-model.md` (STRIDE) and `meta/redaction-proof.md` (the privacy claim). |
 | [PRIVACY.md](operator/PRIVACY.md) | What data is collected, retained, shared, and how the architecture enforces minimization. Distinct from `SECURITY.md` — that's about defending data, this is about not collecting more than necessary. |
@@ -53,7 +53,7 @@ Three documents that together cover the why, the what, and the how. Added v8.59 
 - **Per-day decision log** → `journal/`.
 - **Strategic option proposals** → `proposals/`.
 - **Sanctum strategic-consultation records** (v8.19+) → `sanctum/`, indexed at `meta/sanctum-index.md`. Each major decision (MEDIUM/HIGH risk, cross-arc, or cognitive-layer structural change) is recorded here. Protocol at `meta/sanctum-protocol.md`; entry script `scripts/ai-sanctum.sh`.
-- **Audit-of-record principle** (v8.20) → `DEVNOTES/audit-of-record.md`. Defines the cross-cutting pattern shared by TokenLifecycleEvent, VerificationEvent, EnrollmentStatusEvent, RecoveryRequest, TokenSignature, AnchorBatch (v8.21), AgencyTrustAttestation (v8.22), TokenStateEpoch (v8.23), DuressEvent (v8.24), and the Sanctum directory; **10 instances total (9 schema + 1 filesystem)**.
+- **Audit-of-record principle** (v8.20) → `DEVNOTES/audit-of-record.md`. Defines the cross-cutting pattern shared by TokenLifecycleEvent, VerificationEvent, EnrollmentStatusEvent, RecoveryRequest, TokenSignature, AnchorBatch (v8.21), AgencyTrustAttestation (v8.22), TokenStateEpoch (v8.23), DuressEvent (v8.24), the Sanctum directory, plus census-roll.json (v8.66) and treasury-roll.json (v8.68); **12 instances total (9 schema + 3 filesystem)**.
 
 ## Re-evaluation triggers
 

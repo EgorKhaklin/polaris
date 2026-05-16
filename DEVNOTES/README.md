@@ -17,7 +17,7 @@ If you don't know which file you want, this README is the answer.
 
 | File | What it covers |
 |---|---|
-| [`audit-of-record.md`](audit-of-record.md) | The principle: schema element + append-only/bounded-mutation invariants fully reconstruct operation history without a separate event-log table. **Ten current instances (9 schema + 1 filesystem).** |
+| [`audit-of-record.md`](audit-of-record.md) | The principle: schema element + append-only/bounded-mutation invariants fully reconstruct operation history without a separate event-log table. **Twelve current instances (9 schema + 3 filesystem).** |
 | [`concurrency.md`](concurrency.md) | Every race that exists, every advisory-lock that seals it. **Six per-entity / per-procedure lock granularities** in the catalog. |
 | [`substrate.md`](substrate.md) | The manifest of every primitive Polaris depends on (NIST, W3C, ML-DSA, Plonky2, Rust toolchain, etc.). 27 rows across 7 layers. Mirrored in `polaris_sql/13_substrate.sql`. |
 | [`threat-model.md`](threat-model.md) | STRIDE-categorized threats and their controls. The map between MISSION's C1–C10 constraints and concrete attacks. |
