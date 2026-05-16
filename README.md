@@ -227,7 +227,7 @@ The academic project report ([docs/paper/polaris_project_report.pdf](docs/paper/
 
 ## Attribution
 
-Educational project for **Seton Hill University SCS-230** (Database Management Systems), Spring 2026. Notional data only; not a real identity system. All cryptographic algorithm choices reflect current NIST PQC standardization (FIPS 204, FIPS 205) for academic accuracy.
+Educational project for **Seton Hill University**, Spring 2026. Notional data only; not a real identity system. All cryptographic algorithm choices reflect current NIST PQC standardization (FIPS 204, FIPS 205) for academic accuracy.
 
 The constitution lives in [MISSION.md](MISSION.md). The build journal lives in [`journal/`](journal/) (indexed at [`journal/INDEX.md`](journal/INDEX.md)). The decision graph lives in [`sanctum/`](sanctum/) (indexed at [`meta/sanctum-index.md`](meta/sanctum-index.md)).
 
