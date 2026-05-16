@@ -105,7 +105,7 @@ A full subcommand reference lives in [`docs/operator/INSTALL.md`](docs/operator/
                  │  1,063 Python tests · 882 structural invariants  │
                  │  59 Sanctum strategic-consultation records       │
                  │  9 HYDRA watchers + CM                           │
-                 │  33 commander ants + 9 soldier classes + 6 citiz │
+                 │  33 commander ants + 6 citiz + 9 soldier classes │
                  │  4 constitutional principles + 1 vocation        │
                  │  1 double-click to launch                        │
                  └──────────────────────────────────────────────────┘
