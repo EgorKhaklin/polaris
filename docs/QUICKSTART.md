@@ -35,8 +35,8 @@ the SQL schema), additionally:
 ## The 90-second path
 
 ```bash
-git clone <polaris repo url> && cd polaris
-./scripts/polaris-generate-secrets.sh        # writes .env
+git clone https://github.com/EgorKhaklin/polaris.git && cd polaris
+./scripts/polaris-generate-secrets.sh        # writes polaris_web/secrets/ (3 files, mode 0600)
 export POLARIS_DOMAIN=localhost              # for local-only; production uses your real domain
 ./scripts/polaris-deploy.sh prod             # brings up Caddy + Postgres + Redis + gunicorn
 curl -fsS http://localhost/api/health | jq .
@@ -96,26 +96,43 @@ The thing that makes Polaris different is that the audit trail is
 enforced, not requested. Verify this:
 
 ```bash
-# Connect to the running database
+# Connect to the running database as the postgres superuser
 docker compose -f polaris_web/docker-compose.prod.yml exec postgres \
-    psql -U polaris -d polaris
+    psql -U postgres -d polaris
+```
 
-# Attempt to UPDATE an audit row (should be refused by trigger)
-UPDATE TokenLifecycleEvent SET created_at = NOW()
+```sql
+-- Attempt to UPDATE an audit row (should be refused by trigger
+-- trg_lifecycle_append_only via reject_audit_modification())
+UPDATE TokenLifecycleEvent SET event_timestamp = NOW()
 WHERE event_id = (SELECT min(event_id) FROM TokenLifecycleEvent);
--- ERROR: TokenLifecycleEvent is append-only (trigger trg_tle_no_update)
+-- ERROR:  UPDATE on tokenlifecycleevent is forbidden: this table is
+--         append-only (audit invariant). For Phase 2b archive-then-
+--         delete, route through uc_archive_purge().
 
-# Attempt to DELETE an audit row (should be refused by trigger)
+-- Attempt to DELETE an audit row (same trigger; UPDATE + DELETE
+-- both rejected outside the v8.87 archive+purge carve-out)
 DELETE FROM TokenLifecycleEvent
 WHERE event_id = (SELECT min(event_id) FROM TokenLifecycleEvent);
--- ERROR: TokenLifecycleEvent is append-only (trigger trg_tle_no_delete)
+-- ERROR:  DELETE on tokenlifecycleevent is forbidden: this table is
+--         append-only (audit invariant). ...
 
-# Attempt a second ACTIVE token for the same individual (should be refused)
-INSERT INTO IdentityToken (individual_id, status, ...)
-SELECT individual_id, 'ACTIVE', ...
-FROM IdentityToken WHERE status='ACTIVE' LIMIT 1;
--- ERROR: duplicate key value violates unique constraint
---        "uq_one_active_token_per_individual" (the partial unique index)
+-- Attempt a second ACTIVE token for the same individual.
+-- The partial unique index uq_one_active_per_person (defined in
+-- polaris_sql/02_indexes.sql with WHERE status='ACTIVE') refuses
+-- a second row at constraint-check time.
+UPDATE IdentityToken SET status='ACTIVE'
+WHERE token_id IN (
+    SELECT token_id FROM IdentityToken
+    WHERE individual_id = (
+        SELECT individual_id FROM IdentityToken
+        WHERE status='ACTIVE' LIMIT 1
+    )
+      AND status='RESERVE'
+    LIMIT 1
+);
+-- ERROR:  duplicate key value violates unique constraint
+--         "uq_one_active_per_person"
 ```
 
 Each of these refusals is C1 (audit-of-record) and C3 (one-identity-

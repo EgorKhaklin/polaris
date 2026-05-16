@@ -28,8 +28,9 @@ Polaris does **not** require:
 
 ## First run
 
-1. Download `polaris_5.zip` (or whichever version) and double-click
-   to extract. macOS will produce a `polaris/` folder.
+1. Either `git clone https://github.com/EgorKhaklin/polaris.git` OR
+   download a release zip from the GitHub Releases page and double-
+   click to extract. macOS will produce a `polaris/` folder.
 
 2. Drag the `polaris/` folder somewhere persistent — `~/Desktop`,
    `~/Documents`, `~/Code`, anywhere. Don't leave it inside the

@@ -53,7 +53,7 @@ What stays preserved across the revocation:
 - C1-C10 verbatim
 - Four cognitive-substrate principles (Sanctum, AoR, risk
   classes, CM) verbatim
-- G-guards G1-G29 in force
+- G-guards G1-G33 in force
 - Audit-of-record discipline (v8.20) — every ship a CHANGELOG
   entry; every MEDIUM/HIGH decision a Sanctum
 - **Constitutional questions still gated through Sanctum** —
