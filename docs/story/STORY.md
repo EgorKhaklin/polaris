@@ -12,7 +12,7 @@ Polaris was a database course project. SCS-230, Seton Hill University, Spring 20
 
 The brief was modest. A relational schema. A handful of stored procedures. A web application that showed every use case. A few diagrams in a LaTeX report.
 
-The first version arrived as expected. Twenty-three tables. Seven core use cases. Sample data for eight notional individuals across four jurisdictions. A Flask application with the Gotham aesthetic of an operational intelligence surface rather than a portal. A 33-page LaTeX report. Everything tested.
+The first version arrived as expected. Twenty-three tables. Seven core use cases. Sample data for eight notional individuals across four jurisdictions. A Flask application with the Gotham aesthetic of an operational intelligence surface rather than a portal. A 36-page LaTeX report. Everything tested.
 
 Then the cybersecurity audit happened.
 
