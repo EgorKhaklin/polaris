@@ -14,17 +14,13 @@ _Cryptographically signed. Audit-of-record by construction. Compulsion-resistant
 Project  ·  Polaris Identity Token System
 Course   ·  SCS-230 Database Management Systems · Seton Hill University
 Author   ·  Egor Khaklin
-Status   ·  v9.23 · 48 ships in v9.x · 747 structural invariants pass · production-deployable
-            Hybrid intelligence (v9.04+): Mycelium swarm (substrate, 33 commanders
-            + 9 soldier classes incl. priest) ↔ HYDRA (lens, 9 watchers) → unified brief
-            + cross-watcher correlations + ranked action queue + cross-run delta.
-            The lens watches itself (v9.06). Vocation named (v9.11): anti-coercion
-            identity substrate. Foresight surface (v9.12). Production-hardened (v9.13).
-            Investigative surface (v9.19). Audit-access meta-audit (v9.20).
-            BIG MISSION composite (v9.23): 12-item Architect + Anti-Architect debate
-            (Pattern #20 18th instance) shipping WebAuthn rollout + cognitive
-            threat model + TLA+ demonstrator + single-region DR + RASP rules +
-            red-team scope + onboarding + cron installer + CONTRIBUTING/SECURITY.
+Status   ·  v9.30 · 40 ships in v9.x · 882 structural invariants pass · production-deployable
+            Hybrid intelligence: Mycelium swarm (substrate, 33 commander ants)
+            ↔ HYDRA (lens, 9 watchers + CM) → unified brief + cross-watcher
+            correlations + ranked action queue + cross-run delta. Anti-coercion
+            vocation. External-referent record: github.com/EgorKhaklin/polaris.
+            For per-ship history see CHANGELOG.md (last 10) and
+            archive/CHANGELOG-FULL.md (full).
 ```
 
 [**System map**](docs/reference/SYSTEM-MAP.md) · [**Conventions**](docs/CONVENTIONS.md) · [**Constitution (MISSION.md)**](MISSION.md) · [**Backlog (ROADMAP.md)**](ROADMAP.md) · [**Audit-of-record (CHANGELOG.md)**](CHANGELOG.md) · [**Agent runbook (CLAUDE.md)**](CLAUDE.md)
@@ -41,7 +37,7 @@ Americans currently carry six to eight credentials that do not talk to each othe
 
 Polaris consolidates them into **one physical token per person**, signed under post-quantum cryptography, with **context-scoped verification** (banking versus voting versus healthcare are different events with different disclosure rules) and **zero-knowledge defaults** (the typical verification stores no token identifier at all).
 
-This repository is a **working reference implementation**: 33 schema tables, 13 stored procedures, a Flask web application that exercises every use case, a Plonky2 ZK-SNARK prover in Rust, WebAuthn-MFA operator authentication, an operational atlas with a live globe, and a self-healing macOS launcher that gets all of it running from a single double-click.
+This repository is a **working reference implementation**: 27 schema tables, 14 stored procedures, a Flask web application that exercises every use case, a Plonky2 ZK-SNARK prover in Rust, WebAuthn-MFA operator authentication, an operational atlas with a live globe, and a self-healing macOS launcher that gets all of it running from a single double-click.
 
 It is not a slide deck. It runs.
 
@@ -74,7 +70,7 @@ cd polaris
 ./Polaris.command            # or: ./polaris_mac_launch.sh up
 ```
 
-The first run pulls Postgres 16, builds the Flask image, loads the schema, runs 78 SQL self-tests, and opens your browser at `http://localhost:2222`. Subsequent launches take roughly ten seconds.
+The first run pulls Postgres 16, builds the Flask image, loads the schema, runs the SQL self-tests, and opens your browser at `http://localhost:2222`. Subsequent launches take roughly ten seconds.
 
 Sign in with one of three seeded roles:
 
@@ -99,19 +95,16 @@ A full subcommand reference lives in [`docs/operator/INSTALL.md`](docs/operator/
 ```
                  ┌─────────────────────────────────────────────────┐
                  │              Polaris in numbers                  │
-                 │              (current as of v9.08)               │
+                 │              (current as of v9.30)               │
                  ├─────────────────────────────────────────────────┤
-                 │  33 schema tables                                │
+                 │  27 schema tables                                │
                  │  14 stored procedures (UC-1 .. UC-12 + foresight)│
-                 │  60+ HTTP routes (incl. /auth/webauthn/*)        │
-                 │  171 SQL self-tests, 606 structural invariants   │
-                 │  846 Python tests, 19 Hypothesis property tests  │
-                 │  50+ Sanctum strategic-consultation records      │
-                 │  13 audit-of-record instances (12 + Pheromone)   │
-                 │  9 mortal HYDRA watchers + 1 immortal CM         │
+                 │  67 HTTP routes (incl. /auth/webauthn/*)         │
+                 │  1,359 Python tests · 882 structural invariants  │
+                 │  60 Sanctum strategic-consultation records       │
+                 │  9 HYDRA watchers + CM                           │
                  │  33 commander ants + 9 soldier classes + 6 citiz │
-                 │  G1-G33 G-guards (G32/G33 added v9.07)           │
-                 │  4 constitutional principles + 1 vocation (v9.11)│
+                 │  4 constitutional principles + 1 vocation        │
                  │  1 double-click to launch                        │
                  └─────────────────────────────────────────────────┘
 ```
@@ -130,12 +123,12 @@ Most reference implementations of an identity system are a database schema, an a
 
 The substrate is named in MISSION.md as four principles. The principles, not the implementation:
 
-1. **The Sanctum protocol.** A formal record of every non-routine decision; seventeen entries in `sanctum/` to date, indexed at [`meta/sanctum-index.md`](meta/sanctum-index.md).
+1. **The Sanctum protocol.** A formal record of every non-routine decision; 60 entries in `sanctum/` to date, indexed at [`meta/sanctum-index.md`](meta/sanctum-index.md).
 2. **Audit-of-record.** Ten instances across schema and filesystem; the system writes evidence at the moment of decision rather than reconstructing it later. See [`DEVNOTES/audit-of-record.md`](DEVNOTES/audit-of-record.md).
 3. **Risk classes.** Three tiers (LOW / MEDIUM / HIGH) governing what an agent may do autonomously versus what requires explicit human approval. See [`meta/autonomy-architecture.md`](meta/autonomy-architecture.md).
 4. **CM (the meta-constraint).** Six executable self-checks under `scripts/ai-meta.sh` that catch drift between the cognitive layer's claims and the running system.
 
-The current implementation is named, not pinned. As of v8.43, MISSION.md says the four principles may be served by *any* synthesis pattern that preserves them. Today that pattern is **HYDRA**, a seven-watcher introspection swarm at [`polaris_hydra/`](polaris_hydra/) that scans schema, cognitive layer, security, mission state, adversary models, performance, and trajectory drift on demand. The Architect persona at [`meta/architect.md`](meta/architect.md) is the synthesis voice. The 22-pattern catalog at [`scripts/ai-pattern.sh`](scripts/ai-pattern.sh) is the procedural memory.
+The current implementation is named, not pinned. As of v8.43, MISSION.md says the four principles may be served by *any* synthesis pattern that preserves them. Today that pattern is **HYDRA**, a nine-watcher introspection swarm at [`polaris_hydra/`](polaris_hydra/) that scans schema, cognitive layer, security, mission state, adversary models, performance, trajectory drift, civitas state, and ant-colony health on demand. The Architect persona at [`meta/architect.md`](meta/architect.md) is the synthesis voice. The 22-pattern catalog at [`scripts/ai-pattern.sh`](scripts/ai-pattern.sh) is the procedural memory.
 
 If a future maintainer replaces HYDRA with something better, the constitution does not need to be amended. The principles are stable; the implementations are substitutable.
 
@@ -150,11 +143,11 @@ Start at the file that matches what you came here for.
 |   |   |   |
 |---|---|---|
 | **[The story](docs/story/STORY.md)** | **[The system map](docs/reference/SYSTEM-MAP.md)** | **[The principles](docs/story/PRINCIPLES.md)** |
-| How Polaris was built between April 30 and May 13, 2026. Eight major versions, sixty-three ships, two single-day rampages, nineteen formal decisions. | A single page that names every meaningful artifact in the repository and what it is for. Use this when you do not know where to start. | The four constitutional principles distilled. Read this before you change anything load-bearing. |
+| How Polaris was built between April 30 and May 16, 2026. Nine major versions, 146 ships, two single-day rampages, 60 formal decisions. | A single page that names every meaningful artifact in the repository and what it is for. Use this when you do not know where to start. | The four constitutional principles distilled. Read this before you change anything load-bearing. |
 | **[The schema](polaris_sql/01_schema.sql)** | **[The constitution](MISSION.md)** | **[The agent runbook](CLAUDE.md)** |
-| Twenty-five tables. Start with `IdentityToken` and follow the foreign keys. Append-only invariants enforced at trigger level on nine of them. | C1 through C10 plus CM. Ten hard constraints the system must never violate, one meta-constraint that guards the layer itself. | If you are an AI agent priming on this project, this is your entry point. Updated through v8.60. |
+| 27 tables. Start with `IdentityToken` and follow the foreign keys. Append-only invariants enforced at trigger level on nine of them. | C1 through C10 plus CM. Ten hard constraints the system must never violate, one meta-constraint that guards the layer itself. | If you are an AI agent priming on this project, this is your entry point. |
 | **[The Atlas](polaris_web/static/atlas-globe.js)** | **[The ZK prover](polaris_zk/src/lib.rs)** | **[The CHANGELOG](CHANGELOG.md)** |
-| The operational globe. 1,318 lines of D3 + custom projection logic. Pan, zoom, drag, hover, click-through, viewport-aware decimation. | Plonky2-backed Merkle-inclusion circuit in Rust. Subprocess CLI consumed by `polaris_web/zk.py`. | Eighty-three thousand words of audit-of-record. Read the version-index table at the top to navigate; v8.57 carries a reading map. |
+| The operational globe. 1,318 lines of D3 + custom projection logic. Pan, zoom, drag, hover, click-through, viewport-aware decimation. | Plonky2-backed Merkle-inclusion circuit in Rust. Subprocess CLI consumed by `polaris_web/zk.py`. | The full audit-of-record (108K words; pre-v9.24 archive). The curated last-10-ships index lives at `CHANGELOG.md` (~3.7K words). |
 
 For an exhaustive index of operator and architect documentation, see [`docs/README.md`](docs/README.md).
 
@@ -168,23 +161,22 @@ Four layers of verification, all run by the launcher's `test` subcommand.
 ┌─────────────────────────────┬────────┬──────────────────────────────────────────────┐
 │  Layer                      │  Count │  What it covers                              │
 ├─────────────────────────────┼────────┼──────────────────────────────────────────────┤
-│  SQL self-tests             │   78   │  Schema sanity, data integrity, UC walks,    │
-│                             │        │  audit-trail invariants. Run on volume init. │
-│  Python integration tests   │   342  │  Every Flask route, every form, the use      │
+│  Python tests (total)       │ 1,359  │  Every Flask route, every form, the use      │
 │                             │        │  cases, rate limiter, atlas API, R6 anti-    │
-│                             │        │  revealing posture.                          │
-│  Hypothesis property tests  │   16   │  Adversarial inputs against C1, C2, C3 and   │
+│                             │        │  revealing posture. Includes property tests  │
+│                             │        │  and structural invariants below.            │
+│  Hypothesis property tests  │   19   │  Adversarial inputs against C1, C2, C3 and   │
 │                             │        │  the M2-12 redaction-proof. Needs hypothesis.│
-│  Structural invariants      │  113   │  The cognitive layer's claims about itself:  │
+│  Structural invariants      │  882   │  The cognitive layer's claims about itself:  │
 │                             │        │  constraint lattice, pattern catalog, CM,    │
-│                             │        │  Sanctum integrity, HYDRA shape, v8.60 reorg.│
+│                             │        │  Sanctum integrity, HYDRA shape, freeze line.│
 └─────────────────────────────┴────────┴──────────────────────────────────────────────┘
 ```
 
 ```bash
 ./polaris_mac_launch.sh test          # full suite, ~60 s
 ./scripts/ai-test.sh quick            # skip the slow concurrency + property tests
-./scripts/ai-done.sh                  # pre-ship gate: 11 checks
+./scripts/ai-done.sh                  # pre-ship gate (incl. CM enforcement)
 ```
 
 A release is shippable when every layer passes and `ai-done` reports `READY`.
