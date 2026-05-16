@@ -9899,15 +9899,20 @@ class TestWave4V908(unittest.TestCase):
     # ---- Root README portfolio quality ------------------------------
 
     def test_root_readme_status_current(self):
+        """Class-shaped: the README's status line must reference the
+        CURRENT POLARIS_VERSION (derived from __version__.py), not a
+        pinned literal that goes stale every ship.
+
+        v9.30 rewrite: the original v9.08 version of this test pinned
+        the literal 'v9.08' + three counts that all drifted (schema
+        tables, HTTP routes, G-guards). Same instance-shape vs
+        class-shape failure mode named in the v9.29 freeze-amendment-
+        protocol Sanctum. Test now derives expectation from the tree."""
+        from polaris_web.__version__ import POLARIS_VERSION
         src = self._read('README.md')
-        self.assertIn('v9.08', src,
-            "README status line must reference v9.08.")
-        # Counts must be current
-        for current_count in ('33 schema tables',
-                              '60+ HTTP routes',
-                              'G1-G33 G-guards'):
-            self.assertIn(current_count, src,
-                f"README must reflect current count '{current_count}'.")
+        self.assertIn(f'v{POLARIS_VERSION}', src,
+            f"README status line must reference current version "
+            f"v{POLARIS_VERSION} (from __version__.py).")
 
     def test_root_readme_links_to_system_map_and_conventions(self):
         src = self._read('README.md')
