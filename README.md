@@ -41,6 +41,8 @@ This repository is a **working reference implementation**: 27 schema tables, 14 
 
 It is not a slide deck. It runs.
 
+The system lives in [`polaris_sql`](polaris_sql/), [`polaris_web`](polaris_web/), [`polaris_cli`](polaris_cli/), [`polaris_zk`](polaris_zk/). The cognitive apparatus lives in [`polaris_swarm`](polaris_swarm/), [`polaris_hydra`](polaris_hydra/), [`polaris_foresight`](polaris_foresight/), [`meta`](meta/), [`sanctum`](sanctum/). Everything under [`archive`](archive/) is frozen history and is not read to understand the system.
+
 ---
 
 ## The hard parts
@@ -100,7 +102,7 @@ A full subcommand reference lives in [`docs/operator/INSTALL.md`](docs/operator/
                  │  27 schema tables                                │
                  │  14 stored procedures (UC-1 .. UC-12 + foresight)│
                  │  67 HTTP routes (incl. /auth/webauthn/*)         │
-                 │  1,359 Python tests · 882 structural invariants  │
+                 │  1,355 Python tests · 882 structural invariants  │
                  │  60 Sanctum strategic-consultation records       │
                  │  9 HYDRA watchers + CM                           │
                  │  33 commander ants + 9 soldier classes + 6 citiz │
@@ -132,7 +134,7 @@ The current implementation is named, not pinned. As of v8.43, MISSION.md says th
 
 If a future maintainer replaces HYDRA with something better, the constitution does not need to be amended. The principles are stable; the implementations are substitutable.
 
-The [brain map](meta/brain-map/brain-map.html) renders all of this as an interactive D3 force-directed graph: 222 nodes, 248 edges across seven layers (schema · behavior · cognitive · decision · constitution · observation · knowledge). Open the file in any browser; nothing is fetched from the network.
+The [brain map](meta/brain-map/brain-map.html) renders all of this as an interactive D3 force-directed graph: 383 nodes, 388 edges across seven layers (schema · behavior · cognitive · decision · constitution · observation · knowledge). Open the file in any browser; nothing is fetched from the network.
 
 ---
 
@@ -161,7 +163,7 @@ Four layers of verification, all run by the launcher's `test` subcommand.
 ┌─────────────────────────────┬────────┬──────────────────────────────────────────────┐
 │  Layer                      │  Count │  What it covers                              │
 ├─────────────────────────────┼────────┼──────────────────────────────────────────────┤
-│  Python tests (total)       │ 1,359  │  Every Flask route, every form, the use      │
+│  Python tests (total)       │ 1,355  │  Every Flask route, every form, the use      │
 │                             │        │  cases, rate limiter, atlas API, R6 anti-    │
 │                             │        │  revealing posture. Includes property tests  │
 │                             │        │  and structural invariants below.            │
