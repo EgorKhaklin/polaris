@@ -218,7 +218,7 @@ Two remaining honestly-named "accept it never will" items:**
 
 ## Current version
 
-**v9.24** (2026-05-16). 49 ships in v9.x. 33 commander ants. 9 HYDRA
+**v9.30** (2026-05-16). 40 ships in v9.x. 33 commander ants. 9 HYDRA
 watchers + CM. 11 manifest legions + 1 reserved. 9 soldier classes (8
 workers + 1 priest). 6 citizens. Treasury (Denarius) ledger.
 

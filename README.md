@@ -103,7 +103,7 @@ A full subcommand reference lives in [`docs/operator/INSTALL.md`](docs/operator/
                  │  14 stored procedures (UC-1 .. UC-12 + foresight)│
                  │  67 HTTP routes (incl. /auth/webauthn/*)         │
                  │  1,355 Python tests · 882 structural invariants  │
-                 │  60 Sanctum strategic-consultation records       │
+                 │  59 Sanctum strategic-consultation records       │
                  │  9 HYDRA watchers + CM                           │
                  │  33 commander ants + 9 soldier classes + 6 citiz │
                  │  4 constitutional principles + 1 vocation        │
@@ -125,7 +125,7 @@ Most reference implementations of an identity system are a database schema, an a
 
 The substrate is named in MISSION.md as four principles. The principles, not the implementation:
 
-1. **The Sanctum protocol.** A formal record of every non-routine decision; 60 entries in `sanctum/` to date, indexed at [`meta/sanctum-index.md`](meta/sanctum-index.md).
+1. **The Sanctum protocol.** A formal record of every non-routine decision; 59 entries in `sanctum/` to date, indexed at [`meta/sanctum-index.md`](meta/sanctum-index.md).
 2. **Audit-of-record.** Ten instances across schema and filesystem; the system writes evidence at the moment of decision rather than reconstructing it later. See [`DEVNOTES/audit-of-record.md`](DEVNOTES/audit-of-record.md).
 3. **Risk classes.** Three tiers (LOW / MEDIUM / HIGH) governing what an agent may do autonomously versus what requires explicit human approval. See [`meta/autonomy-architecture.md`](meta/autonomy-architecture.md).
 4. **CM (the meta-constraint).** Six executable self-checks under `scripts/ai-meta.sh` that catch drift between the cognitive layer's claims and the running system.
@@ -145,7 +145,7 @@ Start at the file that matches what you came here for.
 |   |   |   |
 |---|---|---|
 | **[The story](docs/story/STORY.md)** | **[The system map](docs/reference/SYSTEM-MAP.md)** | **[The principles](docs/story/PRINCIPLES.md)** |
-| How Polaris was built between April 30 and May 16, 2026. Nine major versions, 146 ships, two single-day rampages, 60 formal decisions. | A single page that names every meaningful artifact in the repository and what it is for. Use this when you do not know where to start. | The four constitutional principles distilled. Read this before you change anything load-bearing. |
+| How Polaris was built between April 30 and May 16, 2026. Nine major versions, 146 ships, two single-day rampages, 59 formal decisions. | A single page that names every meaningful artifact in the repository and what it is for. Use this when you do not know where to start. | The four constitutional principles distilled. Read this before you change anything load-bearing. |
 | **[The schema](polaris_sql/01_schema.sql)** | **[The constitution](MISSION.md)** | **[The agent runbook](CLAUDE.md)** |
 | 27 tables. Start with `IdentityToken` and follow the foreign keys. Append-only invariants enforced at trigger level on nine of them. | C1 through C10 plus CM. Ten hard constraints the system must never violate, one meta-constraint that guards the layer itself. | If you are an AI agent priming on this project, this is your entry point. |
 | **[The Atlas](polaris_web/static/atlas-globe.js)** | **[The ZK prover](polaris_zk/src/lib.rs)** | **[The CHANGELOG](CHANGELOG.md)** |

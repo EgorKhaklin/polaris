@@ -398,7 +398,7 @@ Supplementary suites:
 Each test snapshots and restores the database to pristine sample
 state, so tests run in isolation.
 
-Expected output: `Ran ~351 tests in ~70s. OK` (plus property + structural).
+Expected output: `Ran ~342 tests in ~70s. OK` (plus property + structural).
 
 ## File Layout
 
@@ -406,10 +406,10 @@ Expected output: `Ran ~351 tests in ~70s. OK` (plus property + structural).
 polaris_web/
 ├── app.py                       Flask backend (~2,608 lines)
 ├── security.py                  Auth, CSRF, CSP, rate limiter (~710 lines)
-├── test_app.py                  Integration test suite (351 tests, 72 classes)
+├── test_app.py                  Integration test suite (342 tests, 50 classes)
 ├── test_invariants_property.py  Hypothesis property tests (C1, C2, C3)
 ├── test_redaction_property.py   M2-12 redaction-adversary tests
-├── test_structural_invariants.py  Cognitive-layer invariants (22 tests; +4 Sanctum integrity in v8.20)
+├── test_structural_invariants.py  Cognitive-layer invariants (882 tests; structural + Sanctum integrity)
 ├── README.md                    This file
 ├── docker-compose.yml           Full stack bring-up
 ├── docker-init.sh               Postgres init script

@@ -302,7 +302,7 @@ Citizens (6): Plebs, Equites, Augures, Censores, Quaestores, Tribuni
 Plebis. Each handles a different aspect of swarm governance.
 
 The brain-map (`scripts/ai-brain-map.sh` → `meta/brain-map/`)
-visualizes the full cross-tier system as a graph (366 nodes since
+visualizes the full cross-tier system as a graph (383 nodes since
 v9.15). The swarm-map (`scripts/ai-swarm-map.sh` → `meta/swarm-map/`)
 visualizes the Mycelium tier specifically.
 
@@ -349,10 +349,10 @@ Sanctum decision and its outcome.
 
 ## §VIII. What the test suite covers
 
-- ~846 Python tests across 147 TestCase classes
+- ~1063 Python tests across 165 TestCase classes
 - 19 Hypothesis property tests for C1, C2, C3
 - 62 schema-CHECK regression tests
-- 606 structural-invariant tests
+- 882 structural-invariant tests
 - 171 SQL self-tests in 08_tests.sql + section S in 08_tests.sql +
   section T in 12_v7_constraints.sql
 

@@ -442,7 +442,7 @@ Removable Test applied to C1–C10 in `meta/structural-architecture.md`.
 This section names principles, not implementations. The following
 are **current implementation**, not constitutional:
 
-- The 29 ai-* scripts in `scripts/` (the executable cognitive layer; v8.37 added ai-hydra, v8.52 added ai-brain-map)
+- The 39 ai-* scripts in `scripts/` (the executable cognitive layer; v8.37 added ai-hydra, v8.52 added ai-brain-map)
 - The 22-pattern catalog in `scripts/ai-pattern.sh`
 - The Architect persona in `meta/architect.md` + `scripts/ai-architect.sh`
 - The constraint lattice in `meta/constraint-lattice.md`
@@ -574,7 +574,7 @@ the *agent*, not on VANTA.
 4. ✅ Cybersecurity controls: CSP, CSRF, rate-limit, role-based auth (achieved v4)
 5. ✅ Concurrency hazards identified and sealed with tests (achieved v6)
 6. ✅ Scales to 2M+ events with bounded API responses (achieved v6)
-7. ✅ Test coverage: 999 Python (12 test classes incl. property + redaction-property) + 171 SQL self-tests (achieved v6/v7; growing each release — last counted via ai-test-counts.sh)
+7. ✅ Test coverage: 1063 Python (165 test classes incl. property + redaction-property) + 171 SQL self-tests (achieved v6/v7; growing each release — last counted via ai-test-counts.sh)
 8. ✅ Threat model: STRIDE-categorized, every threat mapped to a control (DEVNOTES/threat-model.md)
 9. ✅ Antimeridian-spanning bbox queries (wrap-aware predicate; 11_atlas.sql)
 10. ✅ Cursor pagination on list pages (achieved v7.4 — keyset cursors on /tokens and /verifications)

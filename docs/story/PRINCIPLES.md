@@ -107,7 +107,7 @@ The risk classes resolve the ambiguity by naming the line explicitly.
 
 > _The cognitive layer guards itself. Six executable checks catch drift between the layer's claims and the running system._
 
-**What it solves.** A system that audits its application code while leaving its own auditing infrastructure unaudited has a blind spot. The cognitive layer of Polaris (29 scripts, 22-pattern catalog, 4 meta docs, 7 watchers, 17 Sanctums, 113 structural invariants) is substantial enough to need its own self-monitoring. Without that, scripts get referenced in CLAUDE.md but stop existing on disk; patterns sit in the catalog never invoked; constraints are claimed in MISSION.md but never exercised; structural-invariant tests get retired without leaving a trace. The drift is observable, accumulates silently, and erodes trust in the layer faster than any single ship.
+**What it solves.** A system that audits its application code while leaving its own auditing infrastructure unaudited has a blind spot. The cognitive layer of Polaris (39 ai-* scripts, 22-pattern catalog, 4 meta docs, 9 watchers, 59 Sanctums, 882 structural invariants) is substantial enough to need its own self-monitoring. Without that, scripts get referenced in CLAUDE.md but stop existing on disk; patterns sit in the catalog never invoked; constraints are claimed in MISSION.md but never exercised; structural-invariant tests get retired without leaving a trace. The drift is observable, accumulates silently, and erodes trust in the layer faster than any single ship.
 
 CM (the meta-constraint, named in MISSION.md alongside C1–C10) closes the blind spot.
 
@@ -140,9 +140,9 @@ The four principles are stable. The implementations are not.
 
 As of v8.30, MISSION.md §"The cognitive substrate" explicitly marks the following as **substitutable**:
 
-- The 29 `ai-*` shell scripts (could be Python, Go, or any language)
+- The 39 `ai-*` shell scripts (could be Python, Go, or any language)
 - The 22-pattern catalog (could be a different taxonomy, e.g., a 36-pattern decanate-style or a 12-pattern zodiac-style)
-- The HYDRA swarm with 7 watchers (could be a single LLM call, a CRDT, a deterministic introspection function)
+- The HYDRA swarm with 9 watchers (could be a single LLM call, a CRDT, a deterministic introspection function)
 - The Architect persona (could be a different synthesis voice)
 - The constraint lattice (could use a different mapping topology)
 - The brain map (could be a different visualization paradigm)

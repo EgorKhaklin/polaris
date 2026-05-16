@@ -121,15 +121,15 @@ This requires the stack to be up first (the tests connect to the
 running Postgres). Expected output:
 
 ```
-Ran ~351 tests in ~70s
+Ran ~342 tests in ~70s
 OK
 ```
 
-Plus the structural-layer suite (`test_structural_invariants.py`, 47
+Plus the structural-layer suite (`test_structural_invariants.py`, 882
 tests) and the optional property tests (`test_invariants_property.py`,
 `test_redaction_property.py`, if Hypothesis is installed).
 
-The 140 SQL self-tests run automatically when the Postgres container
+The 171 SQL self-tests run automatically when the Postgres container
 initializes (distributed across `08_tests.sql` sections A–R,
 `12_v7_constraints.sql`, and `13_substrate.sql`) — their results are
 visible in `./polaris_mac_launch.sh logs db`.

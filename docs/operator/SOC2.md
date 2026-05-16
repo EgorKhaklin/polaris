@@ -71,7 +71,7 @@ the operator's governance, but the governance itself is operator-side.
 
 | Control | Polaris contribution | Evidence query |
 |---|---|---|
-| CC2.1 — Information quality | Schema CHECK constraints (~41 in 01_schema.sql) + structural-invariant test suite (349 tests) + ai-coherence cross-layer correspondence checks | `python3 -m unittest polaris_web.test_structural_invariants` (must report 349/349 OK); `./scripts/ai-coherence.sh` (must report STRUCTURE INTACT) |
+| CC2.1 — Information quality | Schema CHECK constraints (~74 in 01_schema.sql) + structural-invariant test suite (882 tests) + ai-coherence cross-layer correspondence checks | `python3 -m unittest polaris_web.test_structural_invariants` (must report 882/882 OK); `./scripts/ai-coherence.sh` (must report STRUCTURE INTACT) |
 | CC2.2 — Internal communication of objectives + responsibilities | MISSION.md (C1-C10 + G1-G31); ROADMAP.md deployability checklist; meta/architect.md persona spec | `cat MISSION.md ROADMAP.md` (the two are public-readable; auditor inspects directly) |
 | CC2.3 — External communication (customers, regulators) | docs/STORY.md (project narrative); docs/reference/API.md (HTTP API surface); docs/operator/* (operator runbooks) | `ls docs/` (auditor inspects directly) |
 
@@ -101,7 +101,7 @@ the operator's governance, but the governance itself is operator-side.
 
 | Control | Polaris contribution | Evidence query |
 |---|---|---|
-| CC5.1 — Selects + develops control activities | C1-C10 are the load-bearing controls; each has structural-invariant test coverage (62 schema-CHECK tests + 349 structural tests + Hypothesis property tests) | `cat MISSION.md \| grep -E "^### C[0-9]"` |
+| CC5.1 — Selects + develops control activities | C1-C10 are the load-bearing controls; each has structural-invariant test coverage (62 schema-CHECK tests + 882 structural tests + Hypothesis property tests) | `cat MISSION.md \| grep -E "^### C[0-9]"` |
 | CC5.2 — Selects + develops controls over technology | docker-compose.prod.yml + Caddyfile (TLS via Let's Encrypt, HSTS, security headers per G27); WebAuthn-MFA (v8.97); rate limiter (R8-2) | `docker compose -f polaris_web/docker-compose.prod.yml config` |
 | CC5.3 — Deploys via policies + procedures | scripts/polaris-deploy.sh (idempotent); scripts/polaris-migrate.sh (audited schema changes); scripts/polaris-create-operator.sh (audited account creation) | `ls scripts/polaris-*.sh \| wc -l` |
 

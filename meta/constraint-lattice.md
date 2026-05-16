@@ -349,8 +349,8 @@ C10*. Mixing them would conflate "the data is consistent" with
 "the cognitive layer that checks consistency is consistent." The
 meta-slot was always reserved for this distinction; filling it is
 acknowledging that the cognitive layer is now substantial enough
-(29 ai-* scripts, ~12 meta docs, a 22-pattern catalog, the HYDRA
-swarm with 7 watchers, and the brain map) to need its own
+(39 ai-* scripts, ~34 meta docs, a 22-pattern catalog, the HYDRA
+swarm with 9 watchers, and the brain map) to need its own
 invariant.
 
 ---
