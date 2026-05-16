@@ -52,6 +52,34 @@ try:
     HYPOTHESIS_AVAILABLE = True
 except ImportError:
     HYPOTHESIS_AVAILABLE = False
+    # No-op fallbacks so the module still imports cleanly without
+    # hypothesis. Each test method is gated by @unittest.skipUnless
+    # (HYPOTHESIS_AVAILABLE, ...) which fires before the test body
+    # runs, so the no-op decorators only need to not raise at class-
+    # definition time. Without these, `@given(...)` at decoration
+    # time raises NameError and the whole module fails to load — a
+    # silent CI regression on any environment without hypothesis.
+    def given(*_a, **_kw):
+        def decorator(f):
+            return f
+        return decorator
+
+    def settings(*_a, **_kw):
+        def decorator(f):
+            return f
+        return decorator
+
+    class _StFallback:
+        def __getattr__(self, _name):
+            return self
+
+        def __call__(self, *_a, **_kw):
+            return self
+
+    st = _StFallback()
+
+    class HealthCheck:
+        too_slow = None
 
 from polaris_hydra.action_queue import Action, ActionQueue
 from polaris_hydra.correlation import CorrelationEngine
@@ -110,6 +138,17 @@ if HYPOTHESIS_AVAILABLE:
         status=st.sampled_from(["healthy", "drift", "alert"]),
         findings=st.lists(finding_strategy, min_size=0, max_size=5),
     )
+else:
+    # Strategy-name sentinels so `@given(...)` at class-definition time
+    # doesn't NameError when hypothesis isn't installed. The no-op
+    # `given` decorator (above) discards them; the @skipUnless gate
+    # ensures the test bodies never run without hypothesis.
+    severity_strategy = None
+    watcher_name_strategy = None
+    node_id_strategy = None
+    title_strategy = None
+    finding_strategy = None
+    watcher_report_strategy = None
 
 
 class TestCorrelationEngineProperties(unittest.TestCase):
