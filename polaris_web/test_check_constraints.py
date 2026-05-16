@@ -269,7 +269,7 @@ class TestBlockchainAnchorChecks(_CheckBase):
         self._expect_check_violation(
             "INSERT INTO BlockchainAnchor "
             "(token_id, did, commitment_hash, ledger_network, status) "
-            "VALUES (1, 'did:polaris:test', 'hash', 'ALGORAND_PQ', 'INVALID')",
+            "VALUES (1, 'did:polaris:test', 'deadbeef', 'ALGORAND_PQ', 'INVALID')",
             constraint_name='blockchainanchor_status_check',
         )
 
@@ -277,7 +277,7 @@ class TestBlockchainAnchorChecks(_CheckBase):
         self._expect_check_violation(
             "INSERT INTO BlockchainAnchor "
             "(token_id, did, commitment_hash, ledger_network) "
-            "VALUES (1, 'did:polaris:test', 'hash', 'BITCOIN')",
+            "VALUES (1, 'did:polaris:test', 'deadbeef', 'BITCOIN')",
             constraint_name='ledger_network_check',
         )
 
