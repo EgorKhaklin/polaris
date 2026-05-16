@@ -95,10 +95,10 @@ A full subcommand reference lives in [`docs/operator/INSTALL.md`](docs/operator/
 ## What you get
 
 ```
-                 ┌─────────────────────────────────────────────────┐
+                 ┌──────────────────────────────────────────────────┐
                  │              Polaris in numbers                  │
                  │              (current as of v9.30)               │
-                 ├─────────────────────────────────────────────────┤
+                 ├──────────────────────────────────────────────────┤
                  │  27 schema tables                                │
                  │  14 stored procedures (UC-1 .. UC-12 + foresight)│
                  │  67 HTTP routes (incl. /auth/webauthn/*)         │
@@ -108,7 +108,7 @@ A full subcommand reference lives in [`docs/operator/INSTALL.md`](docs/operator/
                  │  33 commander ants + 9 soldier classes + 6 citiz │
                  │  4 constitutional principles + 1 vocation        │
                  │  1 double-click to launch                        │
-                 └─────────────────────────────────────────────────┘
+                 └──────────────────────────────────────────────────┘
 ```
 
 After login the app lands on the **Dashboard**, which fans out into eight analytical panels covering schema statistics, token status, the authorization matrix, post-quantum migration ratio, verification activity by context, disclosure posture, succession lineage, and the audit trail.
