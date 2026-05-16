@@ -10,18 +10,7 @@ _Cryptographically signed. Audit-of-record by construction. Compulsion-resistant
 
 > _Fixus inter mutabilia._  Fixed amid the mutable.
 
-```
-Project  ·  Polaris Identity Token System
-Course   ·  SCS-230 Database Management Systems · Seton Hill University
-Author   ·  Egor Khaklin
-Status   ·  v9.30 · 40 ships in v9.x · 882 structural invariants pass · production-deployable
-            Hybrid intelligence: Mycelium swarm (substrate, 33 commander ants)
-            ↔ HYDRA (lens, 9 watchers + CM) → unified brief + cross-watcher
-            correlations + ranked action queue + cross-run delta. Anti-coercion
-            vocation. External-referent record: github.com/EgorKhaklin/polaris.
-            For per-ship history see CHANGELOG.md (last 10) and
-            archive/CHANGELOG-FULL.md (full).
-```
+
 
 [**System map**](docs/reference/SYSTEM-MAP.md) · [**Conventions**](docs/CONVENTIONS.md) · [**Constitution (MISSION.md)**](MISSION.md) · [**Backlog (ROADMAP.md)**](ROADMAP.md) · [**Audit-of-record (CHANGELOG.md)**](CHANGELOG.md) · [**Agent runbook (CLAUDE.md)**](CLAUDE.md)
 
