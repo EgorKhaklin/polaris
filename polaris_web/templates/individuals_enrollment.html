@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Enrollment Summary{% endblock %}
+{% block content %}
+<h1>Civic Enrollment Summary</h1>
+<p class="subtitle">
+    Per-jurisdiction × status counts of individuals in each enrollment state
+    (R11-4 / M2-9). The PDF §9 population-coverage requirement: civic queries
+    answer "is this person known" without requiring an active token.
+    <strong>Counts only</strong> — per-individual enumeration of NOT_ENROLLED
+    is deliberately not a first-class query.
+</p>
+
+<div class="actions-bar">
+    <form method="get" class="inline-form">
+        <label for="jurisdiction">Jurisdiction</label>
+        <select id="jurisdiction" name="jurisdiction" data-submit-on-change>
+            <option value="">— all —</option>
+            {% for j in jurisdictions %}
+                <option value="{{ j.jurisdiction }}"
+                        {% if j.jurisdiction == jurisdiction_filter %}selected{% endif %}>
+                    {{ j.jurisdiction }}
+                </option>
+            {% endfor %}
+        </select>
+        <noscript><button type="submit" class="btn btn-sm">Filter</button></noscript>
+    </form>
+    <a href="{{ url_for('individuals_list') }}" class="btn btn-secondary">Back to Individuals</a>
+</div>
+
+{% if pivot %}
+    <table class="data">
+        <thead>
+            <tr>
+                <th>Jurisdiction</th>
+                {% for s in statuses %}
+                    <th class="mono">{{ s }}</th>
+                {% endfor %}
+                <th>Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for jur, counts in pivot.items() %}
+                {% set jur_total = counts.values()|sum %}
+                <tr>
+                    <td class="mono"><strong>{{ jur }}</strong></td>
+                    {% for s in statuses %}
+                        <td>{{ counts.get(s, 0) }}</td>
+                    {% endfor %}
+                    <td><strong>{{ jur_total }}</strong></td>
+                </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+{% else %}
+    <p class="empty-state">No enrollment data for this jurisdiction.</p>
+{% endif %}
+
+<div class="info-panel">
+    <h2>Enrollment vocabulary</h2>
+    <dl>
+        <dt><code>NOT_ENROLLED</code></dt>
+        <dd>Default state for every new Individual. The absence of enrollment, materialized but not weaponized.</dd>
+        <dt><code>PENDING_ENROLLMENT</code></dt>
+        <dd>Enrollment process initiated; biometrics or documentation in progress.</dd>
+        <dt><code>ENROLLED</code></dt>
+        <dd>Holds at least one non-terminal IdentityToken (RESERVE or ACTIVE). Recorded as a policy event, not auto-derived from token state.</dd>
+        <dt><code>EXEMPT</code></dt>
+        <dd>Civic policy recognition of non-token participation (biometric incompatibility, religious exemption, conscientious objection). The PDF §9 "accepted path without tokens" vocabulary.</dd>
+        <dt><code>LAPSED</code></dt>
+        <dd>Was ENROLLED, now isn't, by policy event. Distinct from NOT_ENROLLED (never enrolled).</dd>
+    </dl>
+    <p class="footnote">
+        Per-individual enrollment history is recorded in the
+        append-only <code>EnrollmentStatusEvent</code> table.
+        See <code>DEVNOTES/ships/tiered-enrollment.md</code> for the
+        asymmetric-design rationale.
+    </p>
+</div>
+{% endblock %}

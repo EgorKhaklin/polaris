@@ -1,0 +1,24 @@
+[package]
+name = "polaris_zk"
+version = "0.1.0"
+edition = "2021"
+authors = ["VANTA <noreply@polaris.dev>"]
+description = "ZK-SNARK Merkle-inclusion prover/verifier for Polaris M2-1 (R10-1). Plonky2 + Poseidon."
+license = "MIT"
+
+[[bin]]
+name = "polaris-zk"
+path = "src/main.rs"
+
+[dependencies]
+plonky2 = "0.2"
+plonky2_field = "0.2"
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+hex = "0.4"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1

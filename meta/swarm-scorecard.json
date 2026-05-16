@@ -1,0 +1,72 @@
+{
+  "_doc": "Per-ship swarm scorecard. Appended by scripts/polaris-swarm-scorecard.sh on every ship. Per BIG MISSION Tier 5 Sanctum 2026-05-16: the only load-bearing metric is escape_rate_trailing_10ships \u2014 the fraction of defects that shipped that no ant caught, computed over a sliding window of the last 10 ships. Zero is impossible; the trend matters.",
+  "schema_version": "v9.25",
+  "load_bearing_metric": "escape_rate_trailing_10ships",
+  "anti_architect_constraints": {
+    "no_manual_classification": "TP/FP auto-derived from CHANGELOG fix-list + ai-done.sh ALERT findings (operator can override)",
+    "no_self_reported_escapes": "escape_rate is retroactive \u2014 when a v9.X+N ship records 'fix from v9.X', the v9.X escape is back-filled",
+    "trend_over_absolute": "compare escape_rate across last 10 ships; absolute count of any single ship is noise"
+  },
+  "entries": [
+    {
+      "version": "9.25",
+      "shipped_at_utc": "2026-05-16T07:06:08+00:00Z",
+      "findings_raised": 6,
+      "true_positives": 2,
+      "false_positives": 4,
+      "escaped_defects": 0,
+      "escape_rate_trailing_10ships": 0.0,
+      "note": "auto-classified from CHANGELOG + journal/hydra/"
+    },
+    {
+      "version": "9.26",
+      "shipped_at_utc": "2026-05-16T07:14:58+00:00Z",
+      "findings_raised": 6,
+      "true_positives": 2,
+      "false_positives": 4,
+      "escaped_defects": 0,
+      "escape_rate_trailing_10ships": 0.0,
+      "note": "auto-classified from CHANGELOG + journal/hydra/"
+    },
+    {
+      "version": "9.27",
+      "shipped_at_utc": "2026-05-16T07:32:25+00:00Z",
+      "findings_raised": 6,
+      "true_positives": 1,
+      "false_positives": 5,
+      "escaped_defects": 0,
+      "escape_rate_trailing_10ships": 0.0,
+      "note": "auto-classified from CHANGELOG + journal/hydra/"
+    },
+    {
+      "version": "9.28",
+      "shipped_at_utc": "2026-05-16T08:00:09+00:00Z",
+      "findings_raised": 6,
+      "true_positives": 2,
+      "false_positives": 4,
+      "escaped_defects": 0,
+      "escape_rate_trailing_10ships": 0.0,
+      "note": "auto-classified from CHANGELOG + journal/hydra/"
+    },
+    {
+      "version": "9.29",
+      "shipped_at_utc": "2026-05-16T08:26:31+00:00Z",
+      "findings_raised": 6,
+      "true_positives": 0,
+      "false_positives": 6,
+      "escaped_defects": 0,
+      "escape_rate_trailing_10ships": 0.0,
+      "note": "auto-classified from CHANGELOG + journal/hydra/"
+    },
+    {
+      "version": "9.30",
+      "shipped_at_utc": "2026-05-16T08:37:56+00:00Z",
+      "findings_raised": 6,
+      "true_positives": 0,
+      "false_positives": 6,
+      "escaped_defects": 0,
+      "escape_rate_trailing_10ships": 0.0,
+      "note": "auto-classified from CHANGELOG + journal/hydra/"
+    }
+  ]
+}

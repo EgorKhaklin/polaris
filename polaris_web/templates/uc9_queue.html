@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}UC-9: Recovery Queue{% endblock %}
+{% block content %}
+<h1>Recovery Queue</h1>
+<p class="subtitle">
+    Catastrophic-loss recovery requests (R11-2 / M2-7). PENDING rows are at the top.
+    <strong>Only administrators</strong> can decide; operators can initiate, auditors are read-only.
+</p>
+
+<div class="actions-bar">
+    {% if current_user.role in ('admin', 'operator') %}
+        <a href="{{ url_for('uc9_initiate') }}" class="btn btn-gold">+ New Recovery Request</a>
+    {% endif %}
+    <span class="record-count">{{ rows|length }} request(s)</span>
+</div>
+
+{% if not rows %}
+    <div class="empty-state">No recovery requests in the system.</div>
+{% else %}
+<table class="data">
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Status</th>
+            <th>Individual</th>
+            <th>Requested By</th>
+            <th>Requesting Agency</th>
+            <th>Requested At</th>
+            <th>Cool-down</th>
+            <th>OOB Channels</th>
+            <th>Decision</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for r in rows %}
+        <tr>
+            <td class="mono">#{{ r.recovery_id }}</td>
+            <td>
+                <span class="pill pill-{{ r.status|lower }}">{{ r.status }}</span>
+            </td>
+            <td>
+                #{{ r.claimed_individual_id }} — <strong>{{ r.legal_name }}</strong>
+            </td>
+            <td>{{ r.requesting_username }} (user #{{ r.requesting_user_id }})</td>
+            <td>{{ r.requesting_agency_name }}</td>
+            <td class="mono">{{ r.requested_at.strftime('%Y-%m-%d %H:%M') }}</td>
+            <td>
+                {% if r.status == 'PENDING' %}
+                    {% if r.cooldown_passed %}
+                        <span class="pill pill-success">passed</span>
+                    {% else %}
+                        <span class="pill pill-warn">until {{ r.cooldown_expires_at.strftime('%Y-%m-%d %H:%M') }}</span>
+                    {% endif %}
+                {% else %}
+                    <span class="muted">—</span>
+                {% endif %}
+            </td>
+            <td>
+                <span class="channel-tick {% if r.biometric_verified %}on{% else %}off{% endif %}" title="Biometric">B</span>
+                <span class="channel-tick {% if r.sworn_statement_present %}on{% else %}off{% endif %}" title="Sworn Statement">S</span>
+                <span class="channel-tick {% if r.witness_present %}on{% else %}off{% endif %}" title="Witness Agency">W</span>
+            </td>
+            <td>
+                {% if r.decided_at %}
+                    by <strong>{{ r.decided_by_username }}</strong><br>
+                    <span class="mono">{{ r.decided_at.strftime('%Y-%m-%d %H:%M') }}</span>
+                {% else %}
+                    <span class="muted">—</span>
+                {% endif %}
+            </td>
+            <td class="actions">
+                {% if r.status == 'PENDING' and current_user.role == 'admin' %}
+                    <a href="{{ url_for('uc9_decide', recovery_id=r.recovery_id) }}" class="btn btn-sm btn-gold">Decide</a>
+                {% elif r.status == 'PENDING' %}
+                    <span class="muted">admin only</span>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+
+<div class="info-panel">
+    <h2>Out-of-band channels</h2>
+    <p>Each PENDING request requires three independent channels verified before an APPROVED decision is permitted:</p>
+    <ul>
+        <li><strong>B — Biometric</strong>: holder presents at the requesting agency for live biometric capture.</li>
+        <li><strong>S — Sworn statement</strong>: holder signs an affidavit; only its hash is stored (per the GenomicAnchor pattern).</li>
+        <li><strong>W — Witness agency</strong>: an independent agency co-signs the recovery.</li>
+    </ul>
+    <p class="footnote">
+        These channels are designed to have independent failure modes. Compromising one is not enough.
+        See <code>DEVNOTES/ships/recovery-ceremony.md</code> for the adversary walk.
+    </p>
+</div>
+{% endblock %}

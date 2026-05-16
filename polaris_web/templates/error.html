@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}{{ code }} · {{ status_word|default('Error') }}{% endblock %}
+{% block body_class %} body-error{% endblock %}
+{% block content %}
+
+<section class="error-page" aria-labelledby="error-title">
+    <div class="error-code" aria-hidden="true">{{ code }}</div>
+    <h1 id="error-title" class="error-title">{{ status_word|default('Something went wrong') }}</h1>
+    <p class="error-message">{{ message }}</p>
+
+    {% if code == 404 %}
+        <p class="error-hint">
+            The path you requested isn't part of Polaris's public
+            surface. If you arrived here by following a link in
+            our own documentation, that's a bug — please let an
+            operator know.
+        </p>
+    {% elif code == 403 %}
+        <p class="error-hint">
+            You're signed in, but this resource needs a different
+            role. Contact an administrator if you need access.
+        </p>
+    {% elif code == 500 %}
+        <p class="error-hint">
+            The server hit an unexpected condition. The incident
+            is logged. If the problem persists, page the on-call
+            operator with the timestamp from your browser.
+        </p>
+    {% elif code == 503 %}
+        <p class="error-hint">
+            Polaris is reporting unhealthy on
+            <code>/api/health</code>. The dependency that's failing
+            is in the structured response — typically the database
+            or the rate-limiter backend.
+        </p>
+    {% endif %}
+
+    <div class="error-actions">
+        {% if current_user %}
+            <a href="{{ url_for('dashboard') }}" class="btn btn-gold">Return to Dashboard</a>
+        {% else %}
+            <a href="{{ url_for('home') }}" class="btn btn-gold">Return to overview</a>
+            <a href="{{ url_for('login') }}" class="btn btn-ghost">Sign in</a>
+        {% endif %}
+    </div>
+</section>
+
+{% endblock %}

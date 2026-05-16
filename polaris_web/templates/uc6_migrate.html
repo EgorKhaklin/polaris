@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}UC-6: Migrate Algorithm{% endblock %}
+{% block content %}
+<div class="uc-banner">
+    <div class="uc-id">Use Case 6</div>
+    <h1>Algorithm Migration</h1>
+    <div class="uc-desc">
+        Multi-signature transitional state (R11-1 / M2-6 — PDF §9.4). Adds a new <code>TokenSignature</code> row under a new
+        algorithm, optionally deprecating the old. The old signature continues to verify until its <code>deprecation_date</code>
+        passes — this is the migration window. <strong>The TokenSignature row IS the audit-of-record for migrations</strong>
+        (no separate event table). Closes the cryptographic-diversity leg of the issuer-trust-concentration triad
+        (alongside R11-6 = constitutional limits and M2-8 = federation).
+    </div>
+</div>
+
+{% if not tokens %}
+    <div class="flash flash-error">
+        <span class="flash-icon">⚠</span>
+        <span class="flash-text">No RESERVE or ACTIVE tokens available to migrate.</span>
+    </div>
+{% endif %}
+
+<form method="post" class="standard">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="form-row">
+        <div class="form-group full">
+            <label for="token_id">Token</label>
+            <select id="token_id" name="token_id" required>
+                <option value="">— select —</option>
+                {% for t in tokens %}
+                    <option value="{{ t.token_id }}">
+                        #{{ t.token_id }} — {{ t.legal_name }} ({{ t.token_value }})
+                        · {{ t.status }} · current: {{ t.active_algorithms|join(', ') }}
+                    </option>
+                {% endfor %}
+            </select>
+            <span class="help">Lists RESERVE and ACTIVE tokens with their current active-signature algorithms.</span>
+        </div>
+    </div>
+
+    <div class="form-row">
+        <div class="form-group">
+            <label for="new_algorithm">New Algorithm</label>
+            <select id="new_algorithm" name="new_algorithm" required>
+                <option value="">— select —</option>
+                {% for alg in algorithms %}
+                    <option value="{{ alg.algorithm_id }}">
+                        #{{ alg.algorithm_id }} — {{ alg.name }}
+                        {% if alg.quantum_resistant %} · PQ{% endif %}
+                    </option>
+                {% endfor %}
+            </select>
+            <span class="help">The signature for this algorithm will be added. UNIQUE(token, alg) prevents duplicates.</span>
+        </div>
+        <div class="form-group">
+            <label>
+                <input type="checkbox" name="deprecate_old" value="1">
+                Deprecate old signature(s)
+            </label>
+            <span class="help">If checked, every other active signature on this token gets <code>deprecation_date</code>
+            set to NOW. Otherwise both old and new coexist (migration window).</span>
+        </div>
+    </div>
+
+    <div class="info-panel">
+        <p><strong>What this UC does NOT do:</strong></p>
+        <ul>
+            <li>Does not generate a real cryptographic signature — placeholder bytes are inserted (reference implementation).</li>
+            <li>Does not auto-deprecate based on <code>CryptographicAlgorithm.deprecation_date</code> — operator policy is the only path.</li>
+            <li>Does not remove the old <code>TokenSignature</code> row — the append-only invariant forbids DELETE.</li>
+        </ul>
+    </div>
+
+    <div class="form-actions">
+        <button type="submit" class="btn btn-gold">Migrate</button>
+        <a href="{{ url_for('dashboard') }}" class="btn btn-secondary">Cancel</a>
+    </div>
+</form>
+{% endblock %}

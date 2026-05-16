@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}Sign In{% endblock %}
+{% block content %}
+
+<div class="login-page">
+    <div class="login-card">
+        <div class="login-mark">
+            <div class="login-brand">POLARIS</div>
+            <div class="login-sub">Identity Token System</div>
+        </div>
+
+        <form method="post" class="login-form" autocomplete="off" spellcheck="false" novalidate>
+            {# Decoy fields defeat Chrome/Edge autofill even when autocomplete=off #}
+            <input type="text" name="prevent_autofill" autocomplete="off"
+                   style="display:none" tabindex="-1" aria-hidden="true">
+            <input type="password" name="prevent_autofill_pw" autocomplete="new-password"
+                   style="display:none" tabindex="-1" aria-hidden="true">
+
+            <div class="login-error" id="loginError" role="alert" aria-live="polite"></div>
+
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" name="username" autofocus
+                       autocomplete="off"
+                       maxlength="50" pattern="[a-z0-9._-]{3,50}"
+                       value="{{ username }}">
+            </div>
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password"
+                       autocomplete="new-password"
+                       maxlength="128">
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="btn btn-gold">Sign In</button>
+            </div>
+        </form>
+
+        <script src="{{ url_for('static', filename='login-form.js') }}?v=login001" defer></script>
+
+        <div class="login-help">
+            Authorized use only. All authentication events are logged.
+        </div>
+    </div>
+</div>
+
+{% endblock %}

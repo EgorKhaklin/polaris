@@ -1,0 +1,50 @@
+{
+  "_doc": "Per-Sanctum lifecycle tracker. v9.28 / VANTA addition to the v9.28 mission ('Apply the predicate test to the Sanctum protocol itself'). Tracks: of recent Sanctum joint resolutions, how many survived contact with the next 3 ships unmodified? If most got quietly walked back or never load-bore, the Sanctum protocol is decorative \u2014 same shape v9.28 Hydra #1 is auditing watchers for.",
+  "schema_version": "v9.28",
+  "load_bearing_metric": "joint_resolution_survival_rate_trailing_10sanctums",
+  "anti_architect_constraints": {
+    "no_manual_classification": "survival/walked_back/load_bore are auto-derived from CHANGELOG fix-list + Sanctum file modification times + sanctum-index entries (operator can override)",
+    "retroactive_classification": "a Sanctum's survival is judged at next-3-ships horizon, not at ship-time; entries are back-filled as later ships ship",
+    "trend_over_absolute": "compare survival rate across last 10 Sanctums; single-Sanctum outcome is noise"
+  },
+  "sanctums": [
+    {
+      "_doc": "v9.28 baseline entry \u2014 measurement starts now. Pre-v9.28 Sanctums (~21 of them) are NOT retroactively classified; the AP1 risk (self-evaluation of past decisions) would compromise the data. Real classification begins at the v9.28 Sanctum forward.",
+      "sanctum": "sanctum/2026-05-16-v9-28-hydra-revamp.md",
+      "shipped_at_version": "9.28",
+      "joint_resolution_summary": "Ship Hydra 1-5 + Sanctum scorecard + scope-rebase pre-allocation; predicate-or-delete protocol; external-record refinement on Hydra #1",
+      "survival_status": "PENDING",
+      "next_3_ships": [
+        "9.29",
+        "9.30",
+        "9.31"
+      ],
+      "walked_back_evidence": null,
+      "load_bore_evidence": null,
+      "classified_at_version": null,
+      "note": "v9.28 baseline entry; survival to be auto-classified at v9.31"
+    },
+    {
+      "sanctum": "sanctum/2026-05-16-v9-29-constitution-sanctum-cm.md",
+      "shipped_at_version": "9.29",
+      "joint_resolution_summary": "(auto-classify at v9.29+3)",
+      "survival_status": "PENDING",
+      "next_3_ships": [],
+      "walked_back_evidence": null,
+      "load_bore_evidence": null,
+      "classified_at_version": null,
+      "note": "auto-appended; classify at next-3-ships boundary"
+    },
+    {
+      "sanctum": "sanctum/2026-05-16-v9-30-seven-remaining-items.md",
+      "shipped_at_version": "9.30",
+      "joint_resolution_summary": "(auto-classify at v9.30+3)",
+      "survival_status": "PENDING",
+      "next_3_ships": [],
+      "walked_back_evidence": null,
+      "load_bore_evidence": null,
+      "classified_at_version": null,
+      "note": "auto-appended; classify at next-3-ships boundary"
+    }
+  ]
+}

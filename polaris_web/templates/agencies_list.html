@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}Agencies{% endblock %}
+{% block content %}
+<h1>Agencies</h1>
+<p class="subtitle">Federal, state, county, or private authorities. The same agency may act as issuer, verifier, witness, revoker, or lifecycle-event actor.</p>
+
+<div class="actions-bar">
+    <a href="{{ url_for('agencies_new') }}" class="btn btn-gold">+ New Agency</a>
+    <span class="record-count">{{ rows|length }} agencies</span>
+</div>
+
+<table class="data">
+    <thead>
+        <tr><th>ID</th><th>Name</th><th>Type</th><th>Jurisdiction</th><th>Auth Level</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+        {% for r in rows %}
+        <tr>
+            <td>#{{ r.agency_id }}</td>
+            <td><strong>{{ r.name }}</strong></td>
+            <td><span class="pill agency-type-{{ r.agency_type|lower|replace('_', '-') }}">{{ r.agency_type }}</span></td>
+            <td class="mono">{{ r.jurisdiction }}</td>
+            <td>{{ r.authorization_level }} / 5</td>
+            <td class="actions">
+                <a href="{{ url_for('agencies_edit', ag_id=r.agency_id) }}" class="btn btn-sm btn-secondary">Edit</a>
+                <form method="post" action="{{ url_for('agencies_delete', ag_id=r.agency_id) }}" style="display:inline;"
+                      data-confirm="Delete agency #{{ r.agency_id }}? This will fail if any tokens, lifecycle events, verifications, or revocations reference it.">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                </form>
+            </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="empty">No agencies.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

@@ -1,0 +1,85 @@
+version: '3.9'
+
+# ============================================================================
+# Polaris Identity Token System — Docker Compose
+#
+# One-command bring-up of the complete stack:
+#     docker compose up
+#
+# This launches:
+#   - PostgreSQL 16 with the Polaris schema, sample data, indexes, view,
+#     stored procedures, and triggers loaded automatically on first start.
+#   - The Flask web app, connected to the database service over the internal
+#     network, exposed on host port 5000.
+#
+# To run the test suite against the running stack:
+#     docker compose exec app python3 test_app.py
+#
+# To reset everything (drops the volume):
+#     docker compose down -v
+# ============================================================================
+
+services:
+
+  db:
+    image: postgres:16
+    container_name: polaris-db
+    environment:
+      POSTGRES_DB:       polaris_test
+      POSTGRES_USER:     postgres
+      POSTGRES_PASSWORD: postgres_local_dev
+      # Required so the polaris_app role can be created during init
+      POSTGRES_HOST_AUTH_METHOD: md5
+    volumes:
+      # Mount the SQL package as init scripts. Postgres runs anything in
+      # /docker-entrypoint-initdb.d/ in lexicographic order on first boot.
+      - ../polaris_sql:/docker-entrypoint-initdb.d/sql:ro
+      # Inline init script that creates the polaris_app role and runs the
+      # SQL package's 00_load_all.sql in the right order.
+      - ./docker-init.sh:/docker-entrypoint-initdb.d/00-init.sh:ro
+      # Persist database between restarts
+      - polaris-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d polaris_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    # F-12: Direct DB access from the host is not exposed by default.
+    # The app container reaches the db container via the internal network
+    # using the service name `db`. Uncomment the `ports:` block below ONLY if
+    # you need to connect to Postgres from outside the compose network
+    # (e.g., for a one-off psql shell during development).
+    # ports:
+    #   - "5432:5432"
+
+  app:
+    build: .
+    container_name: polaris-app
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      POLARIS_DB_HOST:     db
+      POLARIS_DB_NAME:     polaris_test
+      POLARIS_DB_USER:     polaris_app
+      POLARIS_DB_PASSWORD: polaris_dev_password
+      POLARIS_PORT:        '5000'
+      POLARIS_STATE_DIR:   '/tmp/polaris-state'
+      # v8.56: read POLARIS_SECRET_KEY from the host environment so the
+      # launcher can rotate it on every `up` — invalidating prior session
+      # cookies and forcing a fresh /login on every relaunch. If the host
+      # env doesn't set it, fall through to the dev-default literal
+      # (which app.py warns about at startup and refuses to start in
+      # production). For a stable session across launcher restarts, set
+      # POLARIS_SECRET_KEY in your shell env before running the launcher.
+      POLARIS_SECRET_KEY:  ${POLARIS_SECRET_KEY:-dev-secret-rotate-in-production}
+    ports:
+      - "${POLARIS_HOST_PORT:-5000}:5000"
+    volumes:
+      # Shared state for the launcher's --watch mode (heartbeat + quit beacon).
+      # Both the host launcher and the container read/write this directory.
+      - /tmp/polaris-state:/tmp/polaris-state
+    restart: unless-stopped
+
+volumes:
+  polaris-pgdata:

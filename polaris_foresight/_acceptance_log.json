@@ -1,0 +1,59 @@
+{
+  "_doc": "Empirical-graduation tracker for the v9.12 foresight surface. Per the Sanctum (polaris-odyssey-debate Position B + Anti-Architect modification \u00a7IV.2): if after 6 monthly briefs the FS-XXXXXXXX acceptance rate is < 50%, the foresight surface fails the empirical-graduation rule and the sunset clause fires (warning emitted in subsequent briefs; operator opens removal Sanctum). The ForesightAgent and promotion module both read/write this file. Schema: {briefs: [{date, timestamp_utc}], candidates: {FS-XXXXXXXX: {title, promoted_at, status: open|accepted|declined, vocation_alignment}}}.",
+  "briefs": [
+    {
+      "date": "2026-05-15",
+      "timestamp_utc": "2026-05-15T08:07:18.610679+00:00"
+    },
+    {
+      "date": "2026-05-15",
+      "timestamp_utc": "2026-05-15T08:07:25.145474+00:00"
+    },
+    {
+      "date": "2026-05-15",
+      "timestamp_utc": "2026-05-15T08:08:22.539544+00:00"
+    },
+    {
+      "date": "2026-05-15",
+      "timestamp_utc": "2026-05-15T08:08:28.524757+00:00"
+    },
+    {
+      "date": "2026-05-15",
+      "timestamp_utc": "2026-05-15T08:19:15.346506+00:00"
+    },
+    {
+      "date": "2026-05-15",
+      "timestamp_utc": "2026-05-15T08:19:15.455570+00:00"
+    },
+    {
+      "date": "2026-05-15",
+      "timestamp_utc": "2026-05-15T08:47:27.944314+00:00"
+    },
+    {
+      "date": "2026-05-15",
+      "timestamp_utc": "2026-05-15T08:48:26.136509+00:00"
+    },
+    {
+      "date": "2026-05-15",
+      "timestamp_utc": "2026-05-15T08:54:23.105462+00:00"
+    },
+    {
+      "date": "2026-05-15",
+      "timestamp_utc": "2026-05-15T17:46:38.795370+00:00"
+    }
+  ],
+  "candidates": {
+    "FS-5B5F30C9": {
+      "promoted_at": "2026-05-15",
+      "status": "open",
+      "title": "Audit Polaris's posture against external category: \"Post-quantum cryptography migration timelines (NIST PQC finalists; deployment milestones",
+      "vocation_alignment": "anti-coercion (defensive scan)"
+    },
+    "FS-FBAEC2B8": {
+      "promoted_at": "2026-05-16",
+      "status": "open",
+      "title": "Test idempotent candidate xyz123",
+      "vocation_alignment": "anti-coercion (test)"
+    }
+  }
+}

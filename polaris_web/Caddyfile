@@ -1,0 +1,119 @@
+# ============================================================================
+# Polaris — Caddyfile (Arc B Phase 1, v8.77)
+#
+# Caddy 2 with automatic Let's Encrypt TLS issuance + renewal.
+# G27: TLS is required. No HTTP-only production.
+#
+# The POLARIS_DOMAIN env var is interpolated at load time via {$POLARIS_DOMAIN}.
+# Caddy auto-redirects HTTP (:80) → HTTPS (:443) for the configured site.
+# ============================================================================
+
+{
+    # Global options
+    email admin@{$POLARIS_DOMAIN}
+    admin off                                 # disable local admin API
+    log {
+        output file /var/log/caddy/caddy.log {
+            roll_size 10mb
+            roll_keep 5
+        }
+        format json
+        level INFO
+    }
+    servers {
+        protocols h1 h2 h3
+        # Hide Caddy version from Server header
+        metrics
+    }
+}
+
+# Main site
+{$POLARIS_DOMAIN} {
+
+    # Reverse proxy to the Polaris app (gunicorn :8000 inside the network)
+    reverse_proxy app:8000 {
+        header_up X-Real-IP {remote_host}
+        header_up X-Forwarded-For {remote_host}
+        header_up X-Forwarded-Proto {scheme}
+        header_up X-Forwarded-Host {host}
+
+        # Pass health checks through but with a short timeout
+        health_uri /api/health
+        health_interval 30s
+        health_timeout 5s
+
+        # Standard timeouts
+        transport http {
+            dial_timeout 5s
+            response_header_timeout 30s
+            read_timeout 60s
+            write_timeout 60s
+        }
+    }
+
+    # Compression
+    encode gzip zstd
+
+    # Security headers (defense in depth — app also sets CSP)
+    header {
+        # HSTS — 2 years + preload (G27 / production-only)
+        Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+
+        # Anti-clickjacking
+        X-Frame-Options "DENY"
+
+        # MIME-sniffing protection
+        X-Content-Type-Options "nosniff"
+
+        # Referrer policy
+        Referrer-Policy "strict-origin-when-cross-origin"
+
+        # Permissions policy — Polaris doesn't use any sensitive APIs
+        Permissions-Policy "geolocation=(), microphone=(), camera=(), payment=(), usb=()"
+
+        # Cross-origin isolation
+        Cross-Origin-Opener-Policy "same-origin"
+        Cross-Origin-Resource-Policy "same-origin"
+
+        # Hide infrastructure
+        -Server
+        -X-Powered-By
+    }
+
+    # Rate limit — 200 req/min/IP global (defends against brute-force at the edge)
+    # The app layer adds finer-grained limits via security.py (R8-2).
+    rate_limit {
+        zone polaris_global {
+            key {client_ip}
+            events 200
+            window 1m
+        }
+    }
+
+    # Cache static assets aggressively (app sends them with ?v=hash query strings)
+    @static path /static/*
+    handle @static {
+        header Cache-Control "public, max-age=31536000, immutable"
+        reverse_proxy app:8000
+    }
+
+    # Block common probes (reduce log noise + minor security)
+    @blocked {
+        path /.env /.git/* /wp-login.php /wp-admin/* /xmlrpc.php /phpmyadmin/*
+    }
+    respond @blocked 404
+
+    # Access logging
+    log {
+        output file /var/log/caddy/access.log {
+            roll_size 50mb
+            roll_keep 10
+        }
+        format json
+    }
+}
+
+# HTTP → HTTPS upgrade (Caddy does this automatically, but be explicit)
+http://{$POLARIS_DOMAIN} {
+    redir https://{$POLARIS_DOMAIN}{uri} permanent
+}

@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}WebAuthn Verification{% endblock %}
+{% block content %}
+
+<div class="login-page">
+    <div class="login-card">
+        <div class="login-mark">
+            <div class="login-brand">POLARIS</div>
+            <div class="login-sub">WebAuthn Verification</div>
+        </div>
+
+        <div class="webauthn-step">
+            <p class="webauthn-greeting">
+                Signed in as <strong>{{ username }}</strong>. One more step:
+                verify with your security key or platform authenticator.
+            </p>
+
+            <div class="webauthn-status" id="waStatus" role="status" aria-live="polite">
+                Press the button to begin verification.
+            </div>
+
+            <div class="form-actions">
+                <button type="button" id="waVerifyBtn" class="btn btn-gold">
+                    Verify with WebAuthn
+                </button>
+            </div>
+
+            <div class="webauthn-error" id="waError" role="alert" aria-live="assertive"></div>
+        </div>
+
+        <div class="login-help">
+            If your device is unavailable, ask another admin to authorize
+            an emergency password login via
+            <code>scripts/polaris-recover-admin.sh</code>.
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='webauthn-assert.js') }}?v=waa001" defer></script>
+{% endblock %}

@@ -1,0 +1,739 @@
+"""
+============================================================================
+polaris-cli — Integration test suite
+============================================================================
+
+Exercises every command in polaris.py via subprocess and verifies output
+contains the expected content. Each test resets the database to pristine
+sample state before running.
+
+Run:
+    python3 test_cli.py
+============================================================================
+"""
+
+import os
+import sys
+import subprocess
+import unittest
+import psycopg2
+from psycopg2.extras import RealDictCursor
+
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+CLI = os.path.join(HERE, 'polaris.py')
+SQL_DIR = os.path.join(HERE, '..', 'polaris_sql')
+
+DB_CONFIG = {
+    'host':     os.environ.get('POLARIS_DB_HOST',     'localhost'),
+    'database': os.environ.get('POLARIS_DB_NAME',     'polaris_test'),
+    'user':     os.environ.get('POLARIS_DB_USER',     'polaris_app'),
+    'password': os.environ.get('POLARIS_DB_PASSWORD', 'polaris_dev_password'),
+}
+
+
+def reload_sample_data():
+    """Reset to pristine 73-row sample state plus a clean AuthAuditLog and
+    the three seed AppUser accounts."""
+    files = ['04_data.sql', '05_procedures.sql', '06_triggers.sql',
+             '09_grants.sql', '10_auth.sql']
+    for fname in files:
+        path = os.path.join(SQL_DIR, fname)
+        if not os.path.exists(path):
+            path = os.path.join('/tmp', fname)
+        result = subprocess.run(
+            ['su', '-', 'postgres', '-c', f'psql -d polaris_test -f {path}'],
+            capture_output=True, text=True
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"Failed to reload {fname}: {result.stderr}")
+
+
+def run_cli(*args, expect_success=True):
+    """Run polaris.py with NO_COLOR set and return CompletedProcess."""
+    env = os.environ.copy()
+    env['NO_COLOR'] = '1'
+    result = subprocess.run(
+        [sys.executable, CLI, *args],
+        capture_output=True, text=True, env=env, timeout=30
+    )
+    if expect_success and result.returncode != 0:
+        raise AssertionError(
+            f"Command failed with code {result.returncode}\n"
+            f"  args:   {args}\n"
+            f"  stdout: {result.stdout[:500]}\n"
+            f"  stderr: {result.stderr[:500]}"
+        )
+    return result
+
+
+class CLIBaseTestCase(unittest.TestCase):
+    def setUp(self):
+        reload_sample_data()
+
+
+# ============================================================================
+# health
+# ============================================================================
+
+class HealthCommandTests(CLIBaseTestCase):
+
+    def test_health_runs(self):
+        r = run_cli('health')
+        self.assertIn('POLARIS', r.stdout)
+        self.assertIn('Schema Statistics', r.stdout)
+
+    def test_health_shows_all_tables(self):
+        r = run_cli('health')
+        for tbl in ['Individual', 'Agency', 'IdentityToken',
+                    'TokenLifecycleEvent', 'VerificationEvent']:
+            self.assertIn(tbl, r.stdout)
+
+    def test_health_shows_pq_breakdown(self):
+        r = run_cli('health')
+        self.assertIn('Post-Quantum Migration', r.stdout)
+        self.assertIn('PQ active', r.stdout)
+
+    def test_health_shows_disclosure(self):
+        r = run_cli('health')
+        self.assertIn('Disclosure Posture', r.stdout)
+        self.assertIn('ZERO_KNOWLEDGE', r.stdout)
+
+
+# ============================================================================
+# list
+# ============================================================================
+
+class ListCommandTests(CLIBaseTestCase):
+
+    def test_list_individuals(self):
+        r = run_cli('list', 'individuals')
+        self.assertIn('Egor Khaklin', r.stdout)
+        self.assertIn('Maria Santos', r.stdout)
+        self.assertIn('James Chen', r.stdout)
+
+    def test_list_agencies(self):
+        r = run_cli('list', 'agencies')
+        self.assertIn('US National Identity Service', r.stdout)
+        self.assertIn('Pennsylvania Identity Bureau', r.stdout)
+
+    def test_list_tokens(self):
+        r = run_cli('list', 'tokens')
+        self.assertIn('TKN-PA-2026-000001', r.stdout)
+        self.assertIn('TKN-CA-2026-000002', r.stdout)
+
+    def test_list_tokens_filtered_by_status(self):
+        r = run_cli('list', 'tokens', '--status', 'ACTIVE')
+        self.assertIn('TKN-CA-2026-000002', r.stdout)  # T2 ACTIVE
+        self.assertNotIn('TKN-PA-2026-000001', r.stdout)  # T1 RESERVE
+
+    def test_list_algorithms(self):
+        r = run_cli('list', 'algorithms')
+        self.assertIn('ML-DSA-65', r.stdout)
+        self.assertIn('SLH-DSA', r.stdout)
+
+    def test_list_verifications(self):
+        r = run_cli('list', 'verifications')
+        self.assertIn('BANKING', r.stdout)
+
+    def test_list_invalid_entity(self):
+        r = run_cli('list', 'cabbages', expect_success=False)
+        self.assertNotEqual(r.returncode, 0)
+
+
+# ============================================================================
+# inspect
+# ============================================================================
+
+class InspectCommandTests(CLIBaseTestCase):
+
+    def test_inspect_existing_token(self):
+        r = run_cli('inspect', '2')
+        self.assertIn('Token #2', r.stdout)
+        self.assertIn('Maria Santos', r.stdout)
+        self.assertIn('ML-DSA-65', r.stdout)
+        self.assertIn('Lifecycle History', r.stdout)
+
+    def test_inspect_nonexistent_token(self):
+        r = run_cli('inspect', '9999', expect_success=False)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn('not found', r.stderr)
+
+
+# ============================================================================
+# query
+# ============================================================================
+
+class QueryCommandTests(CLIBaseTestCase):
+
+    def test_simple_select(self):
+        r = run_cli('query',
+            'SELECT individual_id, legal_name FROM Individual ORDER BY individual_id LIMIT 3')
+        self.assertIn('Egor Khaklin', r.stdout)
+        self.assertIn('Maria Santos', r.stdout)
+
+    def test_update_blocked(self):
+        r = run_cli('query',
+            "UPDATE Individual SET legal_name='X' WHERE individual_id=1",
+            expect_success=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('Only SELECT and WITH', r.stderr)
+
+    def test_with_query(self):
+        r = run_cli('query',
+            'WITH t AS (SELECT 1 AS n) SELECT * FROM t')
+        # Should produce output without error
+        self.assertEqual(r.returncode, 0)
+
+
+# ============================================================================
+# issue (UC-1)
+# ============================================================================
+
+class IssueCommandTests(CLIBaseTestCase):
+
+    def test_issue_creates_token(self):
+        r = run_cli('issue',
+            '--legal-name', 'CLI Test Holder',
+            '--dob', '1990-01-15',
+            '--jurisdiction', 'US-OH',
+            '--agency', '1',
+            '--algorithm', '1',
+            '--token-value', 'TKN-OH-CLI-TEST',
+            '--serial', 'SN-OH-CLI-TEST',
+            '--biometric', 'IRIS',
+            '--contexts', '1,4',
+        )
+        self.assertIn('Issued and activated token', r.stdout)
+        self.assertIn('CLI Test Holder', r.stdout)
+
+    def test_issue_with_unauthorized_algorithm_fails(self):
+        # Agency 2 (PA) doesn't have a grant on algorithm 4 (SLH-DSA-256s)
+        r = run_cli('issue',
+            '--legal-name', 'Unauth Test',
+            '--dob', '1990-01-15',
+            '--jurisdiction', 'US-PA',
+            '--agency', '2',
+            '--algorithm', '4',
+            '--token-value', 'TKN-PA-UNAUTH',
+            '--serial', 'SN-PA-UNAUTH',
+            '--biometric', 'IRIS',
+            '--contexts', '1',
+            expect_success=False,
+        )
+        self.assertEqual(r.returncode, 3)
+        self.assertIn('not authorized to issue', r.stderr)
+
+    def test_issue_produces_correct_audit_chain(self):
+        """After UC-1 simplification, there should be exactly 2 lifecycle
+        events: ISSUED (explicit) + ACTIVATED (auto-trigger)."""
+        run_cli('issue',
+            '--legal-name', 'Audit Chain Test',
+            '--dob', '1990-01-15',
+            '--jurisdiction', 'US-OH',
+            '--agency', '1',
+            '--algorithm', '1',
+            '--token-value', 'TKN-OH-AUDIT',
+            '--serial', 'SN-OH-AUDIT',
+            '--biometric', 'IRIS',
+            '--contexts', '1',
+        )
+        # Count lifecycle events for the new token
+        conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT le.event_type, le.reason_code
+                FROM TokenLifecycleEvent le
+                JOIN IdentityToken t ON le.token_id = t.token_id
+                WHERE t.token_value = 'TKN-OH-AUDIT'
+                ORDER BY le.event_id
+            """)
+            events = cur.fetchall()
+        conn.close()
+        # Exactly 2 events: ISSUED + ACTIVATED. No duplicates.
+        self.assertEqual(len(events), 2,
+                         f"Expected 2 lifecycle events, got {len(events)}: {events}")
+        self.assertEqual(events[0]['event_type'], 'ISSUED')
+        self.assertEqual(events[1]['event_type'], 'ACTIVATED')
+
+
+# ============================================================================
+# transition
+# ============================================================================
+
+class TransitionCommandTests(CLIBaseTestCase):
+
+    def test_transition_legal(self):
+        r = run_cli('transition', '2', 'DORMANT', '--actor', '3', '--reason', 'CLI_TEST_LEGAL')
+        self.assertIn('Transitioned token #2 to DORMANT', r.stdout)
+
+    def test_transition_illegal_blocked(self):
+        # T5 is REVOKED — REVOKED → ACTIVE is illegal
+        r = run_cli('transition', '5', 'ACTIVE', expect_success=False)
+        self.assertEqual(r.returncode, 3)
+        self.assertIn('Illegal token state transition', r.stderr)
+
+    def test_transition_writes_audit_row_with_reason(self):
+        run_cli('transition', '2', 'DORMANT', '--actor', '3', '--reason', 'CLI_AUDIT_TEST')
+        # Check the latest TLE row picks up the GUC-set reason
+        conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT event_type, reason_code, actor_agency_id
+                FROM TokenLifecycleEvent
+                WHERE token_id = 2 ORDER BY event_id DESC LIMIT 1
+            """)
+            latest = cur.fetchone()
+        conn.close()
+        self.assertEqual(latest['event_type'], 'DEACTIVATED')
+        self.assertEqual(latest['reason_code'], 'CLI_AUDIT_TEST')
+        self.assertEqual(latest['actor_agency_id'], 3)
+
+
+# ============================================================================
+# warrant-audit (UC-7)
+# ============================================================================
+
+class WarrantAuditCommandTests(CLIBaseTestCase):
+
+    def test_warrant_audit_runs(self):
+        r = run_cli('warrant-audit', '--individual', '3')
+        self.assertIn('Warrant Audit', r.stdout)
+
+    def test_warrant_audit_excludes_zk(self):
+        # James (id=3) has 1 ZK + 1 SELECTIVE + 1 FULL.
+        # The procedure's INNER JOIN through token_id excludes ZK.
+        r = run_cli('warrant-audit', '--individual', '3')
+        # Should show 2 rows in the table (the 2 non-ZK events)
+        self.assertIn('TRAVEL', r.stdout)
+        self.assertIn('BANKING', r.stdout)
+        # HEALTHCARE is the ZK one — should NOT appear in the results
+        # (but the table footer has "(2 rows)" not "(3 rows)")
+        self.assertIn('(2 rows)', r.stdout)
+
+
+# ============================================================================
+# bind-device (UC-5)
+# ============================================================================
+
+class BindDeviceCommandTests(CLIBaseTestCase):
+
+    def test_bind_device_to_active(self):
+        r = run_cli('bind-device',
+            '--token', '2',
+            '--device-type', 'PHONE',
+            '--fingerprint', 'SE-CLI-TEST-FINGERPRINT-12345',
+            '--binding-method', 'SECURE_ENCLAVE',
+            '--validity-months', '24',
+        )
+        self.assertIn('Created device binding', r.stdout)
+
+    def test_bind_to_revoked_token_fails(self):
+        # T5 is REVOKED, UC-5 should reject
+        r = run_cli('bind-device',
+            '--token', '5',
+            '--device-type', 'PHONE',
+            '--fingerprint', 'SE-CLI-REVOKED-12345',
+            expect_success=False,
+        )
+        self.assertEqual(r.returncode, 3)
+        self.assertIn('not ACTIVE', r.stderr)
+
+
+# ============================================================================
+# User management commands (security patching engagement)
+# ============================================================================
+
+class UserListCommandTests(CLIBaseTestCase):
+
+    def test_user_list_shows_seed_accounts(self):
+        r = run_cli('user-list')
+        self.assertIn('admin', r.stdout)
+        self.assertIn('operator', r.stdout)
+        self.assertIn('auditor', r.stdout)
+        self.assertIn('ADMIN', r.stdout)
+        self.assertIn('OPERATOR', r.stdout)
+        self.assertIn('AUDITOR', r.stdout)
+
+    def test_user_list_never_shows_password_hashes(self):
+        """Defense-in-depth: hashes must never appear in user-list output."""
+        r = run_cli('user-list')
+        # Real scrypt hashes start with 'scrypt:'; nothing user-facing should contain it.
+        self.assertNotIn('scrypt:', r.stdout)
+        self.assertNotIn('password_hash', r.stdout)
+
+
+class UserCreateCommandTests(CLIBaseTestCase):
+
+    def test_create_user_with_valid_password(self):
+        r = run_cli('user-create', 'newop1', 'operator', '--password', 'StrongPass123!')
+        self.assertEqual(r.returncode, 0)
+        self.assertIn('Created user', r.stdout)
+        # Verify the new row exists
+        conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        with conn.cursor() as cur:
+            cur.execute("SELECT role, is_active FROM AppUser WHERE username='newop1'")
+            row = cur.fetchone()
+        conn.close()
+        self.assertIsNotNone(row)
+        self.assertEqual(row['role'], 'operator')
+        self.assertTrue(row['is_active'])
+
+    def test_create_user_rejects_short_password(self):
+        r = run_cli('user-create', 'shortpw', 'operator', '--password', 'Short1!',
+                    expect_success=False)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn('at least 12 characters', r.stderr)
+
+    def test_create_user_rejects_no_digit(self):
+        r = run_cli('user-create', 'nodigit', 'operator', '--password', 'NoDigitsHere!',
+                    expect_success=False)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn('at least one digit', r.stderr)
+
+    def test_create_user_rejects_no_letter(self):
+        r = run_cli('user-create', 'noletter', 'operator', '--password', '12345678901!@#',
+                    expect_success=False)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn('at least one letter', r.stderr)
+
+    def test_create_user_rejects_no_symbol(self):
+        r = run_cli('user-create', 'nosymbol', 'operator', '--password', 'NoSymbolHere123',
+                    expect_success=False)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn('at least one symbol', r.stderr)
+
+    def test_create_user_rejects_duplicate(self):
+        # admin already exists in the seed data
+        r = run_cli('user-create', 'admin', 'operator', '--password', 'Whatever123!',
+                    expect_success=False)
+        self.assertEqual(r.returncode, 3)
+        self.assertIn('already exists', r.stderr)
+
+    def test_create_user_normalizes_uppercase_to_lowercase(self):
+        """The CLI lowercases the username before insert (matches the
+        chk_appuser_username_format CHECK constraint which only allows lowercase)."""
+        r = run_cli('user-create', 'NeWuSeR', 'operator', '--password', 'StrongPass123!')
+        self.assertEqual(r.returncode, 0)
+        # Verify it was stored lowercase
+        conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        with conn.cursor() as cur:
+            cur.execute("SELECT username FROM AppUser WHERE username='newuser'")
+            self.assertIsNotNone(cur.fetchone(),
+                                 "Username should have been lowercased on insert")
+        conn.close()
+
+    def test_create_user_rejects_username_with_invalid_characters(self):
+        """Special characters not in [a-z0-9._-] are rejected."""
+        # Spaces should hit the CHECK constraint after lowercasing
+        r = run_cli('user-create', 'bad name', 'operator', '--password', 'StrongPass123!',
+                    expect_success=False)
+        self.assertEqual(r.returncode, 3)
+
+    def test_create_user_rejects_invalid_role(self):
+        r = run_cli('user-create', 'someuser', 'superuser', '--password', 'Whatever123!',
+                    expect_success=False)
+        self.assertEqual(r.returncode, 2)  # argparse rejects choice
+
+    def test_created_user_password_works_for_authentication(self):
+        """End-to-end: CLI-created user can authenticate via the security module."""
+        run_cli('user-create', 'roundtrip', 'auditor', '--password', 'RoundtripPass123!')
+
+        # Verify hash decodes back via werkzeug
+        from werkzeug.security import check_password_hash
+        conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        with conn.cursor() as cur:
+            cur.execute("SELECT password_hash FROM AppUser WHERE username='roundtrip'")
+            row = cur.fetchone()
+        conn.close()
+        self.assertTrue(check_password_hash(row['password_hash'], 'RoundtripPass123!'))
+        self.assertFalse(check_password_hash(row['password_hash'], 'wrong-password'))
+
+
+class UserPasswdCommandTests(CLIBaseTestCase):
+
+    def test_passwd_changes_hash(self):
+        # Capture the original hash
+        conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        with conn.cursor() as cur:
+            cur.execute("SELECT password_hash FROM AppUser WHERE username='admin'")
+            old_hash = cur.fetchone()['password_hash']
+        conn.close()
+
+        # Rotate the password
+        r = run_cli('user-passwd', 'admin', '--password', 'NewAdminPass123!')
+        self.assertEqual(r.returncode, 0)
+
+        # Hash should have changed
+        conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        with conn.cursor() as cur:
+            cur.execute("SELECT password_hash FROM AppUser WHERE username='admin'")
+            new_hash = cur.fetchone()['password_hash']
+        conn.close()
+        self.assertNotEqual(old_hash, new_hash)
+
+        # And the new password should verify
+        from werkzeug.security import check_password_hash
+        self.assertTrue(check_password_hash(new_hash, 'NewAdminPass123!'))
+
+    def test_passwd_clears_lockout(self):
+        """user-passwd should reset failed_login_count and locked_until."""
+        # Fake a locked-out admin account
+        conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        with conn.cursor() as cur:
+            cur.execute("UPDATE AppUser SET failed_login_count=99, "
+                        "locked_until=CURRENT_TIMESTAMP + INTERVAL '1 hour' "
+                        "WHERE username='admin'")
+            conn.commit()
+        conn.close()
+
+        run_cli('user-passwd', 'admin', '--password', 'FreshPass12345!')
+
+        conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        with conn.cursor() as cur:
+            cur.execute("SELECT failed_login_count, locked_until FROM AppUser "
+                        "WHERE username='admin'")
+            row = cur.fetchone()
+        conn.close()
+        self.assertEqual(row['failed_login_count'], 0)
+        self.assertIsNone(row['locked_until'])
+
+    def test_passwd_unknown_user_fails(self):
+        r = run_cli('user-passwd', 'nobody', '--password', 'Whatever123!',
+                    expect_success=False)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn('No such user', r.stderr)
+
+    def test_passwd_rejects_weak_password(self):
+        r = run_cli('user-passwd', 'admin', '--password', 'weak',
+                    expect_success=False)
+        self.assertEqual(r.returncode, 1)
+
+
+class UserDeactivateCommandTests(CLIBaseTestCase):
+
+    def test_deactivate_sets_is_active_false(self):
+        r = run_cli('user-deactivate', 'operator')
+        self.assertEqual(r.returncode, 0)
+
+        conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        with conn.cursor() as cur:
+            cur.execute("SELECT is_active FROM AppUser WHERE username='operator'")
+            self.assertFalse(cur.fetchone()['is_active'])
+        conn.close()
+
+    def test_deactivate_preserves_audit_history(self):
+        """The deactivated user's audit-log rows must remain intact (FK preservation)."""
+        # Insert an audit row for operator first via the auth flow
+        # (we can't INSERT directly because polaris_app has no privilege to
+        # bypass append-only — but the audit log is INSERT-allowed for
+        # polaris_app as the web app uses that role).
+        conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO AuthAuditLog (event_type, username, user_id, detail)
+                VALUES ('LOGIN_SUCCESS', 'operator', 2, 'pre-deactivation event')
+            """)
+            conn.commit()
+        conn.close()
+
+        run_cli('user-deactivate', 'operator')
+
+        conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) AS n FROM AuthAuditLog WHERE username='operator'")
+            self.assertGreater(cur.fetchone()['n'], 0,
+                               "Audit history should survive deactivation")
+        conn.close()
+
+    def test_deactivate_unknown_user_fails(self):
+        r = run_cli('user-deactivate', 'nobody', expect_success=False)
+        self.assertEqual(r.returncode, 1)
+
+
+class AuditLogCommandTests(CLIBaseTestCase):
+
+    def setUp(self):
+        super().setUp()
+        # Seed a few audit events
+        conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO AuthAuditLog (event_type, username, ip_address, detail)
+                VALUES
+                    ('LOGIN_SUCCESS',  'admin',    '10.0.0.1',  ''),
+                    ('LOGIN_FAILED',   'admin',    '10.0.0.2',  'failure 1/5'),
+                    ('CSRF_REJECTED',  'operator', '10.0.0.3',  'POST /individuals/new'),
+                    ('AUTHZ_DENIED',   'auditor',  '10.0.0.4',  'role=auditor allowed=admin'),
+                    ('LOGOUT',         'admin',    '10.0.0.1',  '')
+            """)
+            conn.commit()
+        conn.close()
+
+    def test_audit_log_runs(self):
+        r = run_cli('audit-log')
+        self.assertEqual(r.returncode, 0)
+        self.assertIn('Authentication Audit', r.stdout)
+
+    def test_audit_log_shows_seeded_events(self):
+        r = run_cli('audit-log')
+        self.assertIn('LOGIN_SUCCESS', r.stdout)
+        self.assertIn('LOGIN_FAILED', r.stdout)
+        self.assertIn('CSRF_REJECTED', r.stdout)
+        self.assertIn('AUTHZ_DENIED', r.stdout)
+        self.assertIn('LOGOUT', r.stdout)
+
+    def test_audit_log_filtered_by_event_type(self):
+        r = run_cli('audit-log', '--event-type', 'LOGIN_FAILED')
+        self.assertIn('LOGIN_FAILED', r.stdout)
+        # Other event types from the seed should not appear
+        self.assertNotIn('CSRF_REJECTED', r.stdout)
+        self.assertNotIn('LOGIN_SUCCESS', r.stdout)
+
+    def test_audit_log_filtered_by_username(self):
+        r = run_cli('audit-log', '--username', 'auditor')
+        self.assertIn('AUTHZ_DENIED', r.stdout)
+        # Events for other users should not appear
+        self.assertNotIn('CSRF_REJECTED', r.stdout)
+
+    def test_audit_log_limit_respected(self):
+        r = run_cli('audit-log', '--limit', '2')
+        # Header line + max 2 event rows
+        events_shown = sum(1 for line in r.stdout.split('\n')
+                           if any(et in line for et in
+                                  ['LOGIN_SUCCESS', 'LOGIN_FAILED',
+                                   'CSRF_REJECTED', 'AUTHZ_DENIED', 'LOGOUT']))
+        self.assertLessEqual(events_shown, 2)
+
+    def test_audit_log_invalid_event_type_rejected(self):
+        # argparse choices validation
+        r = run_cli('audit-log', '--event-type', 'NOT_A_REAL_EVENT',
+                    expect_success=False)
+        self.assertNotEqual(r.returncode, 0)
+
+
+# ============================================================================
+# Help and error handling
+# ============================================================================
+
+class HelpAndErrorTests(unittest.TestCase):
+    """No DB needed for these."""
+
+    def test_help_runs(self):
+        r = run_cli('--help')
+        self.assertIn('polaris', r.stdout.lower())
+        self.assertIn('health', r.stdout)
+        self.assertIn('issue', r.stdout)
+        self.assertIn('warrant-audit', r.stdout)
+
+    def test_help_lists_uc6_8_9_commands(self):
+        """v9.30.1 / item 9a: the CLI must surface UC-6, UC-8, UC-9
+        commands so the operator stops typing ad-hoc psql."""
+        r = run_cli('--help')
+        for cmd in ('migrate-algorithm', 'revoke',
+                    'recovery-initiate', 'recovery-complete'):
+            self.assertIn(cmd, r.stdout,
+                f"--help must list '{cmd}' (UC-6/8/9 CLI coverage)")
+
+    def test_no_command_prints_help(self):
+        r = run_cli(expect_success=False)
+        self.assertEqual(r.returncode, 1)
+
+
+# ============================================================================
+# UC-8 revoke (v9.30.1 / item 9a)
+# ============================================================================
+
+class RevokeCommandTests(CLIBaseTestCase):
+    """UC-8: revoke an ACTIVE token. The CLI being the canonical surface
+    means the operator never needs to type psql for revocation."""
+
+    def test_revoke_help_shows_required_args(self):
+        r = run_cli('revoke', '--help')
+        for arg in ('--token', '--actor-agency', '--reason',
+                    '--published-location', '--cosigner-agency'):
+            self.assertIn(arg, r.stdout,
+                f"revoke --help must document '{arg}'")
+
+    def test_revoke_missing_required_args_fails(self):
+        r = run_cli('revoke', expect_success=False)
+        self.assertNotEqual(r.returncode, 0)
+
+    def test_revoke_invalid_reason_rejected(self):
+        r = run_cli('revoke', '--token', '1', '--actor-agency', '1',
+                    '--reason', 'NOT_A_VALID_REASON',
+                    '--published-location', 'https://example.test/crl',
+                    expect_success=False)
+        self.assertNotEqual(r.returncode, 0)
+
+
+# ============================================================================
+# UC-6 migrate-algorithm (v9.30.1 / item 9a)
+# ============================================================================
+
+class MigrateAlgorithmCommandTests(CLIBaseTestCase):
+    """UC-6: migrate a token to a new cryptographic algorithm. CLI
+    surface means operator doesn't hand-construct the bytes literal in psql."""
+
+    def test_migrate_algorithm_help_shows_required_args(self):
+        r = run_cli('migrate-algorithm', '--help')
+        for arg in ('--token', '--new-algorithm',
+                    '--signature-hex', '--signature-file',
+                    '--deprecate-old'):
+            self.assertIn(arg, r.stdout,
+                f"migrate-algorithm --help must document '{arg}'")
+
+    def test_migrate_algorithm_requires_signature(self):
+        """The signature must be supplied via --signature-hex OR
+        --signature-file (mutually exclusive group, one required)."""
+        r = run_cli('migrate-algorithm',
+                    '--token', '1', '--new-algorithm', '2',
+                    expect_success=False)
+        self.assertNotEqual(r.returncode, 0)
+
+
+# ============================================================================
+# UC-9 recovery (v9.30.1 / item 9a)
+# ============================================================================
+
+class RecoveryCommandTests(CLIBaseTestCase):
+    """UC-9: catastrophic-loss recovery ceremony (initiate + complete).
+    Two-phase commit: the CLI splits these into separate subcommands
+    so the cooldown semantics are explicit."""
+
+    def test_recovery_initiate_help_shows_required_args(self):
+        r = run_cli('recovery-initiate', '--help')
+        for arg in ('--individual', '--requesting-agency',
+                    '--requesting-user', '--cooldown-hours'):
+            self.assertIn(arg, r.stdout,
+                f"recovery-initiate --help must document '{arg}'")
+
+    def test_recovery_complete_help_shows_required_args(self):
+        r = run_cli('recovery-complete', '--help')
+        for arg in ('--recovery-id', '--deciding-user', '--decision',
+                    '--reason'):
+            self.assertIn(arg, r.stdout,
+                f"recovery-complete --help must document '{arg}'")
+
+    def test_recovery_complete_decision_must_be_approved_or_rejected(self):
+        r = run_cli('recovery-complete',
+                    '--recovery-id', '1', '--deciding-user', '1',
+                    '--decision', 'NOT_A_VALID_DECISION',
+                    '--reason', 'test',
+                    expect_success=False)
+        self.assertNotEqual(r.returncode, 0)
+
+
+if __name__ == '__main__':
+    # Verify connection works before running anything
+    try:
+        conn = psycopg2.connect(**DB_CONFIG)
+        conn.close()
+    except psycopg2.Error as e:
+        sys.stderr.write(f"Cannot connect to database: {e}\n")
+        sys.exit(1)
+
+    runner = unittest.TextTestRunner(verbosity=2)
+    suite = unittest.TestLoader().loadTestsFromModule(sys.modules[__name__])
+    result = runner.run(suite)
+    sys.exit(0 if result.wasSuccessful() else 1)

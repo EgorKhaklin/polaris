@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% block title %}Anchor Batches{% endblock %}
+{% block content %}
+<h1>Anchor Batches</h1>
+<p class="subtitle">
+    Off-chain audit-of-record for DID anchoring (R10-2 / M2-2 / v8.21).
+    Each batch groups one or more <code>BlockchainAnchor</code> rows under
+    a per-algorithm advisory lock; the <code>merkle_root</code> commits
+    the batch contents to whatever chain or registry the operator
+    chooses, at whatever cadence makes sense. The schema implements the
+    primitive; the operator decides timing.
+</p>
+
+<div class="actions-bar">
+    <span class="record-count">{{ rows|length }} batch(es) recorded</span>
+    {% if pending_anchors %}
+    <span class="record-count" style="margin-left: 1em;">
+        {{ pending_anchors }} anchor(s) pending (not yet batched)
+    </span>
+    {% endif %}
+</div>
+
+{% if not rows %}
+    <div class="empty-state">No anchor batches recorded.</div>
+{% else %}
+<table class="data">
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Algorithm</th>
+            <th>Members</th>
+            <th>Merkle Root</th>
+            <th>Created</th>
+            <th>On-Chain</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for r in rows %}
+        <tr>
+            <td class="mono">#{{ r.batch_id }}</td>
+            <td>
+                <span class="pill {% if r.quantum_resistant %}pill-success{% else %}pill-warn{% endif %}">
+                    {{ r.algorithm_name }}
+                </span>
+            </td>
+            <td class="mono">{{ r.member_count }} / {{ r.batch_size }}</td>
+            <td class="mono" title="{{ r.merkle_root }}">
+                {{ r.merkle_root[:8] }}…{{ r.merkle_root[-6:] }}
+            </td>
+            <td class="mono">{{ r.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+            <td>
+                {% if r.committed_to_chain %}
+                    <span class="pill pill-success">
+                        {{ r.external_chain or 'COMMITTED' }}
+                    </span>
+                    {% if r.external_chain_tx %}
+                    <div class="mono footnote" title="{{ r.external_chain_tx }}">
+                        tx: {{ r.external_chain_tx[:10] }}…
+                    </div>
+                    {% endif %}
+                {% else %}
+                    <span class="pill">OFF-CHAIN</span>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+
+<div class="info-panel">
+    <h2>How anchor batches work</h2>
+    <ol>
+        <li><strong>Pending pool:</strong> <code>BlockchainAnchor</code> rows accumulate with <code>batch_id IS NULL</code>.</li>
+        <li><strong>Close ceremony:</strong> the <code>close_anchor_batch(algorithm_id, root, proofs)</code> procedure takes a <code>pg_advisory_xact_lock(hashtext('polaris.anchor.close-batch.' || algorithm_id))</code>, computes the Merkle root server-side via <code>polaris_web/anchoring.py</code>, and assigns the pending rows.</li>
+        <li><strong>Verification:</strong> <code>/api/anchor/verify/&lt;token_id&gt;</code> reconstructs the root from leaf + proof. Tampered logs are rejected at the API boundary, not in the client.</li>
+        <li><strong>Operator discretion:</strong> <code>committed_to_chain</code> is operator-set, not auto-derived. The schema implements the primitive; whether and when to publish to Algorand-PQ, Hyperledger Indy, or a custom lattice is the operator's call.</li>
+    </ol>
+    <p class="footnote">
+        Mechanism design: <code>DEVNOTES/ships/anchoring.md</code>.
+        Concurrency: per-algorithm lock is the 4th entry in
+        <code>DEVNOTES/concurrency.md</code>.
+    </p>
+</div>
+{% endblock %}

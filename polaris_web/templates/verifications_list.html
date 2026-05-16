@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% from "_pager.html" import render_pager %}
+{% block title %}Verifications{% endblock %}
+{% block content %}
+<h1>Verification Events</h1>
+<p class="subtitle">Append-only audit log. ZERO_KNOWLEDGE events have <code>token_id=NULL</code> and produce no holder reference.</p>
+
+<form method="get" class="filter-row">
+    <div class="form-group">
+        <label for="context">Context</label>
+        <select id="context" name="context">
+            <option value="">All</option>
+            {% for c in contexts %}
+                <option value="{{ c.context_type }}" {% if context == c.context_type %}selected{% endif %}>{{ c.context_type }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="form-group">
+        <label for="outcome">Outcome</label>
+        <select id="outcome" name="outcome">
+            <option value="">All</option>
+            {% for o in ['SUCCESS', 'FAILURE', 'EXPIRED', 'UNAUTHORIZED'] %}
+                <option value="{{ o }}" {% if outcome == o %}selected{% endif %}>{{ o }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="form-group">
+        <label for="disclosure">Disclosure</label>
+        <select id="disclosure" name="disclosure">
+            <option value="">All</option>
+            {% for d in ['ZERO_KNOWLEDGE', 'SELECTIVE', 'FULL'] %}
+                <option value="{{ d }}" {% if disclosure == d %}selected{% endif %}>{{ d }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="filter-actions">
+        <button type="submit" class="btn btn-sm">Filter</button>
+        <a href="{{ url_for('verifications_list') }}" class="btn btn-sm btn-secondary">Clear</a>
+    </div>
+</form>
+
+<div class="actions-bar">
+    <a href="{{ url_for('verifications_new') }}" class="btn btn-gold">+ Record Verification</a>
+    <span class="record-count">{{ rows|length }} events</span>
+</div>
+
+<table class="data">
+    <thead>
+        <tr>
+            <th>Event</th><th>Timestamp</th><th>Holder</th>
+            <th>Context</th><th>Verifier</th><th>Outcome</th>
+            <th>Disclosure</th><th>Location</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for r in rows %}
+        <tr>
+            <td>#{{ r.event_id }}</td>
+            <td>{{ r.event_timestamp.strftime('%Y-%m-%d %H:%M') }}</td>
+            <td>
+                {%- if r.holder_name %}{{ r.holder_name }}
+                {%- else %}<em style="color: var(--steel-light);">— (ZK)</em>{% endif %}
+            </td>
+            <td>{{ r.context_type }}</td>
+            <td>{{ r.verifier_name }}</td>
+            <td><span class="pill pill-{{ r.outcome|lower }}">{{ r.outcome }}</span></td>
+            <td><span class="pill pill-{{ r.disclosure_level|lower }}">{{ r.disclosure_level }}</span></td>
+            <td>{{ r.requestor_location or '—' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8" class="empty">No verification events.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<p style="font-size: 12px; color: var(--steel); margin-top: 12px;">
+    <strong>Note:</strong> This table is append-only by trigger. UPDATE and DELETE operations are rejected
+    by the database to preserve the audit invariant (NFR-4). To remove an event, the trigger must be
+    explicitly dropped — a deliberate friction point.
+</p>
+{{ render_pager(page, has_prev, has_next, page_size,
+                cursor_mode=cursor_mode|default(false),
+                first_cursor=first_cursor|default(none),
+                last_cursor=last_cursor|default(none)) }}
+{% endblock %}

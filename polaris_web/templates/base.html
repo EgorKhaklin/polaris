@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Polaris{% endblock %} | Identity Token System</title>
+    {# Bump ?v= when editing CSS so dev browsers don't serve stale styles. #}
+    <link rel="stylesheet" href="{{ url_for('static', filename='polaris.css') }}?v=h0879a01">
+    {# v8.14 — sci-fi HD skin layer, loaded after polaris.css. Removing this <link> reverts. #}
+    <link rel="stylesheet" href="{{ url_for('static', filename='polaris-scifi.css') }}?v=hd06c18a0">
+</head>
+<body class="theme-scifi{% block body_class %}{% endblock %}">
+    <header class="masthead">
+        <div class="masthead-inner">
+            <div class="brand">
+                <a href="{{ url_for('dashboard') if current_user else url_for('home') }}">
+                    <span class="brand-mark">POLARIS</span>
+                    <span class="brand-sub">Identity Token System</span>
+                </a>
+            </div>
+
+            {% if current_user %}
+                <nav class="primary-nav">
+                    <a href="{{ url_for('dashboard') }}">Dashboard</a>
+                    <a href="{{ url_for('atlas') }}" class="nav-atlas">Atlas</a>
+                    <a href="{{ url_for('individuals_list') }}">Individuals</a>
+                    <a href="{{ url_for('agencies_list') }}">Agencies</a>
+                    <a href="{{ url_for('tokens_list') }}">Tokens</a>
+                    <a href="{{ url_for('verifications_list') }}">Verifications</a>
+                    {% if current_user.role in ('admin', 'auditor') %}
+                        <a href="{{ url_for('sql_query') }}">SQL Console</a>
+                    {% endif %}
+                    {% if current_user.role in ('admin', 'operator', 'auditor') %}
+                        <details class="nav-uc-menu">
+                            <summary class="nav-uc-summary">SUBSTRATE</summary>
+                            <div class="nav-uc-panel" role="menu">
+                                <a href="{{ url_for('anchors_list') }}" class="nav-uc-item" role="menuitem">
+                                    <span class="uc-id">R10-2</span>
+                                    <span class="uc-name">Anchor Batches</span>
+                                </a>
+                                <a href="{{ url_for('epochs_list') }}" class="nav-uc-item" role="menuitem">
+                                    <span class="uc-id">R10-1</span>
+                                    <span class="uc-name">ZK Epochs</span>
+                                </a>
+                                <a href="{{ url_for('federation_viewer') }}" class="nav-uc-item" role="menuitem">
+                                    <span class="uc-id">R11-3</span>
+                                    <span class="uc-name">Federation</span>
+                                </a>
+                            </div>
+                        </details>
+                        <details class="nav-uc-menu">
+                            <summary class="nav-uc-summary">USE CASES</summary>
+                            <div class="nav-uc-panel" role="menu">
+                                {# Numeric ordering: UC-1, UC-4, UC-5, UC-6, UC-7, UC-8, UC-9, UC-12.
+                                   Each item carries its own role gate so the visible order stays
+                                   numeric regardless of which roles the viewer holds. #}
+                                {% if current_user.role in ('admin', 'operator') %}
+                                    <a href="{{ url_for('uc1_issue') }}" class="nav-uc-item" role="menuitem">
+                                        <span class="uc-id">UC-1</span>
+                                        <span class="uc-name">Issue</span>
+                                    </a>
+                                    <a href="{{ url_for('uc4_activate_reserve') }}" class="nav-uc-item" role="menuitem">
+                                        <span class="uc-id">UC-4</span>
+                                        <span class="uc-name">Activate Reserve</span>
+                                    </a>
+                                    <a href="{{ url_for('uc5_bind_device') }}" class="nav-uc-item" role="menuitem">
+                                        <span class="uc-id">UC-5</span>
+                                        <span class="uc-name">Bind Device</span>
+                                    </a>
+                                    <a href="{{ url_for('uc6_migrate') }}" class="nav-uc-item" role="menuitem">
+                                        <span class="uc-id">UC-6</span>
+                                        <span class="uc-name">Migrate Alg</span>
+                                    </a>
+                                {% endif %}
+                                {% if current_user.role in ('admin', 'auditor') %}
+                                    <a href="{{ url_for('uc7_warrant_audit') }}" class="nav-uc-item" role="menuitem">
+                                        <span class="uc-id">UC-7</span>
+                                        <span class="uc-name">Warrant Audit</span>
+                                    </a>
+                                {% endif %}
+                                {% if current_user.role in ('admin', 'operator') %}
+                                    <a href="{{ url_for('uc8_revoke') }}" class="nav-uc-item" role="menuitem">
+                                        <span class="uc-id">UC-8</span>
+                                        <span class="uc-name">Revoke</span>
+                                    </a>
+                                    <a href="{{ url_for('uc9_queue') }}" class="nav-uc-item" role="menuitem">
+                                        <span class="uc-id">UC-9</span>
+                                        <span class="uc-name">Recovery</span>
+                                    </a>
+                                {% endif %}
+                                {% if current_user.role in ('admin', 'auditor') %}
+                                    <a href="{{ url_for('duress_dashboard') }}" class="nav-uc-item" role="menuitem">
+                                        <span class="uc-id">UC-12</span>
+                                        <span class="uc-name">Duress Signals</span>
+                                    </a>
+                                {% endif %}
+                            </div>
+                        </details>
+                    {% endif %}
+                </nav>
+
+                <div class="user-strip">
+                    <span class="user-name">{{ current_user.username }}</span>
+                    <span class="user-role role-{{ current_user.role }}">{{ current_user.role|upper }}</span>
+                    <a href="{{ url_for('webauthn_settings') }}" class="user-strip-link"
+                       title="Account settings (WebAuthn enrollment)">⚙</a>
+                    <form method="post" action="{{ url_for('logout') }}" style="display:inline;">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="btn-logout" title="Sign out">⏻</button>
+                    </form>
+                </div>
+            {% endif %}
+        </div>
+    </header>
+
+    <main class="content">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="flash-region">
+                    {% for category, message in messages %}
+                        <div class="flash flash-{{ category }}">
+                            <span class="flash-icon">{% if category == 'success' %}✓{% elif category == 'error' %}✕{% else %}ⓘ{% endif %}</span>
+                            <span class="flash-text">{{ message }}</span>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
+
+        {% block content %}{% endblock %}
+    </main>
+
+    <footer class="page-footer">
+        <span>Polaris Identity Token System</span>
+        <span class="footer-sep">·</span>
+        <span>Schema v1.0</span>
+        <span class="footer-sep">·</span>
+        <span class="footer-motto">Fixus inter mutabilia</span>
+    </footer>
+    {% block scripts %}{% endblock %}
+
+    <script src="{{ url_for('static', filename='heartbeat.js') }}?v=heart002" defer></script>
+    <script src="{{ url_for('static', filename='flash-dismiss.js') }}?v=flash001" defer></script>
+    <script src="{{ url_for('static', filename='nav-dropdown.js') }}?v=navdd001" defer></script>
+    <script src="{{ url_for('static', filename='confirm-submit.js') }}?v=conf001" defer></script>
+</body>
+</html>

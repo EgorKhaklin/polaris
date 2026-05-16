@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}SQL Console{% endblock %}
+{% block content %}
+<h1>SQL Console</h1>
+<p class="subtitle">
+    Read-only query interface against the polaris_test database. Only <code>SELECT</code> and
+    <code>WITH</code> queries are accepted; the <code>polaris_app</code> role has no DDL privileges.
+    Queries are capped at <code>{{ max_length }}</code> characters and <code>{{ (timeout_ms/1000)|int }}s</code> execution time.
+</p>
+
+<form method="post" class="standard wide">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="form-row">
+        <div class="form-group full">
+            <label for="sql">SQL Query</label>
+            <textarea id="sql" name="sql" class="sql" maxlength="{{ max_length }}"
+                      placeholder="SELECT * FROM Individual ORDER BY individual_id;">{{ sql }}</textarea>
+        </div>
+    </div>
+    <div class="form-actions">
+        <button type="submit" class="btn">Execute Query</button>
+        <button type="submit" name="explain" value="1" class="btn btn-secondary">EXPLAIN ANALYZE</button>
+        <a href="{{ url_for('sql_query') }}" class="btn btn-secondary">Clear</a>
+        {% if explain_mode %}
+            <span style="color: var(--gold); font-size: 12px; margin-left: 12px; font-weight: 600;">
+                ℹ Showing query plan and runtime statistics
+            </span>
+        {% endif %}
+    </div>
+</form>
+
+{% if error %}
+    <div class="sql-error">{{ error }}</div>
+{% endif %}
+
+{% if results is not none %}
+    <h2>{% if explain_mode %}Query Plan{% else %}Results{% endif %} ({{ results|length }} row{{ '' if results|length == 1 else 's' }})</h2>
+    <div class="sql-results">
+        <table class="data">
+            <thead>
+                <tr>
+                    {% for col in columns %}
+                        <th>{{ col }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in results %}
+                    <tr>
+                        {% for col in columns %}
+                            <td class="mono">
+                                {%- if row[col] is none %}<em style="color: var(--steel-light);">NULL</em>
+                                {%- else %}{{ row[col] }}
+                                {%- endif %}
+                            </td>
+                        {% endfor %}
+                    </tr>
+                {% else %}
+                    <tr><td colspan="{{ columns|length }}" class="empty">Query returned 0 rows.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+{% endif %}
+
+<details class="example-list">
+    <summary>Example Queries (click to expand)</summary>
+    {% for label, query_text in examples %}
+        <div class="example-item">
+            <div class="ex-label">{{ label }}</div>
+            <pre>{{ query_text }}</pre>
+        </div>
+    {% endfor %}
+</details>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='sql-console.js') }}?v=sql001" defer></script>
+{% endblock %}

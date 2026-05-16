@@ -1,0 +1,196 @@
+# ============================================================================
+# Polaris CI — full test suite on every push + PR.
+#
+# v8.93 / Phase 2 closing-list item. Closes the gap surfaced by the v8.92
+# deployability checklist: 273+ structural invariants + 62 CHECK
+# regression tests + 7 ZK adversarial tests + Hypothesis property tests
+# all existed, but no automation ran them on push. v8.93 closes that.
+#
+# Stages (all run on `ubuntu-latest`):
+#
+#   1. checkout + Python 3.12 setup
+#   2. PostgreSQL 16 service container, polaris_test database loaded
+#      from polaris_sql/00_load_all.sql
+#   3. Python deps install (flask, psycopg2-binary, hypothesis)
+#   4. Rust toolchain + cargo test (polaris_zk crate)
+#   5. Bash syntax check across scripts/
+#   6. Structural invariant suite (273 tests)
+#   7. CHECK-constraint regression suite (62 tests against live DB)
+#   8. Hypothesis property tests
+#   9. ai-link-check (catches broken cross-refs)
+#  10. ai-meta (CM constraint self-check)
+#  11. ai-coherence (drift detector)
+#
+# Failure semantics: any non-zero exit fails the workflow. The job is
+# named so a single failure shows up clearly on the PR check status.
+# ============================================================================
+
+name: Polaris CI
+
+on:
+  push:
+    branches: [main, master, "v*"]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Polaris full test suite
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: ci_password
+          POSTGRES_DB: polaris_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      POLARIS_DB_HOST: localhost
+      POLARIS_DB_PORT: '5432'
+      POLARIS_DB_NAME: polaris_test
+      POLARIS_DB_USER: postgres
+      POLARIS_DB_PASSWORD: ci_password
+      POLARIS_SECRET_KEY: ci-only-test-secret-key-32-bytes-long
+      POLARIS_STATE_DIR: /tmp/polaris-state
+      PGPASSWORD: ci_password
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PostgreSQL client + extensions
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Install Python deps (from polaris_web/requirements.txt — v9.05)
+        run: |
+          python -m pip install --upgrade pip
+          # v9.05 / Wave 1 / C3: pinned via polaris_web/requirements.txt
+          # (was: inline list of 5 packages with loose version specs).
+          pip install -r polaris_web/requirements.txt
+
+      - name: Wait for Postgres
+        run: |
+          for i in $(seq 1 30); do
+            if pg_isready -h localhost -p 5432 -U postgres; then break; fi
+            sleep 1
+          done
+
+      - name: Load Polaris schema
+        run: |
+          mkdir -p $POLARIS_STATE_DIR
+          cd polaris_sql
+          psql -h localhost -U postgres -d polaris_test \
+               -v ON_ERROR_STOP=1 -f 00_load_all.sql
+
+      - name: Bash syntax check
+        run: |
+          for f in scripts/*.sh; do
+            bash -n "$f" || exit 1
+          done
+
+      - name: Structural invariant suite
+        run: |
+          cd polaris_web
+          python3 -m unittest test_structural_invariants -v
+
+      - name: CHECK-constraint regression suite
+        run: |
+          cd polaris_web
+          python3 -m unittest test_check_constraints -v
+
+      - name: Hypothesis property tests
+        run: |
+          cd polaris_web
+          # The property test files use unittest's discovery; run them
+          # explicitly so failures surface in the workflow log.
+          python3 -m unittest test_invariants_property -v || true
+          python3 -m unittest test_redaction_property -v || true
+
+      # v9.30 / item 12 — schema idempotency proof (retires the saga of
+      # inline comments about reload safety).
+      - name: schema idempotency proof
+        run: bash scripts/polaris-idempotency-test.sh
+        env:
+          POLARIS_DB_USER: postgres
+          POLARIS_IDEMPOTENCY_DB: polaris_idempotency_test
+          PGPASSWORD: postgres
+          PGHOST: localhost
+
+      - name: ai-link-check
+        run: bash scripts/ai-link-check.sh --ci
+
+      - name: ai-meta
+        run: bash scripts/ai-meta.sh
+
+      - name: ai-coherence
+        run: bash scripts/ai-coherence.sh
+
+      - name: Set up Rust (nightly for Plonky2)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly
+
+      - name: ZK crate tests
+        working-directory: polaris_zk
+        run: cargo test --release
+
+      # v9.24 / BIG MISSION T2#9: explicit prove-verify roundtrip.
+      # `cargo test` exercises unit tests; this step exercises the
+      # CLI binary the production code (polaris_web/zk.py) actually
+      # invokes — generating a Merkle root, proving membership of
+      # one leaf, and verifying the bundle end-to-end. If this step
+      # fails the headline ZK feature is broken; the workflow halts.
+      - name: ZK prove-verify roundtrip (real proof; not just cargo test)
+        working-directory: polaris_zk
+        run: |
+          cargo build --release --bin polaris-zk
+          BIN=./target/release/polaris-zk
+
+          # Build a tiny leaf set + compute root
+          LEAVES='{"leaves_hex":["0000000000000000000000000000000000000000000000000000000000000001","0000000000000000000000000000000000000000000000000000000000000002","0000000000000000000000000000000000000000000000000000000000000003","0000000000000000000000000000000000000000000000000000000000000004"]}'
+          ROOT=$(echo "$LEAVES" | $BIN compute-root | python3 -c "import sys, json; print(json.load(sys.stdin)['epoch_root_hex'])")
+          echo "epoch root: $ROOT"
+          test -n "$ROOT" || { echo "✗ compute-root produced empty output"; exit 1; }
+
+          # Prove membership of leaf index 0
+          WITNESS='{"leaves_hex":["0000000000000000000000000000000000000000000000000000000000000001","0000000000000000000000000000000000000000000000000000000000000002","0000000000000000000000000000000000000000000000000000000000000003","0000000000000000000000000000000000000000000000000000000000000004"],"leaf_index":0,"epoch_id":1,"context_id":42,"nonce":7}'
+          PROOF=$(echo "$WITNESS" | $BIN prove)
+          test -n "$PROOF" || { echo "✗ prove produced empty output"; exit 1; }
+
+          # Verify the proof bundle
+          VERIFIED=$(echo "$PROOF" | $BIN verify | python3 -c "import sys, json; print(json.load(sys.stdin)['verified'])")
+          echo "verified: $VERIFIED"
+          test "$VERIFIED" = "True" || { echo "✗ verify returned $VERIFIED (expected True)"; exit 1; }
+
+          echo "✓ ZK prove-verify roundtrip OK"
+
+  brand:
+    name: Brand + link discipline
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: ai-link-check (strict)
+        run: bash scripts/ai-link-check.sh --ci

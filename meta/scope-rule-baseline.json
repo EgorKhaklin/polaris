@@ -1,0 +1,10 @@
+{
+  "_doc": "Scope-rule baseline pinned by scripts/pre-commit-scope-check.sh --rebase-baseline. The ratio_ceiling is current narrative/core word ratio + 0.10 headroom. Future commits must keep narrative/core <= ratio_ceiling. Edit only via --rebase-baseline.",
+  "rebased_at": "2026-05-16T06:08:54Z",
+  "current_ratio": 0.609,
+  "ratio_ceiling": 0.709,
+  "narrative_words": 253864,
+  "core_words": 416701,
+  "narrative_dirs": ["meta DEVNOTES journal sanctum proposals"],
+  "core_dirs": ["polaris_sql polaris_web polaris_hydra polaris_swarm polaris_foresight polaris_cli polaris_zk scripts"]
+}

@@ -1,0 +1,211 @@
+"""polaris_web/pqc_signing.py — real ML-DSA-65 (FIPS 204) signing path.
+
+v9.24 / BIG MISSION Tier 2 #7. Until this module, Polaris's headline
+post-quantum claim was rendered by a deterministic string in
+`token_value`. The Anti-Architect's AP8 (larping) detector named this
+as the most damning critique: "the system's headline claim is post-
+quantum signing and it is currently a deterministic string."
+
+This module integrates the FIPS 204 (ML-DSA-65) signing path via
+liboqs-python (the Open Quantum Safe project's Python binding to the
+liboqs C library). It is **gated behind POLARIS_USE_REAL_PQC=1**
+(default OFF) so operators opt in deliberately after verifying their
+deployment has the native library installed.
+
+**Activation procedure (operator):**
+
+    1. Install native liboqs (apt-get install liboqs-dev or build from
+       https://github.com/open-quantum-safe/liboqs)
+    2. pip install oqs (or pip install liboqs-python)
+    3. Verify: python3 -c "import polaris_web.pqc_signing as p; print(p.availability_report())"
+    4. Set POLARIS_USE_REAL_PQC=1 in production env
+    5. New token issuance writes real signatures; verification rejects
+       tampered tokens; rotation works via CryptographicAlgorithm row updates
+
+**Honest accounting (per the Anti-Architect's joint resolution):**
+
+This module ships the integration. It does NOT migrate existing
+tokens. Pre-v9.24 tokens carry deterministic `token_value` strings;
+the verifier accepts them as a legacy class. The migration to
+all-real-signatures is a separate operator decision documented in
+docs/operator/PQC-MIGRATION.md.
+
+**If `oqs` is not importable**, `is_available()` returns False and
+`sign()` raises `PQCUnavailableError`. The flag-off default means
+the rest of Polaris is unaffected. With flag-on but oqs missing,
+token issuance fails fast (loud) rather than silently falling back
+to the deterministic stub.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import os
+from dataclasses import dataclass
+from typing import Optional
+
+
+class PQCUnavailableError(RuntimeError):
+    """Raised when POLARIS_USE_REAL_PQC=1 but oqs is not importable."""
+
+
+# Detect liboqs-python at import time (defer ImportError so module
+# always imports — callers introspect via is_available()).
+_OQS_AVAILABLE = False
+_OQS_IMPORT_ERROR: Optional[str] = None
+_OQS_VERSION: Optional[str] = None
+
+try:
+    import oqs  # type: ignore
+    _OQS_AVAILABLE = True
+    _OQS_VERSION = getattr(oqs, "__version__", "unknown")
+except ImportError as e:
+    _OQS_IMPORT_ERROR = str(e)
+    _OQS_AVAILABLE = False
+
+
+# FIPS 204 algorithm identifier used by liboqs (per OQS naming)
+_ALG_NAME = "ML-DSA-65"
+
+
+@dataclass(frozen=True)
+class SigningResult:
+    """One signed token's outputs.
+
+    `algorithm_name` ties to the CryptographicAlgorithm table row (C7).
+    `public_key_hex` is the verifier's lookup key.
+    `signature_hex` is what gets stored alongside token_value.
+    `message_hash_hex` is the hash that was signed (sha3_256(token_value)).
+    """
+    algorithm_name: str
+    public_key_hex: str
+    signature_hex: str
+    message_hash_hex: str
+
+
+def is_available() -> bool:
+    """True iff liboqs-python is importable.
+
+    Cheap; safe to call from request paths to short-circuit.
+    """
+    return _OQS_AVAILABLE
+
+
+def is_enabled() -> bool:
+    """True iff POLARIS_USE_REAL_PQC=1 AND oqs is available.
+
+    Production check — issuance code uses this as the gate. The flag
+    must be set explicitly; we never silently enable.
+    """
+    flag_set = os.environ.get("POLARIS_USE_REAL_PQC", "0") == "1"
+    return flag_set and _OQS_AVAILABLE
+
+
+def availability_report() -> dict:
+    """Structured introspection for operators + CI.
+
+    Used by `scripts/polaris-pqc-status.sh` to render a clear
+    operator message.
+    """
+    return {
+        "module_imported": True,
+        "oqs_available": _OQS_AVAILABLE,
+        "oqs_version": _OQS_VERSION,
+        "oqs_import_error": _OQS_IMPORT_ERROR,
+        "flag_set": os.environ.get("POLARIS_USE_REAL_PQC", "0") == "1",
+        "is_enabled": is_enabled(),
+        "algorithm": _ALG_NAME,
+        "notes": (
+            "Per BIG MISSION v9.24 Sanctum T2#7: real signing ships as "
+            "scaffolding behind POLARIS_USE_REAL_PQC=1. Migration of "
+            "existing token_value entries is a separate operator decision."
+        ),
+    }
+
+
+def sign(message: bytes) -> SigningResult:
+    """Sign `message` with ML-DSA-65.
+
+    Raises PQCUnavailableError if oqs is not importable.
+    Raises RuntimeError if liboqs reports any internal failure.
+
+    Returns SigningResult with public_key, signature, message hash.
+    For now generates a fresh keypair per call; production should
+    use a long-lived key bound to the issuing agency (see
+    docs/operator/PQC-MIGRATION.md).
+    """
+    if not _OQS_AVAILABLE:
+        raise PQCUnavailableError(
+            f"liboqs-python is not importable: {_OQS_IMPORT_ERROR}. "
+            "Install per polaris_web/pqc_signing.py module docstring."
+        )
+
+    # Deferred import (mypy/IDE don't see it pre-import)
+    import oqs as _oqs  # type: ignore
+
+    # SHA3-256 the message for binding to a fixed-size digest
+    digest = hashlib.sha3_256(message).digest()
+
+    # Generate a fresh keypair (in production, this is per-agency long-lived)
+    with _oqs.Signature(_ALG_NAME) as signer:
+        public_key = signer.generate_keypair()
+        signature = signer.sign(digest)
+
+    return SigningResult(
+        algorithm_name=_ALG_NAME,
+        public_key_hex=public_key.hex(),
+        signature_hex=signature.hex(),
+        message_hash_hex=digest.hex(),
+    )
+
+
+def verify(
+    message: bytes,
+    signature_hex: str,
+    public_key_hex: str,
+) -> bool:
+    """Verify a signature against (message, public_key).
+
+    Returns True if the signature is valid. Returns False on any
+    verification failure (does NOT raise — verification is a binary
+    yes/no for the calling code).
+
+    Raises PQCUnavailableError if oqs is not importable.
+    """
+    if not _OQS_AVAILABLE:
+        raise PQCUnavailableError(
+            f"liboqs-python is not importable: {_OQS_IMPORT_ERROR}"
+        )
+
+    import oqs as _oqs  # type: ignore
+
+    digest = hashlib.sha3_256(message).digest()
+    try:
+        public_key = bytes.fromhex(public_key_hex)
+        signature = bytes.fromhex(signature_hex)
+    except ValueError:
+        return False
+
+    try:
+        with _oqs.Signature(_ALG_NAME) as verifier:
+            return verifier.verify(digest, signature, public_key)
+    except Exception:
+        return False
+
+
+def smoke_test() -> bool:
+    """Roundtrip: sign + verify a known message.
+
+    Returns True if both succeed and verifier accepts. Used by CI
+    and by scripts/polaris-pqc-status.sh to confirm working state.
+    Returns False on any failure (graceful — caller decides whether
+    to escalate).
+    """
+    if not _OQS_AVAILABLE:
+        return False
+    msg = b"polaris-pqc-smoke-test-v9.24"
+    try:
+        result = sign(msg)
+        return verify(msg, result.signature_hex, result.public_key_hex)
+    except Exception:
+        return False

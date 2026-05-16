@@ -1,0 +1,204 @@
+# ============================================================================
+# Polaris — Production Docker Compose (Arc B Phase 1, v8.77)
+#
+# Stack: Caddy (TLS) + app (gunicorn) + Postgres 16 + Redis 7
+#
+# G27: TLS is required — Caddy provisions Let's Encrypt cert for POLARIS_DOMAIN
+# G28: Sensitive secrets are FILE-MOUNTED at /run/secrets/*, never `environment:`
+# G29: app exposes structured /api/health JSON (per-component checks)
+#
+# Bring up:
+#     export POLARIS_DOMAIN=polaris.example.com
+#     ../scripts/polaris-generate-secrets.sh   # one-time
+#     docker compose -f docker-compose.prod.yml up -d
+#
+# Smoke:
+#     curl -fsS https://${POLARIS_DOMAIN}/api/health | jq .
+# ============================================================================
+
+services:
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: polaris-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"          # HTTP/3
+    environment:
+      POLARIS_DOMAIN: ${POLARIS_DOMAIN:?POLARIS_DOMAIN must be set in shell env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+      - ./logs:/var/log/caddy
+    depends_on:
+      app:
+        condition: service_healthy
+    networks:
+      - polaris-net
+
+  app:
+    image: polaris-app:prod
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    container_name: polaris-app
+    restart: unless-stopped
+    depends_on:
+      pgbouncer:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # Non-sensitive runtime config (G28: nothing here is sensitive)
+      # v8.83: app talks to pgbouncer:6432, which multiplexes onto
+      # postgres:5432. Connection-pooling foundations for Arc B Phase 2.
+      POLARIS_DB_HOST: pgbouncer
+      POLARIS_DB_PORT: '6432'
+      POLARIS_DB_NAME: polaris
+      POLARIS_DB_USER: polaris_app
+      POLARIS_DB_PASSWORD_FILE: /run/secrets/polaris_db_password
+      POLARIS_SECRET_KEY_FILE: /run/secrets/polaris_secret_key
+      POLARIS_REDIS_HOST: redis
+      POLARIS_REDIS_PORT: '6379'
+      POLARIS_PORT: '8000'
+      POLARIS_STATE_DIR: /var/lib/polaris/state
+      POLARIS_ENV: production
+      POLARIS_ZK_BINARY: /opt/polaris/zk
+      WEB_CONCURRENCY: ${WEB_CONCURRENCY:-4}
+    secrets:
+      - polaris_secret_key
+      - polaris_db_password
+    volumes:
+      - polaris_state:/var/lib/polaris/state
+      - ./logs:/var/log/polaris
+      - ../sanctum:/opt/polaris/sanctum:ro
+      - ../journal:/opt/polaris/journal:ro
+    networks:
+      - polaris-net
+    # No `ports:` block here — app is only reachable via Caddy
+
+  # ----------------------------------------------------------------------
+  # pgbouncer — Arc B Phase 2 connection pooler (v8.83)
+  #
+  # Multiplexes thousands of short-lived app connections onto a handful
+  # of long-lived Postgres backends. Transaction-pooling mode (one
+  # backend per transaction); compatible with Polaris's per-request
+  # connection pattern. Userlist is file-mounted from ./secrets/.
+  #
+  # See `docs/operator/OPERATIONS.md` § Scaling for tuning notes.
+  # ----------------------------------------------------------------------
+  pgbouncer:
+    image: bitnami/pgbouncer:1.22
+    container_name: polaris-pgbouncer
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGBOUNCER_DATABASE: polaris
+      POSTGRESQL_HOST: postgres
+      POSTGRESQL_PORT: 5432
+      POSTGRESQL_DATABASE: polaris
+      POSTGRESQL_USERNAME: polaris_app
+      POSTGRESQL_PASSWORD_FILE: /run/secrets/polaris_db_password
+      PGBOUNCER_POOL_MODE: transaction
+      PGBOUNCER_DEFAULT_POOL_SIZE: 20
+      PGBOUNCER_MIN_POOL_SIZE: 5
+      PGBOUNCER_RESERVE_POOL_SIZE: 5
+      PGBOUNCER_MAX_CLIENT_CONN: 500
+      PGBOUNCER_MAX_DB_CONNECTIONS: 50
+      PGBOUNCER_AUTH_TYPE: scram-sha-256
+      PGBOUNCER_IGNORE_STARTUP_PARAMETERS: extra_float_digits
+    secrets:
+      - polaris_db_password
+    networks:
+      - polaris-net
+    # No `ports:` block — pgbouncer is reachable only from inside the
+    # polaris-net network. App connects to pgbouncer:6432.
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: polaris-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: polaris
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD_FILE: /run/secrets/polaris_db_root_password
+      POSTGRES_HOST_AUTH_METHOD: scram-sha-256
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+    secrets:
+      - polaris_db_password
+      - polaris_db_root_password
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+      - ../polaris_sql:/docker-entrypoint-initdb.d/sql:ro
+      - ./docker-init.sh:/docker-entrypoint-initdb.d/00-init.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d polaris"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - polaris-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: polaris-redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - polaris-net
+
+# ----------------------------------------------------------------------------
+# Secrets — file-mounted from ./secrets/ on the host (G28)
+#
+# Generation: ../scripts/polaris-generate-secrets.sh
+# Rotation:   ../scripts/polaris-rotate-secret.sh <name>
+# ----------------------------------------------------------------------------
+secrets:
+  polaris_secret_key:
+    file: ./secrets/polaris_secret_key
+  polaris_db_password:
+    file: ./secrets/polaris_db_password
+  polaris_db_root_password:
+    file: ./secrets/polaris_db_root_password
+
+# ----------------------------------------------------------------------------
+# Volumes (named; survive `down`, destroyed by `down -v`)
+# ----------------------------------------------------------------------------
+volumes:
+  pg_data:
+    driver: local
+  redis_data:
+    driver: local
+  caddy_data:
+    driver: local
+  caddy_config:
+    driver: local
+  polaris_state:
+    driver: local
+
+# ----------------------------------------------------------------------------
+# Network (internal; only Caddy exposes ports to the host)
+# ----------------------------------------------------------------------------
+networks:
+  polaris-net:
+    driver: bridge

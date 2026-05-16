@@ -1,0 +1,357 @@
+{% extends "base.html" %}
+{% block title %}Demo — Token lifecycle{% endblock %}
+{% block body_class %} body-demo{% endblock %}
+{% block content %}
+
+<section class="demo-hero" aria-labelledby="demo-title">
+    <p class="demo-eyebrow">DEMO · no sign-in needed · synthetic data only</p>
+    <h1 id="demo-title" class="demo-title">A token's life, four steps.</h1>
+    <p class="demo-subtitle">
+        Polaris is the anti-coercion identity substrate. The deepest
+        constraint, deeper than C1-C10, is that no person be
+        compellable into renouncing, transferring, or surrendering
+        their identity against their will. The four steps below show
+        the lifecycle of a single token through that lens. Every
+        procedure shown is real; every constraint named is enforced
+        at the database layer; every audit row is append-only. For a
+        live operator view, <a href="{{ url_for('login') }}">sign
+        in</a>.
+    </p>
+
+    <div class="demo-stepnav" role="tablist" aria-label="Demo steps">
+        <a href="#step-issue" class="demo-stepnav-link" role="tab" data-step="1">
+            <span class="step-num">1</span><span class="step-name">Issue</span>
+        </a>
+        <a href="#step-activate" class="demo-stepnav-link" role="tab" data-step="2">
+            <span class="step-num">2</span><span class="step-name">Activate</span>
+        </a>
+        <a href="#step-verify" class="demo-stepnav-link" role="tab" data-step="3">
+            <span class="step-num">3</span><span class="step-name">Verify</span>
+        </a>
+        <a href="#step-revoke" class="demo-stepnav-link" role="tab" data-step="4">
+            <span class="step-num">4</span><span class="step-name">Revoke</span>
+        </a>
+    </div>
+</section>
+
+<!-- STEP 1 — ISSUE -->
+<section id="step-issue" class="demo-step" aria-labelledby="step-issue-title">
+    <header class="demo-step-header">
+        <span class="demo-step-number">Step 1</span>
+        <h2 id="step-issue-title" class="demo-step-title">Issue</h2>
+        <p class="demo-step-lede">
+            An authorized agency issues an identity token for an
+            individual. <code>uc1_issue_and_activate</code> is the
+            single-shot path that creates the Individual + IdentityToken
+            + first TokenLifecycleEvent in one atomic transaction.
+            The post-quantum algorithm is bound by reference, not
+            hardcoded.
+        </p>
+    </header>
+
+    <div class="demo-step-grid">
+        <div class="demo-pane demo-pane-procedure">
+            <h3>Procedure</h3>
+            <pre><code>SELECT uc1_issue_and_activate(
+    p_legal_name             := 'Maria Santos',
+    p_dob                    := '1992-03-14',
+    p_jurisdiction           := 'US-PA',
+    p_issuing_agency_id      := 1,    -- US National Identity Service
+    p_algorithm_id           := 1,    -- ML-DSA-65 (post-quantum)
+    p_biometric_binding_type := 'FINGERPRINT',
+    p_witness_agency_id      := 2,
+    p_liveness_check_type    := 'MULTI_MODAL',
+    p_token_value            := 'PSV-2026-MS-0007',
+    p_physical_serial        := 'NTS-AX44-019',
+    p_hardware_model         := 'NeoSecure GX-2',
+    p_permitted_contexts     := ARRAY[1, 3, 5]
+) AS new_token_id;</code></pre>
+        </div>
+
+        <div class="demo-pane demo-pane-effect">
+            <h3>Effect</h3>
+            <ul class="demo-effect-list">
+                <li>Inserts <code>Individual</code> + <code>IdentityToken</code> rows atomically</li>
+                <li>Token status: <code>ACTIVE</code> on first issuance (v8.18 multi-signature migration semantics)</li>
+                <li>Trigger appends <code>TokenLifecycleEvent { event_type: 'ISSUED' }</code></li>
+                <li>FK to <code>CryptographicAlgorithm</code> — algorithm rotates by column update, not code deploy</li>
+                <li>TokenPermission rows created for each permitted VerificationContext</li>
+            </ul>
+        </div>
+
+        <div class="demo-pane demo-pane-constraint">
+            <h3>What's enforced</h3>
+            <p>
+                <strong>C7</strong> — no hardcoded crypto. The token
+                references <code>algorithm_id = 1</code>; the operator
+                chose post-quantum ML-DSA-65 at issuance. Rotating to
+                ML-DSA-87 or SLH-DSA is a row update in
+                <code>CryptographicAlgorithm</code>, not a redeploy.
+            </p>
+            <p>
+                <strong>C1</strong> — issuance is recorded permanently.
+                The lifecycle row cannot be UPDATEd or DELETEd after
+                COMMIT; the append-only trigger raises
+                <code>insufficient_privilege</code>. Audit-of-record
+                (v8.20) is constitutional.
+            </p>
+        </div>
+    </div>
+</section>
+
+<!-- STEP 2 — ACTIVATE (successor path; R11-2 recovery semantics) -->
+<section id="step-activate" class="demo-step demo-step-alt" aria-labelledby="step-activate-title">
+    <header class="demo-step-header">
+        <span class="demo-step-number">Step 2</span>
+        <h2 id="step-activate-title" class="demo-step-title">Activate (successor)</h2>
+        <p class="demo-step-lede">
+            A holder loses their token and a successor must take its
+            place. <code>uc4_activate_reserve</code> is the two-stage
+            path: a RESERVE successor token already exists (issued
+            ahead of time per R11-2); this call atomically marks the
+            lost token as <code>LOST</code> + flips the reserve to
+            <code>ACTIVE</code>. Optional: enroll a duress code on
+            the new token for the v8.24 anti-coercion primitive
+            (R11-5).
+        </p>
+    </header>
+
+    <div class="demo-step-grid">
+        <div class="demo-pane demo-pane-procedure">
+            <h3>Procedure</h3>
+            <pre><code>SELECT uc4_activate_reserve(
+    p_lost_token_id      := 27,
+    p_actor_agency_id    := 1,
+    p_reason_code        := 'LOST_IN_TRANSIT',
+    p_reserve_token_id   := 42,
+    p_published_location := 'CRL/2026-05-15/CA-12'
+) AS activated_token_id;
+
+-- Optional: enroll duress code on the new token (R11-5).
+UPDATE IdentityToken
+   SET duress_code_hash = ('scrypt:32768:8:1$' || …)
+ WHERE token_id = 42;</code></pre>
+        </div>
+
+        <div class="demo-pane demo-pane-effect">
+            <h3>Effect</h3>
+            <ul class="demo-effect-list">
+                <li>Lost token transitions <code>ACTIVE → LOST</code> (terminal; lifecycle event appended)</li>
+                <li>Reserve token transitions <code>RESERVE → ACTIVE</code> (lifecycle event appended)</li>
+                <li>Partial unique index <code>uq_one_active_per_person</code> attempts the insert atomically</li>
+                <li>RevocationList row appended for the lost token (CRL pointer)</li>
+                <li>If duress code enrolled: <code>duress_code_hash</code> set; verifications now check it constant-time (R11-5)</li>
+            </ul>
+        </div>
+
+        <div class="demo-pane demo-pane-constraint">
+            <h3>What's enforced</h3>
+            <p>
+                <strong>C3</strong> — one ACTIVE token per individual.
+                The partial unique index keys on <code>(individual_id)
+                WHERE status = 'ACTIVE'</code>. Two operators racing
+                successor activation: one commits, the other gets a
+                23505 unique-violation.
+            </p>
+            <p>
+                <strong>R11-5</strong> — duress-code primitive
+                (v8.24, anti-coercion-direct). When set, the
+                verification flow checks the holder's typed duress
+                code against this hash with constant-time comparison.
+                A match silently records a DuressEvent + the
+                user-visible verification proceeds as normal (R2
+                anti-revealing posture: identical observable behavior).
+                The secret name that signals coercion without revealing
+                the signal.
+            </p>
+        </div>
+    </div>
+</section>
+
+<!-- STEP 3 — VERIFY (with v9.20 verification-purpose + audit-access) -->
+<section id="step-verify" class="demo-step" aria-labelledby="step-verify-title">
+    <header class="demo-step-header">
+        <span class="demo-step-number">Step 3</span>
+        <h2 id="step-verify-title" class="demo-step-title">Verify</h2>
+        <p class="demo-step-lede">
+            A relying agency checks the token. Three disclosure levels
+            available: <code>FULL</code> (full identity reveal),
+            <code>SELECTIVE</code> (named attributes only),
+            <code>ZERO_KNOWLEDGE</code> (proves a valid token exists,
+            reveals nothing else). v9.20 added two anti-coercion
+            audit surfaces to this step: an operator-supplied
+            <code>requesting_purpose_text</code> on each verification,
+            and a meta-audit table that records who-queried-audit-when.
+        </p>
+    </header>
+
+    <div class="demo-step-grid">
+        <div class="demo-pane demo-pane-procedure">
+            <h3>Procedure (FULL, with purpose)</h3>
+            <pre><code>INSERT INTO VerificationEvent (
+    token_id,
+    requesting_agency_id,
+    context_id,
+    outcome,
+    disclosure_level,
+    requestor_location,
+    requesting_purpose_text   -- v9.20
+) VALUES (
+    42,
+    4,    -- Transportation Security Admin
+    3,    -- TRAVEL context
+    'SUCCESS',
+    'FULL',
+    'JFK Terminal 4, gate B22',
+    'border crossing — random check'
+);</code></pre>
+            <h3>Procedure (ZERO_KNOWLEDGE)</h3>
+            <pre><code>INSERT INTO VerificationEvent (
+    token_id,            -- MUST be NULL for ZK (C2)
+    requesting_agency_id,
+    context_id,
+    outcome,
+    disclosure_level,
+    proof_commitment
+) VALUES (
+    NULL,
+    4, 3, 'SUCCESS', 'ZERO_KNOWLEDGE',
+    '0x' || encode(sha256_zk_proof, 'hex')
+);</code></pre>
+        </div>
+
+        <div class="demo-pane demo-pane-effect">
+            <h3>Effect</h3>
+            <ul class="demo-effect-list">
+                <li><code>VerificationEvent</code> row inserted (append-only by trigger)</li>
+                <li>FULL: <code>token_id</code> populated; full identity revealed via JOIN</li>
+                <li>SELECTIVE: <code>token_id</code> populated; permitted attributes only</li>
+                <li>ZK: <code>token_id IS NULL</code>; identity not derivable from the event</li>
+                <li>Federation gate: verifier must hold an active <code>AgencyTrustAttestation</code> toward the issuing agency for this context (R11-3)</li>
+                <li>Anti-coercion: the <code>requesting_purpose_text</code> is recorded permanently — a coerced verification leaves the coercer's stated context in the audit chain</li>
+                <li>Meta-audit (v9.20): any subsequent read of this row from an authorized operator is logged in <code>AuditAccessLog</code>, recording who-queried-when-and-why-filter</li>
+            </ul>
+        </div>
+
+        <div class="demo-pane demo-pane-constraint">
+            <h3>What's enforced</h3>
+            <p>
+                <strong>C2</strong> — ZK events cannot reveal identity.
+                Trigger raises if a ZK row INSERTs with non-null
+                <code>token_id</code>. Column-level CHECK repeats the
+                guarantee. A malicious DBA cannot insert a ZK event
+                with a token_id.
+            </p>
+            <p>
+                <strong>R11-3</strong> — federation gate. SUCCESS
+                outcomes require an active trust attestation from
+                the verifying agency toward the issuing agency for
+                the verification context. Cross-jurisdictional trust
+                is recorded; not assumed.
+            </p>
+            <p>
+                <strong>v9.20</strong> — verification-purpose lineage
+                + audit-access audit. Both anti-coercion-direct: the
+                first records WHY each verification happened (the
+                coercer's stated context); the second records WHO
+                looked at the audit trail later. The audit's audit.
+            </p>
+        </div>
+    </div>
+</section>
+
+<!-- STEP 4 — REVOKE -->
+<section id="step-revoke" class="demo-step demo-step-alt" aria-labelledby="step-revoke-title">
+    <header class="demo-step-header">
+        <span class="demo-step-number">Step 4</span>
+        <h2 id="step-revoke-title" class="demo-step-title">Revoke</h2>
+        <p class="demo-step-lede">
+            The token is revoked — compromised, lost, or superseded.
+            The row stays in the database with terminal status; the
+            data is never erased. <code>uc8_revoke_token</code> applies
+            the state transition + appends the lifecycle event + writes
+            a RevocationList CRL pointer. R11-6 issuer-discretion
+            policy fires if the issuing agency's recent revocation
+            rate exceeds its declared bound.
+        </p>
+    </header>
+
+    <div class="demo-step-grid">
+        <div class="demo-pane demo-pane-procedure">
+            <h3>Procedure</h3>
+            <pre><code>CALL uc8_revoke_token(
+    p_token_id           := 42,
+    p_actor_agency_id    := 1,
+    p_reason_code        := 'COMPROMISED',
+    p_published_location := 'CRL/2026-05-15/CA-12',
+    p_cosigner_agency_id := NULL    -- optional dual-sign
+);</code></pre>
+        </div>
+
+        <div class="demo-pane demo-pane-effect">
+            <h3>Effect</h3>
+            <ul class="demo-effect-list">
+                <li>Status transitions <code>ACTIVE → REVOKED</code> (legal edge per state-machine trigger)</li>
+                <li>Lifecycle row <code>REVOKED</code> appended with reason</li>
+                <li>RevocationList row appended (CRL pointer published)</li>
+                <li>R11-6 revocation-velocity trigger samples the issuing agency's recent rate; flags burst patterns if &gt; policy bound</li>
+                <li>Row stays — non-repudiation requires the historical record</li>
+            </ul>
+        </div>
+
+        <div class="demo-pane demo-pane-constraint">
+            <h3>What's enforced</h3>
+            <p>
+                <strong>C1</strong> — revocation is recorded, not
+                erased. The lifecycle event is append-only; the
+                IdentityToken row survives with terminal status.
+                An operator cannot tidy up a holder's history.
+            </p>
+            <p>
+                <strong>R11-6</strong> — issuer discretion policy.
+                Burst-revocation patterns from a single issuing
+                agency surface as a policy signal. The schema names
+                the abuse vector so governance can catch it.
+            </p>
+        </div>
+    </div>
+</section>
+
+<section class="demo-final" aria-labelledby="final-title">
+    <h2 id="final-title" class="demo-section-title">What you just saw</h2>
+    <p>
+        Four procedures called. Four rows appended to audit tables.
+        Constraints enforced at the database layer — C1, C2, C3, C7,
+        R11-3, R11-5, R11-6. Zero opportunities for the application
+        code to silently violate the schema's invariants.
+    </p>
+    <p>
+        The walkthrough is synthetic, but the procedures, triggers,
+        and constraints are not. They live in
+        <code>polaris_sql/05_procedures.sql</code> + <code>06_triggers.sql</code>;
+        the corresponding schema lives in <code>polaris_sql/01_schema.sql</code>;
+        the test suite (924 Python tests + 689 structural invariants
+        + 171 SQL self-tests + 19 Hypothesis property tests) runs them
+        every release. The data model is documented at
+        <a href="https://github.com/anthropics/polaris/blob/main/docs/reference/DATA-MODEL.md"><code>docs/reference/DATA-MODEL.md</code></a>
+        in the repository.
+    </p>
+    <p>
+        The <strong>anti-coercion vocation</strong> Polaris serves
+        runs through every step: post-quantum crypto (C7) protects
+        against future cryptanalytic coercion; append-only audit (C1)
+        prevents silent rewriting of history; one-ACTIVE-per-individual
+        (C3) prevents identity duplication attacks; ZK disclosure (C2)
+        prevents downstream surveillance; duress codes (R11-5) give
+        holders a silent signal under physical coercion; verification-
+        purpose lineage (v9.20) records the coercer's stated context;
+        audit-access audit (v9.20) records who later looked at all
+        of it. Each is necessary; none alone is sufficient.
+    </p>
+
+    <div class="demo-final-cta">
+        <a href="{{ url_for('login') }}" class="btn btn-gold">Sign in to operate</a>
+        <a href="{{ url_for('home') }}" class="btn btn-ghost">Back to overview</a>
+    </div>
+</section>
+{% endblock %}

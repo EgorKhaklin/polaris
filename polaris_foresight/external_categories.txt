@@ -1,0 +1,48 @@
+# polaris_foresight/external_categories.txt
+#
+# Operator-curated list of external categories the foresight agent
+# surfaces in §III of every brief. The agent does NOT fetch these
+# externally; the categories are pure prompts for operator attention.
+#
+# Per the v9.12 Sanctum (polaris-odyssey-debate, Position B):
+# "External signals to watch" must be operator-curated; the agent
+# does NOT make network calls. This file is the surface where the
+# operator periodically refreshes which external categories deserve
+# attention.
+#
+# Format: one category per line. Lines starting with # are comments.
+# Blank lines are skipped. Categories should be anti-coercion-aligned
+# where possible (per the v9.11 vocation Sanctum).
+#
+# Refresh cadence: monthly review by operator (Saturn-pass), or when
+# a specific external event makes a category suddenly relevant.
+
+# --- Cryptographic threat horizon ---
+Post-quantum cryptography migration timelines (NIST PQC finalists; deployment milestones)
+Side-channel attack literature (timing, power, EM) relevant to identity-token verification
+Novel zero-knowledge proof systems beyond Plonky2 (foresight: when to migrate)
+
+# --- Coercion vector intelligence ---
+Documented compulsion attacks on identity systems (legal, technical, social)
+Border-crossing identity-disclosure regimes (jurisdictional anti-coercion gaps)
+Rubber-hose cryptanalysis case studies (informs duress-code design refinement)
+
+# --- Regulatory + governance ---
+National identity framework rollouts (failure modes; hostile-state implementations)
+Data minimization regulations (GDPR successors; sectoral disclosure rules)
+Digital sovereignty + cross-jurisdictional trust federation precedents
+
+# --- Operational + infrastructure ---
+PostgreSQL major version EOL timelines (current: PG16; foresight migration windows)
+Linux distro / container base image security advisories impacting Polaris stack
+Authentication standard evolution (WebAuthn L3+, FIDO2 successors, passkeys)
+
+# --- Adjacent identity systems (learn-from / threat-from) ---
+Verifiable credential standards (W3C VC, DID; interop without compromise)
+Self-sovereign identity wallet ecosystems (architectural patterns + failure modes)
+Centralized digital identity rollouts (CBDC-adjacent; state-issued; coercion vectors)
+
+# Operator notes:
+# - Add categories when a real signal makes them relevant; don't pad.
+# - Remove categories when they no longer serve the vocation.
+# - Keep the list under 25 entries (operator attention budget).

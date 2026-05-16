@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+{% block title %}UC-9: Decide Recovery #{{ req.recovery_id }}{% endblock %}
+{% block content %}
+<div class="uc-banner">
+    <div class="uc-id">Use Case 9 — Phase 2</div>
+    <h1>Decide Recovery #{{ req.recovery_id }}</h1>
+    <div class="uc-desc">
+        Admin decision on a PENDING recovery. APPROVED issues a new ACTIVE token (with predecessor_token_id=NULL —
+        the prior chain was lost) and transitions all of the individual's non-terminal tokens to LOST, publishing
+        each to RevocationList. Every transition is audit-tagged <code>[RECOVERY:{{ req.recovery_id }}]</code>.
+    </div>
+</div>
+
+<div class="info-panel">
+    <h2>Request summary</h2>
+    <dl class="kv">
+        <dt>Claimed individual</dt>
+        <dd>#{{ req.claimed_individual_id }} — <strong>{{ req.legal_name }}</strong></dd>
+
+        <dt>Requested at</dt>
+        <dd class="mono">{{ req.requested_at.strftime('%Y-%m-%d %H:%M:%S') }}</dd>
+
+        <dt>Requesting agency</dt>
+        <dd>#{{ req.requesting_agency_id }} — {{ req.requesting_agency_name }}</dd>
+
+        <dt>Requesting user</dt>
+        <dd>{{ req.requesting_username }} (user #{{ req.requesting_user_id }})</dd>
+
+        <dt>Cool-down expires</dt>
+        <dd class="mono">{{ req.cooldown_expires_at.strftime('%Y-%m-%d %H:%M:%S') }}
+            — {% if req.cooldown_passed %}
+                <span class="pill pill-success">passed</span>
+            {% else %}
+                <span class="pill pill-warn">not yet</span>
+            {% endif %}
+        </dd>
+
+        <dt>OOB channels</dt>
+        <dd>
+            <span class="pill {% if req.biometric_verified %}pill-success{% else %}pill-warn{% endif %}">
+                Biometric: {% if req.biometric_verified %}verified{% else %}pending{% endif %}
+            </span>
+            <span class="pill {% if req.sworn_statement_hash %}pill-success{% else %}pill-warn{% endif %}">
+                Sworn statement: {% if req.sworn_statement_hash %}recorded{% else %}pending{% endif %}
+            </span>
+            <span class="pill {% if req.witness_agency_id %}pill-success{% else %}pill-warn{% endif %}">
+                Witness agency: {% if req.witness_agency_id %}{{ req.witness_agency_name }}{% else %}pending{% endif %}
+            </span>
+        </dd>
+
+        <dt>Three-channel gate</dt>
+        <dd>
+            {% if req.three_channels_present %}
+                <span class="pill pill-success">all three verified</span>
+            {% else %}
+                <span class="pill pill-warn">incomplete — APPROVED will be refused</span>
+            {% endif %}
+        </dd>
+    </dl>
+</div>
+
+<form method="post" class="standard">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <div class="form-row">
+        <div class="form-group">
+            <label for="decision">Decision</label>
+            <select id="decision" name="decision" required>
+                <option value="APPROVED">APPROVED — issue new token</option>
+                <option value="REJECTED">REJECTED — close without issuing</option>
+            </select>
+        </div>
+        <div class="form-group full">
+            <label for="reason">Reason / Notes</label>
+            <textarea id="reason" name="reason" rows="2" maxlength="500"
+                      placeholder="e.g. 'Identity verified at PA-Allegheny office on 2026-05-13; biometric match confirmed'"></textarea>
+        </div>
+    </div>
+
+    <h2>New token (required only if APPROVED)</h2>
+
+    <div class="form-row">
+        <div class="form-group">
+            <label for="new_token_value">Token value</label>
+            <input type="text" id="new_token_value" name="new_token_value"
+                   class="mono" maxlength="128"
+                   placeholder="TKN-XX-2026-RCV-...">
+        </div>
+        <div class="form-group">
+            <label for="new_serial">Physical serial</label>
+            <input type="text" id="new_serial" name="new_serial"
+                   class="mono" maxlength="64"
+                   placeholder="SN-...">
+        </div>
+    </div>
+
+    <div class="form-row">
+        <div class="form-group">
+            <label for="algorithm_id">Signing algorithm</label>
+            <select id="algorithm_id" name="algorithm_id">
+                <option value="">— select —</option>
+                {% for alg in algorithms %}
+                    <option value="{{ alg.algorithm_id }}">
+                        #{{ alg.algorithm_id }} — {{ alg.name }}
+                        {% if alg.quantum_resistant %} · PQ{% endif %}
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="biometric_binding">Biometric binding</label>
+            <select id="biometric_binding" name="biometric_binding">
+                <option value="">— select —</option>
+                <option value="IRIS">IRIS</option>
+                <option value="FINGERPRINT">FINGERPRINT</option>
+                <option value="FACE">FACE</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="liveness_check">Liveness check</label>
+            <select id="liveness_check" name="liveness_check">
+                <option value="">— select —</option>
+                <option value="MULTI_MODAL">MULTI_MODAL</option>
+                <option value="ACTIVE_CHALLENGE">ACTIVE_CHALLENGE</option>
+                <option value="PASSIVE">PASSIVE</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="form-row">
+        <div class="form-group full">
+            <label for="published_location">Published CRL location (for the lost tokens being revoked)</label>
+            <input type="text" id="published_location" name="published_location"
+                   class="mono" maxlength="300"
+                   placeholder="https://crl.idtoken.gov/recovery/{{ req.recovery_id }}">
+        </div>
+    </div>
+
+    <div class="form-actions">
+        <button type="submit" class="btn btn-gold">Record Decision</button>
+        <a href="{{ url_for('uc9_queue') }}" class="btn btn-secondary">Cancel</a>
+    </div>
+</form>
+{% endblock %}

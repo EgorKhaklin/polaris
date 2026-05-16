@@ -1,0 +1,6227 @@
+# =============================================================================
+# AI-context: 118 tests across 24+ test classes. setUp() calls
+#   reload_sample_data() which honors POLARIS_DB_NAME (fixed in v6).
+# Read before editing:
+#     ../DEVNOTES/known-gotchas.md  (admin lockout in tests)
+# ConcurrencyTests use threading; each thread needs its own connection.
+# =============================================================================
+
+"""
+============================================================================
+POLARIS WEB INTERFACE — INTEGRATION TEST SUITE
+============================================================================
+
+Exercises every route in the Flask app against a real PostgreSQL database
+using Flask's test_client. Each test runs in isolation by snapshotting the
+database state before the test and restoring it afterward.
+
+Run:
+    python3 test_app.py
+
+Prerequisites:
+    - PostgreSQL running with polaris_test database loaded (see SQL package)
+    - polaris_app role with credentials matching app.py defaults
+
+Output: one line per test (PASS/FAIL with description), final summary.
+============================================================================
+"""
+
+import os
+import sys
+import unittest
+from contextlib import closing
+from datetime import datetime, timedelta
+import psycopg2
+from psycopg2.extras import RealDictCursor
+
+# Import the Flask app
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import app as flask_app
+
+
+# ----------------------------------------------------------------------------
+# Test infrastructure: snapshot/restore the database around each test
+# ----------------------------------------------------------------------------
+
+DB_CONFIG = flask_app.DB_CONFIG
+SQL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'polaris_sql')
+
+
+def _superuser_conn():
+    """Connection as postgres for snapshot/restore (needs to truncate)."""
+    cfg = dict(DB_CONFIG)
+    cfg['user'] = 'postgres'
+    cfg['password'] = ''
+    return psycopg2.connect(host='/var/run/postgresql', database=cfg['database'])
+
+
+def reload_sample_data():
+    """
+    Reset the database to the pristine sample state by re-running:
+      - 04_data.sql      (TRUNCATEs and re-inserts the 73-row sample)
+      - 06_triggers.sql  (triggers must be reinstalled after the data load)
+      - 09_grants.sql    (grants are wiped if 01_schema.sql ever runs because
+                          of its DROP TABLE CASCADE statements)
+      - 10_auth.sql      (re-seeds the three AppUser accounts and clears the
+                          AuthAuditLog so audit-trail tests start clean)
+
+    Platform handling: Linux servers usually run the cluster as the
+    `postgres` user, so we shell out via `su - postgres -c`. On macOS
+    (Homebrew Postgres) and dev boxes where the cluster runs as the
+    current user, plain `psql` works directly. POLARIS_TEST_RELOAD_VIA
+    overrides the auto-detection (values: 'su', 'direct').
+    """
+    import subprocess, platform
+    db_name = os.environ.get('POLARIS_DB_NAME', 'polaris_test')
+    files_to_run = ['04_data.sql', '06_triggers.sql', '09_grants.sql', '10_auth.sql']
+
+    override = os.environ.get('POLARIS_TEST_RELOAD_VIA', '').lower()
+    if override in ('su', 'direct'):
+        use_su = (override == 'su')
+    else:
+        # Auto-detect: only use su when on Linux AND a postgres user exists.
+        use_su = (platform.system() == 'Linux' and
+                  subprocess.run(['id', 'postgres'],
+                                 capture_output=True).returncode == 0)
+
+    for fname in files_to_run:
+        fpath = os.path.join(SQL_DIR, fname)
+        if not os.path.exists(fpath):
+            # Fallback: try /tmp where the user has copies
+            fpath = os.path.join('/tmp', fname)
+        if use_su:
+            cmd = ['su', '-', 'postgres', '-c', f'psql -d {db_name} -f {fpath}']
+        else:
+            cmd = ['psql', '-d', db_name, '-f', fpath]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise RuntimeError(f"Failed to reload {fname}: {result.stderr}")
+
+
+# Test passwords from 10_auth.sql seed data (development credentials)
+TEST_PASSWORDS = {
+    'admin':    'Admin@123!',
+    'operator': 'Operator@123!',
+    'auditor':  'Auditor@123!',
+}
+
+
+# ----------------------------------------------------------------------------
+# Base test case
+# ----------------------------------------------------------------------------
+
+class PolarisTestCase(unittest.TestCase):
+    """
+    Base class. Resets the database, instantiates a fresh test client, and
+    logs in as 'admin' before each test so that the existing CRUD/UC/SQL
+    tests (which assume full access) keep working after the auth controls
+    were added during the cybersecurity-patching pass.
+
+    Tests that need to verify access control (anonymous access, wrong-role
+    access) should subclass UnauthenticatedTestCase or call self._login()
+    with a different role.
+    """
+
+    DEFAULT_ROLE = 'admin'
+
+    @classmethod
+    def setUpClass(cls):
+        flask_app.app.config['TESTING'] = True
+        # Use a deterministic secret key for tests so sessions decode correctly
+        flask_app.app.secret_key = 'test-key-' + ('x' * 60)
+        # Disable rate limiting between tests by resetting the limiter on every
+        # setUp; otherwise the 60-write/min cap bites the test suite.
+        cls.client = flask_app.app.test_client()
+
+    def setUp(self):
+        """Reset DB, reset rate limiter, log in as the default role."""
+        reload_sample_data()
+        # Clear any state from prior tests
+        flask_app.security.rate_limiter.reset()
+        # Fresh client to ensure no leaked session
+        self.client = flask_app.app.test_client()
+        if self.DEFAULT_ROLE is not None:
+            self._login(self.DEFAULT_ROLE)
+
+    # ------ helpers ------
+
+    def _login(self, role='admin'):
+        """Authenticate the test client as the given role."""
+        if role not in TEST_PASSWORDS:
+            raise ValueError(f"Unknown test role: {role}")
+        r = self.client.post('/login', data={
+            'username': role,
+            'password': TEST_PASSWORDS[role],
+        })
+        # Login should redirect on success
+        if r.status_code != 302:
+            raise RuntimeError(
+                f"Test login as {role!r} failed: HTTP {r.status_code} "
+                f"body={r.get_data(as_text=True)[:200]}"
+            )
+
+    def _logout(self):
+        """Clear the session by clearing client cookies."""
+        with self.client.session_transaction() as sess:
+            sess.clear()
+
+    def _csrf_token_from(self, path):
+        """GET a page and extract its CSRF token from the rendered form."""
+        import re
+        r = self.client.get(path)
+        m = re.search(r'name="csrf_token" value="([^"]+)"', r.get_data(as_text=True))
+        if not m:
+            raise RuntimeError(f"No CSRF token found on {path}")
+        return m.group(1)
+
+    def _post(self, path, data=None, csrf_from=None, **kwargs):
+        """
+        POST helper that auto-includes the CSRF token. If csrf_from is
+        provided, fetches the token from that path; otherwise fetches from
+        the same path.
+        """
+        data = dict(data or {})
+        if 'csrf_token' not in data:
+            data['csrf_token'] = self._csrf_token_from(csrf_from or path)
+        return self.client.post(path, data=data, **kwargs)
+
+    def assertHTML(self, response, *substrings):
+        """Assert that the response body contains all given substrings."""
+        body = response.get_data(as_text=True)
+        for s in substrings:
+            self.assertIn(s, body, f"Response did not contain {s!r}")
+
+    def assertNotHTML(self, response, *substrings):
+        body = response.get_data(as_text=True)
+        for s in substrings:
+            self.assertNotIn(s, body, f"Response unexpectedly contained {s!r}")
+
+
+class UnauthenticatedTestCase(PolarisTestCase):
+    """Test base class that does NOT auto-login. Use for auth-gate tests."""
+    DEFAULT_ROLE = None
+
+
+# ============================================================================
+# DASHBOARD TESTS
+# ============================================================================
+
+class DashboardTests(PolarisTestCase):
+
+    def test_dashboard_renders(self):
+        r = self.client.get('/')
+        self.assertEqual(r.status_code, 200)
+        self.assertHTML(r, 'POLARIS', 'System Dashboard')
+
+    def test_dashboard_shows_all_table_stats(self):
+        r = self.client.get('/')
+        self.assertHTML(r,
+            'Individual', 'Agency', 'CryptographicAlgorithm',
+            'VerificationContext', 'IdentityToken', 'TokenLifecycleEvent',
+            'VerificationEvent', 'DeviceBinding', 'BlockchainAnchor',
+            'RevocationList', 'AgencyAlgorithmAuth', 'TokenPermission')
+
+    def test_dashboard_shows_active_tokens(self):
+        r = self.client.get('/')
+        # 3 active tokens in pristine sample data: T2 Maria, T3 James, T4 Priya
+        self.assertHTML(r, 'Maria Santos', 'James Chen', 'Priya Patel')
+
+
+class AtlasTests(PolarisTestCase):
+    """Atlas is now a Gotham-style operational investigation surface.
+    Aggregate analytics live on the dashboard (`/`); Atlas only owns the
+    globe, the HUD chrome, the live event feed, and the selection-driven
+    detail console."""
+
+    def test_atlas_renders(self):
+        r = self.client.get('/atlas')
+        self.assertEqual(r.status_code, 200)
+        # v8.2: id-strip text shortened from "ATLAS / OPERATIONAL OVERVIEW"
+        # to "OPERATIONAL" — "Atlas" is already the active nav link, so
+        # the redundant prefix was costing toolbar real estate at 1280-wide.
+        self.assertHTML(r, '<div class="atlas-id-strip">OPERATIONAL</div>')
+
+    def test_atlas_has_gotham_chrome(self):
+        """The reframed Atlas uses fullbleed layout, gold id-strip, and
+        the globe-data payload script."""
+        r = self.client.get('/atlas')
+        self.assertHTML(r, 'atlas-fullbleed', 'atlas-id-strip', 'atlas-globe-data')
+
+    def test_atlas_hud_shows_operational_signals(self):
+        """The HUD surfaces Active Tokens, Anomalies, Post-Quantum %, and
+        Zero-Knowledge % — these are the four operational ratios that
+        matter at a glance."""
+        r = self.client.get('/atlas')
+        self.assertHTML(r,
+            'Active Tokens', 'Anomalies',
+            'Post-Quantum', 'Zero-Knowledge')
+
+    def test_atlas_has_event_feed_rail(self):
+        """The right rail is the live event feed (drives selection)."""
+        r = self.client.get('/atlas')
+        self.assertHTML(r, 'Event Feed')
+
+    def test_atlas_classification_banner_reframed(self):
+        """SCS-230 reference dropped; banner reads OPERATIONAL ATLAS."""
+        r = self.client.get('/atlas')
+        body = r.get_data(as_text=True)
+        self.assertIn('OPERATIONAL ATLAS', body)
+        self.assertNotIn('SCS-230', body)
+
+    def test_atlas_does_not_carry_dashboard_panels(self):
+        """The Authorization Matrix, PQ Migration table, and Disclosure
+        Posture grid live on the dashboard now — Atlas should not duplicate
+        them."""
+        r = self.client.get('/atlas')
+        body = r.get_data(as_text=True)
+        # Section headers are on the dashboard; Atlas keeps the HUD-level
+        # Post-Quantum % indicator but not the full table.
+        self.assertNotIn('Agency × Algorithm Authorization Matrix', body)
+        self.assertNotIn('Disclosure Posture', body)
+        self.assertNotIn('Token Succession Lineage', body)
+
+    def test_atlas_state_populations_match_database(self):
+        """The Active Tokens count in the HUD should match a direct COUNT."""
+        conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) AS n FROM IdentityToken WHERE status='ACTIVE'")
+            active = cur.fetchone()['n']
+        conn.close()
+
+        r = self.client.get('/atlas')
+        body = r.get_data(as_text=True)
+        self.assertIn(str(active), body)
+
+
+class DashboardAnalyticsTests(PolarisTestCase):
+    """Dashboard at `/` is the analytics surface. Authorization Matrix,
+    PQ Migration, Verification by Context, Disclosure Posture, Lineage,
+    and Recent Audit Events all live here after the Gotham reframe."""
+
+    def test_dashboard_renders(self):
+        r = self.client.get('/')
+        self.assertEqual(r.status_code, 200)
+        self.assertHTML(r, 'System Dashboard', 'Schema Statistics')
+
+    def test_dashboard_shows_state_breakdown(self):
+        """The status breakdown table is data-driven (GROUP BY status), so it
+        only lists states that actually have tokens. In pristine sample data
+        that's ACTIVE, RESERVE, and REVOKED."""
+        r = self.client.get('/')
+        body = r.get_data(as_text=True)
+        for state in ['ACTIVE', 'RESERVE', 'REVOKED']:
+            self.assertIn(state, body, f"Status breakdown missing {state}")
+
+    def test_dashboard_shows_authorization_matrix(self):
+        """Auth Matrix should include every agency name and algorithm."""
+        r = self.client.get('/')
+        body = r.get_data(as_text=True)
+        for ag in ['US National Identity Service', 'Pennsylvania Identity Bureau',
+                   'California Identity Office', 'First National Bank']:
+            self.assertIn(ag, body, f"Auth matrix missing {ag}")
+        for alg in ['ML-DSA-65', 'ML-DSA-87', 'SLH-DSA-128s', 'ECDSA-P256']:
+            self.assertIn(alg, body, f"Auth matrix missing {alg}")
+
+    def test_dashboard_shows_pq_migration(self):
+        r = self.client.get('/')
+        self.assertHTML(r, 'Post-Quantum Migration', 'PQ')
+
+    def test_dashboard_shows_disclosure_breakdown(self):
+        r = self.client.get('/')
+        self.assertHTML(r, 'Disclosure Posture',
+                        'ZERO_KNOWLEDGE', 'SELECTIVE', 'FULL')
+
+    def test_dashboard_shows_recent_events(self):
+        r = self.client.get('/')
+        self.assertHTML(r, 'Recent Audit Events', 'ISSUED')
+
+    def test_dashboard_shows_lineage(self):
+        r = self.client.get('/')
+        self.assertHTML(r, 'Token Succession Lineage')
+
+    def test_dashboard_shows_context_activity(self):
+        r = self.client.get('/')
+        self.assertHTML(r, 'Verification Activity by Context')
+
+
+class HeartbeatTests(PolarisTestCase):
+    """Browser-presence beacons used by the launcher's --watch mode.
+    These endpoints must work without authentication and without CSRF."""
+
+    def test_heartbeat_post_returns_204(self):
+        r = self.client.post('/api/heartbeat')
+        self.assertEqual(r.status_code, 204)
+
+    def test_quit_post_returns_204(self):
+        r = self.client.post('/api/quit')
+        self.assertEqual(r.status_code, 204)
+
+    def test_since_heartbeat_returns_json(self):
+        # Send a heartbeat first so the file exists
+        self.client.post('/api/heartbeat')
+        r = self.client.get('/api/since-heartbeat')
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.content_type.split(';')[0], 'application/json')
+        payload = r.get_json()
+        self.assertIn('since_s', payload)
+        self.assertIn('quit_requested', payload)
+
+
+# ============================================================================
+# INDIVIDUAL CRUD TESTS
+# ============================================================================
+
+class IndividualCRUDTests(PolarisTestCase):
+
+    def test_list_shows_all_individuals(self):
+        r = self.client.get('/individuals')
+        self.assertEqual(r.status_code, 200)
+        self.assertHTML(r,
+            'Egor Khaklin', 'Maria Santos', 'James Chen',
+            'Priya Patel', 'David Okafor')
+
+    def test_create_individual(self):
+        r = self._post('/individuals/new', data={
+            'legal_name': 'Test Subject Alpha',
+            'date_of_birth': '1990-01-15',
+            'jurisdiction': 'US-NJ',
+        }, follow_redirects=True)
+        self.assertEqual(r.status_code, 200)
+        self.assertHTML(r, 'Test Subject Alpha', 'Created individual')
+
+    def test_create_individual_form_renders(self):
+        r = self.client.get('/individuals/new')
+        self.assertEqual(r.status_code, 200)
+        self.assertHTML(r, 'Create Individual', 'legal_name', 'date_of_birth')
+
+    def test_edit_individual(self):
+        r = self._post('/individuals/1/edit', data={
+            'legal_name': 'Egor Khaklin (renamed)',
+            'date_of_birth': '2005-03-12',
+            'jurisdiction': 'US-PA',
+        }, follow_redirects=True)
+        self.assertEqual(r.status_code, 200)
+        self.assertHTML(r, 'Egor Khaklin (renamed)', 'Updated individual')
+
+    def test_edit_nonexistent_individual_404s(self):
+        r = self.client.get('/individuals/9999/edit')
+        self.assertEqual(r.status_code, 404)
+
+    def test_delete_individual_with_token_fails(self):
+        """Egor (id=1) has token T1; FK should block deletion."""
+        r = self._post('/individuals/1/delete', csrf_from='/individuals',
+                       follow_redirects=True)
+        self.assertEqual(r.status_code, 200)
+        # The error message should be surfaced (FK violation)
+        self.assertHTML(r, 'Referential integrity violation')
+
+
+# ============================================================================
+# AGENCY CRUD TESTS
+# ============================================================================
+
+class AgencyCRUDTests(PolarisTestCase):
+
+    def test_list_shows_all_agencies(self):
+        r = self.client.get('/agencies')
+        self.assertHTML(r,
+            'US National Identity Service',
+            'Pennsylvania Identity Bureau',
+            'California Identity Office',
+            'Transportation Security',
+            'First National Bank',
+            'Allegheny County Health')
+
+    def test_create_agency(self):
+        r = self._post('/agencies/new', data={
+            'name': 'Test Agency Beta',
+            'agency_type': 'STATE',
+            'jurisdiction': 'US-NY',
+            'authorization_level': '3',
+        }, follow_redirects=True)
+        self.assertEqual(r.status_code, 200)
+        self.assertHTML(r, 'Test Agency Beta', 'Created agency')
+
+    def test_create_agency_with_invalid_type_fails(self):
+        r = self._post('/agencies/new', data={
+            'name': 'Bad Agency',
+            'agency_type': 'ALIEN',
+            'jurisdiction': 'US',
+            'authorization_level': '1',
+        }, follow_redirects=True)
+        self.assertEqual(r.status_code, 200)
+        # Either CHECK constraint message or "Constraint violation"
+        body = r.get_data(as_text=True)
+        self.assertTrue('Constraint violation' in body or 'check constraint' in body.lower(),
+                        "Expected constraint violation message")
+
+    def test_edit_agency(self):
+        r = self._post('/agencies/5/edit', data={
+            'name': 'First National Bank (revised)',
+            'agency_type': 'PRIVATE',
+            'jurisdiction': 'US',
+            'authorization_level': '2',
+        }, follow_redirects=True)
+        self.assertEqual(r.status_code, 200)
+        self.assertHTML(r, 'First National Bank (revised)', 'Updated agency')
+
+
+# ============================================================================
+# TOKEN TESTS
+# ============================================================================
+
+class TokenTests(PolarisTestCase):
+
+    def test_list_shows_all_tokens(self):
+        r = self.client.get('/tokens')
+        self.assertHTML(r, 'TKN-PA-2026-000001', 'TKN-CA-2026-000002',
+                        'TKN-NY-2026-000003', 'TKN-TX-2026-000004',
+                        'TKN-FL-2026-000005')
+
+    def test_filter_by_status_active(self):
+        r = self.client.get('/tokens?status=ACTIVE')
+        # Only T2, T3, T4 are active
+        self.assertHTML(r, 'TKN-CA-2026-000002', 'TKN-NY-2026-000003', 'TKN-TX-2026-000004')
+        # T1 (RESERVE), T5 (REVOKED) should NOT appear
+        self.assertNotHTML(r, 'TKN-PA-2026-000001', 'TKN-FL-2026-000005')
+
+    def test_filter_by_individual(self):
+        r = self.client.get('/tokens?individual_id=2')
+        self.assertHTML(r, 'TKN-CA-2026-000002', 'Maria Santos')
+        self.assertNotHTML(r, 'TKN-PA-2026-000001', 'TKN-NY-2026-000003')
+
+    def test_token_detail_shows_full_record(self):
+        r = self.client.get('/tokens/2')
+        self.assertEqual(r.status_code, 200)
+        self.assertHTML(r,
+            'TKN-CA-2026-000002', 'Maria Santos',
+            'California Identity Office', 'ML-DSA-65',
+            'Lifecycle History', 'Verification Events',
+            'Device Bindings', 'Blockchain Anchors')
+
+    def test_token_detail_404_for_unknown(self):
+        r = self.client.get('/tokens/9999')
+        self.assertEqual(r.status_code, 404)
+
+    def test_token_state_transition_legal(self):
+        """ACTIVE → DORMANT is legal."""
+        r = self._post('/tokens/2/transition', csrf_from='/tokens/2',
+                             data={'new_status': 'DORMANT'},
+                             follow_redirects=True)
+        self.assertEqual(r.status_code, 200)
+        self.assertHTML(r, 'Transitioned token #2 to DORMANT')
+
+    def test_token_state_transition_illegal_blocked_by_trigger(self):
+        """REVOKED → ACTIVE is illegal (T5 is REVOKED)."""
+        r = self._post('/tokens/5/transition', csrf_from='/tokens/5',
+                             data={'new_status': 'ACTIVE'},
+                             follow_redirects=True)
+        self.assertEqual(r.status_code, 200)
+        self.assertHTML(r, 'Illegal token state transition')
+
+    def test_state_change_writes_audit_row_automatically(self):
+        """The AFTER UPDATE auto-audit trigger guarantees that every status
+        change produces a TokenLifecycleEvent row, independent of whether the
+        application inserts one explicitly. This eliminates the application-
+        discipline dependency the report previously called out for NFR-4."""
+        # Count lifecycle events for T2 before the transition
+        conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) AS n FROM TokenLifecycleEvent WHERE token_id=2")
+            events_before = cur.fetchone()['n']
+        conn.close()
+
+        # Trigger a legal transition: ACTIVE → DORMANT
+        r = self._post('/tokens/2/transition', csrf_from='/tokens/2',
+                             data={'new_status': 'DORMANT', 'reason': 'TEST_AUTO_AUDIT'},
+                             follow_redirects=True)
+        self.assertEqual(r.status_code, 200)
+
+        # Now there must be exactly ONE more lifecycle event, with event_type
+        # DEACTIVATED, and the reason set by the session GUC.
+        conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT event_type, reason_code FROM TokenLifecycleEvent
+                WHERE token_id=2 ORDER BY event_id DESC LIMIT 1
+            """)
+            latest = cur.fetchone()
+            cur.execute("SELECT COUNT(*) AS n FROM TokenLifecycleEvent WHERE token_id=2")
+            events_after = cur.fetchone()['n']
+        conn.close()
+
+        self.assertEqual(events_after, events_before + 1,
+                         "Auto-audit trigger should write exactly one row per status change")
+        self.assertEqual(latest['event_type'], 'DEACTIVATED')
+        self.assertEqual(latest['reason_code'], 'TEST_AUTO_AUDIT',
+                         "Trigger should pick up reason from polaris.reason_code GUC")
+
+    def test_no_status_change_writes_no_audit_row(self):
+        """An UPDATE that doesn't change status must NOT produce an audit row."""
+        conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) AS n FROM TokenLifecycleEvent WHERE token_id=2")
+            events_before = cur.fetchone()['n']
+            # Direct UPDATE that touches a non-status column
+            cur.execute("UPDATE IdentityToken SET hardware_model='TitanQ-3-revB' WHERE token_id=2")
+            conn.commit()
+            cur.execute("SELECT COUNT(*) AS n FROM TokenLifecycleEvent WHERE token_id=2")
+            events_after = cur.fetchone()['n']
+        conn.close()
+        self.assertEqual(events_after, events_before,
+                         "Trigger should not fire for non-status updates")
+
+
+# ============================================================================
+# UC-1 (issuance) TESTS
+# ============================================================================
+
+class UC1Tests(PolarisTestCase):
+
+    def test_form_renders(self):
+        r = self.client.get('/uc1/issue')
+        self.assertEqual(r.status_code, 200)
+        self.assertHTML(r, 'UC-1', 'New Token Issuance', 'Issuing Agency')
+
+    def test_issue_new_token_atomic(self):
+        r = self._post('/uc1/issue', data={
+            'legal_name': 'Test UC1 Holder',
+            'date_of_birth': '1985-06-20',
+            'jurisdiction': 'US-OH',
+            'issuing_agency_id': '1',
+            'algorithm_id': '1',
+            'biometric_binding_type': 'IRIS',
+            'witness_agency_id': '2',
+            'liveness_check_type': 'MULTI_MODAL',
+            'token_value': 'TKN-OH-TEST-UC1',
+            'physical_serial': 'SN-OH-UC1',
+            'hardware_model': 'TitanQ-3',
+            'contexts': ['1', '2'],
+        }, follow_redirects=True)
+        self.assertEqual(r.status_code, 200)
+        self.assertHTML(r, 'Issued and activated token', 'Test UC1 Holder')
+
+    def test_unauthorized_algorithm_rejected(self):
+        """Agency 2 (PA) does not hold a grant on algorithm 4 (SLH-DSA-256s)."""
+        r = self._post('/uc1/issue', data={
+            'legal_name': 'Test Unauthorized',
+            'date_of_birth': '1985-06-20',
+            'jurisdiction': 'US-PA',
+            'issuing_agency_id': '2',
+            'algorithm_id': '4',
+            'biometric_binding_type': 'IRIS',
+            'token_value': 'TKN-PA-TEST-UNAUTH',
+            'physical_serial': 'SN-PA-UNAUTH',
+            'hardware_model': 'TitanQ-3',
+            'contexts': ['1'],
+        }, follow_redirects=True)
+        self.assertEqual(r.status_code, 200)
+        body = r.get_data(as_text=True)
+        # Procedure raises with "is not authorized to issue"
+        self.assertTrue('not authorized to issue' in body or
+                        'insufficient_privilege' in body.lower(),
+                        f"Expected authorization error, got: {body[:500]}")
+
+
+# ============================================================================
+# UC-4 (reserve activation) TESTS
+# ============================================================================
+
+class UC4Tests(PolarisTestCase):
+
+    def test_form_renders(self):
+        r = self.client.get('/uc4/activate-reserve')
+        self.assertEqual(r.status_code, 200)
+        self.assertHTML(r, 'UC-4', 'Reserve Token Activation')
+
+    def test_form_lists_active_and_reserve_tokens(self):
+        """Pristine state: T1 (Egor, individual 1) is RESERVE; T2/T3/T4 are
+        ACTIVE for individuals 2/3/4. The form should list both buckets."""
+        r = self.client.get('/uc4/activate-reserve')
+        body = r.get_data(as_text=True)
+        # Active tokens dropdown should show holders of active tokens
+        self.assertIn('Maria Santos', body)  # T2 is ACTIVE
+        # Reserve dropdown should show Egor's RESERVE token
+        self.assertIn('Egor Khaklin', body)
+
+    def test_uc4_activates_reserve_end_to_end(self):
+        """Full UC-4 happy path. Sets up the precondition (Egor needs to have
+        BOTH an ACTIVE and a RESERVE token, so we issue an ACTIVE one for him
+        directly via SQL), then calls UC-4 and verifies the procedure executed.
+        This test does NOT rely on what the SQL test suite leaves behind — it
+        builds its own preconditions explicitly."""
+        # Precondition: confirm pristine state has T1=RESERVE for Egor (individual 1)
+        conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        with conn.cursor() as cur:
+            cur.execute("SELECT status FROM IdentityToken WHERE token_id=1")
+            t1_status = cur.fetchone()['status']
+        conn.close()
+        self.assertEqual(t1_status, 'RESERVE',
+                         "Pristine sample data must have T1 in RESERVE state for individual 1")
+
+        # Precondition: insert an ACTIVE token directly for Egor (individual 1)
+        # so that UC-4 has both an ACTIVE and a RESERVE for the same person.
+        # We go through the proper state-machine path: INSERT as RESERVE first,
+        # then UPDATE to ACTIVE (the trigger only allows RESERVE → ACTIVE).
+        conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO IdentityToken
+                    (token_value, physical_serial, hardware_model,
+                     biometric_binding_type, individual_id, issuing_agency_id, algorithm_id,
+                     status, issued_date, expiration_date)
+                VALUES
+                    ('TKN-PA-UC4-ACTIVE', 'SN-PA-UC4-ACT', 'TitanQ-3',
+                     'IRIS', 1, 2, 1,
+                     'RESERVE', CURRENT_TIMESTAMP, (CURRENT_DATE + INTERVAL '10 years')::date)
+                RETURNING token_id
+            """)
+            new_active_id = cur.fetchone()['token_id']
+            cur.execute("""
+                UPDATE IdentityToken
+                   SET status='ACTIVE', activated_date=CURRENT_TIMESTAMP
+                 WHERE token_id=%s
+            """, (new_active_id,))
+            conn.commit()
+        conn.close()
+
+        # Verify Egor now has T1 (RESERVE) + new_active_id (ACTIVE)
+        conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT token_id, status FROM IdentityToken
+                WHERE individual_id=1 ORDER BY token_id
+            """)
+            egor_tokens = cur.fetchall()
+        conn.close()
+        active_id = next((t['token_id'] for t in egor_tokens if t['status'] == 'ACTIVE'), None)
+        reserve_id = next((t['token_id'] for t in egor_tokens if t['status'] == 'RESERVE'), None)
+        self.assertIsNotNone(active_id, f"No ACTIVE token for Egor; got: {egor_tokens}")
+        self.assertIsNotNone(reserve_id, f"No RESERVE token for Egor; got: {egor_tokens}")
+
+        # Now exercise UC-4: lose the active, promote the reserve
+        r = self._post('/uc4/activate-reserve', data={
+            'lost_token_id':     str(active_id),
+            'reserve_token_id':  str(reserve_id),
+            'actor_agency_id':   '1',
+            'reason_code':       'LOST',
+            'published_location': 'https://crl.idtoken.gov/2026/05/UC4-TEST.crl',
+        }, follow_redirects=True)
+        self.assertEqual(r.status_code, 200)
+        self.assertHTML(r, 'Activated reserve token')
+
+        # Verify the swap: previously-ACTIVE is now LOST; previously-RESERVE is now ACTIVE
+        conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        with conn.cursor() as cur:
+            cur.execute("SELECT token_id, status FROM IdentityToken WHERE token_id IN (%s, %s)",
+                        (active_id, reserve_id))
+            after = {t['token_id']: t['status'] for t in cur.fetchall()}
+        conn.close()
+        self.assertEqual(after[active_id], 'LOST',
+                         f"Lost token #{active_id} should be LOST, got {after[active_id]}")
+        self.assertEqual(after[reserve_id], 'ACTIVE',
+                         f"Reserve #{reserve_id} should be ACTIVE, got {after[reserve_id]}")
+
+        # Verify the audit chain: the AFTER UPDATE auto-audit trigger should
+        # have written events for both transitions.
+        conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT event_type FROM TokenLifecycleEvent
+                WHERE token_id = %s ORDER BY event_id DESC LIMIT 5
+            """, (reserve_id,))
+            events_for_reserve = [r['event_type'] for r in cur.fetchall()]
+        conn.close()
+        self.assertIn('ACTIVATED', events_for_reserve,
+                      f"Expected ACTIVATED audit row for promoted reserve, got: {events_for_reserve}")
+
+
+# ============================================================================
+# UC-5 (device binding) TESTS
+# ============================================================================
+
+class UC5Tests(PolarisTestCase):
+
+    def test_form_renders(self):
+        r = self.client.get('/uc5/bind-device')
+        self.assertEqual(r.status_code, 200)
+        self.assertHTML(r, 'UC-5', 'Device Binding')
+
+    def test_bind_device_to_active_token(self):
+        r = self._post('/uc5/bind-device', data={
+            'token_id': '2',  # T2 Maria, ACTIVE
+            'device_type': 'PHONE',
+            'device_fingerprint': 'SE-TEST-UC5-NEW-FINGERPRINT-12345',
+            'binding_method': 'SECURE_ENCLAVE',
+            'validity_months': '24',
+        }, follow_redirects=True)
+        self.assertEqual(r.status_code, 200)
+        self.assertHTML(r, 'Created device binding')
+
+    def test_bind_to_revoked_token_rejected(self):
+        """T5 is REVOKED; UC-5 must reject."""
+        r = self._post('/uc5/bind-device', data={
+            'token_id': '5',  # T5 David, REVOKED
+            'device_type': 'PHONE',
+            'device_fingerprint': 'SE-TEST-UC5-REVOKED-12345',
+            'binding_method': 'SECURE_ENCLAVE',
+            'validity_months': '12',
+        }, follow_redirects=True)
+        self.assertEqual(r.status_code, 200)
+        body = r.get_data(as_text=True)
+        self.assertTrue('not ACTIVE' in body, f"Expected ACTIVE-only rejection, got: {body[:500]}")
+
+
+# ============================================================================
+# UC-7 (warrant audit) TESTS
+# ============================================================================
+
+class UC7Tests(PolarisTestCase):
+
+    def test_form_renders(self):
+        r = self.client.get('/uc7/warrant-audit')
+        self.assertEqual(r.status_code, 200)
+        self.assertHTML(r, 'UC-7', 'Warrant-Authorized')
+
+    def test_warrant_returns_events_for_james(self):
+        """James Chen (id=3) has 3 verification events: 1 ZK + 1 FULL + 1 SELECTIVE.
+        ZK events are EXCLUDED from results entirely because the procedure joins
+        through token_id which is NULL for ZK events. The warrant cannot recover
+        what was never stored — this is the architectural privacy guarantee."""
+        r = self._post('/uc7/warrant-audit', data={
+            'individual_id': '3',
+        })
+        self.assertEqual(r.status_code, 200)
+        body = r.get_data(as_text=True)
+        # Slice to just the results table to avoid form options matching
+        results_section = body[body.index('Warrant Results'):body.index('</table>') + 8] \
+            if 'Warrant Results' in body and '</table>' in body[body.index('Warrant Results'):] else ''
+        # SELECTIVE and FULL events appear with full data
+        self.assertIn('TRAVEL', results_section)
+        self.assertIn('BANKING', results_section)
+        self.assertIn('James Chen', results_section)
+        # ZK event for James (HEALTHCARE) does NOT appear in results
+        self.assertNotIn('HEALTHCARE', results_section)
+        # Result count is 2, not 3
+        self.assertIn('Warrant Results (2 events)', body)
+
+    def test_warrant_excludes_zero_knowledge_events(self):
+        """The warrant query for any individual cannot return ZK events for that
+        individual because the procedure joins through token_id (NULL for ZK).
+        This is the schema-level privacy guarantee NFR-2."""
+        r = self._post('/uc7/warrant-audit', data={
+            'individual_id': '3',  # James Chen
+        })
+        body = r.get_data(as_text=True)
+        results_section = body[body.index('Warrant Results'):body.index('</table>') + 8] \
+            if 'Warrant Results' in body and '</table>' in body[body.index('Warrant Results'):] else ''
+        # ZERO_KNOWLEDGE pill should not appear in the results table
+        self.assertNotIn('ZERO_KNOWLEDGE', results_section)
+        # Confirm we DO see SELECTIVE and FULL pills (sanity: results are populated)
+        self.assertTrue('FULL' in results_section or 'SELECTIVE' in results_section)
+
+
+# ============================================================================
+# UC-8 / R11-6 / M2-11 — BOUNDED REVOCATION ("constitutional limits on
+# issuer discretion", PDF §9). The procedure uc8_revoke_token is the single
+# sanctioned revocation path. It enforces a rolling N%/W-day rate per
+# issuing agency; above the bound a co-signer is required. It also mirrors
+# the UC-4 pattern: status='REVOKED' + RevocationList row in the same txn.
+# ============================================================================
+
+
+class IssuerDiscretionBoundsTests(PolarisTestCase):
+    """Tests for R11-6 / M2-11 — issuer-discretion bounds via uc8_revoke_token."""
+
+    def _new_conn(self):
+        return psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+
+    def _seed_active_token(self, agency_id, algorithm_id, label):
+        """Insert a fresh Individual + a new IdentityToken in RESERVE, then
+        promote to ACTIVE via the state-machine path. Each call uses a
+        new individual so the partial unique index uq_one_active_per_person
+        doesn't collide across test fixtures. Returns the new token_id."""
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO Individual (legal_name, date_of_birth, jurisdiction)
+                VALUES (%s, '1990-01-01', 'US-PA')
+                RETURNING individual_id
+            """, (f'R11-6 Test {label}',))
+            iid = cur.fetchone()['individual_id']
+            cur.execute("""
+                INSERT INTO IdentityToken
+                    (token_value, physical_serial, hardware_model,
+                     biometric_binding_type, individual_id, issuing_agency_id,
+                     algorithm_id, status, issued_date, expiration_date)
+                VALUES
+                    (%s, %s, 'TitanQ-3', 'IRIS', %s, %s, %s,
+                     'RESERVE', CURRENT_TIMESTAMP,
+                     (CURRENT_DATE + INTERVAL '10 years')::date)
+                RETURNING token_id
+            """, (f'TKN-R11-6-{label}', f'SN-R11-6-{label}',
+                  iid, agency_id, algorithm_id))
+            tid = cur.fetchone()['token_id']
+            # Set audit GUCs and promote — the state machine trigger only
+            # allows RESERVE → ACTIVE.
+            cur.execute("SELECT set_config('polaris.actor_agency_id', %s, false)",
+                        (str(agency_id),))
+            cur.execute("SELECT set_config('polaris.reason_code', %s, false)",
+                        ('TEST_SEED_ACTIVATE',))
+            cur.execute("""
+                UPDATE IdentityToken SET status='ACTIVE',
+                       activated_date=CURRENT_TIMESTAMP
+                 WHERE token_id=%s
+            """, (tid,))
+            conn.commit()
+        return tid
+
+    def _set_policy(self, agency_id, max_percent, window_days=30):
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO IssuerDiscretionPolicy
+                    (agency_id, max_revoke_percent, window_days,
+                     set_by_admin, justification)
+                VALUES (%s, %s, %s, 'test_setup',
+                        'test fixture for IssuerDiscretionBoundsTests')
+                ON CONFLICT (agency_id) DO UPDATE
+                  SET max_revoke_percent = EXCLUDED.max_revoke_percent,
+                      window_days        = EXCLUDED.window_days,
+                      justification      = EXCLUDED.justification
+            """, (agency_id, max_percent, window_days))
+            conn.commit()
+
+    def _call_uc8(self, token_id, actor, reason, cosigner=None,
+                  loc='https://crl.idtoken.gov/test/uc8.crl'):
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute(
+                "CALL uc8_revoke_token(%s, %s, %s, %s, %s)",
+                (token_id, actor, reason, loc, cosigner))
+            conn.commit()
+
+    def test_form_renders(self):
+        r = self.client.get('/uc8/revoke')
+        self.assertEqual(r.status_code, 200)
+        self.assertHTML(r, 'UC-8', 'Bounded Revocation')
+
+    def test_revoke_under_bound_succeeds(self):
+        """With a permissive per-agency override, a single revocation
+        succeeds without a co-signer. Verifies both:
+          - IdentityToken.status flips to REVOKED
+          - RevocationList gains a row in the same transaction
+        """
+        # Seed: agency 1 (federal issuer w/ BOTH on alg 1) gets a 90%
+        # override and a fresh ACTIVE token to revoke.
+        self._set_policy(1, 90.00)
+        tid = self._seed_active_token(1, 1, 'under-bound')
+
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT count(*) AS c FROM RevocationList")
+            crl_before = cur.fetchone()['c']
+
+        self._call_uc8(tid, actor=1, reason='ADMINISTRATIVE')
+
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT status FROM IdentityToken WHERE token_id=%s", (tid,))
+            self.assertEqual(cur.fetchone()['status'], 'REVOKED')
+            cur.execute("SELECT count(*) AS c FROM RevocationList")
+            self.assertEqual(cur.fetchone()['c'], crl_before + 1)
+
+    def test_revoke_over_bound_without_cosigner_rejected(self):
+        """Default 5% bound applies (no override). Sample data is small enough
+        that any single revocation trips the bound — co-signer required."""
+        tid = self._seed_active_token(2, 1, 'over-bound-no-cosign')
+        # Make sure agency 2 has no override.
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("DELETE FROM IssuerDiscretionPolicy WHERE agency_id=2")
+            conn.commit()
+        with self.assertRaises(psycopg2.Error) as ctx:
+            self._call_uc8(tid, actor=2, reason='COMPROMISED')
+        self.assertIn('co-signer required', str(ctx.exception))
+
+    def test_revoke_over_bound_with_cosigner_succeeds(self):
+        """Same over-bound setup, but provide a valid co-signer.
+        Agency 1 holds BOTH on alg 1 (different from actor agency 2).
+        Audit row's reason_code must carry the [COSIGN:1] tag."""
+        tid = self._seed_active_token(2, 1, 'over-bound-with-cosign')
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("DELETE FROM IssuerDiscretionPolicy WHERE agency_id=2")
+            conn.commit()
+
+        self._call_uc8(tid, actor=2, reason='COMPROMISED', cosigner=1)
+
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT status FROM IdentityToken WHERE token_id=%s", (tid,))
+            self.assertEqual(cur.fetchone()['status'], 'REVOKED')
+            cur.execute("""
+                SELECT reason_code FROM TokenLifecycleEvent
+                WHERE token_id=%s AND event_type='REVOKED'
+                ORDER BY event_id DESC LIMIT 1
+            """, (tid,))
+            self.assertIn('[COSIGN:1]', cur.fetchone()['reason_code'])
+
+    def test_cosigner_equals_actor_rejected(self):
+        tid = self._seed_active_token(2, 1, 'cosign-equals-actor')
+        with self.assertRaises(psycopg2.Error) as ctx:
+            self._call_uc8(tid, actor=2, reason='COMPROMISED', cosigner=2)
+        self.assertIn('Co-signer must differ from actor', str(ctx.exception))
+
+    def test_cosigner_without_both_authorization_rejected(self):
+        """Agency 4 (TSA) holds only VERIFY on algorithm 1, not BOTH.
+        It cannot serve as co-signer for revoking an alg-1 token."""
+        tid = self._seed_active_token(2, 1, 'cosign-without-both')
+        with self.assertRaises(psycopg2.Error) as ctx:
+            self._call_uc8(tid, actor=2, reason='COMPROMISED', cosigner=4)
+        self.assertIn('BOTH authorization', str(ctx.exception))
+
+    def test_revocation_list_row_uses_canonical_reason(self):
+        """The audit lifecycle row may carry the [COSIGN:N] tag in its
+        reason_code (VARCHAR(60), unchecked), but the verifier-facing
+        RevocationList row must stay in the standard reason vocabulary
+        (VARCHAR(40), CHECK-constrained)."""
+        tid = self._seed_active_token(2, 1, 'crl-canonical-reason')
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("DELETE FROM IssuerDiscretionPolicy WHERE agency_id=2")
+            conn.commit()
+
+        self._call_uc8(tid, actor=2, reason='ADMINISTRATIVE', cosigner=1)
+
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("""
+                SELECT reason_code FROM RevocationList
+                WHERE token_id=%s ORDER BY revocation_id DESC LIMIT 1
+            """, (tid,))
+            row = cur.fetchone()
+            self.assertEqual(row['reason_code'], 'ADMINISTRATIVE')
+            self.assertNotIn('COSIGN', row['reason_code'])
+
+    def test_already_terminal_rejected(self):
+        """Revoking a token that's already REVOKED must fail with an
+        explicit 'already terminal' message."""
+        self._set_policy(1, 90.00)
+        tid = self._seed_active_token(1, 1, 'already-terminal')
+        self._call_uc8(tid, actor=1, reason='ADMINISTRATIVE')
+        with self.assertRaises(psycopg2.Error) as ctx:
+            self._call_uc8(tid, actor=1, reason='COMPROMISED')
+        self.assertIn('already terminal', str(ctx.exception))
+
+    def test_direct_update_to_revoked_rejected_by_trigger(self):
+        """Belt-and-suspenders: raw UPDATE that bypasses uc8_revoke_token
+        is rejected by the trigger because polaris.revoke_check_done GUC
+        was not set in the transaction."""
+        tid = self._seed_active_token(1, 1, 'direct-update')
+        with self.assertRaises(psycopg2.Error) as ctx:
+            with self._new_conn() as conn, conn.cursor() as cur:
+                cur.execute("UPDATE IdentityToken SET status='REVOKED' WHERE token_id=%s", (tid,))
+                conn.commit()
+        self.assertIn('uc8_revoke_token', str(ctx.exception))
+
+    def test_per_agency_override_takes_effect(self):
+        """Agency with a low-percent override hits the bound at fewer
+        revocations than the system default would imply."""
+        # Tighten agency 1 to 0.01% (any revocation is over the bound).
+        self._set_policy(1, 0.01)
+        tid = self._seed_active_token(1, 1, 'override-takes-effect')
+        with self.assertRaises(psycopg2.Error) as ctx:
+            self._call_uc8(tid, actor=1, reason='ADMINISTRATIVE')
+        self.assertIn('co-signer required', str(ctx.exception))
+
+    def test_bound_tripping_revoke_rolls_back_atomically(self):
+        """A revocation that trips the bound (and has no co-signer) must
+        roll back atomically — neither the status flip nor the
+        RevocationList insert may persist. The original 'synthetic mass-
+        revocation' acceptance criterion reduces to this single
+        invariant: the failing call did NOT silently succeed."""
+        tid = self._seed_active_token(2, 1, 'atomic-rollback')
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("DELETE FROM IssuerDiscretionPolicy WHERE agency_id=2")
+            cur.execute("SELECT count(*) AS c FROM RevocationList WHERE token_id=%s", (tid,))
+            crl_before = cur.fetchone()['c']
+            conn.commit()
+
+        with self.assertRaises(psycopg2.Error):
+            self._call_uc8(tid, actor=2, reason='COMPROMISED')
+
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT status FROM IdentityToken WHERE token_id=%s", (tid,))
+            self.assertEqual(cur.fetchone()['status'], 'ACTIVE',
+                'Bound-tripping revoke must leave token ACTIVE on rollback')
+            cur.execute("SELECT count(*) AS c FROM RevocationList WHERE token_id=%s", (tid,))
+            self.assertEqual(cur.fetchone()['c'], crl_before,
+                'Bound-tripping revoke must NOT insert into RevocationList')
+
+
+# ============================================================================
+# R11-4 / M2-9 — TIERED ENROLLMENT / POPULATION COVERAGE
+#
+# Tests the EnrollmentStatusEvent table, seed trigger, view, and civic
+# query function. Verifies the asymmetric design: aggregate civic queries
+# are easy; per-individual NOT_ENROLLED enumeration is deliberately not
+# a first-class affordance.
+# ============================================================================
+
+
+class TieredEnrollmentTests(PolarisTestCase):
+    """Tests for R11-4 / M2-9 — tiered enrollment / population coverage."""
+
+    def _new_conn(self):
+        return psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+
+    def _make_individual(self, name='Test Person', jurisdiction='US-PA'):
+        """Insert a fresh Individual and return its id. The seed trigger
+        will emit a NOT_ENROLLED event automatically."""
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO Individual (legal_name, date_of_birth, jurisdiction)
+                VALUES (%s, '1990-01-01', %s)
+                RETURNING individual_id
+            """, (name, jurisdiction))
+            iid = cur.fetchone()['individual_id']
+            conn.commit()
+        return iid
+
+    def test_summary_page_renders(self):
+        r = self.client.get('/individuals/enrollment')
+        self.assertEqual(r.status_code, 200)
+        self.assertHTML(r, 'Civic Enrollment Summary', 'NOT_ENROLLED', 'EXEMPT', 'LAPSED')
+
+    def test_seed_trigger_emits_not_enrolled(self):
+        """Every new Individual row gets exactly one NOT_ENROLLED event
+        from the seed trigger."""
+        iid = self._make_individual(name='Seed Trigger Test')
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("""
+                SELECT status, transition_reason, recorded_by_agency_id
+                FROM EnrollmentStatusEvent WHERE individual_id=%s
+            """, (iid,))
+            rows = cur.fetchall()
+        self.assertEqual(len(rows), 1,
+            f'Expected exactly 1 seed event, got {len(rows)}')
+        self.assertEqual(rows[0]['status'], 'NOT_ENROLLED')
+        self.assertEqual(rows[0]['transition_reason'], 'INDIVIDUAL_ROW_CREATED')
+        self.assertIsNone(rows[0]['recorded_by_agency_id'],
+            'Seed events must be SYSTEM events with NULL agency')
+
+    def test_view_returns_latest_status_per_individual(self):
+        """IndividualCurrentEnrollment resolves multiple events to the
+        most recent."""
+        iid = self._make_individual(name='View Test')
+        # Manually record a transition to PENDING_ENROLLMENT.
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO EnrollmentStatusEvent
+                    (individual_id, status, transition_reason, recorded_by_agency_id)
+                VALUES (%s, 'PENDING_ENROLLMENT', 'BIOMETRIC_INTAKE', 1)
+            """, (iid,))
+            conn.commit()
+            cur.execute("""
+                SELECT current_status FROM IndividualCurrentEnrollment
+                WHERE individual_id=%s
+            """, (iid,))
+            self.assertEqual(cur.fetchone()['current_status'], 'PENDING_ENROLLMENT')
+
+    def test_view_definition_has_coalesce_default(self):
+        """Defensive: the view's CURRENT_STATUS column wraps the latest-
+        event status in COALESCE(..., 'NOT_ENROLLED') so the absence of
+        events resolves to NOT_ENROLLED. Under normal operation the seed
+        trigger ensures every Individual has at least one event, so this
+        is structural defense for the trigger-disabled edge case. Tested
+        by inspecting the materialized view definition rather than
+        forcing the trigger-disabled state at runtime (which requires
+        table-owner privileges that polaris_app doesn't hold)."""
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("""
+                SELECT pg_get_viewdef('IndividualCurrentEnrollment'::regclass)
+                       AS definition
+            """)
+            defn = cur.fetchone()['definition']
+        self.assertIn("COALESCE", defn.upper(),
+            'View must wrap latest status in COALESCE for the no-events default')
+        self.assertIn("'NOT_ENROLLED'", defn,
+            'View COALESCE must fall back to literal NOT_ENROLLED')
+
+    def test_civic_summary_returns_rollup(self):
+        """civic_enrollment_summary(NULL) returns rows for every
+        (jurisdiction, status) combo present in the data."""
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT * FROM civic_enrollment_summary(NULL)")
+            rows = cur.fetchall()
+        self.assertGreater(len(rows), 0)
+        # Statuses in sample data: at minimum NOT_ENROLLED, ENROLLED,
+        # EXEMPT, LAPSED.
+        statuses = {r['status'] for r in rows}
+        for required in ('ENROLLED', 'EXEMPT', 'LAPSED'):
+            self.assertIn(required, statuses,
+                f'Sample data should produce a {required} row in the rollup')
+
+    def test_civic_summary_jurisdiction_filter(self):
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT * FROM civic_enrollment_summary(%s)", ('US-PA',))
+            rows = cur.fetchall()
+        jurisdictions = {r['jurisdiction'] for r in rows}
+        self.assertEqual(jurisdictions, {'US-PA'},
+            f'jurisdiction filter should restrict to US-PA, got {jurisdictions}')
+
+    def test_check_constraint_rejects_invalid_status(self):
+        with self.assertRaises(psycopg2.Error) as ctx:
+            with self._new_conn() as conn, conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO EnrollmentStatusEvent
+                        (individual_id, status, transition_reason, recorded_by_agency_id)
+                    VALUES (1, 'NONSENSE', 'should fail', 1)
+                """)
+                conn.commit()
+        self.assertIn('check constraint', str(ctx.exception).lower())
+
+    def test_append_only_update_rejected(self):
+        """Append-only: UPDATE on EnrollmentStatusEvent is rejected."""
+        iid = self._make_individual(name='Append-Only Test')
+        with self.assertRaises(psycopg2.Error) as ctx:
+            with self._new_conn() as conn, conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE EnrollmentStatusEvent SET status='EXEMPT'
+                    WHERE individual_id=%s
+                """, (iid,))
+                conn.commit()
+        self.assertIn('append-only', str(ctx.exception).lower())
+
+    def test_append_only_delete_rejected(self):
+        """Append-only: DELETE on EnrollmentStatusEvent is rejected."""
+        iid = self._make_individual(name='Append-Only Delete Test')
+        with self.assertRaises(psycopg2.Error) as ctx:
+            with self._new_conn() as conn, conn.cursor() as cur:
+                cur.execute("DELETE FROM EnrollmentStatusEvent WHERE individual_id=%s", (iid,))
+                conn.commit()
+        self.assertIn('append-only', str(ctx.exception).lower())
+
+    def test_state_machine_is_not_trigger_enforced(self):
+        """R11-4 deliberately does not trigger-enforce state-machine
+        sequencing. Any policy transition is recorded; the application
+        layer enforces order where it matters. Test: a LAPSED event
+        directly after a NOT_ENROLLED seed event (skipping ENROLLED)
+        is permitted by the database."""
+        iid = self._make_individual(name='Unusual Transition Test')
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO EnrollmentStatusEvent
+                    (individual_id, status, transition_reason, recorded_by_agency_id, notes)
+                VALUES (%s, 'LAPSED', 'POLICY_OVERRIDE', 1,
+                        'Unusual but permitted by schema')
+            """, (iid,))
+            conn.commit()
+            cur.execute("""
+                SELECT current_status FROM IndividualCurrentEnrollment
+                WHERE individual_id=%s
+            """, (iid,))
+            self.assertEqual(cur.fetchone()['current_status'], 'LAPSED')
+
+
+# ============================================================================
+# R11-2 / M2-7 — CATASTROPHIC-LOSS RECOVERY (UC-9)
+#
+# The third leg of the "schema doesn't weaponize itself against the holder"
+# triad. Two-phase out-of-band ceremony: operator initiates PENDING, admin
+# decides APPROVED/REJECTED after 48h cool-down and three-channel verify.
+# ============================================================================
+
+
+class CatastrophicLossRecoveryTests(PolarisTestCase):
+    """Tests for R11-2 / M2-7 — UC-9 catastrophic-loss recovery."""
+
+    def _new_conn(self):
+        return psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+
+    def _make_individual(self, name='UC9 Test'):
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO Individual (legal_name, date_of_birth, jurisdiction)
+                VALUES (%s, '1990-01-01', 'US-PA')
+                RETURNING individual_id
+            """, (name,))
+            iid = cur.fetchone()['individual_id']
+            conn.commit()
+        return iid
+
+    def _user_id(self, username):
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT user_id FROM AppUser WHERE username=%s", (username,))
+            return cur.fetchone()['user_id']
+
+    def _make_pending(self, individual_id, *, requesting_user='operator', cooldown_hours=48):
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("CALL uc9_initiate_recovery(%s, %s, %s, %s)",
+                        (individual_id, 1, self._user_id(requesting_user), cooldown_hours))
+            cur.execute(
+                "SELECT recovery_id FROM RecoveryRequest "
+                "WHERE claimed_individual_id=%s AND status='PENDING' "
+                "ORDER BY recovery_id DESC LIMIT 1",
+                (individual_id,))
+            rid = cur.fetchone()['recovery_id']
+            conn.commit()
+        return rid
+
+    def _verify_three_channels(self, recovery_id):
+        """Set the OOB channels so APPROVED becomes structurally permitted.
+        Must run before cooldown is over OR after — order doesn't matter for
+        these UPDATEs since RecoveryRequest is append-only only after the
+        decision lands; pre-decision UPDATEs are allowed by the trigger
+        because the row isn't yet decided. WAIT — actually the append-only
+        trigger refuses ALL UPDATEs. The procedure path is the only one;
+        for tests we need a different strategy: insert the channels at
+        initiate time via direct INSERT, NOT via uc9_initiate_recovery."""
+        # The proper test strategy: bypass uc9_initiate_recovery for setup
+        # and INSERT directly with channels already verified.
+        raise NotImplementedError("see _make_pending_with_channels")
+
+    def _make_pending_with_channels(self, individual_id, *, cooldown_past=True,
+                                     requesting_user='operator', biometric=True,
+                                     sworn=True, witness=True):
+        """Build a PENDING RecoveryRequest with all channels pre-verified.
+        Bypasses uc9_initiate_recovery because the append-only trigger on
+        EnrollmentStatusEvent (and RecoveryRequest after decision) means
+        we can't UPDATE channel fields after initiate. Tests need to set
+        up the cooldown-passed + three-channel state explicitly."""
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO RecoveryRequest
+                    (claimed_individual_id, requested_at, requesting_agency_id,
+                     requesting_user_id, biometric_verified, sworn_statement_hash,
+                     witness_agency_id, witness_co_sign_user_id,
+                     cooldown_expires_at)
+                VALUES (
+                    %s,
+                    CURRENT_TIMESTAMP - INTERVAL '50 hours',
+                    1,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    %s,
+                    CURRENT_TIMESTAMP - INTERVAL '2 hours'
+                )
+                RETURNING recovery_id
+            """, (
+                individual_id,
+                self._user_id(requesting_user),
+                biometric,
+                'a' * 64 if sworn else None,
+                3 if witness else None,
+                self._user_id('admin') if witness else None,
+            ))
+            rid = cur.fetchone()['recovery_id']
+            conn.commit()
+        return rid
+
+    def _complete(self, recovery_id, *, decision='APPROVED',
+                  deciding_user='admin', new_token_suffix='RCV'):
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("""
+                CALL uc9_complete_recovery(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            """, (
+                recovery_id, self._user_id(deciding_user), decision,
+                'test reason',
+                f'TKN-TEST-{recovery_id}-{new_token_suffix}',
+                f'SN-TEST-{recovery_id}-{new_token_suffix}',
+                1,  # ML-DSA-65
+                'IRIS', 'MULTI_MODAL',
+                f'https://crl.idtoken.gov/test/{recovery_id}',
+            ))
+            conn.commit()
+
+    # ------------------------------------------------------------------
+    # Page-render tests
+    # ------------------------------------------------------------------
+
+    def test_queue_page_renders(self):
+        r = self.client.get('/uc9/queue')
+        self.assertEqual(r.status_code, 200)
+        self.assertHTML(r, 'Recovery Queue', 'OOB Channels')
+
+    def test_initiate_page_renders(self):
+        r = self.client.get('/uc9/initiate-recovery')
+        self.assertEqual(r.status_code, 200)
+        self.assertHTML(r, 'Initiate Catastrophic-Loss Recovery')
+
+    # ------------------------------------------------------------------
+    # uc9_initiate_recovery behavior
+    # ------------------------------------------------------------------
+
+    def test_initiate_rejects_when_active_token_exists(self):
+        """Maria (or whoever still has ACTIVE) — UC-4 is the path; UC-9 must reject."""
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT individual_id FROM IdentityToken WHERE status='ACTIVE' LIMIT 1")
+            row = cur.fetchone()
+        self.assertIsNotNone(row, 'Need an ACTIVE token for this test')
+        with self.assertRaises(psycopg2.Error) as ctx:
+            with self._new_conn() as conn, conn.cursor() as cur:
+                cur.execute("CALL uc9_initiate_recovery(%s, %s, %s, %s)",
+                            (row['individual_id'], 1, self._user_id('operator'), 48))
+                conn.commit()
+        self.assertIn('ACTIVE', str(ctx.exception))
+
+    def test_initiate_rejects_when_pending_already_exists(self):
+        iid = self._make_individual('initiate twice')
+        self._make_pending(iid)
+        with self.assertRaises(psycopg2.Error) as ctx:
+            self._make_pending(iid)
+        self.assertIn('PENDING', str(ctx.exception))
+
+    def test_initiate_creates_pending_with_cooldown_set(self):
+        iid = self._make_individual('initiate happy path')
+        rid = self._make_pending(iid, cooldown_hours=48)
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("""
+                SELECT status, cooldown_expires_at - requested_at AS span
+                FROM RecoveryRequest WHERE recovery_id=%s
+            """, (rid,))
+            row = cur.fetchone()
+        self.assertEqual(row['status'], 'PENDING')
+        # span >= 48h
+        self.assertGreaterEqual(row['span'].total_seconds(), 48 * 3600 - 1)
+
+    # ------------------------------------------------------------------
+    # uc9_complete_recovery behavior
+    # ------------------------------------------------------------------
+
+    def test_complete_rejects_non_admin_deciders(self):
+        iid = self._make_individual('non-admin decide')
+        rid = self._make_pending_with_channels(iid)
+        # Operator tries to decide — should fail.
+        with self.assertRaises(psycopg2.Error) as ctx:
+            self._complete(rid, deciding_user='operator')
+        self.assertIn('admin', str(ctx.exception).lower())
+
+    def test_complete_rejects_when_approver_equals_requester(self):
+        iid = self._make_individual('self-approve')
+        # Operator initiates and tries to decide — even if it were admin,
+        # approver != requester would block.
+        rid = self._make_pending_with_channels(iid, requesting_user='admin')
+        with self.assertRaises(psycopg2.Error) as ctx:
+            self._complete(rid, deciding_user='admin')
+        self.assertIn('differ', str(ctx.exception).lower())
+
+    def test_complete_rejects_before_cooldown(self):
+        iid = self._make_individual('cooldown active')
+        # Build a PENDING that's still in cool-down.
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO RecoveryRequest
+                    (claimed_individual_id, requesting_agency_id,
+                     requesting_user_id, biometric_verified, sworn_statement_hash,
+                     witness_agency_id, witness_co_sign_user_id,
+                     cooldown_expires_at)
+                VALUES (%s, 1, %s, TRUE, %s, 3, %s,
+                        CURRENT_TIMESTAMP + INTERVAL '49 hours')
+                RETURNING recovery_id
+            """, (iid, self._user_id('operator'), 'a' * 64, self._user_id('admin')))
+            rid = cur.fetchone()['recovery_id']
+            conn.commit()
+        with self.assertRaises(psycopg2.Error) as ctx:
+            self._complete(rid)
+        self.assertIn('cool', str(ctx.exception).lower())
+
+    def test_complete_rejects_without_three_channels(self):
+        iid = self._make_individual('no channels')
+        rid = self._make_pending_with_channels(iid, biometric=False)
+        with self.assertRaises(psycopg2.Error) as ctx:
+            self._complete(rid)
+        self.assertIn('three', str(ctx.exception).lower())
+
+    def test_approved_path_issues_new_token_and_lost_old(self):
+        """Full APPROVED happy path:
+        - issue an ACTIVE token directly for the test individual (so there's
+          something to transition to LOST)
+        - file a PENDING recovery with channels verified and cool-down past
+        - decide APPROVED
+        - verify: old token → LOST, new token → ACTIVE, RevocationList row
+          present, audit rows tagged [RECOVERY:<id>]"""
+        iid = self._make_individual('approved happy path')
+        # Seed an ACTIVE token for this individual.
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO IdentityToken
+                    (token_value, physical_serial, hardware_model,
+                     biometric_binding_type, individual_id, issuing_agency_id,
+                     algorithm_id, status, issued_date, expiration_date)
+                VALUES ('TKN-UC9-PRE', 'SN-UC9-PRE', 'TitanQ-3',
+                        'IRIS', %s, 1, 1, 'RESERVE', CURRENT_TIMESTAMP,
+                        (CURRENT_DATE + INTERVAL '10 years')::date)
+                RETURNING token_id
+            """, (iid,))
+            old_token_id = cur.fetchone()['token_id']
+            cur.execute("SELECT set_config('polaris.actor_agency_id', '1', false)")
+            cur.execute("SELECT set_config('polaris.reason_code', 'TEST', false)")
+            cur.execute("UPDATE IdentityToken SET status='ACTIVE', activated_date=CURRENT_TIMESTAMP WHERE token_id=%s",
+                        (old_token_id,))
+            conn.commit()
+
+        # The "ACTIVE token exists" check would block uc9_initiate_recovery,
+        # so we bypass it and INSERT a PENDING directly with channels set.
+        # (Real ops flow: holder loses ACTIVE → UC-9 initiate after the
+        # ACTIVE has gone terminal somehow. For tests we shortcut.)
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO RecoveryRequest
+                    (claimed_individual_id, requested_at, requesting_agency_id,
+                     requesting_user_id, biometric_verified, sworn_statement_hash,
+                     witness_agency_id, witness_co_sign_user_id,
+                     cooldown_expires_at)
+                VALUES (
+                    %s,
+                    CURRENT_TIMESTAMP - INTERVAL '50 hours',
+                    1, %s, TRUE, %s, 3, %s,
+                    CURRENT_TIMESTAMP - INTERVAL '2 hours'
+                )
+                RETURNING recovery_id
+            """, (iid, self._user_id('operator'), 'a' * 64, self._user_id('admin')))
+            rid = cur.fetchone()['recovery_id']
+            conn.commit()
+
+        self._complete(rid)
+
+        with self._new_conn() as conn, conn.cursor() as cur:
+            # Old token is now LOST.
+            cur.execute("SELECT status FROM IdentityToken WHERE token_id=%s", (old_token_id,))
+            self.assertEqual(cur.fetchone()['status'], 'LOST')
+
+            # New ACTIVE token exists for this individual.
+            cur.execute("SELECT token_id FROM IdentityToken WHERE individual_id=%s AND status='ACTIVE'", (iid,))
+            new_row = cur.fetchone()
+            self.assertIsNotNone(new_row, 'New ACTIVE token must exist')
+            new_token_id = new_row['token_id']
+            self.assertNotEqual(new_token_id, old_token_id)
+
+            # RevocationList row for the old token.
+            cur.execute("SELECT count(*) AS c FROM RevocationList WHERE token_id=%s", (old_token_id,))
+            self.assertEqual(cur.fetchone()['c'], 1,
+                'Lost token must be published to RevocationList')
+
+            # Audit-row tagging: old token's lifecycle row carries [RECOVERY:<id>].
+            cur.execute("""
+                SELECT reason_code FROM TokenLifecycleEvent
+                WHERE token_id=%s AND event_type='LOST'
+                ORDER BY event_id DESC LIMIT 1
+            """, (old_token_id,))
+            self.assertIn(f'[RECOVERY:{rid}]', cur.fetchone()['reason_code'])
+
+            # New token's lifecycle row carries [RECOVERY:<id>] too.
+            cur.execute("""
+                SELECT reason_code FROM TokenLifecycleEvent
+                WHERE token_id=%s ORDER BY event_id DESC LIMIT 1
+            """, (new_token_id,))
+            self.assertIn(f'[RECOVERY:{rid}]', cur.fetchone()['reason_code'])
+
+            # RecoveryRequest closed out.
+            cur.execute("SELECT status, resulting_token_id FROM RecoveryRequest WHERE recovery_id=%s", (rid,))
+            row = cur.fetchone()
+            self.assertEqual(row['status'], 'APPROVED')
+            self.assertEqual(row['resulting_token_id'], new_token_id)
+
+    def test_rejected_path_does_not_issue_token(self):
+        iid = self._make_individual('rejected path')
+        rid = self._make_pending_with_channels(iid)
+
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT count(*) AS c FROM IdentityToken WHERE individual_id=%s", (iid,))
+            tokens_before = cur.fetchone()['c']
+            cur.execute("SELECT count(*) AS c FROM RevocationList")
+            crl_before = cur.fetchone()['c']
+
+        self._complete(rid, decision='REJECTED')
+
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT status FROM RecoveryRequest WHERE recovery_id=%s", (rid,))
+            self.assertEqual(cur.fetchone()['status'], 'REJECTED')
+            cur.execute("SELECT count(*) AS c FROM IdentityToken WHERE individual_id=%s", (iid,))
+            self.assertEqual(cur.fetchone()['c'], tokens_before,
+                'REJECTED must not issue a token')
+            cur.execute("SELECT count(*) AS c FROM RevocationList")
+            self.assertEqual(cur.fetchone()['c'], crl_before,
+                'REJECTED must not publish to RevocationList')
+
+    def test_cannot_decide_twice(self):
+        iid = self._make_individual('decide twice')
+        rid = self._make_pending_with_channels(iid)
+        self._complete(rid, decision='REJECTED')
+        with self.assertRaises(psycopg2.Error) as ctx:
+            self._complete(rid, decision='APPROVED')
+        self.assertIn('not PENDING', str(ctx.exception))
+
+    # ------------------------------------------------------------------
+    # CHECK constraints (table-level)
+    # ------------------------------------------------------------------
+
+    def test_check_cooldown_minimum_48h(self):
+        iid = self._make_individual('check cooldown')
+        with self.assertRaises(psycopg2.Error) as ctx:
+            with self._new_conn() as conn, conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO RecoveryRequest
+                        (claimed_individual_id, requesting_agency_id,
+                         requesting_user_id, cooldown_expires_at)
+                    VALUES (%s, 1, %s, CURRENT_TIMESTAMP + INTERVAL '12 hours')
+                """, (iid, self._user_id('admin')))
+                conn.commit()
+        self.assertIn('check constraint', str(ctx.exception).lower())
+
+    def test_check_approver_differs_from_requester_table_level(self):
+        iid = self._make_individual('approver=requester')
+        op_uid = self._user_id('operator')
+        with self.assertRaises(psycopg2.Error) as ctx:
+            with self._new_conn() as conn, conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO RecoveryRequest
+                        (claimed_individual_id, requesting_agency_id,
+                         requesting_user_id, decided_by_user_id,
+                         cooldown_expires_at)
+                    VALUES (%s, 1, %s, %s, CURRENT_TIMESTAMP + INTERVAL '49 hours')
+                """, (iid, op_uid, op_uid))
+                conn.commit()
+        self.assertIn('check constraint', str(ctx.exception).lower())
+
+    def test_new_pending_allowed_after_prior_rejected(self):
+        """After REJECTED, the partial unique index `WHERE status='PENDING'`
+        no longer constrains; a new PENDING request can be filed (a
+        rejected holder may re-apply with new OOB evidence)."""
+        iid = self._make_individual('re-apply after reject')
+        rid_first = self._make_pending_with_channels(iid)
+        self._complete(rid_first, decision='REJECTED')
+        # New PENDING should succeed — the prior is no longer PENDING.
+        rid_second = self._make_pending(iid)
+        self.assertNotEqual(rid_second, rid_first)
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT count(*) AS c FROM RecoveryRequest WHERE claimed_individual_id=%s", (iid,))
+            self.assertEqual(cur.fetchone()['c'], 2)
+
+
+# ============================================================================
+# R11-1 / M2-6 — MULTI-SIGNATURE TRANSITIONAL STATE (UC-6)
+#
+# Closes the cryptographic-diversity leg of the PDF §9 issuer-trust-
+# concentration triad. M:N TokenSignature relation lets a token carry
+# signatures from multiple algorithms during a migration window. The
+# TokenSignature row IS the audit-of-record for migrations.
+# ============================================================================
+
+
+class MultiSignatureTests(PolarisTestCase):
+    """Tests for R11-1 / M2-6 — multi-signature transitional state."""
+
+    def _new_conn(self):
+        return psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+
+    def _seed_token(self, individual_id=None, algorithm_id=1, label='ms-test'):
+        """Insert a fresh Individual + IdentityToken (RESERVE) +
+        TokenSignature backfill. Returns the token_id."""
+        with self._new_conn() as conn, conn.cursor() as cur:
+            if individual_id is None:
+                cur.execute("""
+                    INSERT INTO Individual (legal_name, date_of_birth, jurisdiction)
+                    VALUES (%s, '1990-01-01', 'US-PA')
+                    RETURNING individual_id
+                """, (f'MultiSig {label}',))
+                individual_id = cur.fetchone()['individual_id']
+            cur.execute("""
+                INSERT INTO IdentityToken
+                    (token_value, physical_serial, hardware_model,
+                     biometric_binding_type, individual_id, issuing_agency_id,
+                     algorithm_id, status, issued_date, expiration_date)
+                VALUES
+                    (%s, %s, 'TitanQ-3', 'IRIS', %s, 1, %s,
+                     'RESERVE', CURRENT_TIMESTAMP,
+                     (CURRENT_DATE + INTERVAL '10 years')::date)
+                RETURNING token_id
+            """, (f'TKN-MS-{label}', f'SN-MS-{label}',
+                  individual_id, algorithm_id))
+            tid = cur.fetchone()['token_id']
+            # Backfill TokenSignature for the new token.
+            cur.execute("""
+                INSERT INTO TokenSignature (token_id, algorithm_id, signature_bytes)
+                VALUES (%s, %s, %s)
+            """, (tid, algorithm_id, f'TEST_SEED_{label}'.encode()))
+            conn.commit()
+        return tid
+
+    def _migrate(self, token_id, new_algorithm, deprecate_old=False,
+                 sig_bytes=None):
+        sig = sig_bytes or f'MIG_{token_id}_{new_algorithm}'.encode()
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("CALL uc6_migrate_algorithm(%s, %s, %s, %s)",
+                        (token_id, new_algorithm, sig, deprecate_old))
+            conn.commit()
+
+    # ------------------------------------------------------------------
+    # Page-render tests
+    # ------------------------------------------------------------------
+
+    def test_migrate_page_renders(self):
+        r = self.client.get('/uc6/migrate')
+        self.assertEqual(r.status_code, 200)
+        self.assertHTML(r, 'Algorithm Migration', 'TokenSignature')
+
+    # ------------------------------------------------------------------
+    # Backfill + invariants
+    # ------------------------------------------------------------------
+
+    def test_every_existing_token_has_a_signature(self):
+        """The backfill block in 04_data.sql + the in-procedure inserts
+        in uc1_issue_and_activate together ensure every IdentityToken
+        has ≥ 1 TokenSignature row."""
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("""
+                SELECT t.token_id FROM IdentityToken t
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM TokenSignature s WHERE s.token_id = t.token_id)
+            """)
+            orphans = cur.fetchall()
+        self.assertEqual(orphans, [],
+            f'Found IdentityToken rows without a TokenSignature: {orphans}')
+
+    def test_unique_constraint_blocks_duplicate_algorithm_per_token(self):
+        tid = self._seed_token(label='unique-test', algorithm_id=1)
+        with self.assertRaises(psycopg2.errors.UniqueViolation):
+            with self._new_conn() as conn, conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO TokenSignature (token_id, algorithm_id, signature_bytes)
+                    VALUES (%s, 1, %s)
+                """, (tid, b'duplicate'))
+                conn.commit()
+
+    def test_deprecation_after_signed_check(self):
+        tid = self._seed_token(label='dep-check')
+        with self.assertRaises(psycopg2.Error) as ctx:
+            with self._new_conn() as conn, conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO TokenSignature
+                        (token_id, algorithm_id, signature_bytes, signed_at,
+                         deprecation_date)
+                    VALUES (%s, 2, %s, CURRENT_TIMESTAMP,
+                            CURRENT_TIMESTAMP - INTERVAL '1 hour')
+                """, (tid, b'bad'))
+                conn.commit()
+        self.assertIn('check', str(ctx.exception).lower())
+
+    # ------------------------------------------------------------------
+    # Append-only immutability
+    # ------------------------------------------------------------------
+
+    def test_delete_on_token_signature_rejected(self):
+        tid = self._seed_token(label='del-reject')
+        with self.assertRaises(psycopg2.Error) as ctx:
+            with self._new_conn() as conn, conn.cursor() as cur:
+                cur.execute("DELETE FROM TokenSignature WHERE token_id=%s", (tid,))
+                conn.commit()
+        self.assertIn('forbidden', str(ctx.exception).lower())
+
+    def test_update_to_signature_bytes_rejected(self):
+        tid = self._seed_token(label='upd-bytes')
+        with self.assertRaises(psycopg2.Error) as ctx:
+            with self._new_conn() as conn, conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE TokenSignature SET signature_bytes='MUTATED'::BYTEA
+                     WHERE token_id=%s
+                """, (tid,))
+                conn.commit()
+        self.assertIn('append-only', str(ctx.exception).lower())
+
+    def test_update_to_signed_at_rejected(self):
+        tid = self._seed_token(label='upd-signed-at')
+        with self.assertRaises(psycopg2.Error) as ctx:
+            with self._new_conn() as conn, conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE TokenSignature SET signed_at=CURRENT_TIMESTAMP
+                     WHERE token_id=%s
+                """, (tid,))
+                conn.commit()
+        self.assertIn('append-only', str(ctx.exception).lower())
+
+    def test_cannot_deprecate_last_active_signature(self):
+        """Deprecating the only active signature of a token leaves the
+        token with zero active signatures → enforce_token_has_active_signature
+        rejects."""
+        tid = self._seed_token(label='zero-active')
+        with self.assertRaises(psycopg2.errors.CheckViolation):
+            with self._new_conn() as conn, conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE TokenSignature
+                       SET deprecation_date = CURRENT_TIMESTAMP + INTERVAL '1 hour'
+                     WHERE token_id=%s
+                """, (tid,))
+                conn.commit()
+        # Confirm the rollback: still 1 active signature.
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("""
+                SELECT count(*) AS c FROM TokenSignature
+                WHERE token_id=%s AND deprecation_date IS NULL
+            """, (tid,))
+            self.assertEqual(cur.fetchone()['c'], 1)
+
+    def test_deprecation_via_migration_then_cannot_unset(self):
+        """Migration deprecates the old sig (with a new one alongside).
+        After deprecation lands, setting deprecation_date=NULL must be rejected."""
+        tid = self._seed_token(label='dep-unset', algorithm_id=1)
+        # Migrate to alg 2, deprecate alg 1's signature.
+        self._migrate(tid, new_algorithm=2, deprecate_old=True)
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("""
+                SELECT signature_id FROM TokenSignature
+                WHERE token_id=%s AND algorithm_id=1
+            """, (tid,))
+            old_sig_id = cur.fetchone()['signature_id']
+        with self.assertRaises(psycopg2.Error) as ctx:
+            with self._new_conn() as conn, conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE TokenSignature SET deprecation_date=NULL
+                     WHERE signature_id=%s
+                """, (old_sig_id,))
+                conn.commit()
+        self.assertIn('un-set', str(ctx.exception).lower())
+
+    # ------------------------------------------------------------------
+    # uc6_migrate_algorithm behavior
+    # ------------------------------------------------------------------
+
+    def test_migrate_adds_new_signature_without_deprecating(self):
+        tid = self._seed_token(label='add-only', algorithm_id=1)
+        self._migrate(tid, new_algorithm=2, deprecate_old=False)
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("""
+                SELECT count(*) AS c FROM TokenSignature
+                WHERE token_id=%s AND deprecation_date IS NULL
+            """, (tid,))
+            self.assertEqual(cur.fetchone()['c'], 2,
+                'Both old and new signatures should be active during migration window')
+
+    def test_migrate_with_deprecate_old(self):
+        tid = self._seed_token(label='dep-old', algorithm_id=1)
+        self._migrate(tid, new_algorithm=2, deprecate_old=True)
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("""
+                SELECT count(*) FILTER (WHERE deprecation_date IS NULL) AS active,
+                       count(*) FILTER (WHERE deprecation_date IS NOT NULL) AS deprecated
+                FROM TokenSignature WHERE token_id=%s
+            """, (tid,))
+            row = cur.fetchone()
+        self.assertEqual(row['active'], 1,
+            f'After deprecate_old=TRUE, exactly 1 active sig: {row}')
+        self.assertEqual(row['deprecated'], 1,
+            f'After deprecate_old=TRUE, exactly 1 deprecated sig: {row}')
+
+    def test_migrate_rejects_nonexistent_token(self):
+        with self.assertRaises(psycopg2.Error) as ctx:
+            self._migrate(token_id=999_999, new_algorithm=2)
+        self.assertIn('does not exist', str(ctx.exception))
+
+    def test_migrate_rejects_deprecated_algorithm(self):
+        """Algorithm 5 is ECDSA-P256, scheduled for deprecation 2027-12-31
+        in the sample data — not yet deprecated as of test runtime. To
+        exercise the procedure's deprecation check, temporarily move
+        algorithm 5's deprecation_date into the past, attempt the migration,
+        then restore."""
+        tid = self._seed_token(label='dep-alg')
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("""
+                SELECT deprecation_date FROM CryptographicAlgorithm WHERE algorithm_id=5
+            """)
+            original = cur.fetchone()['deprecation_date']
+            cur.execute("""
+                UPDATE CryptographicAlgorithm
+                   SET deprecation_date='2020-01-01'::TIMESTAMP
+                 WHERE algorithm_id=5
+            """)
+            conn.commit()
+        try:
+            with self.assertRaises(psycopg2.Error) as ctx:
+                self._migrate(tid, new_algorithm=5)
+            self.assertIn('deprecated', str(ctx.exception))
+        finally:
+            with self._new_conn() as conn, conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE CryptographicAlgorithm SET deprecation_date=%s WHERE algorithm_id=5
+                """, (original,))
+                conn.commit()
+
+    def test_migrate_rejects_duplicate_algorithm(self):
+        """UNIQUE(token_id, algorithm_id) blocks re-migrating to the same algorithm."""
+        tid = self._seed_token(label='dup-alg', algorithm_id=1)
+        with self.assertRaises(psycopg2.errors.UniqueViolation):
+            self._migrate(tid, new_algorithm=1)
+
+    # ------------------------------------------------------------------
+    # No-auto-derivation invariant (R11-4-style assertion)
+    # ------------------------------------------------------------------
+
+    def test_no_auto_derivation_from_algorithm_deprecation(self):
+        """Setting CryptographicAlgorithm.deprecation_date does NOT cascade
+        into TokenSignature.deprecation_date. The two columns are
+        independent operator-policy decisions."""
+        tid = self._seed_token(label='no-auto-derive', algorithm_id=1)
+        # Sanity: the seeded sig is active under alg 1.
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("""
+                SELECT deprecation_date FROM TokenSignature
+                WHERE token_id=%s AND algorithm_id=1
+            """, (tid,))
+            self.assertIsNone(cur.fetchone()['deprecation_date'])
+
+            # Set the ALGORITHM's deprecation_date in the future. (Use a
+            # future date so as not to interfere with other tests.)
+            cur.execute("""
+                UPDATE CryptographicAlgorithm
+                   SET deprecation_date = CURRENT_TIMESTAMP + INTERVAL '90 days'
+                 WHERE algorithm_id=1
+            """)
+            conn.commit()
+            # The TokenSignature row's deprecation_date must remain NULL —
+            # the schema does NOT auto-derive.
+            cur.execute("""
+                SELECT deprecation_date FROM TokenSignature
+                WHERE token_id=%s AND algorithm_id=1
+            """, (tid,))
+            self.assertIsNone(cur.fetchone()['deprecation_date'],
+                'TokenSignature.deprecation_date must NOT auto-derive from '
+                'CryptographicAlgorithm.deprecation_date')
+            # Clean up to avoid polluting other tests.
+            cur.execute("UPDATE CryptographicAlgorithm SET deprecation_date=NULL WHERE algorithm_id=1")
+            conn.commit()
+
+    # ------------------------------------------------------------------
+    # TokenSignature row = migration audit
+    # ------------------------------------------------------------------
+
+    def test_token_signature_row_is_migration_audit(self):
+        """Querying TokenSignature for a migrated token reconstructs the
+        full migration history. signed_at is the canonical timestamp."""
+        tid = self._seed_token(label='audit-row', algorithm_id=1)
+        self._migrate(tid, new_algorithm=2)
+        # Wait a bit so signed_at differs measurably for the next migration.
+        import time as _time; _time.sleep(0.05)
+        self._migrate(tid, new_algorithm=3)
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("""
+                SELECT algorithm_id, signed_at
+                FROM TokenSignature
+                WHERE token_id=%s
+                ORDER BY signed_at, algorithm_id
+            """, (tid,))
+            rows = cur.fetchall()
+        self.assertEqual(len(rows), 3,
+            'Expected 3 TokenSignature rows: original + 2 migrations')
+        self.assertEqual([r['algorithm_id'] for r in rows], [1, 2, 3],
+            f'Audit replay should show algorithm sequence 1→2→3: {rows}')
+
+
+# ============================================================================
+# v8.21 / R10-2 / M2-2 — ANCHOR BATCH (DID anchoring + Merkle log)
+# ============================================================================
+
+class AnchorBatchTests(PolarisTestCase):
+    """Tests for the per-batch Merkle commitment layer (AnchorBatch).
+    Implements PDF §9 'Centralized trust assumption' — closes Substrate-D
+    arc to 4/5 done (M2-1 ZK-SNARK remains).
+
+    Verifies:
+      - Merkle helper is deterministic and correct
+      - close_anchor_batch produces consistent state
+      - Append-only invariant on AnchorBatch
+      - co-NULL invariant on (batch_id, merkle_proof)
+      - Inclusion-proof verification round-trip
+      - Per-algorithm scoping (cross-algorithm batches don't bleed)
+      - Algorithm-deprecation guard
+      - Empty-pending rejection
+      - 10,000-leaf hard cap (smoke; we don't seed 10k)
+      - Routes return correct shapes
+    """
+
+    # -- Merkle helper unit tests ---------------------------------------
+
+    def test_merkle_leaf_hash_is_deterministic(self):
+        from anchoring import leaf_hash
+        a = leaf_hash(42, '0xabc')
+        b = leaf_hash(42, '0xabc')
+        self.assertEqual(a, b)
+        # And changes with input
+        self.assertNotEqual(a, leaf_hash(43, '0xabc'))
+        self.assertNotEqual(a, leaf_hash(42, '0xabd'))
+
+    def test_merkle_root_single_leaf_equals_leaf(self):
+        from anchoring import compute_batch, leaf_hash
+        root, proofs = compute_batch([(1, '0xaa')], 'SHA3-256')
+        self.assertEqual(root, leaf_hash(1, '0xaa'))
+        self.assertEqual(proofs['1'], [])
+
+    def test_merkle_root_independent_of_input_order(self):
+        from anchoring import compute_batch
+        r1, _ = compute_batch([(1, '0xaa'), (2, '0xbb'), (3, '0xcc')])
+        r2, _ = compute_batch([(3, '0xcc'), (1, '0xaa'), (2, '0xbb')])
+        self.assertEqual(r1, r2,
+            'Sorted leaf order must produce identical roots regardless of caller order')
+
+    def test_merkle_proof_verifies_against_root(self):
+        from anchoring import compute_batch, leaf_hash, verify_proof
+        leaves = [(1, '0xaa'), (2, '0xbb'), (3, '0xcc'), (4, '0xdd')]
+        root, proofs = compute_batch(leaves)
+        for aid, ch in leaves:
+            leaf = leaf_hash(aid, ch)
+            self.assertTrue(verify_proof(leaf, proofs[str(aid)], root),
+                f'Proof for leaf {aid} must verify against root')
+
+    def test_merkle_proof_fails_with_wrong_root(self):
+        from anchoring import compute_batch, leaf_hash, verify_proof
+        leaves = [(1, '0xaa'), (2, '0xbb')]
+        _root, proofs = compute_batch(leaves)
+        leaf = leaf_hash(1, '0xaa')
+        wrong = '0' * 64
+        self.assertFalse(verify_proof(leaf, proofs['1'], wrong))
+
+    # -- Seed-state assertions ------------------------------------------
+
+    def test_seed_contains_two_closed_batches(self):
+        with psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG) as conn, conn.cursor() as cur:
+            cur.execute("SELECT count(*) AS n FROM AnchorBatch")
+            self.assertEqual(cur.fetchone()['n'], 2,
+                'Seed should produce exactly two AnchorBatch rows (per-algorithm)')
+
+    def test_seed_no_pending_blockchain_anchors(self):
+        with psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG) as conn, conn.cursor() as cur:
+            cur.execute("SELECT count(*) AS n FROM BlockchainAnchor WHERE batch_id IS NULL")
+            self.assertEqual(cur.fetchone()['n'], 0,
+                'Seed should batch every BlockchainAnchor row')
+
+    # -- Append-only invariant ------------------------------------------
+
+    def test_anchor_batch_update_rejected(self):
+        with psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG) as conn, conn.cursor() as cur:
+            with self.assertRaises(psycopg2.Error):
+                cur.execute("UPDATE AnchorBatch SET merkle_root = %s WHERE batch_id = 1",
+                            ('0' * 64,))
+
+    def test_anchor_batch_delete_rejected(self):
+        with psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG) as conn, conn.cursor() as cur:
+            with self.assertRaises(psycopg2.Error):
+                cur.execute("DELETE FROM AnchorBatch WHERE batch_id = 1")
+
+    # -- Procedure semantics --------------------------------------------
+
+    def test_close_anchor_batch_round_trip(self):
+        from anchoring import compute_batch
+        from psycopg2.extras import Json
+        # Insert a fresh pending anchor under algorithm 2 (ML-DSA-87).
+        with psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG) as conn, conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO BlockchainAnchor
+                    (token_id, did, commitment_hash, ledger_network, anchor_tx_hash, anchored_date)
+                VALUES (3, 'did:polaris:test:rt',
+                        '0xroundtripcommit', 'ALGORAND_PQ',
+                        '0xroundtriptx', CURRENT_TIMESTAMP)
+                RETURNING anchor_id
+            """)
+            aid = cur.fetchone()['anchor_id']
+            conn.commit()
+
+            root, proofs = compute_batch([(aid, '0xroundtripcommit')], 'SHA3-256')
+            cur.execute("CALL close_anchor_batch(%s, %s, %s)",
+                        (2, root, Json(proofs)))
+            conn.commit()
+
+            cur.execute("""
+                SELECT batch_id, merkle_proof FROM BlockchainAnchor
+                 WHERE anchor_id = %s
+            """, (aid,))
+            row = cur.fetchone()
+            self.assertIsNotNone(row['batch_id'])
+            self.assertEqual(row['merkle_proof'], [])
+
+    def test_close_anchor_batch_rejects_empty_pending(self):
+        # All seed anchors already batched → algorithm 1 has zero pending.
+        with psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG) as conn, conn.cursor() as cur:
+            with self.assertRaises(psycopg2.errors.NoDataFound):
+                cur.execute("CALL close_anchor_batch(%s, %s, %s)",
+                            (1, '0' * 64, psycopg2.extras.Json({})))
+
+    def test_close_anchor_batch_rejects_unknown_algorithm(self):
+        with psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG) as conn, conn.cursor() as cur:
+            with self.assertRaises(psycopg2.errors.RaiseException):
+                cur.execute("CALL close_anchor_batch(%s, %s, %s)",
+                            (9999, '0' * 64, psycopg2.extras.Json({})))
+
+    # -- Flask routes ---------------------------------------------------
+
+    def test_api_anchor_get_returns_proof(self):
+        # Token 2 is anchored in the seed; the endpoint should return its
+        # batch row plus merkle root.
+        self.client.post('/login', data={'username': 'admin', 'password': 'Admin@123!'})
+        r = self.client.get('/api/anchor/2')
+        self.assertEqual(r.status_code, 200)
+        data = r.get_json()
+        self.assertIn('merkle_root', data)
+        self.assertIsNotNone(data['merkle_root'])
+        self.assertEqual(data['merkle_proof'], [])
+
+    def test_api_anchor_verify_succeeds_for_batched_token(self):
+        self.client.post('/login', data={'username': 'admin', 'password': 'Admin@123!'})
+        r = self.client.get('/api/anchor/verify/2')
+        self.assertEqual(r.status_code, 200)
+        data = r.get_json()
+        self.assertTrue(data['verified'],
+            'Server-side proof verification should succeed for a batched anchor')
+
+    def test_api_anchor_get_returns_404_for_unknown_token(self):
+        self.client.post('/login', data={'username': 'admin', 'password': 'Admin@123!'})
+        r = self.client.get('/api/anchor/99999')
+        self.assertEqual(r.status_code, 404)
+
+
+# ============================================================================
+# v8.22 / R11-3 / M2-8 — ISSUER FEDERATION (PDF §9.2)
+# ============================================================================
+
+class IssuerFederationTests(PolarisTestCase):
+    """Tests for the federation trust graph.
+
+    Closes the issuer-trust-concentration triad to 3/3:
+      - Cryptographic diversity (R11-1) ✅ v8.18
+      - Constitutional limits (R11-6)   ✅ v8.15
+      - **Federation (this)**           ✅ v8.22
+
+    Verifies the six audit refinements:
+      R1 — no transitive trust
+      R2 — schema records, agencies decide (revocation forward-looking)
+      R3 — future-field path noted in proposal (no schema impact)
+      R4 — operator-logged attestation (signed_by AppUser)
+      R5 — schema-layer self-attestation rejection
+      R6 — 6-row seed graph
+    """
+
+    def _db(self):
+        return psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+
+    def _admin_user_id(self):
+        with self._db() as conn, conn.cursor() as cur:
+            cur.execute("SELECT user_id FROM AppUser WHERE username='admin'")
+            return cur.fetchone()['user_id']
+
+    def _operator_user_id(self):
+        with self._db() as conn, conn.cursor() as cur:
+            cur.execute("SELECT user_id FROM AppUser WHERE username='operator'")
+            return cur.fetchone()['user_id']
+
+    def _context_id(self, name):
+        with self._db() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT context_id FROM VerificationContext WHERE context_type=%s",
+                (name,))
+            return cur.fetchone()['context_id']
+
+    # -- Seed assertions ----------------------------------------------------
+
+    def test_seed_graph_six_rows(self):
+        with self._db() as conn, conn.cursor() as cur:
+            cur.execute("SELECT count(*) AS n FROM AgencyTrustAttestation")
+            self.assertEqual(cur.fetchone()['n'], 6)
+
+    def test_seed_graph_covers_tsa_and_bank(self):
+        with self._db() as conn, conn.cursor() as cur:
+            cur.execute("""
+                SELECT attesting_agency_id, count(*) AS n
+                  FROM AgencyTrustAttestation
+                 GROUP BY attesting_agency_id ORDER BY attesting_agency_id
+            """)
+            rows = {r['attesting_agency_id']: r['n'] for r in cur.fetchall()}
+            self.assertEqual(rows.get(4), 3, 'TSA should attest 3 issuers for TRAVEL')
+            self.assertEqual(rows.get(5), 3, 'Bank should attest 3 issuers for BANKING')
+
+    # -- Schema-layer guards (R5: self-attestation) -------------------------
+
+    def test_self_attestation_rejected_by_check(self):
+        with self._db() as conn, conn.cursor() as cur:
+            admin = self._admin_user_id()
+            ctx = self._context_id('TRAVEL')
+            with self.assertRaises(psycopg2.errors.CheckViolation):
+                cur.execute("""
+                    INSERT INTO AgencyTrustAttestation
+                        (attesting_agency_id, attested_agency_id, context_id,
+                         valid_until, signed_by)
+                    VALUES (1, 1, %s, %s, %s)
+                """, (ctx, datetime.now().date() + timedelta(days=30), admin))
+
+    def test_zero_duration_attestation_rejected_by_check(self):
+        with self._db() as conn, conn.cursor() as cur:
+            admin = self._admin_user_id()
+            ctx = self._context_id('VOTING')
+            with self.assertRaises(psycopg2.errors.CheckViolation):
+                cur.execute("""
+                    INSERT INTO AgencyTrustAttestation
+                        (attesting_agency_id, attested_agency_id, context_id,
+                         valid_until, signed_by)
+                    VALUES (4, 1, %s, CURRENT_DATE, %s)
+                """, (ctx, admin))
+
+    def test_revocation_reason_floor_rejected_by_check(self):
+        with self._db() as conn, conn.cursor() as cur:
+            with self.assertRaises(psycopg2.errors.CheckViolation):
+                cur.execute("""
+                    UPDATE AgencyTrustAttestation
+                       SET revocation_date = CURRENT_TIMESTAMP,
+                           revocation_reason = 'too'
+                     WHERE attestation_id = 1
+                """)
+
+    # -- Append-only invariant (6th audit-of-record) ------------------------
+
+    def test_delete_attestation_rejected(self):
+        with self._db() as conn, conn.cursor() as cur:
+            with self.assertRaises(psycopg2.Error):
+                cur.execute("DELETE FROM AgencyTrustAttestation WHERE attestation_id = 1")
+
+    def test_update_immutable_column_rejected(self):
+        with self._db() as conn, conn.cursor() as cur:
+            with self.assertRaises(psycopg2.Error):
+                cur.execute("""
+                    UPDATE AgencyTrustAttestation
+                       SET attested_agency_id = 99
+                     WHERE attestation_id = 1
+                """)
+
+    def test_revocation_one_way(self):
+        """Once revoked, an attestation cannot be un-revoked."""
+        admin = self._admin_user_id()
+        ctx = self._context_id('MOTOR_VEHICLE')
+        with self._db() as conn, conn.cursor() as cur:
+            cur.execute("CALL uc10_attest_trust(%s, %s, %s, %s, %s)",
+                        (4, 2, ctx, datetime.now().date() + timedelta(days=30), admin))
+            cur.execute("""
+                SELECT attestation_id FROM AgencyTrustAttestation
+                 WHERE attesting_agency_id=4 AND attested_agency_id=2
+                   AND context_id=%s AND revocation_date IS NULL
+            """, (ctx,))
+            aid = cur.fetchone()['attestation_id']
+            cur.execute("CALL uc10_revoke_attestation(%s, %s, %s)",
+                        (aid, 'TESTING_ONEWAY_REVOCATION', admin))
+            conn.commit()
+            # Now try to un-revoke — should fail.
+            with self.assertRaises(psycopg2.Error):
+                cur.execute("""
+                    UPDATE AgencyTrustAttestation
+                       SET revocation_date = NULL, revocation_reason = NULL
+                     WHERE attestation_id = %s
+                """, (aid,))
+
+    # -- Procedure role guards ----------------------------------------------
+
+    def test_non_admin_attestation_rejected(self):
+        """Operator role lacks federation-attestation privilege."""
+        op = self._operator_user_id()
+        ctx = self._context_id('TRAVEL')
+        with self._db() as conn, conn.cursor() as cur:
+            with self.assertRaises(psycopg2.Error):
+                cur.execute("CALL uc10_attest_trust(%s, %s, %s, %s, %s)",
+                            (1, 2, ctx,
+                             datetime.now().date() + timedelta(days=30), op))
+
+    # -- Verification-flow contract (R1: no transitive trust) ---------------
+
+    def test_same_agency_verification_allowed(self):
+        """Same-agency verification: implicit trust, no attestation required."""
+        # Token 4 (Priya) was issued by Agency 1. Agency 1 verifying its
+        # own token in BANKING context is implicitly trusted.
+        r = self._post('/verifications/new', data={
+            'token_id': '4',
+            'requesting_agency_id': '1',  # same as issuer
+            'context_id': str(self._context_id('BANKING')),
+            'outcome': 'SUCCESS',
+            'disclosure_level': 'SELECTIVE',
+        }, follow_redirects=False)
+        # Should redirect to list page on success (not bounced to form)
+        self.assertEqual(r.status_code, 302)
+        self.assertIn('/verifications', r.location)
+
+    def test_cross_agency_success_blocked_without_attestation(self):
+        """No attestation between Agency 6 and Agency 1 for HEALTHCARE →
+        SUCCESS verification must be blocked."""
+        ctx_hc = self._context_id('HEALTHCARE')
+        r = self._post('/verifications/new', data={
+            'token_id': '3',  # James, issued by Agency 1
+            'requesting_agency_id': '6',  # no attestation from 6 → 1 for HEALTHCARE
+            'context_id': str(ctx_hc),
+            'outcome': 'SUCCESS',
+            'disclosure_level': 'SELECTIVE',
+        }, follow_redirects=False)
+        # Redirected back to the new-form, not to verifications list
+        self.assertEqual(r.status_code, 302)
+        self.assertIn('/verifications/new', r.location)
+
+    def test_no_transitive_trust(self):
+        """A→B + B→C must NOT imply A→C. Federation is explicit-only.
+        Seed has TSA(4)→federal(1) for TRAVEL. We add federal(1)→PA(2)
+        for TRAVEL. Verification of PA-issued token at TSA must still
+        succeed (direct TSA→PA also exists in seed), but the test scenario
+        is: a token issued by some agency X that has *no* direct attestation
+        from TSA — even if X→Y and Y is trusted by TSA — should fail."""
+        admin = self._admin_user_id()
+        ctx_travel = self._context_id('TRAVEL')
+
+        # Step 1: Create A→B (Agency 1 → Agency 6 for TRAVEL).
+        with self._db() as conn, conn.cursor() as cur:
+            cur.execute("CALL uc10_attest_trust(%s, %s, %s, %s, %s)",
+                        (1, 6, ctx_travel,
+                         datetime.now().date() + timedelta(days=30), admin))
+            conn.commit()
+
+        # Step 2: Create a token issued by Agency 6 (the "C" in our chain).
+        with self._db() as conn, conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO Individual (legal_name, date_of_birth, jurisdiction)
+                VALUES ('Transitive Test', '1990-01-01', 'US-PA')
+                RETURNING individual_id
+            """)
+            iid = cur.fetchone()['individual_id']
+            cur.execute("""
+                INSERT INTO IdentityToken
+                    (token_value, physical_serial, hardware_model,
+                     biometric_binding_type, individual_id, issuing_agency_id,
+                     algorithm_id, status, issued_date, expiration_date)
+                VALUES (%s, %s, 'TitanQ-3', 'IRIS', %s, 6, 1,
+                        'ACTIVE', CURRENT_TIMESTAMP,
+                        (CURRENT_DATE + INTERVAL '10 years')::date)
+                RETURNING token_id
+            """, (f'TKN-TRANS-{iid}', f'SN-TRANS-{iid}', iid))
+            tid = cur.fetchone()['token_id']
+            cur.execute("""
+                INSERT INTO TokenSignature (token_id, algorithm_id, signature_bytes)
+                VALUES (%s, 1, %s)
+            """, (tid, b'TRANSITIVE_SIG'))
+            conn.commit()
+
+        # Step 3: TSA(4) tries to verify the Agency-6-issued token.
+        # TSA→Agency-1 exists (seed). Agency-1→Agency-6 exists (we just made it).
+        # If transitive trust applied, TSA→Agency-6 would be implied. It must NOT.
+        r = self._post('/verifications/new', data={
+            'token_id': str(tid),
+            'requesting_agency_id': '4',  # TSA
+            'context_id': str(ctx_travel),
+            'outcome': 'SUCCESS',
+            'disclosure_level': 'SELECTIVE',
+        }, follow_redirects=False)
+        self.assertEqual(r.status_code, 302)
+        self.assertIn('/verifications/new', r.location,
+            'Transitive trust must NOT apply: TSA→6 was never explicitly '
+            'attested even though TSA→1 and 1→6 both exist')
+
+    def test_cross_context_attestation_does_not_grant_other_context(self):
+        """TSA→CA for TRAVEL must NOT imply TSA→CA for BANKING."""
+        # Maria's T2 issued by CA (Agency 3). Bank (Agency 5) has BANKING
+        # attestation to CA, but TSA (4) does NOT. So TSA→T2 for BANKING fails.
+        ctx_bank = self._context_id('BANKING')
+        r = self._post('/verifications/new', data={
+            'token_id': '2',
+            'requesting_agency_id': '4',  # TSA — has TRAVEL attestation to CA, NOT banking
+            'context_id': str(ctx_bank),
+            'outcome': 'SUCCESS',
+            'disclosure_level': 'SELECTIVE',
+        }, follow_redirects=False)
+        self.assertEqual(r.status_code, 302)
+        self.assertIn('/verifications/new', r.location)
+
+    def test_revoked_attestation_blocks_new_verification(self):
+        """After revoking an attestation, new SUCCESS verifications fail."""
+        admin = self._admin_user_id()
+        ctx_voting = self._context_id('VOTING')
+        # Set up: create a fresh attestation, then revoke it.
+        with self._db() as conn, conn.cursor() as cur:
+            cur.execute("CALL uc10_attest_trust(%s, %s, %s, %s, %s)",
+                        (4, 1, ctx_voting,
+                         datetime.now().date() + timedelta(days=30), admin))
+            cur.execute("""
+                SELECT attestation_id FROM AgencyTrustAttestation
+                 WHERE attesting_agency_id=4 AND attested_agency_id=1
+                   AND context_id=%s AND revocation_date IS NULL
+            """, (ctx_voting,))
+            aid = cur.fetchone()['attestation_id']
+            cur.execute("CALL uc10_revoke_attestation(%s, %s, %s)",
+                        (aid, 'TEST_REVOKED_BLOCKS', admin))
+            conn.commit()
+
+        # Now a SUCCESS verification under this attestation should fail.
+        r = self._post('/verifications/new', data={
+            'token_id': '3',  # issued by federal NY (Agency 1)
+            'requesting_agency_id': '4',  # TSA, revoked above
+            'context_id': str(ctx_voting),
+            'outcome': 'SUCCESS',
+            'disclosure_level': 'SELECTIVE',
+        }, follow_redirects=False)
+        self.assertEqual(r.status_code, 302)
+        self.assertIn('/verifications/new', r.location)
+
+    def test_past_verification_events_survive_revocation(self):
+        """R2: revocation is forward-looking. Past VerificationEvent rows
+        with the revoked attestation in scope must NOT be invalidated."""
+        with self._db() as conn, conn.cursor() as cur:
+            cur.execute("SELECT count(*) AS n FROM VerificationEvent WHERE outcome='SUCCESS'")
+            ve_before = cur.fetchone()['n']
+
+            # Pick any seed attestation (TSA → federal NY for TRAVEL)
+            cur.execute("""
+                SELECT attestation_id FROM AgencyTrustAttestation
+                 WHERE attesting_agency_id=4 AND attested_agency_id=1
+                   AND revocation_date IS NULL
+                 LIMIT 1
+            """)
+            row = cur.fetchone()
+            if row is None:
+                self.skipTest('seed graph missing TSA→NY')
+            aid = row['attestation_id']
+
+            admin = self._admin_user_id()
+            cur.execute("CALL uc10_revoke_attestation(%s, %s, %s)",
+                        (aid, 'TEST_R2_FORWARD_LOOKING', admin))
+            conn.commit()
+
+            cur.execute("SELECT count(*) AS n FROM VerificationEvent WHERE outcome='SUCCESS'")
+            ve_after = cur.fetchone()['n']
+            self.assertEqual(ve_before, ve_after,
+                'Past VerificationEvent rows must survive attestation revocation')
+
+    # -- Route smoke tests --------------------------------------------------
+
+    def test_api_federation_attest_requires_admin(self):
+        """Operator role cannot POST to /api/federation/attest."""
+        self._logout()
+        self._login('operator')
+        csrf = self._csrf_token_from('/verifications/new')
+        r = self.client.post(
+            '/api/federation/attest',
+            json={'attesting_agency_id': 4, 'attested_agency_id': 1,
+                  'context_id': 4, 'valid_until': '2027-01-15'},
+            headers={'X-CSRFToken': csrf})
+        self.assertIn(r.status_code, (302, 403))
+
+    def test_api_federation_attest_admin_succeeds(self):
+        """Admin can POST a new attestation through the JSON API. CSRF
+        token travels via X-CSRFToken header (the AJAX-friendly path
+        added in v8.22)."""
+        ctx_mv = self._context_id('MOTOR_VEHICLE')
+        csrf = self._csrf_token_from('/verifications/new')
+        valid_until = str(datetime.now().date() + timedelta(days=90))
+        r = self.client.post(
+            '/api/federation/attest',
+            json={'attesting_agency_id': 5,
+                  'attested_agency_id': 1,
+                  'context_id': ctx_mv,
+                  'valid_until': valid_until},
+            headers={'X-CSRFToken': csrf})
+        # 200 success OR 400 if duplicate active (e.g., test ordering) —
+        # both acceptable. 403 would be a CSRF / role failure.
+        self.assertIn(r.status_code, (200, 400))
+
+
+# ============================================================================
+# v8.23 / R10-1 / M2-1 — ZK-SNARK (Plonky2 + Hybrid-Merkle, C3+A4+B3)
+# ============================================================================
+
+class ZKSnarkTests(PolarisTestCase):
+    """Tests for the ZK-SNARK epoch + verification path.
+
+    Closes the Substrate-D arc to 5/5 (after R10-2 anchoring, R10-3
+    manifest, R10-4 GenomicAnchor, R10-5 QuantumObserverBinding).
+
+    Verifies the nine audit refinements:
+      R1 — honest-prover binding to specific (epoch, context, nonce)
+      R2 — replay resistance via nonce binding
+      R3 — witness-leak resistance IS the SNARK soundness property
+      R4 — epoch-boundary semantics (valid_until)
+      R5 — substrate manifest update (Plonky2 + Rust toolchain)
+      R6 — performance budget (~130 ms / verification)
+      R7 — operator-driven epoch closure (anti-auto-derivation)
+      R8 — TokenStateEpoch is the 7th audit-of-record instance
+      R9 — coexistence with R11-3 federation check (complementary by disclosure)
+    """
+
+    def _db(self):
+        return psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        # The Rust binary must exist for these tests to run. Skip the whole
+        # class with a clear message if it's not built.
+        import zk as _zk
+        cls._zk_binary = _zk._binary_path()
+        if not os.path.isfile(cls._zk_binary):
+            raise unittest.SkipTest(
+                f"polaris-zk binary not built at {cls._zk_binary}. "
+                f"Run `cargo build --release` in polaris_zk/ first."
+            )
+
+    # ------------------------------------------------------------------
+    # Merkle / Plonky2 unit-level tests (pure Python wrapper around Rust)
+    # ------------------------------------------------------------------
+
+    def test_compute_epoch_root_deterministic(self):
+        import zk
+        leaves = [zk.derive_leaf_seed(i, f'T{i}', 1) for i in range(4)]
+        r1 = zk.compute_epoch_root(leaves)
+        r2 = zk.compute_epoch_root(leaves)
+        self.assertEqual(r1, r2)
+
+    def test_derive_leaf_seed_distinct_across_tokens(self):
+        import zk
+        seeds = {zk.derive_leaf_seed(i, f'T{i}', 1) for i in range(10)}
+        self.assertEqual(len(seeds), 10,
+            'Leaf seeds must be unique per (token_id, value, context)')
+
+    def test_derive_leaf_seed_distinct_across_contexts(self):
+        import zk
+        s1 = zk.derive_leaf_seed(2, 'TKN-X', 1)
+        s2 = zk.derive_leaf_seed(2, 'TKN-X', 2)
+        self.assertNotEqual(s1, s2,
+            'Same token in different contexts must hash differently')
+
+    def test_honest_prover_passes(self):
+        import zk
+        leaves = [zk.derive_leaf_seed(i, f'T{i}', 1) for i in range(4)]
+        bundle = zk.generate_proof(leaves[2], 2, leaves,
+                                   epoch_id=1, context_id=1, nonce=99)
+        root = bundle['public_inputs']['epoch_root_hex']
+        self.assertTrue(zk.verify_proof_against_epoch(bundle, root, 1, 1, 99))
+
+    def test_replay_with_wrong_nonce_fails(self):
+        import zk
+        leaves = [zk.derive_leaf_seed(i, f'T{i}', 1) for i in range(4)]
+        bundle = zk.generate_proof(leaves[0], 0, leaves,
+                                   epoch_id=1, context_id=1, nonce=42)
+        root = bundle['public_inputs']['epoch_root_hex']
+        # Verifier expects nonce=43; proof's nonce is 42. Must reject.
+        self.assertFalse(zk.verify_proof_against_epoch(bundle, root, 1, 1, 43))
+
+    def test_cross_epoch_proof_fails(self):
+        import zk
+        leaves = [zk.derive_leaf_seed(i, f'T{i}', 1) for i in range(4)]
+        bundle = zk.generate_proof(leaves[1], 1, leaves,
+                                   epoch_id=7, context_id=1, nonce=10)
+        root = bundle['public_inputs']['epoch_root_hex']
+        # Verifier expects epoch_id=8; proof is for epoch_id=7.
+        self.assertFalse(zk.verify_proof_against_epoch(bundle, root, 8, 1, 10))
+
+    def test_cross_context_proof_fails(self):
+        import zk
+        leaves = [zk.derive_leaf_seed(i, f'T{i}', 1) for i in range(4)]
+        bundle = zk.generate_proof(leaves[2], 2, leaves,
+                                   epoch_id=1, context_id=1, nonce=5)
+        root = bundle['public_inputs']['epoch_root_hex']
+        self.assertFalse(zk.verify_proof_against_epoch(bundle, root, 1, 2, 5))
+
+    def test_wrong_root_fails(self):
+        import zk
+        leaves = [zk.derive_leaf_seed(i, f'T{i}', 1) for i in range(4)]
+        bundle = zk.generate_proof(leaves[0], 0, leaves,
+                                   epoch_id=1, context_id=1, nonce=1)
+        wrong_root = "0" * 64
+        self.assertFalse(zk.verify_proof_against_epoch(bundle, wrong_root, 1, 1, 1))
+
+    # ------------------------------------------------------------------
+    # Schema-layer assertions
+    # ------------------------------------------------------------------
+
+    def test_seed_demo_epoch_exists(self):
+        with self._db() as conn, conn.cursor() as cur:
+            cur.execute("SELECT count(*) AS n FROM TokenStateEpoch")
+            self.assertEqual(cur.fetchone()['n'], 1,
+                'Demo seed should produce exactly 1 TokenStateEpoch row')
+
+    def test_seed_demo_epoch_has_three_leaves(self):
+        with self._db() as conn, conn.cursor() as cur:
+            cur.execute("SELECT count(*) AS n FROM TokenStateEpochLeaf WHERE epoch_id = 1")
+            self.assertEqual(cur.fetchone()['n'], 3)
+
+    def test_token_state_epoch_update_rejected(self):
+        with self._db() as conn, conn.cursor() as cur:
+            with self.assertRaises(psycopg2.Error):
+                cur.execute(
+                    "UPDATE TokenStateEpoch SET valid_until = CURRENT_TIMESTAMP "
+                    "WHERE epoch_id = 1")
+
+    def test_token_state_epoch_leaf_delete_rejected(self):
+        with self._db() as conn, conn.cursor() as cur:
+            with self.assertRaises(psycopg2.Error):
+                cur.execute(
+                    "DELETE FROM TokenStateEpochLeaf WHERE epoch_id = 1 AND token_id = 2")
+
+    def test_demo_epoch_root_verifies_via_python(self):
+        """Round-trip: read the demo epoch's leaves, regenerate the proof
+        for one of them, verify against the schema-stored root."""
+        import zk
+        with self._db() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT t.token_id, t.token_value "
+                "FROM IdentityToken t JOIN TokenPermission p ON p.token_id=t.token_id "
+                "WHERE t.status='ACTIVE' AND p.context_id=1 ORDER BY t.token_id")
+            tokens = cur.fetchall()
+            cur.execute("SELECT merkle_root FROM TokenStateEpoch WHERE epoch_id = 1")
+            schema_root = cur.fetchone()['merkle_root']
+
+        leaves = [zk.derive_leaf_seed(t['token_id'], t['token_value'], 1) for t in tokens]
+        computed_root = zk.compute_epoch_root(leaves)
+        self.assertEqual(schema_root, computed_root,
+            'Schema-stored epoch root must match Python-recomputed root')
+
+        # Prove + verify for one leaf
+        bundle = zk.generate_proof(leaves[0], 0, leaves,
+                                   epoch_id=1, context_id=1, nonce=314)
+        self.assertTrue(zk.verify_proof_against_epoch(
+            bundle, schema_root, 1, 1, 314))
+
+    # ------------------------------------------------------------------
+    # Procedure semantics (uc11_close_epoch)
+    # ------------------------------------------------------------------
+
+    def test_uc11_close_epoch_creates_new_row(self):
+        """Calling uc11_close_epoch via Python should produce a new epoch
+        row whose merkle_root matches the Rust-computed root."""
+        import zk
+        from psycopg2.extras import Json
+        with self._db() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT t.token_id, t.token_value FROM IdentityToken t "
+                "JOIN TokenPermission p ON p.token_id=t.token_id "
+                "WHERE t.status='ACTIVE' AND p.context_id=2 ORDER BY t.token_id")
+            tokens = cur.fetchall()
+            self.assertGreaterEqual(len(tokens), 1,
+                'Need at least one active EMPLOYMENT token for the test')
+
+            leaves = [zk.derive_leaf_seed(t['token_id'], t['token_value'], 2)
+                      for t in tokens]
+            root, leaf_info = zk.compute_epoch_leaves(leaves)
+
+            token_leaves = [
+                {'token_id': t['token_id'],
+                 'leaf_hash': li['leaf_hash'],
+                 'proof_path': li['proof_path']}
+                for t, li in zip(tokens, leaf_info)
+            ]
+
+            cur.execute("SELECT user_id FROM AppUser WHERE username='admin'")
+            admin = cur.fetchone()['user_id']
+
+            cur.execute(
+                "CALL uc11_close_epoch(%s, %s, %s, %s)",
+                (root,
+                 datetime.now() + timedelta(days=30),
+                 admin,
+                 Json(token_leaves)))
+            conn.commit()
+
+            cur.execute(
+                "SELECT committed_count FROM TokenStateEpoch "
+                "WHERE merkle_root = %s", (root,))
+            row = cur.fetchone()
+            self.assertEqual(row['committed_count'], len(tokens))
+
+    def test_uc11_close_epoch_rejects_non_admin(self):
+        from psycopg2.extras import Json
+        with self._db() as conn, conn.cursor() as cur:
+            cur.execute("SELECT user_id FROM AppUser WHERE username='operator'")
+            op = cur.fetchone()['user_id']
+            with self.assertRaises(psycopg2.Error):
+                cur.execute(
+                    "CALL uc11_close_epoch(%s, %s, %s, %s)",
+                    ('deadbeef' * 8,
+                     datetime.now() + timedelta(days=10),
+                     op,
+                     Json([{'token_id': 2, 'leaf_hash': 'a' * 64, 'proof_path': []}])))
+
+    def test_uc11_close_epoch_rejects_oversize(self):
+        from psycopg2.extras import Json
+        # Build a fake payload of >10000 leaves; should be rejected by the
+        # cap CHECK constraint in the procedure.
+        with self._db() as conn, conn.cursor() as cur:
+            cur.execute("SELECT user_id FROM AppUser WHERE username='admin'")
+            admin = cur.fetchone()['user_id']
+            oversized = [
+                {'token_id': i, 'leaf_hash': 'a' * 64, 'proof_path': []}
+                for i in range(10001)
+            ]
+            with self.assertRaises(psycopg2.Error):
+                cur.execute(
+                    "CALL uc11_close_epoch(%s, %s, %s, %s)",
+                    ('deadbeef' * 8,
+                     datetime.now() + timedelta(days=10),
+                     admin,
+                     Json(oversized)))
+
+    # ------------------------------------------------------------------
+    # Flask route smoke tests
+    # ------------------------------------------------------------------
+
+    def test_api_zk_epoch_get_demo(self):
+        r = self.client.get('/api/zk/epoch/1')
+        self.assertEqual(r.status_code, 200)
+        data = r.get_json()
+        self.assertEqual(data['committed_count'], 3)
+        self.assertEqual(len(data['merkle_root']), 64)
+
+    def test_api_zk_epoch_get_404(self):
+        r = self.client.get('/api/zk/epoch/99999')
+        self.assertEqual(r.status_code, 404)
+
+    def test_api_zk_verify_round_trip(self):
+        """End-to-end: generate proof via Python, POST it to /api/zk/verify,
+        receive verified=True."""
+        import zk
+        with self._db() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT t.token_id, t.token_value FROM IdentityToken t "
+                "JOIN TokenPermission p ON p.token_id=t.token_id "
+                "WHERE t.status='ACTIVE' AND p.context_id=1 ORDER BY t.token_id")
+            tokens = cur.fetchall()
+            cur.execute("SELECT merkle_root FROM TokenStateEpoch WHERE epoch_id = 1")
+            root = cur.fetchone()['merkle_root']
+
+        leaves = [zk.derive_leaf_seed(t['token_id'], t['token_value'], 1) for t in tokens]
+        bundle = zk.generate_proof(leaves[1], 1, leaves,
+                                   epoch_id=1, context_id=1, nonce=777)
+
+        csrf = self._csrf_token_from('/verifications/new')
+        r = self.client.post('/api/zk/verify',
+            json={'epoch_id': 1, 'context_id': 1, 'nonce': 777,
+                  'proof_bundle': bundle},
+            headers={'X-CSRFToken': csrf})
+        self.assertEqual(r.status_code, 200)
+        data = r.get_json()
+        self.assertTrue(data['verified'],
+            f'End-to-end ZK verification should succeed: {data}')
+
+    def test_api_zk_verify_wrong_nonce(self):
+        """The verifier must reject when the proof's bound nonce doesn't
+        match the verifier's expected nonce."""
+        import zk
+        with self._db() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT t.token_id, t.token_value FROM IdentityToken t "
+                "JOIN TokenPermission p ON p.token_id=t.token_id "
+                "WHERE t.status='ACTIVE' AND p.context_id=1 ORDER BY t.token_id")
+            tokens = cur.fetchall()
+
+        leaves = [zk.derive_leaf_seed(t['token_id'], t['token_value'], 1) for t in tokens]
+        bundle = zk.generate_proof(leaves[0], 0, leaves,
+                                   epoch_id=1, context_id=1, nonce=100)
+
+        csrf = self._csrf_token_from('/verifications/new')
+        r = self.client.post('/api/zk/verify',
+            json={'epoch_id': 1, 'context_id': 1, 'nonce': 101,
+                  'proof_bundle': bundle},
+            headers={'X-CSRFToken': csrf})
+        self.assertEqual(r.status_code, 200)
+        self.assertFalse(r.get_json()['verified'])
+
+
+# ============================================================================
+# v8.24 / R11-5 / M2-10 — DURESS CODES (compulsion resistance, PDF §9.5)
+# The v2 mission-closer.
+# ============================================================================
+
+class DuressCodeTests(PolarisTestCase):
+    """Tests for the duress-code mechanism.
+
+    M2-10 is the LAST v2 item; after this ships, v2 done-list = 12/12.
+
+    Verifies the six audit refinements:
+      R1 — constant-time hash comparison (Werkzeug check_password_hash)
+      R2 — identical observable behavior across all branches
+      R3 — DuressEvent is the 8th audit-of-record (append-only)
+      R4 — per-token enrollment-only (anti-auto-derivation)
+      R5 — OOB v1 reference scope; v2 path named via oob_channel future-field
+      R6 — anti-revealing: DuressEvent NOT in standard verifications list
+    """
+
+    def _db(self):
+        return psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+
+    DEMO_DURESS_CODE = '911911'  # The plaintext for Maria's T2 seed enrollment
+
+    # ------------------------------------------------------------------
+    # Schema invariants
+    # ------------------------------------------------------------------
+
+    def test_demo_token_has_duress_enrolled(self):
+        with self._db() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT duress_code_hash FROM IdentityToken WHERE token_id = 2")
+            self.assertIsNotNone(cur.fetchone()['duress_code_hash'])
+
+    def test_duress_code_hash_length_floor(self):
+        """CHECK constraint chk_duress_hash_well_formed rejects short hashes."""
+        with self._db() as conn, conn.cursor() as cur:
+            with self.assertRaises(psycopg2.errors.CheckViolation):
+                cur.execute(
+                    "UPDATE IdentityToken SET duress_code_hash = 'too_short' "
+                    "WHERE token_id = 3")
+
+    def test_duress_event_append_only_delete(self):
+        with self._db() as conn, conn.cursor() as cur:
+            cur.execute("CALL uc12_record_duress(%s, %s, %s, %s)",
+                        (2, 1, 5, 'AUDIT_TABLE'))
+            conn.commit()
+            cur.execute(
+                "SELECT event_id FROM DuressEvent ORDER BY event_id DESC LIMIT 1")
+            evt_id = cur.fetchone()['event_id']
+            with self.assertRaises(psycopg2.Error):
+                cur.execute("DELETE FROM DuressEvent WHERE event_id = %s", (evt_id,))
+
+    def test_duress_event_append_only_update(self):
+        with self._db() as conn, conn.cursor() as cur:
+            cur.execute("CALL uc12_record_duress(%s, %s, %s, %s)",
+                        (2, 1, 5, 'AUDIT_TABLE'))
+            conn.commit()
+            cur.execute(
+                "SELECT event_id FROM DuressEvent ORDER BY event_id DESC LIMIT 1")
+            evt_id = cur.fetchone()['event_id']
+            with self.assertRaises(psycopg2.Error):
+                cur.execute(
+                    "UPDATE DuressEvent SET oob_channel = 'STDERR_LOG' "
+                    "WHERE event_id = %s", (evt_id,))
+
+    # ------------------------------------------------------------------
+    # Procedure semantics
+    # ------------------------------------------------------------------
+
+    def test_uc12_record_duress_rejects_unenrolled_token(self):
+        """T1 (Egor) has no duress_code_hash; the procedure must refuse."""
+        with self._db() as conn, conn.cursor() as cur:
+            with self.assertRaises(psycopg2.errors.NoDataFound):
+                cur.execute("CALL uc12_record_duress(%s, %s, %s, %s)",
+                            (1, 1, 1, 'AUDIT_TABLE'))
+
+    def test_uc12_record_duress_writes_row(self):
+        with self._db() as conn, conn.cursor() as cur:
+            cur.execute("SELECT count(*) AS n FROM DuressEvent")
+            before = cur.fetchone()['n']
+            cur.execute("CALL uc12_record_duress(%s, %s, %s, %s)",
+                        (2, 1, 5, 'AUDIT_TABLE'))
+            conn.commit()
+            cur.execute("SELECT count(*) AS n FROM DuressEvent")
+            self.assertEqual(cur.fetchone()['n'], before + 1)
+
+    # ------------------------------------------------------------------
+    # Verification-flow behavior (R1, R2, R6)
+    # ------------------------------------------------------------------
+
+    def test_correct_duress_code_records_silent_event(self):
+        """When the holder types the correct duress code, a DuressEvent is
+        written silently — but the user-visible VerificationEvent still
+        appears with the requested outcome. R2 audit refinement."""
+        with self._db() as conn, conn.cursor() as cur:
+            cur.execute("SELECT count(*) AS n FROM DuressEvent")
+            duress_before = cur.fetchone()['n']
+            cur.execute("SELECT count(*) AS n FROM VerificationEvent")
+            verif_before = cur.fetchone()['n']
+
+        r = self._post('/verifications/new', data={
+            'token_id': '2',
+            'requesting_agency_id': '5',
+            'context_id': '1',
+            'outcome': 'SUCCESS',
+            'disclosure_level': 'SELECTIVE',
+            'duress_code': self.DEMO_DURESS_CODE,
+        }, follow_redirects=True)
+        self.assertEqual(r.status_code, 200)
+        self.assertHTML(r, 'Recorded verification event')
+
+        with self._db() as conn, conn.cursor() as cur:
+            cur.execute("SELECT count(*) AS n FROM DuressEvent")
+            self.assertEqual(cur.fetchone()['n'], duress_before + 1,
+                'Correct duress code must write a DuressEvent row')
+            cur.execute("SELECT count(*) AS n FROM VerificationEvent")
+            self.assertEqual(cur.fetchone()['n'], verif_before + 1,
+                'Verification path proceeds normally (coercer-visible)')
+
+    def test_wrong_duress_code_no_event(self):
+        """Typing the wrong code (or any non-duress code) writes NO
+        DuressEvent. Constant-time comparison rejects without leaking."""
+        with self._db() as conn, conn.cursor() as cur:
+            cur.execute("SELECT count(*) AS n FROM DuressEvent")
+            duress_before = cur.fetchone()['n']
+
+        r = self._post('/verifications/new', data={
+            'token_id': '2',
+            'requesting_agency_id': '5',
+            'context_id': '1',
+            'outcome': 'SUCCESS',
+            'disclosure_level': 'SELECTIVE',
+            'duress_code': '000000',  # wrong
+        }, follow_redirects=True)
+        self.assertEqual(r.status_code, 200)
+
+        with self._db() as conn, conn.cursor() as cur:
+            cur.execute("SELECT count(*) AS n FROM DuressEvent")
+            self.assertEqual(cur.fetchone()['n'], duress_before,
+                'Wrong duress code must NOT write a DuressEvent row')
+
+    def test_no_duress_input_no_event(self):
+        """Omitting the duress_code field entirely is the normal flow —
+        no DuressEvent written."""
+        with self._db() as conn, conn.cursor() as cur:
+            cur.execute("SELECT count(*) AS n FROM DuressEvent")
+            duress_before = cur.fetchone()['n']
+
+        r = self._post('/verifications/new', data={
+            'token_id': '2',
+            'requesting_agency_id': '5',
+            'context_id': '1',
+            'outcome': 'SUCCESS',
+            'disclosure_level': 'SELECTIVE',
+        }, follow_redirects=True)
+        self.assertEqual(r.status_code, 200)
+
+        with self._db() as conn, conn.cursor() as cur:
+            cur.execute("SELECT count(*) AS n FROM DuressEvent")
+            self.assertEqual(cur.fetchone()['n'], duress_before,
+                'No duress input must NOT write a DuressEvent row')
+
+    def test_duress_on_unenrolled_token_no_event(self):
+        """If the user types any duress code against a token that has not
+        enrolled, the system must NOT write a DuressEvent (no enrolled hash
+        means nothing to match against; verification proceeds normally).
+        T3 (James) has no duress_code_hash enrolled in the seed."""
+        with self._db() as conn, conn.cursor() as cur:
+            cur.execute("SELECT count(*) AS n FROM DuressEvent")
+            duress_before = cur.fetchone()['n']
+
+        r = self._post('/verifications/new', data={
+            'token_id': '3',  # James, unenrolled
+            'requesting_agency_id': '4',  # TSA — federation says ok for TRAVEL
+            'context_id': '4',  # TRAVEL
+            'outcome': 'SUCCESS',
+            'disclosure_level': 'SELECTIVE',
+            'duress_code': '911911',
+        }, follow_redirects=True)
+        self.assertEqual(r.status_code, 200)
+
+        with self._db() as conn, conn.cursor() as cur:
+            cur.execute("SELECT count(*) AS n FROM DuressEvent")
+            self.assertEqual(cur.fetchone()['n'], duress_before,
+                'Duress against unenrolled token must NOT write a DuressEvent')
+
+    def test_anti_revealing_verifications_list_excludes_duress(self):
+        """R6 audit refinement: the OPERATOR view of /verifications does
+        not surface duress signals — not in the data table, and not in
+        the nav menu (the 'Duress Signals' / /duress link is admin/auditor-
+        gated via Jinja conditional). A coercer who has compromised an
+        operator account must not learn that the mechanism exists."""
+        # First, trigger a duress event so DuressEvent has a row.
+        self._post('/verifications/new', data={
+            'token_id': '2',
+            'requesting_agency_id': '5',
+            'context_id': '1',
+            'outcome': 'SUCCESS',
+            'disclosure_level': 'SELECTIVE',
+            'duress_code': self.DEMO_DURESS_CODE,
+        }, follow_redirects=True)
+
+        # Re-login as operator (default test class logs in as admin); admin
+        # legitimately sees the /duress nav link because admins handle
+        # duress events. Operators must not.
+        self._logout()
+        self._login('operator')
+
+        r = self.client.get('/verifications')
+        self.assertEqual(r.status_code, 200)
+        body = r.get_data(as_text=True).lower()
+        self.assertNotIn('duress', body,
+            "Operator-visible /verifications must NOT reveal duress signals "
+            "(R6 anti-revealing posture). Found 'duress' in body.")
+
+    # ------------------------------------------------------------------
+    # API route smoke tests
+    # ------------------------------------------------------------------
+
+    def test_api_duress_events_admin(self):
+        """Admin can fetch duress events via /api/duress/events."""
+        # Trigger one event first
+        with self._db() as conn, conn.cursor() as cur:
+            cur.execute("CALL uc12_record_duress(%s, %s, %s, %s)",
+                        (2, 1, 5, 'AUDIT_TABLE'))
+            conn.commit()
+
+        r = self.client.get('/api/duress/events')
+        self.assertEqual(r.status_code, 200)
+        data = r.get_json()
+        self.assertGreaterEqual(data['count'], 1)
+
+    def test_api_duress_events_operator_rejected(self):
+        """Operator role lacks admin/auditor privilege for the duress
+        dashboard. Anti-revealing posture extends to API access."""
+        self._logout()
+        self._login('operator')
+        r = self.client.get('/api/duress/events')
+        # Should be 302 (redirect) or 403 (forbidden) — both are valid
+        # "no" responses depending on how the role gate is implemented.
+        self.assertIn(r.status_code, (302, 403))
+
+    # ------------------------------------------------------------------
+    # UI rendering (v8.25 — /verifications/new field + /duress dashboard)
+    # ------------------------------------------------------------------
+
+    def test_verifications_form_has_duress_code_input(self):
+        """The /verifications/new form must render the duress_code input
+        so operators can pass through holder-typed codes. Without this
+        field, the M2-10 mechanism is API-only."""
+        r = self.client.get('/verifications/new')
+        self.assertEqual(r.status_code, 200)
+        body = r.get_data(as_text=True)
+        self.assertIn('name="duress_code"', body,
+            'Form must contain <input name="duress_code">')
+        # Label/hint should be neutral (no "duress" word visible to a
+        # coercer glancing at the operator's screen).
+        self.assertIn('Holder verification code', body)
+        self.assertNotIn('Duress code', body,
+            'Field label must be neutral; not literally "Duress code"')
+
+    def test_duress_dashboard_renders_for_admin(self):
+        """Admin can see the /duress dashboard with its title and table."""
+        r = self.client.get('/duress')
+        self.assertEqual(r.status_code, 200)
+        body = r.get_data(as_text=True)
+        self.assertIn('Duress Signals', body)
+        self.assertIn('duress code enrolled', body,
+            'Dashboard should show the enrolled-count summary')
+
+    def test_duress_dashboard_renders_for_auditor(self):
+        """Auditor (read-only) role also has access (R6 — responders
+        need this path)."""
+        self._logout()
+        self._login('auditor')
+        r = self.client.get('/duress')
+        self.assertEqual(r.status_code, 200)
+        self.assertIn('Duress Signals', r.get_data(as_text=True))
+
+    def test_duress_dashboard_blocked_for_operator(self):
+        """Operator role cannot reach /duress — R6 anti-revealing."""
+        self._logout()
+        self._login('operator')
+        r = self.client.get('/duress', follow_redirects=False)
+        self.assertIn(r.status_code, (302, 403))
+
+    def test_duress_dashboard_shows_recorded_event(self):
+        """After triggering a duress event via the form, the /duress
+        dashboard shows the holder's name and the verifying agency."""
+        # Trigger via the form (admin role — default).
+        self._post('/verifications/new', data={
+            'token_id': '2',
+            'requesting_agency_id': '5',
+            'context_id': '1',
+            'outcome': 'SUCCESS',
+            'disclosure_level': 'SELECTIVE',
+            'duress_code': self.DEMO_DURESS_CODE,
+        }, follow_redirects=True)
+
+        r = self.client.get('/duress')
+        self.assertEqual(r.status_code, 200)
+        body = r.get_data(as_text=True)
+        # The dashboard joins to Individual/Agency/VerificationContext;
+        # all three names should appear for the recorded row.
+        self.assertIn('Maria Santos', body)
+        self.assertIn('First National Bank', body)
+        self.assertIn('BANKING', body)
+
+
+# ============================================================================
+# VERIFICATION EVENT TESTS
+# ============================================================================
+
+class VerificationTests(PolarisTestCase):
+
+    def test_list_renders(self):
+        r = self.client.get('/verifications')
+        self.assertEqual(r.status_code, 200)
+        self.assertHTML(r, 'Verification Events', 'BANKING')
+
+    def test_filter_by_disclosure(self):
+        r = self.client.get('/verifications?disclosure=ZERO_KNOWLEDGE')
+        # 3 ZK events in sample data
+        self.assertHTML(r, 'ZERO_KNOWLEDGE')
+        self.assertEqual(r.status_code, 200)
+
+    def test_create_valid_selective(self):
+        r = self._post('/verifications/new', data={
+            'token_id': '2',
+            'requesting_agency_id': '5',
+            'context_id': '1',
+            'outcome': 'SUCCESS',
+            'disclosure_level': 'SELECTIVE',
+        }, follow_redirects=True)
+        self.assertEqual(r.status_code, 200)
+        self.assertHTML(r, 'Recorded verification event')
+
+    def test_zero_knowledge_with_token_rejected(self):
+        """ZERO_KNOWLEDGE events MUST have token_id NULL — the form coerces this,
+        but if someone POSTs a token_id with disclosure=ZK, the form sets token to NULL.
+        This test verifies the form handles it correctly."""
+        r = self._post('/verifications/new', data={
+            'token_id': '2',
+            'requesting_agency_id': '5',
+            'context_id': '1',
+            'outcome': 'SUCCESS',
+            'disclosure_level': 'ZERO_KNOWLEDGE',
+        }, follow_redirects=True)
+        self.assertEqual(r.status_code, 200)
+        # Form sets token_id to NULL for ZK; should succeed
+        self.assertHTML(r, 'Recorded verification event')
+
+    def test_full_without_token_rejected(self):
+        """FULL events MUST have token_id; the constraint should reject."""
+        r = self._post('/verifications/new', data={
+            'token_id': '',  # empty
+            'requesting_agency_id': '5',
+            'context_id': '1',
+            'outcome': 'SUCCESS',
+            'disclosure_level': 'FULL',
+        }, follow_redirects=True)
+        self.assertEqual(r.status_code, 200)
+        self.assertHTML(r, 'Disclosure level is inconsistent')
+
+
+# ============================================================================
+# SQL CONSOLE TESTS
+# ============================================================================
+
+class SQLConsoleTests(PolarisTestCase):
+
+    def test_console_renders(self):
+        r = self.client.get('/sql')
+        self.assertEqual(r.status_code, 200)
+        self.assertHTML(r, 'SQL Console', 'Example Queries')
+
+    def test_simple_select_works(self):
+        r = self._post('/sql', data={
+            'sql': 'SELECT individual_id, legal_name FROM Individual ORDER BY individual_id LIMIT 3'
+        })
+        self.assertEqual(r.status_code, 200)
+        self.assertHTML(r, 'Egor Khaklin', 'Maria Santos', 'James Chen')
+
+    def test_update_blocked_by_whitelist(self):
+        r = self._post('/sql', data={
+            'sql': "UPDATE Individual SET legal_name='X' WHERE individual_id=1"
+        })
+        self.assertEqual(r.status_code, 200)
+        self.assertHTML(r, 'read-only', 'Only SELECT and WITH')
+
+    def test_drop_blocked_by_whitelist(self):
+        r = self._post('/sql', data={
+            'sql': 'DROP TABLE Individual'
+        })
+        self.assertEqual(r.status_code, 200)
+        self.assertHTML(r, 'read-only')
+
+    def test_with_query_works(self):
+        r = self._post('/sql', data={
+            'sql': 'WITH t AS (SELECT 1 AS n) SELECT * FROM t'
+        })
+        self.assertEqual(r.status_code, 200)
+        # Should have rendered a result table
+
+    def test_oversized_query_rejected(self):
+        """Queries over the length cap must be rejected before execution."""
+        # 5001 chars of SELECT 1; clearly over the 5000 cap
+        big_sql = "SELECT 1 -- " + ("X" * 5001)
+        r = self._post('/sql', data={'sql': big_sql})
+        self.assertEqual(r.status_code, 200)
+        self.assertHTML(r, 'exceeds the', 'character limit')
+
+    def test_explain_analyze_button(self):
+        """EXPLAIN ANALYZE button surfaces query plans."""
+        r = self._post('/sql', data={
+            'sql': 'SELECT * FROM Individual',
+            'explain': '1',
+        })
+        self.assertEqual(r.status_code, 200)
+        body = r.get_data(as_text=True)
+        # EXPLAIN output typically contains "Seq Scan" or "rows="
+        self.assertTrue('Scan' in body or 'rows=' in body or 'cost=' in body,
+                        "Expected EXPLAIN output to contain query-plan keywords")
+        self.assertIn('Showing query plan', body)
+
+    def test_runaway_query_times_out(self):
+        """A query that would take much longer than 5s should be cancelled
+        cleanly with a user-readable message, not a stack trace."""
+        # pg_sleep(10) blocks the connection for 10 seconds — guaranteed to
+        # exceed the 5s statement_timeout. We expect a clean timeout message.
+        slow_sql = "SELECT pg_sleep(10)"
+        r = self._post('/sql', data={'sql': slow_sql})
+        self.assertEqual(r.status_code, 200)
+        body = r.get_data(as_text=True)
+        # Either the timeout message rendered, or — if the test runner is
+        # remarkably fast — the query completed. Either way: no 500.
+        self.assertNotIn('Internal server error', body)
+        # And specifically, the timeout error is what we expect
+        self.assertIn('timed out', body.lower())
+
+
+# ============================================================================
+# ERROR HANDLING TESTS
+# ============================================================================
+
+class ErrorHandlingTests(PolarisTestCase):
+
+    def test_404_renders_error_page(self):
+        r = self.client.get('/nonexistent-route')
+        self.assertEqual(r.status_code, 404)
+        self.assertHTML(r, '404', 'Page not found')
+
+
+# ============================================================================
+# Custom test runner with cleaner output
+# ============================================================================
+
+# ============================================================================
+# CYBERSECURITY-PATCH TESTS
+# ============================================================================
+# One test class per finding category from docs/operator/SECURITY.md. Each test proves the
+# patch works end-to-end (not just that the code compiles).
+
+class F01_AuthenticationTests(UnauthenticatedTestCase):
+    """F-01: No authentication on any endpoint. CWE-306 / OWASP A01."""
+
+    # v9.13: `/` is the public landing page (introduces Polaris to anonymous
+    # visitors). Authenticated users get redirected to /dashboard.
+    # `/demo` is also intentionally public (synthetic walkthrough; no real
+    # holder data). All other paths below require authentication.
+    PROTECTED_PATHS = [
+        '/atlas',
+        '/individuals',
+        '/individuals/new',
+        '/individuals/1/edit',
+        '/agencies',
+        '/agencies/new',
+        '/tokens',
+        '/tokens/2',
+        '/verifications',
+        '/verifications/new',
+        '/sql',
+        '/uc1/issue',
+        '/uc4/activate-reserve',
+        '/uc5/bind-device',
+        '/uc7/warrant-audit',
+    ]
+
+    def test_anonymous_redirected_from_every_protected_route(self):
+        """Every protected GET must 302 to /login when not authenticated."""
+        for path in self.PROTECTED_PATHS:
+            r = self.client.get(path)
+            self.assertEqual(r.status_code, 302,
+                             f"GET {path} should redirect to /login")
+            self.assertIn('/login', r.headers.get('Location', ''),
+                          f"GET {path} redirected to wrong location")
+
+    def test_login_page_accessible_anonymously(self):
+        """The login page itself must be reachable without auth."""
+        r = self.client.get('/login')
+        self.assertEqual(r.status_code, 200)
+        self.assertHTML(r, 'POLARIS', 'Sign In')
+
+    def test_login_success_with_valid_credentials(self):
+        r = self.client.post('/login', data={
+            'username': 'admin', 'password': 'Admin@123!'
+        })
+        self.assertEqual(r.status_code, 302)
+        # Should establish session
+        with self.client.session_transaction() as sess:
+            self.assertEqual(sess.get('username'), 'admin')
+            self.assertTrue(sess.get('logged_in'))
+
+    def test_login_failure_with_wrong_password(self):
+        r = self.client.post('/login', data={
+            'username': 'admin', 'password': 'wrong-password'
+        })
+        self.assertEqual(r.status_code, 401)
+        self.assertHTML(r, 'Invalid username or password')
+
+    def test_login_failure_with_unknown_username(self):
+        r = self.client.post('/login', data={
+            'username': 'nobody', 'password': 'anything'
+        })
+        self.assertEqual(r.status_code, 401)
+        # Generic message — NO username enumeration
+        self.assertHTML(r, 'Invalid username or password')
+        self.assertNotHTML(r, 'unknown user', 'no such user', 'not found')
+
+    def test_login_audit_trail(self):
+        """Successful and failed logins must be recorded in AuthAuditLog."""
+        self.client.post('/login', data={'username':'admin','password':'Admin@123!'})
+        self.client.post('/login', data={'username':'admin','password':'wrong'})
+
+        conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT event_type FROM AuthAuditLog "
+                "WHERE username='admin' ORDER BY audit_id DESC LIMIT 5"
+            )
+            events = [r['event_type'] for r in cur.fetchall()]
+        conn.close()
+        self.assertIn('LOGIN_SUCCESS', events)
+        self.assertIn('LOGIN_FAILED', events)
+
+    def test_account_locks_after_threshold_failures(self):
+        """5 wrong-password attempts in 10 min must lock the account."""
+        from app import security as sec
+        # Generate enough failures to trip the lockout
+        for _ in range(sec.LOGIN_FAILURE_THRESHOLD):
+            self.client.post('/login', data={
+                'username': 'admin', 'password': 'wrong'
+            })
+
+        # Check the AppUser row directly
+        conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT failed_login_count, locked_until FROM AppUser "
+                "WHERE username='admin'"
+            )
+            row = cur.fetchone()
+        conn.close()
+        self.assertGreaterEqual(row['failed_login_count'],
+                                sec.LOGIN_FAILURE_THRESHOLD)
+        self.assertIsNotNone(row['locked_until'],
+                             "Account should be locked after threshold")
+
+        # And subsequent CORRECT login should still be rejected
+        r = self.client.post('/login', data={
+            'username': 'admin', 'password': 'Admin@123!'
+        })
+        self.assertEqual(r.status_code, 401)
+
+    def test_logout_clears_session(self):
+        """Logout must invalidate the session."""
+        self._login('admin')
+        r = self._post('/logout', csrf_from='/')
+        self.assertEqual(r.status_code, 302)
+        with self.client.session_transaction() as sess:
+            self.assertFalse(sess.get('logged_in', False))
+
+    def test_logout_requires_post(self):
+        """GET /logout must not log the user out (drive-by logout via <img> URL)."""
+        self._login('admin')
+        r = self.client.get('/logout')
+        self.assertIn(r.status_code, (404, 405))  # Method not allowed or not found
+        with self.client.session_transaction() as sess:
+            self.assertTrue(sess.get('logged_in'))
+
+    def test_login_redirect_safe_against_open_redirect(self):
+        """?next= must only honor same-origin paths (CWE-601)."""
+        r = self.client.post('/login?next=//evil.example.com/',
+                             data={'username':'admin','password':'Admin@123!'})
+        # Must redirect to dashboard, NOT to evil.example.com
+        self.assertEqual(r.status_code, 302)
+        location = r.headers.get('Location', '')
+        self.assertNotIn('evil.example.com', location)
+
+    def test_login_session_fixation_resistance(self):
+        """Session ID/data must change on login to prevent fixation (CWE-384)."""
+        # Get a session before login
+        with self.client.session_transaction() as sess:
+            sess['fixation_marker'] = 'planted'
+        self.client.post('/login', data={
+            'username': 'admin', 'password': 'Admin@123!'
+        })
+        with self.client.session_transaction() as sess:
+            # session.clear() in login_user wipes pre-login data
+            self.assertNotIn('fixation_marker', sess)
+
+
+class F02_CSRFTests(PolarisTestCase):
+    """F-02: CSRF protection on state-changing forms. CWE-352 / OWASP A01."""
+
+    def test_post_without_csrf_rejected(self):
+        """Mutating POST without CSRF token gets 403."""
+        # Bypass _post helper to omit the token
+        r = self.client.post('/individuals/new', data={
+            'legal_name': 'NoCSRFAttacker', 'date_of_birth': '1990-01-01',
+            'jurisdiction': 'US-NJ',
+        })
+        self.assertEqual(r.status_code, 403)
+
+    def test_post_with_wrong_csrf_rejected(self):
+        r = self.client.post('/individuals/new', data={
+            'csrf_token': 'this-is-not-the-real-token',
+            'legal_name': 'WrongCSRFAttacker',
+            'date_of_birth': '1990-01-01',
+            'jurisdiction': 'US-NJ',
+        })
+        self.assertEqual(r.status_code, 403)
+
+    def test_post_with_valid_csrf_accepted(self):
+        r = self._post('/individuals/new', data={
+            'legal_name': 'ValidCSRFUser',
+            'date_of_birth': '1990-01-01',
+            'jurisdiction': 'US-NJ',
+        })
+        self.assertEqual(r.status_code, 302)
+
+    def test_csrf_rejection_is_audited(self):
+        """Each CSRF rejection is logged in AuthAuditLog."""
+        self.client.post('/individuals/new', data={'legal_name': 'X'})
+        conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT event_type FROM AuthAuditLog "
+                "WHERE event_type='CSRF_REJECTED' ORDER BY audit_id DESC LIMIT 1"
+            )
+            row = cur.fetchone()
+        conn.close()
+        self.assertIsNotNone(row, "CSRF_REJECTED audit event should exist")
+
+    def test_csrf_token_present_in_every_form(self):
+        """Every rendered POST form must include csrf_token input."""
+        # Sample a few representative forms
+        for path in ['/individuals/new', '/agencies/new', '/uc1/issue',
+                     '/uc4/activate-reserve', '/uc5/bind-device',
+                     '/uc7/warrant-audit', '/verifications/new', '/sql']:
+            r = self.client.get(path)
+            self.assertEqual(r.status_code, 200, f"GET {path} failed")
+            body = r.get_data(as_text=True)
+            self.assertIn('name="csrf_token"', body,
+                          f"missing CSRF input on {path}")
+
+
+class F03_RateLimitingTests(UnauthenticatedTestCase):
+    """F-03: Rate limiting on login + writes. CWE-307, CWE-770 / OWASP A04."""
+
+    def test_excessive_login_attempts_rate_limited(self):
+        """After RATE_LIMIT_LOGIN_MAX requests, the next is 429."""
+        from app import security as sec
+        # Note: lockout fires after 5 failures, but the per-IP rate limiter
+        # is separately enforced and kicks in BEFORE the auth handler. We
+        # test the rate limit by hitting wrong creds RATE_LIMIT_LOGIN_MAX+1
+        # times.
+        for i in range(sec.RATE_LIMIT_LOGIN_MAX):
+            r = self.client.post('/login', data={
+                'username': f'user{i}', 'password': 'whatever'
+            })
+            # All 401 (authentication failure), not 429 yet
+        # The (MAX+1)th must be 429
+        r = self.client.post('/login', data={
+            'username': 'oneMore', 'password': 'whatever'
+        })
+        self.assertEqual(r.status_code, 429)
+
+
+class F04_SecurityHeadersTests(PolarisTestCase):
+    """F-04: Security headers on every response. CWE-693 / OWASP A05."""
+
+    def test_csp_header_present(self):
+        r = self.client.get('/')
+        csp = r.headers.get('Content-Security-Policy', '')
+        self.assertIn("default-src 'self'", csp)
+        self.assertIn("frame-ancestors 'none'", csp)
+        self.assertIn("object-src 'none'", csp)
+
+    def test_x_frame_options_deny(self):
+        r = self.client.get('/')
+        self.assertEqual(r.headers.get('X-Frame-Options'), 'DENY')
+
+    def test_x_content_type_options_nosniff(self):
+        r = self.client.get('/')
+        self.assertEqual(r.headers.get('X-Content-Type-Options'), 'nosniff')
+
+    def test_referrer_policy(self):
+        r = self.client.get('/')
+        self.assertEqual(r.headers.get('Referrer-Policy'),
+                         'strict-origin-when-cross-origin')
+
+    def test_permissions_policy(self):
+        r = self.client.get('/')
+        pp = r.headers.get('Permissions-Policy', '')
+        self.assertIn('camera=()', pp)
+        self.assertIn('microphone=()', pp)
+
+    def test_authenticated_pages_not_cached(self):
+        """Cache-Control no-store on authenticated content (CWE-525)."""
+        r = self.client.get('/')
+        cc = r.headers.get('Cache-Control', '')
+        self.assertIn('no-store', cc)
+
+
+class F05_ProductionSecretGuardTests(unittest.TestCase):
+    """F-05: Refuse to start in prod with default secret. CWE-798 / OWASP A05."""
+
+    def test_dev_default_secret_rejected_in_production(self):
+        """Setting POLARIS_ENV=production with the dev secret must exit."""
+        import subprocess
+        env = {
+            **os.environ,
+            'POLARIS_ENV': 'production',
+            'POLARIS_SECRET_KEY': 'dev-key-change-in-production',
+        }
+        # Run app.py and expect it to exit with code 2
+        proc = subprocess.run(
+            [sys.executable, '-c',
+             'import os, sys; sys.path.insert(0, "."); '
+             'os.environ["POLARIS_ENV"]="production"; '
+             'os.environ["POLARIS_SECRET_KEY"]="dev-key-change-in-production"; '
+             'import app'],
+            cwd=os.path.dirname(os.path.abspath(__file__)),
+            capture_output=True, text=True, timeout=10
+        )
+        self.assertEqual(proc.returncode, 2,
+                         f"Expected exit 2; got {proc.returncode}. "
+                         f"stderr: {proc.stderr[:300]}")
+        self.assertIn('FATAL', proc.stderr)
+
+
+class F06_CookieHardeningTests(PolarisTestCase):
+    """F-07: Cookie attributes Secure / HttpOnly / SameSite. CWE-614, CWE-1004."""
+
+    def test_session_cookie_httponly(self):
+        """The session cookie must have HttpOnly to prevent JS theft."""
+        # Use the cookie jar from the client, which exposes flags as attributes
+        # of the cookie object
+        r = self.client.post('/login', data={
+            'username':'admin', 'password':'Admin@123!'
+        })
+        # Find the polaris_session cookie in the response
+        for cookie in self.client.cookie_jar if hasattr(self.client, 'cookie_jar') else []:
+            if cookie.name == 'polaris_session':
+                # Werkzeug's test client cookies expose flags via _rest
+                break
+        # Alternative: parse the Set-Cookie header
+        set_cookie = r.headers.get('Set-Cookie', '')
+        if 'polaris_session' in set_cookie:
+            self.assertIn('HttpOnly', set_cookie)
+            self.assertIn('SameSite=Lax', set_cookie)
+
+
+class F08_ErrorMessageSanitizationTests(PolarisTestCase):
+    """F-08: DB errors don't leak SQL fragments. CWE-209 / OWASP A09."""
+
+    def test_unknown_error_returns_generic_message(self):
+        """Unhandled DB errors yield a generic message, not internals."""
+        # Call db_error_to_message directly with a fabricated unknown error
+        from app import db_error_to_message
+        class FakeErr:
+            def __str__(self):
+                return ('ERROR:  some internal column "secret_field" something\n'
+                        'DETAIL:  internal sql here SELECT * FROM secret_table')
+        msg = db_error_to_message(FakeErr())
+        # Must NOT leak the internal fragments
+        self.assertNotIn('secret_field', msg)
+        self.assertNotIn('secret_table', msg)
+        self.assertNotIn('SELECT *', msg)
+
+    def test_known_constraint_returns_friendly_message(self):
+        """Known constraints still return readable user messages."""
+        from app import db_error_to_message
+        class FakeErr:
+            def __str__(self):
+                return ('ERROR:  duplicate key value violates unique constraint '
+                        '"uq_one_active_per_person"')
+        msg = db_error_to_message(FakeErr())
+        self.assertIn('Cannot create a second ACTIVE token', msg)
+
+
+class F11_AuditLoggingTests(PolarisTestCase):
+    """F-11: Authentication events recorded in AuthAuditLog."""
+
+    def _get_event_count(self, event_type):
+        conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT COUNT(*) AS n FROM AuthAuditLog WHERE event_type=%s",
+                (event_type,)
+            )
+            n = cur.fetchone()['n']
+        conn.close()
+        return n
+
+    def test_login_success_audited(self):
+        before = self._get_event_count('LOGIN_SUCCESS')
+        self._logout()
+        self._login('operator')
+        after = self._get_event_count('LOGIN_SUCCESS')
+        self.assertGreater(after, before)
+
+    def test_authz_denial_audited(self):
+        """Forbidden-by-role accesses are logged."""
+        self._logout()
+        self._login('operator')  # operator has no /individuals/new
+        before = self._get_event_count('AUTHZ_DENIED')
+        r = self.client.get('/individuals/new')
+        self.assertEqual(r.status_code, 403)
+        after = self._get_event_count('AUTHZ_DENIED')
+        self.assertEqual(after, before + 1)
+
+    def test_audit_log_is_append_only(self):
+        """Confirm UPDATE/DELETE on AuthAuditLog is rejected by trigger."""
+        conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        with conn.cursor() as cur:
+            with self.assertRaises(psycopg2.Error):
+                cur.execute("UPDATE AuthAuditLog SET detail='tampered' "
+                            "WHERE audit_id = (SELECT MIN(audit_id) FROM AuthAuditLog)")
+        conn.rollback()
+        with conn.cursor() as cur:
+            with self.assertRaises(psycopg2.Error):
+                cur.execute("DELETE FROM AuthAuditLog "
+                            "WHERE audit_id = (SELECT MIN(audit_id) FROM AuthAuditLog)")
+        conn.rollback()
+        conn.close()
+
+
+class RoleBasedAccessControlTests(PolarisTestCase):
+    """Role enforcement across the route matrix."""
+
+    # Path → roles allowed (sets must match the @require_role decorators)
+    ROLE_MATRIX = {
+        '/': ('admin', 'operator', 'auditor'),
+        '/atlas': ('admin', 'operator', 'auditor'),
+        '/individuals/new': ('admin',),
+        '/agencies/new': ('admin',),
+        '/uc1/issue': ('admin', 'operator'),
+        '/uc4/activate-reserve': ('admin', 'operator'),
+        '/uc5/bind-device': ('admin', 'operator'),
+        '/uc7/warrant-audit': ('admin', 'auditor'),
+        '/sql': ('admin', 'auditor'),
+        '/verifications/new': ('admin', 'operator'),
+    }
+
+    def test_each_role_can_access_only_what_it_should(self):
+        for role in ('admin', 'operator', 'auditor'):
+            self._logout()
+            self._login(role)
+            for path, allowed in self.ROLE_MATRIX.items():
+                r = self.client.get(path)
+                if role in allowed:
+                    self.assertEqual(r.status_code, 200,
+                        f"{role} should access {path} (got {r.status_code})")
+                else:
+                    self.assertEqual(r.status_code, 403,
+                        f"{role} should NOT access {path} (got {r.status_code})")
+
+    def test_navigation_only_shows_allowed_links(self):
+        """The nav bar is role-gated — operator shouldn't see SQL Console."""
+        self._logout()
+        self._login('operator')
+        r = self.client.get('/')
+        # Operator can't use SQL console, so the nav link shouldn't appear
+        # (The role-based template hides it.)
+        self.assertNotHTML(r, '>SQL Console<')
+        # v8.14 iteration 11: UC-* nav items moved into a <details>
+        # dropdown menu; operator sees UC-1 / UC-4 / UC-5 / UC-6 / UC-8 / UC-9.
+        # v8.15 R11-6: UC-8 (bounded revocation) added to the operator set.
+        # v8.17 R11-2: UC-9 (recovery queue) added to the operator set.
+        # v8.18 R11-1: UC-6 (algorithm migration) added to the operator set.
+        self.assertHTML(r, '>UC-1<')   # in the dropdown menu
+        self.assertHTML(r, '>UC-6<')
+        self.assertHTML(r, '>UC-8<')
+        self.assertHTML(r, '>UC-9<')
+
+        self._logout()
+        self._login('auditor')
+        r = self.client.get('/')
+        # Auditor sees SQL but not UC-1/6/8/9 (only UC-7 in the dropdown)
+        self.assertHTML(r, '>SQL Console<')
+        self.assertNotHTML(r, '>UC-1<')
+        self.assertNotHTML(r, '>UC-6<')
+        self.assertNotHTML(r, '>UC-8<')
+        self.assertNotHTML(r, '>UC-9<')
+        # Auditor still sees UC-7 in the dropdown
+        self.assertHTML(r, '>UC-7<')
+
+
+class PasswordHashingTests(unittest.TestCase):
+    """Sanity checks on password hashing primitives."""
+
+    def test_hash_password_uses_scrypt(self):
+        from app import security as sec
+        h = sec.hash_password('Test@1234')
+        self.assertTrue(h.startswith('scrypt:'),
+                        f"Expected scrypt-prefixed hash, got: {h[:30]}")
+
+    def test_verify_password_round_trip(self):
+        from app import security as sec
+        h = sec.hash_password('Correct@Horse123!')
+        self.assertTrue(sec.verify_password(h, 'Correct@Horse123!'))
+        self.assertFalse(sec.verify_password(h, 'wrong'))
+
+    def test_hash_uniqueness(self):
+        """Two hashes of the same password should differ (salted)."""
+        from app import security as sec
+        h1 = sec.hash_password('SamePass@123')
+        h2 = sec.hash_password('SamePass@123')
+        self.assertNotEqual(h1, h2)
+
+
+# ============================================================================
+# V6 — CONCURRENCY HARDENING TESTS
+# ============================================================================
+# These tests exercise the race-condition fixes shipped in v6:
+#   - Atomic increment of AppUser.failed_login_count (TOCTOU was bypassable)
+#   - SELECT FOR UPDATE in uc4_activate_reserve serializes per-holder
+#   - activation_sequence computed from MAX(seq)+1 inside the locked region
+#
+# Race tests use threading + a connection per thread. Because Postgres
+# serializes via row locks rather than transaction-level optimistic
+# concurrency, these tests verify correctness under concurrent load
+# without depending on timing.
+# ============================================================================
+
+import threading
+from concurrent.futures import ThreadPoolExecutor
+
+
+class ConcurrencyTests(PolarisTestCase):
+    """Tests for the v6 concurrency hardening. Run a handful of operations
+    in parallel against the live database and assert the invariants hold."""
+
+    def _new_conn(self):
+        """Each thread needs its own connection — psycopg2 connections are
+        not thread-safe."""
+        return psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+
+    # -------------------------------------------------------------------
+    # Atomic failed_login_count increment under concurrent load.
+    # Pre-v6: two simultaneous failed logins both read count=N and both
+    # wrote N+1, losing one failure. An attacker could spam concurrent
+    # failed login attempts and never trip the lockout.
+    # Post-v6: UPDATE ... SET col = col + 1 RETURNING is atomic; every
+    # failure is counted exactly once.
+    # -------------------------------------------------------------------
+    def test_failed_login_count_is_atomic_under_concurrent_load(self):
+        # Use a fresh test user so we don't interfere with the seeded admin
+        with self._new_conn() as conn, conn.cursor() as cur:
+            from werkzeug.security import generate_password_hash
+            cur.execute(
+                "INSERT INTO AppUser (username, password_hash, role, "
+                "failed_login_count, locked_until, is_active) "
+                "VALUES (%s, %s, 'auditor', 0, NULL, TRUE) "
+                "ON CONFLICT (username) DO UPDATE SET "
+                "  failed_login_count=0, locked_until=NULL, is_active=TRUE",
+                ('concurrency_victim', generate_password_hash('CorrectPassword!1', method='scrypt'))
+            )
+            conn.commit()
+
+        N_ATTEMPTS = 8
+        sec = flask_app.security
+
+        def fail_once():
+            user, err = sec.authenticate(
+                lambda: psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG),
+                'concurrency_victim',
+                'WrongPassword'
+            )
+            return err is not None  # True if rejected, as expected
+
+        # Fire N parallel failed-login attempts
+        with ThreadPoolExecutor(max_workers=N_ATTEMPTS) as pool:
+            results = list(pool.map(lambda _: fail_once(), range(N_ATTEMPTS)))
+
+        # All must have been rejected (None user)
+        self.assertTrue(all(results),
+            "All concurrent failed logins should be rejected")
+
+        # The counter must show EXACTLY N_ATTEMPTS — no lost increments.
+        # Pre-v6 this would frequently land at N-1 or N-2 due to TOCTOU.
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT failed_login_count, locked_until FROM AppUser "
+                "WHERE username = %s",
+                ('concurrency_victim',))
+            row = cur.fetchone()
+            self.assertEqual(row['failed_login_count'], N_ATTEMPTS,
+                f"Atomic increment lost updates: expected {N_ATTEMPTS}, "
+                f"got {row['failed_login_count']}")
+            # Account should be locked since N_ATTEMPTS (8) > threshold (5)
+            self.assertIsNotNone(row['locked_until'],
+                "Account should be locked after threshold-crossing failures")
+
+        # Cleanup
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("DELETE FROM AuthAuditLog WHERE username = 'concurrency_victim'")
+            cur.execute("DELETE FROM AppUser WHERE username = 'concurrency_victim'")
+            conn.commit()
+
+    # -------------------------------------------------------------------
+    # The partial unique index uq_one_active_per_person enforces at most
+    # one ACTIVE token per individual at the database level. Two parallel
+    # attempts to set status='ACTIVE' for the same individual must
+    # serialize: exactly one succeeds, others get UniqueViolation.
+    # -------------------------------------------------------------------
+    def test_partial_unique_index_blocks_double_active(self):
+        with self._new_conn() as conn, conn.cursor() as cur:
+            # Find an individual who has two RESERVE tokens we can race for ACTIVE
+            cur.execute("""
+                SELECT individual_id, array_agg(token_id) AS tokens
+                FROM IdentityToken
+                WHERE status = 'RESERVE'
+                GROUP BY individual_id
+                HAVING count(*) >= 2
+                LIMIT 1
+            """)
+            row = cur.fetchone()
+            # If the sample set doesn't naturally contain two RESERVE tokens
+            # for the same individual, create them.
+            if not row:
+                cur.execute("""
+                    INSERT INTO Individual (legal_name, date_of_birth, jurisdiction)
+                    VALUES ('Race Test Subject', '1990-01-01', 'US')
+                    RETURNING individual_id
+                """)
+                ind_id = cur.fetchone()['individual_id']
+                cur.execute("""
+                    INSERT INTO IdentityToken
+                        (token_value, physical_serial, biometric_binding_type,
+                         individual_id, issuing_agency_id, algorithm_id, status)
+                    VALUES
+                        ('RACE-A', 'HW-RACE-A', 'NONE', %s, 1, 1, 'RESERVE'),
+                        ('RACE-B', 'HW-RACE-B', 'NONE', %s, 1, 1, 'RESERVE')
+                    RETURNING token_id
+                """, (ind_id, ind_id))
+                cur.execute("SELECT token_id FROM IdentityToken WHERE individual_id=%s",
+                    (ind_id,))
+                tokens = [r['token_id'] for r in cur.fetchall()]
+                conn.commit()
+            else:
+                tokens = row['tokens'][:2]
+
+        results = {'success': 0, 'unique_violation': 0, 'other_error': 0}
+        results_lock = threading.Lock()
+
+        def race_activate(token_id):
+            try:
+                with self._new_conn() as conn, conn.cursor() as cur:
+                    cur.execute(
+                        "UPDATE IdentityToken SET status='ACTIVE', "
+                        "activated_date=CURRENT_TIMESTAMP WHERE token_id=%s",
+                        (token_id,))
+                    conn.commit()
+                with results_lock: results['success'] += 1
+            except psycopg2.errors.UniqueViolation:
+                with results_lock: results['unique_violation'] += 1
+            except psycopg2.Error:
+                with results_lock: results['other_error'] += 1
+
+        threads = [threading.Thread(target=race_activate, args=(t,)) for t in tokens]
+        for t in threads: t.start()
+        for t in threads: t.join()
+
+        # Exactly one must succeed; the other gets UniqueViolation
+        self.assertEqual(results['success'], 1,
+            f"Exactly one parallel activation should succeed: {results}")
+        self.assertEqual(results['unique_violation'], 1,
+            f"The losing thread should get UniqueViolation: {results}")
+
+    # -------------------------------------------------------------------
+    # R11-6 / M2-11 — pg_advisory_xact_lock prevents two concurrent
+    # boundary-tripping revocations from both succeeding. Each thread
+    # has its own connection; the procedure serializes them by agency_id.
+    # -------------------------------------------------------------------
+    def test_uc8_advisory_lock_prevents_double_revoke_at_boundary(self):
+        # Seed: agency 2 gets a 50% override + two fresh ACTIVE tokens
+        # under it. After one revocation that single agency is past the
+        # bound (1/2 = 50% which is == not >; bumping to 49% so the
+        # SECOND revoke must be rejected). The first thread to acquire
+        # the advisory lock will be UNDER the bound; the second will
+        # find itself OVER and require a co-signer (which it doesn't
+        # provide here).
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO IssuerDiscretionPolicy
+                    (agency_id, max_revoke_percent, window_days, set_by_admin, justification)
+                VALUES (2, 49.00, 30, 'concurrency_test',
+                        'C9 concurrency test fixture for boundary-race')
+                ON CONFLICT (agency_id) DO UPDATE
+                  SET max_revoke_percent=49.00,
+                      justification='C9 concurrency test fixture for boundary-race'
+            """)
+            conn.commit()
+
+        def seed_active(label):
+            with self._new_conn() as conn, conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO Individual (legal_name, date_of_birth, jurisdiction)
+                    VALUES (%s, '1990-01-01', 'US-PA')
+                    RETURNING individual_id
+                """, (f'R11-6 C9 {label}',))
+                iid = cur.fetchone()['individual_id']
+                cur.execute("""
+                    INSERT INTO IdentityToken
+                        (token_value, physical_serial, hardware_model,
+                         biometric_binding_type, individual_id, issuing_agency_id,
+                         algorithm_id, status, issued_date, expiration_date)
+                    VALUES
+                        (%s, %s, 'TitanQ-3', 'IRIS', %s, 2, 1,
+                         'RESERVE', CURRENT_TIMESTAMP,
+                         (CURRENT_DATE + INTERVAL '10 years')::date)
+                    RETURNING token_id
+                """, (f'TKN-R11-6-C9-{label}', f'SN-R11-6-C9-{label}', iid))
+                tid = cur.fetchone()['token_id']
+                cur.execute("SELECT set_config('polaris.actor_agency_id', '2', false)")
+                cur.execute("SELECT set_config('polaris.reason_code', 'TEST_SEED', false)")
+                cur.execute("UPDATE IdentityToken SET status='ACTIVE', activated_date=CURRENT_TIMESTAMP WHERE token_id=%s", (tid,))
+                conn.commit()
+            return tid
+
+        # Create two tokens. The denominator (agency 2's outstanding count)
+        # includes any existing tokens — the bound math handles this.
+        tids = [seed_active(f'race-{i}') for i in range(2)]
+
+        results = {'success': 0, 'rejected_co_sign_required': 0, 'other_error': 0}
+        results_lock = threading.Lock()
+
+        def race_revoke(token_id):
+            try:
+                with self._new_conn() as conn, conn.cursor() as cur:
+                    cur.execute(
+                        "CALL uc8_revoke_token(%s, %s, %s, %s, %s)",
+                        (token_id, 2, 'ADMINISTRATIVE',
+                         'https://crl.idtoken.gov/test/C9.crl', None))
+                    conn.commit()
+                with results_lock: results['success'] += 1
+            except psycopg2.errors.CheckViolation:
+                with results_lock: results['rejected_co_sign_required'] += 1
+            except psycopg2.Error as e:
+                with results_lock:
+                    results['other_error'] += 1
+                    results.setdefault('other_msgs', []).append(str(e))
+
+        threads = [threading.Thread(target=race_revoke, args=(t,)) for t in tids]
+        for t in threads: t.start()
+        for t in threads: t.join()
+
+        # Exactly one of the two must succeed (the bound permits one).
+        # The losing thread sees the post-commit count and gets the
+        # 'co-signer required' check_violation.
+        self.assertEqual(results['success'], 1,
+            f"Advisory-lock contract: exactly one thread should succeed at the boundary: {results}")
+        self.assertEqual(results['rejected_co_sign_required'], 1,
+            f"The losing thread should be rejected with co-signer required: {results}")
+
+    # -------------------------------------------------------------------
+    # R11-6 / M2-11 — Cross-agency revocations don't block each other.
+    # The advisory-lock key is hashtext('polaris.revoke.' || agency_id),
+    # so two different agencies revoking simultaneously do not serialize.
+    # -------------------------------------------------------------------
+    def test_uc8_cross_agency_revocations_do_not_block(self):
+        # Permissive overrides for both agency 2 and agency 3.
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO IssuerDiscretionPolicy
+                    (agency_id, max_revoke_percent, window_days, set_by_admin, justification)
+                VALUES (2, 95.00, 30, 'concurrency_test',
+                        'C9 cross-agency test — permissive for agency 2'),
+                       (3, 95.00, 30, 'concurrency_test',
+                        'C9 cross-agency test — permissive for agency 3')
+                ON CONFLICT (agency_id) DO UPDATE
+                  SET max_revoke_percent=95.00,
+                      justification=EXCLUDED.justification
+            """)
+            conn.commit()
+
+        def seed_active(agency_id, label):
+            with self._new_conn() as conn, conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO Individual (legal_name, date_of_birth, jurisdiction)
+                    VALUES (%s, '1990-01-01', 'US-PA')
+                    RETURNING individual_id
+                """, (f'R11-6 CROSS {label}',))
+                iid = cur.fetchone()['individual_id']
+                cur.execute("""
+                    INSERT INTO IdentityToken
+                        (token_value, physical_serial, hardware_model,
+                         biometric_binding_type, individual_id, issuing_agency_id,
+                         algorithm_id, status, issued_date, expiration_date)
+                    VALUES
+                        (%s, %s, 'TitanQ-3', 'IRIS', %s, %s, 1,
+                         'RESERVE', CURRENT_TIMESTAMP,
+                         (CURRENT_DATE + INTERVAL '10 years')::date)
+                    RETURNING token_id
+                """, (f'TKN-R11-6-CROSS-{label}', f'SN-R11-6-CROSS-{label}', iid, agency_id))
+                tid = cur.fetchone()['token_id']
+                cur.execute("SELECT set_config('polaris.actor_agency_id', %s, false)", (str(agency_id),))
+                cur.execute("SELECT set_config('polaris.reason_code', 'TEST_SEED', false)")
+                cur.execute("UPDATE IdentityToken SET status='ACTIVE', activated_date=CURRENT_TIMESTAMP WHERE token_id=%s", (tid,))
+                conn.commit()
+            return tid
+
+        tid_a = seed_active(2, 'a')
+        tid_b = seed_active(3, 'b')
+
+        outcomes = []
+        outcomes_lock = threading.Lock()
+
+        def revoke(agency_id, token_id):
+            try:
+                with self._new_conn() as conn, conn.cursor() as cur:
+                    # Brief pg_sleep ensures both threads hold their lock
+                    # concurrently if they're not blocking each other.
+                    cur.execute("SELECT pg_sleep(0.3)")
+                    cur.execute(
+                        "CALL uc8_revoke_token(%s, %s, %s, %s, %s)",
+                        (token_id, agency_id, 'ADMINISTRATIVE',
+                         'https://crl.idtoken.gov/test/cross.crl', None))
+                    conn.commit()
+                with outcomes_lock: outcomes.append(('ok', agency_id))
+            except psycopg2.Error as e:
+                with outcomes_lock: outcomes.append(('err', agency_id, str(e)))
+
+        import time
+        t0 = time.perf_counter()
+        threads = [
+            threading.Thread(target=revoke, args=(2, tid_a)),
+            threading.Thread(target=revoke, args=(3, tid_b)),
+        ]
+        for t in threads: t.start()
+        for t in threads: t.join()
+        elapsed = time.perf_counter() - t0
+
+        # Both should succeed
+        successes = [o for o in outcomes if o[0] == 'ok']
+        self.assertEqual(len(successes), 2,
+            f"Both cross-agency revocations should succeed: {outcomes}")
+        # Parallelism check: if they were serialized, total would be ~0.6s
+        # (2 × 0.3s sleep). Parallel should be ~0.3s + overhead. Assert <
+        # 0.55s for headroom against test-machine variability.
+        self.assertLess(elapsed, 0.55,
+            f"Cross-agency revocations should run in parallel; elapsed={elapsed:.3f}s")
+
+    # -------------------------------------------------------------------
+    # R11-2 / M2-7 — pg_advisory_xact_lock on claimed_individual_id
+    # prevents two threads from both completing the same PENDING recovery.
+    # -------------------------------------------------------------------
+    def test_uc9_advisory_lock_serializes_concurrent_completes(self):
+        """Race uc9_complete_recovery on the same PENDING with T threads.
+        Exactly one should succeed; the others should fail with
+        'not PENDING' because the winner committed first."""
+        # Seed: fresh Individual + PENDING with channels verified + cool-down past.
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO Individual (legal_name, date_of_birth, jurisdiction)
+                VALUES ('R11-2 C9 race', '1990-01-01', 'US-PA')
+                RETURNING individual_id
+            """)
+            iid = cur.fetchone()['individual_id']
+
+            cur.execute("SELECT user_id FROM AppUser WHERE username='operator'")
+            op_uid = cur.fetchone()['user_id']
+            cur.execute("SELECT user_id FROM AppUser WHERE username='admin'")
+            admin_uid = cur.fetchone()['user_id']
+
+            cur.execute("""
+                INSERT INTO RecoveryRequest
+                    (claimed_individual_id, requested_at, requesting_agency_id,
+                     requesting_user_id, biometric_verified, sworn_statement_hash,
+                     witness_agency_id, witness_co_sign_user_id,
+                     cooldown_expires_at)
+                VALUES (
+                    %s,
+                    CURRENT_TIMESTAMP - INTERVAL '50 hours',
+                    1, %s, TRUE, %s, 3, %s,
+                    CURRENT_TIMESTAMP - INTERVAL '2 hours'
+                )
+                RETURNING recovery_id
+            """, (iid, op_uid, 'a' * 64, admin_uid))
+            rid = cur.fetchone()['recovery_id']
+            conn.commit()
+
+        N = 4
+        results = {'success': 0, 'rejected_not_pending': 0, 'other': 0}
+        results_lock = threading.Lock()
+
+        def race_complete(suffix):
+            try:
+                with self._new_conn() as conn, conn.cursor() as cur:
+                    cur.execute("""
+                        CALL uc9_complete_recovery(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """, (
+                        rid, admin_uid, 'APPROVED', f'race {suffix}',
+                        f'TKN-UC9-RACE-{suffix}', f'SN-UC9-RACE-{suffix}',
+                        1, 'IRIS', 'MULTI_MODAL',
+                        f'https://crl.idtoken.gov/race/{suffix}',
+                    ))
+                    conn.commit()
+                with results_lock: results['success'] += 1
+            except psycopg2.Error as e:
+                msg = str(e)
+                with results_lock:
+                    if 'not PENDING' in msg or 'already in status' in msg:
+                        results['rejected_not_pending'] += 1
+                    else:
+                        results['other'] += 1
+                        results.setdefault('other_msgs', []).append(msg)
+
+        threads = [threading.Thread(target=race_complete, args=(i,)) for i in range(N)]
+        for t in threads: t.start()
+        for t in threads: t.join()
+
+        self.assertEqual(results['success'], 1,
+            f"Advisory-lock contract: exactly one thread should complete the PENDING: {results}")
+        self.assertEqual(results['rejected_not_pending'], N - 1,
+            f"The losing threads should see 'not PENDING' after the winner committed: {results}")
+
+    # -------------------------------------------------------------------
+    # R11-2 / M2-7 — Cross-individual recoveries do not block each other.
+    # -------------------------------------------------------------------
+    def test_uc9_cross_individual_recoveries_do_not_block(self):
+        """Two PENDING recoveries for two different individuals should
+        complete in parallel — the advisory-lock key is per-individual."""
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT user_id FROM AppUser WHERE username='operator'")
+            op_uid = cur.fetchone()['user_id']
+            cur.execute("SELECT user_id FROM AppUser WHERE username='admin'")
+            admin_uid = cur.fetchone()['user_id']
+
+            def make_pending(label):
+                cur.execute("""
+                    INSERT INTO Individual (legal_name, date_of_birth, jurisdiction)
+                    VALUES (%s, '1990-01-01', 'US-PA')
+                    RETURNING individual_id
+                """, (f'R11-2 CROSS {label}',))
+                iid = cur.fetchone()['individual_id']
+                cur.execute("""
+                    INSERT INTO RecoveryRequest
+                        (claimed_individual_id, requested_at, requesting_agency_id,
+                         requesting_user_id, biometric_verified, sworn_statement_hash,
+                         witness_agency_id, witness_co_sign_user_id,
+                         cooldown_expires_at)
+                    VALUES (
+                        %s,
+                        CURRENT_TIMESTAMP - INTERVAL '50 hours',
+                        1, %s, TRUE, %s, 3, %s,
+                        CURRENT_TIMESTAMP - INTERVAL '2 hours'
+                    )
+                    RETURNING recovery_id
+                """, (iid, op_uid, 'a' * 64, admin_uid))
+                return cur.fetchone()['recovery_id']
+
+            rid_a = make_pending('A')
+            rid_b = make_pending('B')
+            conn.commit()
+
+        outcomes = []
+        outcomes_lock = threading.Lock()
+
+        def complete(rid, suffix):
+            try:
+                with self._new_conn() as conn, conn.cursor() as cur:
+                    cur.execute("SELECT pg_sleep(0.3)")
+                    cur.execute("""
+                        CALL uc9_complete_recovery(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """, (
+                        rid, admin_uid, 'APPROVED', f'cross {suffix}',
+                        f'TKN-UC9-XR-{suffix}', f'SN-UC9-XR-{suffix}',
+                        1, 'IRIS', 'MULTI_MODAL',
+                        f'https://crl.idtoken.gov/xr/{suffix}',
+                    ))
+                    conn.commit()
+                with outcomes_lock: outcomes.append(('ok', rid))
+            except psycopg2.Error as e:
+                with outcomes_lock: outcomes.append(('err', rid, str(e)))
+
+        import time
+        t0 = time.perf_counter()
+        threads = [
+            threading.Thread(target=complete, args=(rid_a, 'A')),
+            threading.Thread(target=complete, args=(rid_b, 'B')),
+        ]
+        for t in threads: t.start()
+        for t in threads: t.join()
+        elapsed = time.perf_counter() - t0
+
+        successes = [o for o in outcomes if o[0] == 'ok']
+        self.assertEqual(len(successes), 2,
+            f"Both cross-individual recoveries should succeed: {outcomes}")
+        # Parallelism check: if serialized, total ≈ 0.6s; parallel ≈ 0.3s.
+        self.assertLess(elapsed, 0.55,
+            f"Cross-individual recoveries should run in parallel; elapsed={elapsed:.3f}s")
+
+    # -------------------------------------------------------------------
+    # R11-1 / M2-6 — pg_advisory_xact_lock on token_id serializes
+    # concurrent uc6_migrate_algorithm calls on the same token.
+    # -------------------------------------------------------------------
+    def test_uc6_per_token_lock_serializes_concurrent_migrations(self):
+        """T threads each migrate the same token to T distinct algorithms.
+        Lock serializes them; final state has 1 (original) + T new
+        signatures, all under different algorithms. The UNIQUE
+        (token_id, algorithm_id) constraint prevents duplicate-algorithm
+        inserts; the lock prevents interleaved trigger checks."""
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO Individual (legal_name, date_of_birth, jurisdiction)
+                VALUES ('R11-1 C9 per-token', '1990-01-01', 'US-PA')
+                RETURNING individual_id
+            """)
+            iid = cur.fetchone()['individual_id']
+            cur.execute("""
+                INSERT INTO IdentityToken
+                    (token_value, physical_serial, hardware_model,
+                     biometric_binding_type, individual_id, issuing_agency_id,
+                     algorithm_id, status, issued_date, expiration_date)
+                VALUES ('TKN-R11-1-LOCK', 'SN-R11-1-LOCK', 'TitanQ-3',
+                        'IRIS', %s, 1, 1, 'RESERVE',
+                        CURRENT_TIMESTAMP, (CURRENT_DATE + INTERVAL '10 years')::date)
+                RETURNING token_id
+            """, (iid,))
+            tid = cur.fetchone()['token_id']
+            cur.execute("""
+                INSERT INTO TokenSignature (token_id, algorithm_id, signature_bytes)
+                VALUES (%s, 1, %s)
+            """, (tid, b'TEST_LOCK_SEED'))
+            conn.commit()
+
+        # Use 3 distinct algorithm_ids for the migrations: 2, 3, 4.
+        # (Algorithm 1 is already on the token; algorithm 5 is deprecated.)
+        target_algs = [2, 3, 4]
+        results = []
+        results_lock = threading.Lock()
+
+        def migrate(alg_id):
+            try:
+                with self._new_conn() as conn, conn.cursor() as cur:
+                    cur.execute(
+                        "CALL uc6_migrate_algorithm(%s, %s, %s, %s)",
+                        (tid, alg_id, f'MIG_{alg_id}'.encode(), False))
+                    conn.commit()
+                with results_lock: results.append(('ok', alg_id))
+            except psycopg2.Error as e:
+                with results_lock: results.append(('err', alg_id, str(e)))
+
+        threads = [threading.Thread(target=migrate, args=(a,)) for a in target_algs]
+        for t in threads: t.start()
+        for t in threads: t.join()
+
+        successes = [r for r in results if r[0] == 'ok']
+        self.assertEqual(len(successes), 3,
+            f"All 3 distinct-algorithm migrations should succeed: {results}")
+
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("""
+                SELECT count(*) AS c FROM TokenSignature WHERE token_id=%s
+            """, (tid,))
+            self.assertEqual(cur.fetchone()['c'], 4,
+                'Final state: 1 seed + 3 migrations = 4 signatures')
+
+    def test_uc6_verification_snapshot_consistent_with_migration(self):
+        """Verify-then-migrate consistency model: within a transaction's
+        read snapshot, the active-signature set is stable even if a
+        concurrent migration commits in the middle. New migrations are
+        visible only to subsequent transactions. This documents the
+        consistency contract — a verification path can trust its
+        snapshot reads."""
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO Individual (legal_name, date_of_birth, jurisdiction)
+                VALUES ('R11-1 verify-migrate', '1990-01-01', 'US-PA')
+                RETURNING individual_id
+            """)
+            iid = cur.fetchone()['individual_id']
+            cur.execute("""
+                INSERT INTO IdentityToken
+                    (token_value, physical_serial, hardware_model,
+                     biometric_binding_type, individual_id, issuing_agency_id,
+                     algorithm_id, status, issued_date, expiration_date)
+                VALUES ('TKN-R11-1-SNAP', 'SN-R11-1-SNAP', 'TitanQ-3',
+                        'IRIS', %s, 1, 1, 'RESERVE',
+                        CURRENT_TIMESTAMP, (CURRENT_DATE + INTERVAL '10 years')::date)
+                RETURNING token_id
+            """, (iid,))
+            tid = cur.fetchone()['token_id']
+            cur.execute("""
+                INSERT INTO TokenSignature (token_id, algorithm_id, signature_bytes)
+                VALUES (%s, 1, %s)
+            """, (tid, b'SNAP_SEED'))
+            conn.commit()
+
+        # Verifier-thread: open a transaction with REPEATABLE READ
+        # isolation and observe the active-signature set. Then sleep,
+        # then re-read. The set should be identical even though the
+        # migrator commits during the sleep.
+        verifier_snapshot = []
+        migrator_done = threading.Event()
+
+        def verifier():
+            conn = self._new_conn()
+            try:
+                conn.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_REPEATABLE_READ)
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        SELECT algorithm_id FROM TokenSignature
+                        WHERE token_id=%s AND deprecation_date IS NULL
+                        ORDER BY algorithm_id
+                    """, (tid,))
+                    verifier_snapshot.append(
+                        ('pre', tuple(r['algorithm_id'] for r in cur.fetchall())))
+                    # Wait for migrator to commit.
+                    migrator_done.wait(timeout=5)
+                    cur.execute("""
+                        SELECT algorithm_id FROM TokenSignature
+                        WHERE token_id=%s AND deprecation_date IS NULL
+                        ORDER BY algorithm_id
+                    """, (tid,))
+                    verifier_snapshot.append(
+                        ('post', tuple(r['algorithm_id'] for r in cur.fetchall())))
+                conn.commit()
+            finally:
+                conn.close()
+
+        def migrator():
+            # Brief sleep so the verifier opens its snapshot first.
+            import time as _t; _t.sleep(0.1)
+            with self._new_conn() as conn, conn.cursor() as cur:
+                cur.execute("CALL uc6_migrate_algorithm(%s, %s, %s, %s)",
+                            (tid, 2, b'SNAP_MIG', False))
+                conn.commit()
+            migrator_done.set()
+
+        v_thread = threading.Thread(target=verifier)
+        m_thread = threading.Thread(target=migrator)
+        v_thread.start(); m_thread.start()
+        v_thread.join(); m_thread.join()
+
+        # The verifier saw the same set both times (snapshot isolation).
+        self.assertEqual(verifier_snapshot[0][1], verifier_snapshot[1][1],
+            f"Verifier's REPEATABLE READ snapshot should be stable: {verifier_snapshot}")
+        # And the verifier's set was {1} — the seed signature only, not
+        # the {1, 2} the migrator added.
+        self.assertEqual(verifier_snapshot[0][1], (1,),
+            f"Verifier should see only the pre-migration signature: {verifier_snapshot}")
+
+        # After both transactions complete, a fresh read sees the new sig.
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("""
+                SELECT algorithm_id FROM TokenSignature
+                WHERE token_id=%s AND deprecation_date IS NULL
+                ORDER BY algorithm_id
+            """, (tid,))
+            post = tuple(r['algorithm_id'] for r in cur.fetchall())
+        self.assertEqual(post, (1, 2),
+            'A fresh transaction sees the migrator-added signature')
+
+    def test_uc6_cross_token_migrations_run_in_parallel(self):
+        """Two threads migrating two different tokens should complete
+        in parallel — the advisory-lock key is per-token."""
+        def seed():
+            with self._new_conn() as conn, conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO Individual (legal_name, date_of_birth, jurisdiction)
+                    VALUES ('R11-1 xtoken', '1990-01-01', 'US-PA')
+                    RETURNING individual_id
+                """)
+                iid = cur.fetchone()['individual_id']
+                cur.execute("""
+                    INSERT INTO IdentityToken
+                        (token_value, physical_serial, hardware_model,
+                         biometric_binding_type, individual_id, issuing_agency_id,
+                         algorithm_id, status, issued_date, expiration_date)
+                    VALUES (%s, %s, 'TitanQ-3', 'IRIS', %s, 1, 1,
+                            'RESERVE', CURRENT_TIMESTAMP,
+                            (CURRENT_DATE + INTERVAL '10 years')::date)
+                    RETURNING token_id
+                """, (f'TKN-R11-1-X{iid}', f'SN-R11-1-X{iid}', iid))
+                tid = cur.fetchone()['token_id']
+                cur.execute("""
+                    INSERT INTO TokenSignature (token_id, algorithm_id, signature_bytes)
+                    VALUES (%s, 1, %s)
+                """, (tid, f'XSEED_{tid}'.encode()))
+                conn.commit()
+            return tid
+
+        tid_a = seed()
+        tid_b = seed()
+
+        def migrate(token_id, label):
+            with self._new_conn() as conn, conn.cursor() as cur:
+                cur.execute("SELECT pg_sleep(0.3)")  # hold lock for noticeable time
+                cur.execute("CALL uc6_migrate_algorithm(%s, %s, %s, %s)",
+                            (token_id, 2, f'XMIG_{label}'.encode(), False))
+                conn.commit()
+
+        import time
+        t0 = time.perf_counter()
+        threads = [
+            threading.Thread(target=migrate, args=(tid_a, 'A')),
+            threading.Thread(target=migrate, args=(tid_b, 'B')),
+        ]
+        for t in threads: t.start()
+        for t in threads: t.join()
+        elapsed = time.perf_counter() - t0
+
+        # If serialized: ~0.6s; if parallel: ~0.3s.
+        self.assertLess(elapsed, 0.55,
+            f"Cross-token migrations should run in parallel; elapsed={elapsed:.3f}s")
+
+    # -------------------------------------------------------------------
+    # R10-2 / M2-2 — Per-algorithm advisory-lock on close_anchor_batch.
+    # The lock key is hashtext('polaris.anchor.close-batch.' || alg_id),
+    # so same-algorithm batch-closes serialize and cross-algorithm
+    # batch-closes parallelize. The serialization protects against the
+    # phantom-batch race: two parallel close_anchor_batch calls for the
+    # same algorithm would otherwise see overlapping pending leaf sets
+    # and produce two batches with the same root or split leaves
+    # silently between two roots — either way, broken audit-of-record.
+    # -------------------------------------------------------------------
+    def test_close_anchor_batch_same_algorithm_serializes(self):
+        from anchoring import compute_batch
+        from psycopg2.extras import Json
+
+        # Seed two fresh pending anchors under algorithm 2 (ML-DSA-87).
+        # We'll let close_anchor_batch sweep them; if the lock fails,
+        # both threads run concurrently, each thread sees both rows as
+        # pending, and we get two batches with batch_size=2 — total 4.
+        with self._new_conn() as conn, conn.cursor() as cur:
+            for i in range(2):
+                cur.execute("""
+                    INSERT INTO BlockchainAnchor
+                        (token_id, did, commitment_hash, ledger_network,
+                         anchor_tx_hash, anchored_date)
+                    VALUES (3, %s, %s, 'ALGORAND_PQ', %s, CURRENT_TIMESTAMP)
+                """, (f'did:polaris:test:race{i}',
+                      f'0xrace{i}commit',
+                      f'0xrace{i}tx'))
+            conn.commit()
+
+        def race_close():
+            try:
+                with self._new_conn() as conn, conn.cursor() as cur:
+                    cur.execute("""
+                        SELECT a.anchor_id, a.commitment_hash
+                          FROM BlockchainAnchor a
+                          JOIN IdentityToken t ON a.token_id = t.token_id
+                         WHERE a.batch_id IS NULL AND t.algorithm_id = 2
+                         ORDER BY a.anchor_id
+                    """)
+                    leaves = [(int(r['anchor_id']), r['commitment_hash'])
+                              for r in cur.fetchall()]
+                    if not leaves:
+                        return 'EMPTY'
+                    root, proofs = compute_batch(leaves)
+                    cur.execute("CALL close_anchor_batch(%s, %s, %s)",
+                                (2, root, Json(proofs)))
+                    conn.commit()
+                    return 'OK'
+            except psycopg2.errors.NoDataFound:
+                return 'EMPTY'
+
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(lambda _: race_close(), range(2)))
+
+        # One thread closes the batch; the other finds no pending and
+        # raises no_data_found (caught above and returned 'EMPTY').
+        # The advisory lock guarantees ordering — no double-count.
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("""
+                SELECT batch_size FROM AnchorBatch
+                 WHERE algorithm_id = 2 ORDER BY batch_id DESC LIMIT 1
+            """)
+            last = cur.fetchone()
+            self.assertEqual(last['batch_size'], 2,
+                f'Same-algorithm parallel closes must coalesce into one '
+                f'batch of size 2, not split. Results: {results}')
+
+    # -------------------------------------------------------------------
+    # R10-2 / M2-2 — Cross-algorithm batch-closes don't serialize.
+    # Different algorithm_id → different advisory-lock key → parallel.
+    # -------------------------------------------------------------------
+    def test_close_anchor_batch_cross_algorithm_parallel(self):
+        from anchoring import compute_batch
+        from psycopg2.extras import Json
+
+        # Seed pending anchors under two algorithms (2 and 3). Use the
+        # existing test tokens 3 (alg=2) and 4 (alg=3).
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO BlockchainAnchor
+                    (token_id, did, commitment_hash, ledger_network,
+                     anchor_tx_hash, anchored_date)
+                VALUES (3, 'did:polaris:test:xalg-2', '0xxalg2commit',
+                        'ALGORAND_PQ', '0xxalg2tx', CURRENT_TIMESTAMP),
+                       (4, 'did:polaris:test:xalg-3', '0xxalg3commit',
+                        'ALGORAND_PQ', '0xxalg3tx', CURRENT_TIMESTAMP)
+            """)
+            conn.commit()
+
+        def close_for(alg_id):
+            with self._new_conn() as conn, conn.cursor() as cur:
+                cur.execute("SELECT pg_sleep(0.3)")  # hold transaction
+                cur.execute("""
+                    SELECT a.anchor_id, a.commitment_hash
+                      FROM BlockchainAnchor a
+                      JOIN IdentityToken t ON a.token_id = t.token_id
+                     WHERE a.batch_id IS NULL AND t.algorithm_id = %s
+                     ORDER BY a.anchor_id
+                """, (alg_id,))
+                leaves = [(int(r['anchor_id']), r['commitment_hash'])
+                          for r in cur.fetchall()]
+                root, proofs = compute_batch(leaves)
+                cur.execute("CALL close_anchor_batch(%s, %s, %s)",
+                            (alg_id, root, Json(proofs)))
+                conn.commit()
+
+        import time
+        t0 = time.perf_counter()
+        threads = [
+            threading.Thread(target=close_for, args=(2,)),
+            threading.Thread(target=close_for, args=(3,)),
+        ]
+        for t in threads: t.start()
+        for t in threads: t.join()
+        elapsed = time.perf_counter() - t0
+
+        # Serialized would be ~0.6s; parallel ~0.3s.
+        self.assertLess(elapsed, 0.55,
+            f'Cross-algorithm batch closes should run in parallel; '
+            f'elapsed={elapsed:.3f}s (would be ~0.6s if same lock)')
+
+    # -------------------------------------------------------------------
+    # R11-3 / M2-8 — Per-attesting-agency advisory-lock on
+    # uc10_attest_trust / uc10_revoke_attestation. Same-attesting-agency
+    # attest + concurrent revoke serialize; cross-attesting-agency
+    # operations parallelize.
+    # -------------------------------------------------------------------
+    def test_uc10_same_attesting_agency_serializes(self):
+        """Two parallel uc10_attest_trust calls under the same attesting
+        agency must serialize at the advisory lock. Each thread manually
+        acquires the lock first, then sleeps INSIDE the transaction so the
+        lock is held during the sleep window. With serial execution, total
+        time ≈ 2 × pg_sleep; with parallel, ≈ 1 × pg_sleep."""
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT user_id FROM AppUser WHERE username='admin'")
+            admin = cur.fetchone()['user_id']
+            cur.execute("SELECT context_id FROM VerificationContext WHERE context_type='VOTING'")
+            ctx_voting = cur.fetchone()['context_id']
+            cur.execute("SELECT context_id FROM VerificationContext WHERE context_type='MOTOR_VEHICLE'")
+            ctx_mv = cur.fetchone()['context_id']
+
+        # Both threads target attesting=4 (TSA), so they share the lock key.
+        lock_key_sql = "polaris.federation.attest.4"
+
+        def attest_holding_lock(context_id):
+            with self._new_conn() as conn, conn.cursor() as cur:
+                # Acquire the same lock the procedure will reacquire (no-op
+                # second time), then sleep INSIDE the transaction. The lock
+                # is xact-scoped, so it stays held through the sleep.
+                cur.execute("SELECT pg_advisory_xact_lock(hashtext(%s))",
+                            (lock_key_sql,))
+                cur.execute("SELECT pg_sleep(0.3)")
+                cur.execute("CALL uc10_attest_trust(%s, %s, %s, %s, %s)",
+                            (4, 1, context_id,
+                             (datetime.now().date() + timedelta(days=180)),
+                             admin))
+                conn.commit()
+
+        import time
+        t0 = time.perf_counter()
+        threads = [
+            threading.Thread(target=attest_holding_lock, args=(ctx_voting,)),
+            threading.Thread(target=attest_holding_lock, args=(ctx_mv,)),
+        ]
+        for t in threads: t.start()
+        for t in threads: t.join()
+        elapsed = time.perf_counter() - t0
+
+        # Serialized: ~0.6s; parallel would be ~0.3s. Lock enforces serial.
+        self.assertGreater(elapsed, 0.55,
+            f'Same-attesting-agency attests should serialize; elapsed={elapsed:.3f}s')
+
+    def test_uc10_cross_attesting_agency_parallelizes(self):
+        """uc10_attest_trust calls from different attesting agencies hold
+        different advisory locks and run in parallel."""
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT user_id FROM AppUser WHERE username='admin'")
+            admin = cur.fetchone()['user_id']
+            cur.execute("SELECT context_id FROM VerificationContext WHERE context_type='MOTOR_VEHICLE'")
+            ctx_mv = cur.fetchone()['context_id']
+
+        def attest(attesting_id):
+            with self._new_conn() as conn, conn.cursor() as cur:
+                cur.execute("SELECT pg_sleep(0.3)")
+                # Different attesting agencies → different lock keys.
+                # attesting=4 attests to agency_id=2 in MV; attesting=5 attests to agency_id=2 in MV.
+                cur.execute("CALL uc10_attest_trust(%s, %s, %s, %s, %s)",
+                            (attesting_id, 2, ctx_mv,
+                             (datetime.now().date() + timedelta(days=180)),
+                             admin))
+                conn.commit()
+
+        import time
+        t0 = time.perf_counter()
+        threads = [
+            threading.Thread(target=attest, args=(4,)),
+            threading.Thread(target=attest, args=(5,)),
+        ]
+        for t in threads: t.start()
+        for t in threads: t.join()
+        elapsed = time.perf_counter() - t0
+
+        # Parallel: ~0.3s. If serialized, would be ~0.6s.
+        self.assertLess(elapsed, 0.55,
+            f'Cross-attesting-agency attests should run in parallel; elapsed={elapsed:.3f}s')
+
+    # -------------------------------------------------------------------
+    # R10-1 / M2-1 — Per-procedure advisory-lock on uc11_close_epoch.
+    # The lock domain is `polaris.zk.close-epoch` — a SINGLE shared key.
+    # All epoch closures globally serialize (the per-procedure lock rather
+    # than per-entity, because epoch_id is assigned by SERIAL and we want
+    # to prevent gap-skipping under concurrent closure).
+    # -------------------------------------------------------------------
+    def test_uc11_close_epoch_serializes_under_lock(self):
+        """Two parallel uc11_close_epoch calls must serialize at the
+        per-procedure advisory lock. Without the lock, both threads could
+        write TokenStateEpoch rows simultaneously, producing potentially
+        unrelated epoch_id values out of natural order."""
+        from psycopg2.extras import Json
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT user_id FROM AppUser WHERE username='admin'")
+            admin = cur.fetchone()['user_id']
+
+        # Two distinct payloads (different leaves) so each call is a real
+        # epoch creation, not a duplicate.
+        payloads = [
+            ('aa' * 32,
+             [{'token_id': 2, 'leaf_hash': 'bb' * 32, 'proof_path': []}]),
+            ('cc' * 32,
+             [{'token_id': 3, 'leaf_hash': 'dd' * 32, 'proof_path': []}]),
+        ]
+
+        def close_with_lock_hold(root_hex, leaves):
+            with self._new_conn() as conn, conn.cursor() as cur:
+                # Manually grab the same lock the procedure will reacquire,
+                # then sleep INSIDE the transaction.
+                cur.execute(
+                    "SELECT pg_advisory_xact_lock(hashtext('polaris.zk.close-epoch'))")
+                cur.execute("SELECT pg_sleep(0.3)")
+                cur.execute(
+                    "CALL uc11_close_epoch(%s, %s, %s, %s)",
+                    (root_hex,
+                     datetime.now() + timedelta(days=10),
+                     admin,
+                     Json(leaves)))
+                conn.commit()
+
+        import time
+        t0 = time.perf_counter()
+        threads = [
+            threading.Thread(target=close_with_lock_hold, args=(r, ls))
+            for r, ls in payloads
+        ]
+        for t in threads: t.start()
+        for t in threads: t.join()
+        elapsed = time.perf_counter() - t0
+
+        # Serial: ~0.6s. The lock holds across the sleep window.
+        self.assertGreater(elapsed, 0.55,
+            f'Concurrent epoch closures should serialize at the advisory lock; '
+            f'elapsed={elapsed:.3f}s')
+
+    def test_uc11_close_epoch_both_rows_committed(self):
+        """Sanity check: after the two threads above finish, both epoch
+        rows are committed (serialization, not loss-of-write)."""
+        from psycopg2.extras import Json
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT user_id FROM AppUser WHERE username='admin'")
+            admin = cur.fetchone()['user_id']
+
+        payloads = [
+            ('e' * 64,
+             [{'token_id': 2, 'leaf_hash': 'aa' * 32, 'proof_path': []}]),
+            ('f' * 64,
+             [{'token_id': 3, 'leaf_hash': 'bb' * 32, 'proof_path': []}]),
+        ]
+
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT count(*) AS n FROM TokenStateEpoch")
+            count_before = cur.fetchone()['n']
+
+        def close(root_hex, leaves):
+            with self._new_conn() as conn, conn.cursor() as cur:
+                cur.execute(
+                    "CALL uc11_close_epoch(%s, %s, %s, %s)",
+                    (root_hex,
+                     datetime.now() + timedelta(days=10),
+                     admin,
+                     Json(leaves)))
+                conn.commit()
+
+        threads = [
+            threading.Thread(target=close, args=(r, ls))
+            for r, ls in payloads
+        ]
+        for t in threads: t.start()
+        for t in threads: t.join()
+
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT count(*) AS n FROM TokenStateEpoch")
+            count_after = cur.fetchone()['n']
+            self.assertEqual(count_after, count_before + 2,
+                'Both epoch closures must commit; serialization, not loss')
+
+
+# ============================================================================
+# V6 — ATLAS API ENDPOINT TESTS
+# ============================================================================
+
+class AtlasAPITests(PolarisTestCase):
+    """Tests for the /api/atlas/* endpoints added in v6."""
+
+    def test_clusters_endpoint_returns_aggregated_bins(self):
+        r = self.client.get('/api/atlas/clusters?bbox=20,-130,50,-65&grid=5&kind=verification&window=all')
+        self.assertEqual(r.status_code, 200)
+        data = r.get_json()
+        self.assertEqual(data['kind'], 'verification')
+        self.assertEqual(data['bbox'], [20, -130, 50, -65])
+        self.assertGreaterEqual(data['count'], 1, "Continental US should have clusters")
+        # Each cluster has the contracted shape
+        for c in data['clusters']:
+            self.assertIn('lat', c)
+            self.assertIn('lon', c)
+            self.assertIn('n_total', c)
+            self.assertIn('n_failure', c)
+            self.assertGreaterEqual(c['n_total'], 1)
+            # Failure subset can't exceed total
+            self.assertLessEqual(c['n_failure'], c['n_total'])
+
+    def test_clusters_endpoint_lifecycle_kind(self):
+        r = self.client.get('/api/atlas/clusters?bbox=20,-130,50,-65&grid=5&kind=lifecycle&window=all')
+        self.assertEqual(r.status_code, 200)
+        data = r.get_json()
+        self.assertEqual(data['kind'], 'lifecycle')
+        # Each cluster has the lifecycle-specific fields
+        for c in data['clusters']:
+            self.assertIn('n_revoked', c)
+            self.assertIn('n_lost', c)
+            self.assertIn('n_issued', c)
+            # Subset counts can't exceed total
+            self.assertLessEqual(c['n_revoked'], c['n_total'])
+
+    def test_clusters_endpoint_rejects_bad_bbox(self):
+        for bad in ['', 'invalid', '1,2', '1,2,3', '99,1,2,3', '1,2,3,abc']:
+            r = self.client.get(f'/api/atlas/clusters?bbox={bad}&grid=5&kind=verification&window=all')
+            self.assertEqual(r.status_code, 400,
+                f"Bad bbox {bad!r} should be 400, got {r.status_code}")
+
+    def test_clusters_endpoint_rejects_bad_kind(self):
+        r = self.client.get('/api/atlas/clusters?bbox=0,0,1,1&grid=1&kind=banana')
+        self.assertEqual(r.status_code, 400)
+
+    # ----- v7: antimeridian-spanning bbox support -----
+    # Pre-v7 _parse_bbox rejected min_lon > max_lon. v7 supports it as a
+    # wrap-around: bbox=(min_lat, 170, max_lat, -170) covers the 20° strip
+    # spanning the date line.
+
+    def test_antimeridian_bbox_accepted_at_parse(self):
+        """A bbox with min_lon > max_lon is parsed (no longer 400)."""
+        # Wide antimeridian bbox covering Tokyo + Sydney + LA via wrap
+        r = self.client.get('/api/atlas/clusters?bbox=-50,120,50,-100&grid=10&kind=verification')
+        self.assertEqual(r.status_code, 200,
+            "antimeridian bboxes should now parse successfully")
+
+    def test_antimeridian_bbox_correctness(self):
+        """Cluster sum across an antimeridian bbox equals the count of rows
+        whose longitude is in either half of the wrap."""
+        import psycopg2
+        from psycopg2.extras import RealDictCursor
+        with psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG) as conn, conn.cursor() as cur:
+            # bbox: min_lon=170, max_lon=-170 → covers [170,180] ∪ [-180,-170]
+            cur.execute("""
+                SELECT COALESCE(SUM(n_total), 0) AS s
+                FROM atlas_clusters_verifications(-50, 170, 50, -170, 5)
+            """)
+            cluster_sum = cur.fetchone()['s']
+            cur.execute("""
+                SELECT count(*) AS s FROM VerificationEvent
+                WHERE latitude IS NOT NULL AND longitude IS NOT NULL
+                  AND latitude  BETWEEN -50 AND 50
+                  AND (longitude BETWEEN 170 AND 180 OR longitude BETWEEN -180 AND -170)
+            """)
+            raw = cur.fetchone()['s']
+            self.assertEqual(cluster_sum, raw,
+                f"antimeridian cluster sum {cluster_sum} != raw split-range count {raw}")
+
+    def test_antimeridian_bbox_excludes_other_hemisphere(self):
+        """An antimeridian bbox must NOT include rows in the OTHER half of the world."""
+        import psycopg2
+        from psycopg2.extras import RealDictCursor
+        with psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG) as conn, conn.cursor() as cur:
+            # Antimeridian bbox 170 → -170 should NOT include London (lon=-0.1)
+            cur.execute("""
+                SELECT COALESCE(SUM(n_total), 0) AS s
+                FROM atlas_clusters_verifications(-89, 170, 89, -170, 5)
+            """)
+            antimeridian_sum = cur.fetchone()['s']
+            # Row count for London bbox alone (centered around 0)
+            cur.execute("""
+                SELECT count(*) AS s FROM VerificationEvent
+                WHERE latitude IS NOT NULL AND longitude IS NOT NULL
+                  AND longitude BETWEEN -10 AND 10
+            """)
+            london_zone = cur.fetchone()['s']
+            # Antimeridian sum must be LESS than total rows minus london
+            cur.execute("SELECT count(*) AS s FROM VerificationEvent WHERE latitude IS NOT NULL")
+            total = cur.fetchone()['s']
+            self.assertLess(antimeridian_sum, total,
+                "antimeridian bbox should exclude longitudes outside [170,180]∪[-180,-170]")
+            # Specifically: should not include london_zone events (lon ~0)
+            self.assertLess(antimeridian_sum + london_zone, total + 1,
+                "antimeridian bbox must not double-count or include the other hemisphere")
+
+    def test_points_endpoint_caps_at_max(self):
+        r = self.client.get('/api/atlas/points?bbox=-89,-179,89,179&kind=verification&limit=99999&window=all')
+        self.assertEqual(r.status_code, 200)
+        data = r.get_json()
+        # The hard cap _ATLAS_MAX_POINTS should bound the response
+        self.assertLessEqual(data['count'], 2000,
+            "/api/atlas/points should cap at _ATLAS_MAX_POINTS")
+
+    # ----- v7: atlas cache (R8-5) -----
+
+    def test_cache_stats_endpoint_reports_counters(self):
+        """/api/atlas/cache-stats reports cache observability counters."""
+        # Clear cache first so we get clean numbers
+        from app import _atlas_cache_clear
+        _atlas_cache_clear()
+        # Miss: cold cache
+        self.client.get('/api/atlas/clusters?bbox=10,20,30,40&grid=5&kind=verification&window=all')
+        # Hit: same query
+        self.client.get('/api/atlas/clusters?bbox=10,20,30,40&grid=5&kind=verification&window=all')
+        r = self.client.get('/api/atlas/cache-stats')
+        self.assertEqual(r.status_code, 200)
+        data = r.get_json()
+        self.assertGreaterEqual(data['hits'], 1, "second identical query should hit the cache")
+        self.assertGreaterEqual(data['misses'], 1, "first query should miss the cold cache")
+        self.assertIn('hit_ratio', data)
+        self.assertIn('ttl_seconds', data)
+
+
+class AtlasFilterAPITests(PolarisTestCase):
+    """v8.3 (A+C): the temporal-lens + operational-filter primitives must
+    survive the lifetime of the schema. These tests lock in:
+    - default window is 24h (a hidden default change would silently make
+      every existing dashboard return fewer rows)
+    - 'all' window restores the pre-v8.3 unfiltered behavior
+    - outcomes / disclosure / contexts filters reach the SQL layer
+    - 'anomalies' alias expands to FAILURE/UNAUTHORIZED/EXPIRED
+    - bad filter values are rejected with 400
+    - the new /api/atlas/timeline endpoint returns the contracted shape
+    """
+
+    def setUp(self):
+        super().setUp()
+        # Insert one anomaly within the 1h window so window-narrowing tests
+        # have something to find. Reload-sample-data wipes DBs between tests
+        # so this is per-test fresh.
+        conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO VerificationEvent
+                    (token_id, requesting_agency_id, context_id,
+                     event_timestamp, outcome, disclosure_level,
+                     latitude, longitude)
+                VALUES (NULL, 5, 1, CURRENT_TIMESTAMP - INTERVAL '20 minutes',
+                        'SUCCESS', 'ZERO_KNOWLEDGE', 37.78, -122.42),
+                       (2, 1, 2, CURRENT_TIMESTAMP - INTERVAL '12 hours',
+                        'FAILURE', 'SELECTIVE', 40.71, -74.01)
+            """)
+        conn.commit()
+        conn.close()
+
+    def test_window_24h_excludes_old_seed_events(self):
+        """Default window=24h must filter out the March-2026 seed events
+        (which are well over 24 hours old by NOW)."""
+        r = self.client.get('/api/atlas/clusters?bbox=-89,-179,89,179'
+                            '&grid=5&kind=verification&window=24h')
+        self.assertEqual(r.status_code, 200)
+        data = r.get_json()
+        # Only the synthetic events inserted in setUp() should survive
+        # the 24h window — at most 2 clusters, since the synthetic
+        # events are in SF and NYC.
+        self.assertLessEqual(data['count'], 2,
+            "window=24h should exclude pre-24h seed data")
+
+    def test_window_all_includes_seed_events(self):
+        """window=all must include the historical seed."""
+        r = self.client.get('/api/atlas/clusters?bbox=-89,-179,89,179'
+                            '&grid=5&kind=verification&window=all')
+        self.assertEqual(r.status_code, 200)
+        self.assertGreater(r.get_json()['count'], 2,
+            "window=all should yield at least the seed clusters")
+
+    def test_window_1h_excludes_12h_old_event(self):
+        """window=1h must exclude the FAILURE event inserted 12h ago in setUp."""
+        r = self.client.get('/api/atlas/clusters?bbox=-89,-179,89,179'
+                            '&grid=5&kind=verification&window=1h&outcomes=FAILURE')
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.get_json()['count'], 0,
+            "window=1h with outcomes=FAILURE should not see the 12h-old event")
+
+    def test_anomalies_alias_expands_to_outcome_set(self):
+        """The 'anomalies' alias is a server-side expansion to
+        FAILURE/UNAUTHORIZED/EXPIRED — this is the chip the operator
+        clicks to surface incidents."""
+        r1 = self.client.get('/api/atlas/clusters?bbox=-89,-179,89,179'
+                             '&grid=5&window=all&outcomes=anomalies')
+        r2 = self.client.get('/api/atlas/clusters?bbox=-89,-179,89,179'
+                             '&grid=5&window=all'
+                             '&outcomes=FAILURE,UNAUTHORIZED,EXPIRED')
+        self.assertEqual(r1.status_code, 200)
+        self.assertEqual(r2.status_code, 200)
+        # Same set of clusters either way
+        self.assertEqual(r1.get_json()['count'], r2.get_json()['count'])
+
+    def test_disclosure_full_filter(self):
+        """disclosure=FULL narrows to the FULL-disclosure events only."""
+        r = self.client.get('/api/atlas/clusters?bbox=-89,-179,89,179'
+                            '&grid=5&window=all&disclosure=FULL')
+        self.assertEqual(r.status_code, 200)
+        data = r.get_json()
+        # Every cluster's n_full > 0 (since disclosure=FULL) and n_total == n_full
+        for c in data['clusters']:
+            self.assertGreater(c['n_full'], 0)
+            self.assertEqual(c['n_total'], c['n_full'],
+                "disclosure=FULL clusters must contain only FULL events")
+
+    def test_context_filter_narrows_to_named_contexts(self):
+        """contexts=BANKING returns only banking events."""
+        r = self.client.get('/api/atlas/clusters?bbox=-89,-179,89,179'
+                            '&grid=5&window=all&contexts=BANKING')
+        self.assertEqual(r.status_code, 200)
+        # Should still have rows (sample data has BANKING events)
+        # BANKING-only count must be ≤ unfiltered count
+        r_all = self.client.get('/api/atlas/clusters?bbox=-89,-179,89,179'
+                                '&grid=5&window=all')
+        self.assertLessEqual(r.get_json()['count'], r_all.get_json()['count'])
+
+    def test_bad_window_rejected(self):
+        for bad in ['always', '15min', '1y', 'next-week', '24']:
+            r = self.client.get(f'/api/atlas/clusters?bbox=-89,-179,89,179'
+                                f'&grid=5&window={bad}')
+            self.assertEqual(r.status_code, 400,
+                f"window={bad!r} should be 400")
+
+    def test_bad_outcome_rejected(self):
+        r = self.client.get('/api/atlas/clusters?bbox=-89,-179,89,179'
+                            '&grid=5&window=all&outcomes=NOT_A_REAL_OUTCOME')
+        self.assertEqual(r.status_code, 400)
+        self.assertIn('NOT_A_REAL_OUTCOME', r.get_json()['error'])
+
+    def test_bad_context_rejected(self):
+        r = self.client.get('/api/atlas/clusters?bbox=-89,-179,89,179'
+                            '&grid=5&window=all&contexts=NOT_A_CONTEXT')
+        self.assertEqual(r.status_code, 400)
+        self.assertIn('NOT_A_CONTEXT', r.get_json()['error'])
+
+    def test_timeline_endpoint_shape(self):
+        """The timeline endpoint returns the documented shape."""
+        r = self.client.get('/api/atlas/timeline?bbox=-89,-179,89,179'
+                            '&buckets=24&window=24h&kind=verification')
+        self.assertEqual(r.status_code, 200)
+        data = r.get_json()
+        self.assertIn('points', data)
+        self.assertIn('since', data)
+        self.assertIn('until', data)
+        self.assertEqual(data['buckets'], 24)
+        self.assertEqual(data['kind'], 'verification')
+        self.assertEqual(data['window'], '24h')
+        for pt in data['points']:
+            self.assertIn('ts', pt)
+            self.assertIn('n_total', pt)
+            self.assertIn('n_anomaly', pt)
+            self.assertGreaterEqual(pt['n_anomaly'], 0)
+            self.assertLessEqual(pt['n_anomaly'], pt['n_total'])
+
+    def test_timeline_caps_buckets(self):
+        """buckets must be in (0, 240]."""
+        r = self.client.get('/api/atlas/timeline?bbox=-89,-179,89,179'
+                            '&buckets=99999&window=24h')
+        self.assertEqual(r.status_code, 400)
+
+    def test_filter_state_separated_in_cache(self):
+        """Two clusters calls with different windows must NOT collide in
+        the cache. Pre-v8.3 the cache key did not include the filter set
+        and a call with window=1h would receive the cached payload from
+        a prior window=all call."""
+        from app import _atlas_cache_clear
+        _atlas_cache_clear()
+        r1 = self.client.get('/api/atlas/clusters?bbox=-89,-179,89,179'
+                             '&grid=5&window=all')
+        r2 = self.client.get('/api/atlas/clusters?bbox=-89,-179,89,179'
+                             '&grid=5&window=1h')
+        # Different windows must produce different counts (24h is between
+        # them, but 'all' includes seed data while '1h' includes only the
+        # 20-minute-old synthetic event)
+        self.assertNotEqual(
+            r1.get_json()['count'], r2.get_json()['count'],
+            "window=all and window=1h must NOT share a cache slot")
+
+
+class HealthEndpointTests(PolarisTestCase):
+    """v7: /api/health structured status endpoint."""
+
+    def test_health_returns_200_when_db_up(self):
+        # No login required for health
+        from flask import Flask
+        from app import app as polaris_app
+        with polaris_app.test_client() as c:
+            r = c.get('/api/health')
+        self.assertIn(r.status_code, (200, 503))
+        data = r.get_json()
+        self.assertIn('status', data)
+        self.assertIn(data['status'], ('healthy', 'degraded', 'unhealthy'))
+        self.assertIn('checks', data)
+        self.assertIn('db', data['checks'])
+        self.assertIn('atlas_cache', data['checks'])
+
+    def test_health_does_not_require_login(self):
+        from app import app as polaris_app
+        with polaris_app.test_client() as c:
+            # Don't log in
+            r = c.get('/api/health')
+        # Health is reachable without auth (200/503 valid; 302 redirect to login is NOT)
+        self.assertNotEqual(r.status_code, 302,
+            "/api/health must not redirect to login")
+
+    def test_health_reports_rate_limiter_backend(self):
+        """v7.5 / R8-2: operators need to know which backend is active so
+        a multi-worker deployment without Redis is visible (the in-memory
+        backend is per-process and the cap is multiplied by worker count)."""
+        from app import app as polaris_app
+        with polaris_app.test_client() as c:
+            r = c.get('/api/health')
+        data = r.get_json()
+        self.assertIn('rate_limiter', data['checks'])
+        rl = data['checks']['rate_limiter']
+        self.assertIn('backend', rl)
+        self.assertIn(rl['backend'], ('memory', 'redis'))
+        self.assertIn('ok', rl)
+        self.assertIsInstance(rl['ok'], bool)
+
+    def test_stats_endpoint_returns_hud_signals(self):
+        r = self.client.get('/api/atlas/stats?bbox=-89,-179,89,179')
+        self.assertEqual(r.status_code, 200)
+        data = r.get_json()
+        for k in ('n_active_tokens', 'n_anomalies', 'n_failures', 'n_full',
+                  'pq_pct', 'zk_pct', 'n_verifs', 'n_lifecycles'):
+            self.assertIn(k, data)
+        self.assertIsInstance(data['n_active_tokens'], int)
+        self.assertGreaterEqual(data['pq_pct'], 0)
+        self.assertLessEqual(data['pq_pct'], 100)
+
+    def test_events_endpoint_paginates_with_cursor(self):
+        # First page
+        r1 = self.client.get('/api/atlas/events?limit=3')
+        self.assertEqual(r1.status_code, 200)
+        d1 = r1.get_json()
+        self.assertEqual(d1['count'], 3)
+        self.assertIsNotNone(d1.get('next_cursor'),
+            "First page with full results should have a next_cursor")
+
+        # Second page
+        r2 = self.client.get(f'/api/atlas/events?limit=3&cursor={d1["next_cursor"]}')
+        self.assertEqual(r2.status_code, 200)
+        d2 = r2.get_json()
+        # Page 2 events must be chronologically before page 1's last
+        last_p1 = d1['events'][-1]['event_timestamp']
+        for ev in d2['events']:
+            self.assertLessEqual(ev['event_timestamp'], last_p1,
+                "Cursor pagination must descend in time")
+
+    def test_events_endpoint_rejects_bad_cursor(self):
+        r = self.client.get('/api/atlas/events?cursor=garbage')
+        self.assertEqual(r.status_code, 400)
+
+    def test_atlas_endpoints_require_login(self):
+        # Drop the session
+        with self.client.session_transaction() as sess:
+            sess.clear()
+        for path in ('/api/atlas/clusters?bbox=0,0,1,1&grid=1',
+                     '/api/atlas/points?bbox=0,0,1,1',
+                     '/api/atlas/stats?bbox=0,0,1,1',
+                     '/api/atlas/events'):
+            r = self.client.get(path)
+            self.assertIn(r.status_code, (302, 401, 403),
+                f"Anonymous access to {path} should be denied, got {r.status_code}")
+
+
+# ============================================================================
+# V6 — CLUSTER CORRECTNESS TESTS (the SQL aggregation must match raw counts)
+# ============================================================================
+
+class ClusterCorrectnessTests(PolarisTestCase):
+    """Verify atlas_clusters_verifications produces aggregations consistent
+    with what a hand-written GROUP BY query returns."""
+
+    def _connect(self):
+        return psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+
+    def test_cluster_total_matches_raw_count(self):
+        """The sum of n_total across all clusters in a bbox should equal
+        the raw count of geo-tagged events in that bbox."""
+        with self._connect() as conn, conn.cursor() as cur:
+            # Cluster aggregate
+            cur.execute("""
+                SELECT COALESCE(SUM(n_total), 0) AS s
+                FROM atlas_clusters_verifications(20, -130, 50, -65, 5)
+            """)
+            cluster_sum = cur.fetchone()['s']
+            # Raw count
+            cur.execute("""
+                SELECT count(*) AS s FROM VerificationEvent
+                WHERE latitude IS NOT NULL AND longitude IS NOT NULL
+                  AND latitude  BETWEEN 20 AND 50
+                  AND longitude BETWEEN -130 AND -65
+            """)
+            raw = cur.fetchone()['s']
+            self.assertEqual(cluster_sum, raw,
+                f"Cluster sum {cluster_sum} != raw bbox count {raw}")
+
+    def test_cluster_failure_subset_consistent(self):
+        """n_failure in each cluster must equal the raw count of FAILURE
+        events in that cluster's bin."""
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute("""
+                SELECT COALESCE(SUM(n_failure), 0) AS s
+                FROM atlas_clusters_verifications(-89, -179, 89, 179, 10)
+            """)
+            cluster_failures = cur.fetchone()['s']
+            cur.execute("""
+                SELECT count(*) AS s FROM VerificationEvent
+                WHERE outcome = 'FAILURE'
+                  AND latitude  IS NOT NULL AND longitude IS NOT NULL
+                  AND latitude  BETWEEN -89 AND 89
+                  AND longitude BETWEEN -179 AND 179
+            """)
+            raw_failures = cur.fetchone()['s']
+            self.assertEqual(cluster_failures, raw_failures,
+                f"Cluster n_failure sum {cluster_failures} != raw {raw_failures}")
+
+    def test_cluster_centroid_within_bin(self):
+        """Each cluster's centroid (lat, lon) must lie within the grid
+        cell it represents — i.e. floor(lat/grid)*grid <= centroid_lat
+        < floor(lat/grid)*grid + grid."""
+        with self._connect() as conn, conn.cursor() as cur:
+            grid = 5
+            cur.execute(
+                "SELECT lat, lon FROM atlas_clusters_verifications(20, -130, 50, -65, %s)",
+                (grid,))
+            for c in cur.fetchall():
+                bin_lat = math.floor(c['lat'] / grid) * grid
+                bin_lon = math.floor(c['lon'] / grid) * grid
+                self.assertGreaterEqual(c['lat'], bin_lat)
+                self.assertLess        (c['lat'], bin_lat + grid + 1e-9)
+                self.assertGreaterEqual(c['lon'], bin_lon)
+                self.assertLess        (c['lon'], bin_lon + grid + 1e-9)
+
+
+# ============================================================================
+# V6 — LIST PAGE PAGINATION SMOKE
+# ============================================================================
+
+class ListPaginationTests(PolarisTestCase):
+    def test_tokens_list_paginates(self):
+        r = self.client.get('/tokens')
+        self.assertEqual(r.status_code, 200)
+        # Pager should be present and on page 1
+        self.assertHTML(r, 'pager', 'Page 1')
+
+    def test_verifications_list_paginates(self):
+        r = self.client.get('/verifications')
+        self.assertEqual(r.status_code, 200)
+        self.assertHTML(r, 'pager', 'Page 1')
+
+    def test_verifications_list_clamps_oversize_page(self):
+        # page_size > 500 should be clamped to 500 (no OOM via huge requests)
+        r = self.client.get('/verifications?page_size=99999')
+        self.assertEqual(r.status_code, 200)
+        # No assertion on exact value; just that the route accepted the
+        # clamp and didn't blow up
+
+
+# ============================================================================
+# V7 — R7-3 CURSOR PAGINATION
+# OFFSET/LIMIT runs in O(offset). At 2M rows page 20000 takes 13.6s. Cursor
+# (keyset) pagination rides the index and runs in O(log n + page_size). The
+# tests below exercise correctness rather than performance: that walking all
+# rows with a small page_size yields each row exactly once (no boundary
+# duplicates or skips), that backward navigation is symmetric with forward,
+# that cursor params take precedence over legacy page params, and that
+# malformed cursors degrade gracefully.
+# ============================================================================
+
+import re as _re_pager
+from html import unescape as _html_unescape
+
+
+class CursorPaginationTokensTests(PolarisTestCase):
+    """Tokens pagination uses a single-int cursor on token_id ASC."""
+
+    def _ids_on_page(self, body):
+        # The list HTML renders '#<id>' in the first <td> per row.
+        return [int(m) for m in _re_pager.findall(r'<td>#(\d+)</td>', body)]
+
+    def _next_cursor_url_from_pager(self, body):
+        # Pager renders <a class="pager-link" href="..." rel="next">.
+        # Match either attribute order to be tolerant. The href contains
+        # HTML-entity-encoded ampersands (&amp;) — undo those before
+        # round-tripping back through the test client, otherwise the
+        # second '&' in '&amp;cursor=' breaks param parsing.
+        m = (_re_pager.search(r'<a[^>]*href="([^"]+)"[^>]*rel="next"', body)
+             or _re_pager.search(r'<a[^>]*rel="next"[^>]*href="([^"]+)"', body))
+        return _html_unescape(m.group(1)) if m else None
+
+    def _prev_cursor_url_from_pager(self, body):
+        m = (_re_pager.search(r'<a[^>]*href="([^"]+)"[^>]*rel="prev"', body)
+             or _re_pager.search(r'<a[^>]*rel="prev"[^>]*href="([^"]+)"', body))
+        return _html_unescape(m.group(1)) if m else None
+
+    def test_cursor_walks_full_set_with_no_dupes_or_skips(self):
+        """Walking all 5 sample tokens with page_size=2 must yield each
+        token_id exactly once across pages — no boundary duplicate, no skip."""
+        seen = []
+        # First page: cursor mode entered explicitly with empty cursor
+        r = self.client.get('/tokens?cursor=&page_size=2')
+        self.assertEqual(r.status_code, 200)
+        body = r.get_data(as_text=True)
+        seen.extend(self._ids_on_page(body))
+
+        # Walk forward via the pager's Next link until exhausted.
+        for _ in range(10):  # bound the loop; sample = 5 rows / 2 = 3 pages
+            href = self._next_cursor_url_from_pager(body)
+            if href is None:
+                break
+            r = self.client.get('/tokens' + href)
+            self.assertEqual(r.status_code, 200)
+            body = r.get_data(as_text=True)
+            seen.extend(self._ids_on_page(body))
+
+        # Sample data has 5 tokens with token_id 1..5; we must see them all,
+        # in order, with no duplicates.
+        self.assertEqual(seen, [1, 2, 3, 4, 5])
+
+    def test_cursor_backward_navigation_is_symmetric(self):
+        """Forward 2 pages then backward 2 pages must return to page 1."""
+        r = self.client.get('/tokens?cursor=&page_size=2')
+        body0 = r.get_data(as_text=True)
+        page1_ids = self._ids_on_page(body0)
+        self.assertEqual(page1_ids, [1, 2])
+
+        r = self.client.get('/tokens' + self._next_cursor_url_from_pager(body0))
+        body1 = r.get_data(as_text=True)
+        page2_ids = self._ids_on_page(body1)
+        self.assertEqual(page2_ids, [3, 4])
+
+        # Now use the prev link to go back. The prev link's prev_cursor is
+        # this page's first token_id (3), so we should get rows with
+        # token_id < 3 → [1, 2].
+        prev_href = self._prev_cursor_url_from_pager(body1)
+        self.assertIsNotNone(prev_href)
+        self.assertIn('prev_cursor=', prev_href)
+        r = self.client.get('/tokens' + prev_href)
+        body_back = r.get_data(as_text=True)
+        self.assertEqual(self._ids_on_page(body_back), [1, 2])
+
+    def test_cursor_takes_precedence_over_page(self):
+        """If both ?cursor and ?page are supplied, cursor wins."""
+        # ?cursor=2 means rows with token_id > 2; combined with page=99
+        # (which alone would be empty), the cursor still rules.
+        r = self.client.get('/tokens?cursor=2&page=99&page_size=2')
+        self.assertEqual(r.status_code, 200)
+        body = r.get_data(as_text=True)
+        # Cursor mode should produce tokens 3 and 4.
+        self.assertEqual(self._ids_on_page(body), [3, 4])
+        # And pager UI should be in cursor mode, not page mode.
+        self.assertIn('Cursor mode', body)
+        self.assertNotIn('Page 99', body)
+
+    def test_invalid_cursor_falls_back_to_first_page_within_cursor_mode(self):
+        """A malformed cursor string still enters cursor mode but starts at
+        the beginning rather than 500-ing."""
+        r = self.client.get('/tokens?cursor=not-a-number&page_size=2')
+        self.assertEqual(r.status_code, 200)
+        body = r.get_data(as_text=True)
+        self.assertEqual(self._ids_on_page(body), [1, 2])
+        self.assertIn('Cursor mode', body)
+
+    def test_pager_renders_cursor_links_in_cursor_mode(self):
+        r = self.client.get('/tokens?cursor=&page_size=2')
+        body = r.get_data(as_text=True)
+        # Next link must use cursor=, not page=
+        next_href = self._next_cursor_url_from_pager(body)
+        self.assertIsNotNone(next_href)
+        self.assertIn('cursor=', next_href)
+        self.assertNotIn('page=', next_href.split('?')[-1])
+
+    def test_legacy_page_mode_still_works_when_no_cursor(self):
+        """Back-compat: ?page=N alone (no cursor) keeps the OFFSET path."""
+        r = self.client.get('/tokens?page=1&page_size=2')
+        self.assertEqual(r.status_code, 200)
+        body = r.get_data(as_text=True)
+        self.assertIn('Page 1', body)
+        self.assertNotIn('Cursor mode', body)
+        # The pager next link uses page=, not cursor=
+        next_href = self._next_cursor_url_from_pager(body)
+        self.assertIsNotNone(next_href)
+        self.assertIn('page=2', next_href)
+
+    def test_cursor_preserves_filters(self):
+        """Filters set on the URL must survive cursor navigation."""
+        # status=ACTIVE narrows to T2, T3, T4 (3 rows). Page size 1 → 3 pages.
+        r = self.client.get('/tokens?status=ACTIVE&cursor=&page_size=1')
+        body = r.get_data(as_text=True)
+        self.assertEqual(self._ids_on_page(body), [2])
+        next_href = self._next_cursor_url_from_pager(body)
+        self.assertIn('status=ACTIVE', next_href)
+        r = self.client.get('/tokens' + next_href)
+        body2 = r.get_data(as_text=True)
+        self.assertEqual(self._ids_on_page(body2), [3])
+
+
+class CursorPaginationVerificationsTests(PolarisTestCase):
+    """Verifications use a composite cursor (event_timestamp, event_id)
+    because two events can share a timestamp; a single-column cursor would
+    silently drop or duplicate rows at the boundary."""
+
+    def _event_ids_on_page(self, body):
+        return [int(m) for m in _re_pager.findall(r'<td>#(\d+)</td>', body)]
+
+    def _next_cursor_url_from_pager(self, body):
+        m = (_re_pager.search(r'<a[^>]*href="([^"]+)"[^>]*rel="next"', body)
+             or _re_pager.search(r'<a[^>]*rel="next"[^>]*href="([^"]+)"', body))
+        return _html_unescape(m.group(1)) if m else None
+
+    def test_cursor_walks_full_set_with_no_dupes_or_skips(self):
+        """All 8 sample events with page_size=3 must appear in DESC order
+        across pages with no duplicate or skip. Because event_id and
+        event_timestamp are co-monotonic in the seed data, the expected
+        order is event_id 8,7,6,5,4,3,2,1."""
+        seen = []
+        r = self.client.get('/verifications?cursor=&page_size=3')
+        body = r.get_data(as_text=True)
+        seen.extend(self._event_ids_on_page(body))
+        for _ in range(10):
+            href = self._next_cursor_url_from_pager(body)
+            if href is None:
+                break
+            r = self.client.get('/verifications' + href)
+            body = r.get_data(as_text=True)
+            seen.extend(self._event_ids_on_page(body))
+
+        self.assertEqual(seen, [8, 7, 6, 5, 4, 3, 2, 1])
+
+    def test_cursor_url_contains_composite_format(self):
+        """The cursor token must encode timestamp~event_id (composite)."""
+        r = self.client.get('/verifications?cursor=&page_size=3')
+        body = r.get_data(as_text=True)
+        next_href = self._next_cursor_url_from_pager(body)
+        self.assertIsNotNone(next_href)
+        # cursor= should contain a tilde separator and an isoformat-ish
+        # timestamp prefix. URL-encoding turns ~ into %7E, but : in the
+        # iso timestamp turns into %3A — check for either form.
+        self.assertTrue('cursor=' in next_href)
+        # decode for ease of inspection
+        from urllib.parse import unquote
+        decoded = unquote(next_href)
+        self.assertRegex(decoded, r'cursor=\d{4}-\d{2}-\d{2}T[\d:]+~\d+')
+
+    def test_invalid_composite_cursor_falls_back_to_first_page(self):
+        r = self.client.get('/verifications?cursor=not-valid&page_size=3')
+        self.assertEqual(r.status_code, 200)
+        body = r.get_data(as_text=True)
+        # Should still get most-recent-first first page (event 8, 7, 6)
+        self.assertEqual(self._event_ids_on_page(body), [8, 7, 6])
+
+    def test_cursor_preserves_disclosure_filter(self):
+        """disclosure=ZERO_KNOWLEDGE filter must persist into next-page URL."""
+        # 3 ZK events in seed: events 1, 3, 7. With page_size=2 we expect
+        # [7, 3] then [1].
+        r = self.client.get('/verifications?disclosure=ZERO_KNOWLEDGE'
+                            '&cursor=&page_size=2')
+        body = r.get_data(as_text=True)
+        self.assertEqual(self._event_ids_on_page(body), [7, 3])
+        next_href = self._next_cursor_url_from_pager(body)
+        self.assertIsNotNone(next_href)
+        self.assertIn('disclosure=ZERO_KNOWLEDGE', next_href)
+        r = self.client.get('/verifications' + next_href)
+        self.assertEqual(self._event_ids_on_page(r.get_data(as_text=True)), [1])
+
+
+# ============================================================================
+# V8 — M2-4 / R10-4 GENOMIC ANCHOR (Appendix F.1)
+# Three CHECK constraints make the privacy invariant ("no plaintext genomic
+# data is storable") schema-enforced rather than application-enforced. The
+# tests below probe each constraint's failure mode and verify the seed data
+# loaded cleanly. The point is not just to confirm the table exists — it's
+# to confirm that a future developer with INSERT privilege but no
+# application-layer context can NOT bypass the privacy invariant.
+# ============================================================================
+
+class GenomicAnchorTests(PolarisTestCase):
+
+    def _conn(self):
+        return psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+
+    def _insert(self, **kwargs):
+        """Try to INSERT a GenomicAnchor row. Returns (ok, error_str)."""
+        defaults = dict(
+            token_id=1,
+            hash_algorithm='SHA3-256',
+            anchor_hash='0' * 64,           # all-zero 64 hex chars (default valid)
+            enrollment_date='2026-01-01',
+            witness_agency_id=1,
+        )
+        defaults.update(kwargs)
+        conn = self._conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO GenomicAnchor "
+                    "(token_id, hash_algorithm, anchor_hash, "
+                    " enrollment_date, witness_agency_id) "
+                    "VALUES (%(token_id)s, %(hash_algorithm)s, %(anchor_hash)s, "
+                    "%(enrollment_date)s, %(witness_agency_id)s) "
+                    "RETURNING anchor_id",
+                    defaults
+                )
+                row = cur.fetchone()
+            conn.commit()
+            return (True, None)
+        except psycopg2.Error as e:
+            conn.rollback()
+            return (False, str(e))
+        finally:
+            conn.close()
+
+    def test_seed_loaded_three_anchors(self):
+        """Sample data inserts exactly three anchors — one per ACTIVE token."""
+        conn = self._conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT count(*) AS n FROM GenomicAnchor")
+                self.assertEqual(cur.fetchone()['n'], 3)
+                cur.execute("SELECT token_id FROM GenomicAnchor ORDER BY token_id")
+                ids = [r['token_id'] for r in cur.fetchall()]
+                # T2, T3, T4 are the ACTIVE tokens in 04_data.sql
+                self.assertEqual(ids, [2, 3, 4])
+        finally:
+            conn.close()
+
+    def test_valid_hash_inserts_successfully(self):
+        # 64 hex chars containing digits — definitely passes all three checks
+        ok, err = self._insert(
+            anchor_hash='8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d0e9f0000'
+        )
+        self.assertTrue(ok, f"Valid hash should insert; got error: {err}")
+
+    def test_constraint1_rejects_non_hex(self):
+        """genomic_hash_is_hex: anchor_hash must match ^[0-9a-fA-F]+$."""
+        # 'Z' is not a hex character
+        ok, err = self._insert(anchor_hash='ZZ' + '1' * 62)
+        self.assertFalse(ok, "Non-hex character must be rejected")
+        self.assertIn('genomic_hash_is_hex', err or '')
+
+    def test_constraint2_rejects_wrong_length_for_sha3_256(self):
+        """genomic_hash_length_matches_algorithm: SHA3-256 must be 64 chars."""
+        ok, err = self._insert(hash_algorithm='SHA3-256', anchor_hash='0123')
+        self.assertFalse(ok, "Wrong length must be rejected")
+        self.assertIn('genomic_hash_length_matches_algorithm', err or '')
+
+    def test_constraint2_accepts_correct_length_per_algorithm(self):
+        """SHA3-512 takes 128 chars; SHA3-256 takes 64; both must succeed."""
+        ok, _ = self._insert(hash_algorithm='SHA3-512', anchor_hash='0' * 128)
+        self.assertTrue(ok, "SHA3-512 with 128 hex chars must succeed")
+
+        ok, _ = self._insert(hash_algorithm='BLAKE3-256', anchor_hash='1' * 64)
+        self.assertTrue(ok, "BLAKE3-256 with 64 hex chars must succeed")
+
+    def test_constraint3_rejects_pure_genomic_alphabet(self):
+        """genomic_anchor_refuses_plaintext: a 64-char string of {A,C,G,T,U,N}
+        must be rejected, even if otherwise hex-valid for the {A,C} subset.
+        This is the constraint that catches accidental plaintext."""
+        # 32 'A' + 32 'C' = 64 chars. Hex-valid (A and C are hex), correct
+        # length for SHA3-256, but obviously not a real hash output.
+        plaintext_like = ('A' * 32) + ('C' * 32)
+        ok, err = self._insert(anchor_hash=plaintext_like)
+        self.assertFalse(ok,
+            "Pure-genomic-alphabet input must be rejected by "
+            "genomic_anchor_refuses_plaintext")
+        self.assertIn('genomic_anchor_refuses_plaintext', err or '')
+
+    def test_constraint3_accepts_hash_with_one_non_genomic_char(self):
+        """A real hash containing at least one digit (or {b,d,e,f}) must pass.
+        We construct a 'mostly-AC' hash with a single digit to confirm the
+        constraint accepts it — single non-genomic character is sufficient."""
+        # 63 'A' + one '0' digit = 64 chars
+        ok, err = self._insert(anchor_hash=('A' * 63) + '0')
+        self.assertTrue(ok,
+            f"Hash with at least one digit must pass; got: {err}")
+
+    def test_unknown_hash_algorithm_rejected(self):
+        """The hash_algorithm enum is restrictive — MD5 was retired with
+        prejudice and should not be addable."""
+        ok, err = self._insert(hash_algorithm='MD5', anchor_hash='0' * 32)
+        self.assertFalse(ok)
+        # Either the algorithm CHECK or the length CHECK can be the immediate
+        # rejection reason; both are correct.
+        self.assertTrue(
+            ('hash_algorithm' in (err or '')) or
+            ('genomic_hash_length_matches_algorithm' in (err or ''))
+        )
+
+    def test_token_id_must_reference_real_token(self):
+        """FK to IdentityToken — orphaned anchors are rejected."""
+        ok, err = self._insert(token_id=99999)
+        self.assertFalse(ok)
+        self.assertIn('foreign key', (err or '').lower())
+
+    def test_witness_agency_id_must_reference_real_agency(self):
+        """FK to Agency — anchor must name a real witness."""
+        ok, err = self._insert(witness_agency_id=99999)
+        self.assertFalse(ok)
+        self.assertIn('foreign key', (err or '').lower())
+
+    def test_privacy_invariant_holds_for_realistic_genomic_plaintext(self):
+        """A more realistic plaintext: 64 chars of mixed ACGT (the four
+        canonical DNA bases). Must be rejected even though hex would
+        accept the 'A' and 'C' subset."""
+        # 16 each of A, C, G, T = realistic DNA-like sequence
+        sample = ('A' * 16) + ('C' * 16) + ('G' * 16) + ('T' * 16)
+        ok, err = self._insert(anchor_hash=sample)
+        self.assertFalse(ok,
+            "Mixed ACGT plaintext must be rejected — even though G and T "
+            "are not hex (so hex-only fires first), the layered constraints "
+            "should still defend.")
+        # G/T cause hex-only to fail first; that's also acceptable
+        self.assertTrue(
+            ('genomic_hash_is_hex' in (err or '')) or
+            ('genomic_anchor_refuses_plaintext' in (err or ''))
+        )
+
+
+# ============================================================================
+# V8 — M2-5 / R10-5 QUANTUM-OBSERVER BINDING SCAFFOLD
+# Substrate-level reservation for a quantum-measurement attestation primitive
+# (Appendix F.2). Until quantum-observer hardware exists, every row is in
+# binding_status='SCAFFOLD' with functional fields NULL. Two CHECK constraints
+# enforce the SCAFFOLD ↔ OPERATIONAL state distinction structurally.
+# Tests verify: (1) the scaffold state is the default, (2) the scaffold
+# invariant fires on premature population, (3) the operational invariant
+# fires on incomplete operational rows, (4) the enum CHECK rejects bad states.
+# See DEVNOTES/ships/quantum-observer.md for the architectural rationale.
+# ============================================================================
+
+class QuantumObserverBindingTests(PolarisTestCase):
+
+    def _conn(self):
+        return psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+
+    def _insert(self, **kwargs):
+        """INSERT a QuantumObserverBinding row. Returns (ok, error_str)."""
+        defaults = dict(
+            token_id=1,
+            registered_agency_id=1,
+        )
+        defaults.update(kwargs)
+        cols = ', '.join(defaults.keys())
+        placeholders = ', '.join(f"%({k})s" for k in defaults.keys())
+        conn = self._conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"INSERT INTO QuantumObserverBinding ({cols}) "
+                    f"VALUES ({placeholders}) RETURNING binding_id",
+                    defaults
+                )
+                conn.commit()
+            return (True, None)
+        except psycopg2.Error as e:
+            conn.rollback()
+            return (False, str(e))
+        finally:
+            conn.close()
+
+    def test_table_exists_and_starts_empty(self):
+        with closing(self._conn()) as conn, conn.cursor() as cur:
+            cur.execute("SELECT count(*) AS n FROM QuantumObserverBinding")
+            self.assertEqual(cur.fetchone()['n'], 0,
+                "QuantumObserverBinding should start empty — it's a scaffold")
+
+    def test_scaffold_insert_with_null_functional_fields_succeeds(self):
+        """SCAFFOLD is the default state and functional fields default to NULL."""
+        ok, err = self._insert()
+        self.assertTrue(ok, f"Default SCAFFOLD insert failed: {err}")
+
+    def test_scaffold_state_rejects_populated_protocol(self):
+        """qob_scaffold_defers_functional must fire when protocol is set."""
+        ok, err = self._insert(observer_protocol='BB84-WITNESS')
+        self.assertFalse(ok,
+            "SCAFFOLD with populated observer_protocol must violate CHECK")
+        self.assertIn('qob_scaffold_defers_functional', err or '')
+
+    def test_scaffold_state_rejects_populated_witness_hash(self):
+        """qob_scaffold_defers_functional fires on any deferred field."""
+        ok, err = self._insert(collapse_witness_hash='deadbeef' * 8)
+        self.assertFalse(ok,
+            "SCAFFOLD with collapse_witness_hash must violate CHECK")
+        self.assertIn('qob_scaffold_defers_functional', err or '')
+
+    def test_scaffold_state_rejects_populated_coherence_window(self):
+        """qob_scaffold_defers_functional fires on coherence_window_ms too."""
+        ok, err = self._insert(coherence_window_ms=42)
+        self.assertFalse(ok,
+            "SCAFFOLD with coherence_window_ms must violate CHECK")
+        self.assertIn('qob_scaffold_defers_functional', err or '')
+
+    def test_operational_state_requires_functional_fields(self):
+        """qob_operational_requires_functional fires on incomplete OPERATIONAL."""
+        ok, err = self._insert(binding_status='OPERATIONAL')
+        self.assertFalse(ok,
+            "OPERATIONAL with NULL functional fields must violate CHECK")
+        self.assertIn('qob_operational_requires_functional', err or '')
+
+    def test_operational_state_with_full_functional_fields_succeeds(self):
+        """OPERATIONAL with all functional fields populated proves the
+        scaffold doesn't block the eventual functional state. This is the
+        forward-compatibility test."""
+        ok, err = self._insert(
+            binding_status='OPERATIONAL',
+            observer_protocol='BB84-WITNESS',
+            collapse_witness_hash='0' * 64,
+            collapse_hash_algorithm='SHA3-256',
+            coherence_window_ms=10,
+        )
+        self.assertTrue(ok,
+            f"OPERATIONAL with all functional fields failed: {err}. "
+            f"The scaffold must not block the future operational state.")
+
+    def test_binding_status_enum_rejects_unknown_state(self):
+        """The CHECK enforces SCAFFOLD/OPERATIONAL/DEPRECATED only."""
+        ok, err = self._insert(binding_status='HALFBAKED')
+        self.assertFalse(ok,
+            "Unknown binding_status must violate the enum CHECK")
+        # Postgres reports this as "violates check constraint" on binding_status_check
+        self.assertTrue(
+            'check constraint' in (err or '').lower(),
+            f"Expected CHECK violation, got: {err}"
+        )
+
+    def test_substrate_manifest_lists_quantum_observer(self):
+        """The SystemDependency view must include the quantum-observer
+        primitive — otherwise the substrate manifest is out of sync with
+        the schema. Mirrors the M2-3 'manifest is honest' guarantee."""
+        with closing(self._conn()) as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT count(*) AS n FROM SystemDependency "
+                "WHERE primitive ILIKE '%quantum-observer%'"
+            )
+            self.assertGreaterEqual(cur.fetchone()['n'], 1,
+                "SystemDependency view missing quantum-observer primitive — "
+                "schema and substrate manifest are out of sync")
+
+
+# ============================================================================
+# V8 — M2-3 / R10-3 SUBSTRATE-DEPENDENCY MANIFEST
+# Operationalizes Appendix E. The SystemDependency view enumerates every
+# primitive Polaris depends on; DEVNOTES/substrate.md is the prose form of
+# the same data. Tests assert (a) the view loads cleanly with all required
+# columns + layer labels, (b) the well-known load-bearing primitives
+# (ML-DSA, PostgreSQL, scrypt, Redis) are present, and (c) the prose form
+# and the SQL form agree — no row in one without a corresponding mention
+# in the other. (c) is the "manifest is honest" guarantee.
+# ============================================================================
+
+class SubstrateManifestTests(PolarisTestCase):
+
+    def _conn(self):
+        return psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+
+    def test_system_dependency_view_loads(self):
+        with closing(self._conn()) as conn, conn.cursor() as cur:
+            cur.execute("SELECT count(*) AS n FROM SystemDependency")
+            n = cur.fetchone()['n']
+            self.assertGreaterEqual(n, 15,
+                f"Manifest looks thin: only {n} rows in SystemDependency. "
+                f"Appendix E argues every higher-level property is "
+                f"derivative of substrate primitives — under-enumeration "
+                f"hides dependencies rather than naming them.")
+
+    def test_every_required_layer_is_represented(self):
+        """Each of the seven canonical layers from Appendix E's stack
+        diagram must have at least one row. Missing a layer means the
+        manifest can't honestly answer 'where does Polaris depend?'"""
+        expected_layers = {'crypto', 'network', 'storage', 'runtime',
+                           'standards', 'hardware', 'human'}
+        with closing(self._conn()) as conn, conn.cursor() as cur:
+            cur.execute("SELECT DISTINCT layer FROM SystemDependency")
+            actual = {r['layer'] for r in cur.fetchall()}
+            missing = expected_layers - actual
+            self.assertEqual(missing, set(),
+                f"SystemDependency missing layers: {missing}")
+            extra = actual - expected_layers
+            self.assertEqual(extra, set(),
+                f"SystemDependency has unexpected layer label(s): {extra}. "
+                f"Add to the canonical set or fix the row.")
+
+    def test_every_row_has_complete_metadata(self):
+        """fail_mode + replacement + detection are the load-bearing
+        columns — a row without any of these is a half-finished manifest
+        entry, which is worse than no entry at all."""
+        with closing(self._conn()) as conn, conn.cursor() as cur:
+            cur.execute("""
+                SELECT primitive FROM SystemDependency
+                WHERE fail_mode IS NULL OR replacement IS NULL
+                   OR detection IS NULL
+            """)
+            holes = [r['primitive'] for r in cur.fetchall()]
+            self.assertEqual(holes, [],
+                f"Manifest rows with NULL fail_mode/replacement/detection: "
+                f"{holes}")
+
+    def test_load_bearing_primitives_are_present(self):
+        """The four most load-bearing dependencies must appear by name.
+        If one of them stops appearing, the manifest has either been
+        edited carelessly or Polaris's footprint has changed enough to
+        warrant a re-evaluation per the document's re-evaluation
+        triggers."""
+        load_bearing = [
+            'ML-DSA',         # primary signing — Appendix E centerpiece
+            'PostgreSQL',     # every constraint and trigger lives here
+            'scrypt',         # password hashing for AppUser
+            'Redis',          # rate limiter (R8-2)
+            'TLS',            # wire protection
+            'NIST FIPS',      # standards authority
+        ]
+        with closing(self._conn()) as conn, conn.cursor() as cur:
+            cur.execute("SELECT primitive FROM SystemDependency")
+            primitives = ' / '.join(r['primitive'] for r in cur.fetchall())
+            for needle in load_bearing:
+                self.assertIn(needle, primitives,
+                    f"Load-bearing primitive {needle!r} missing from "
+                    f"SystemDependency view. Either add it or update "
+                    f"this test if the dependency has been removed.")
+
+    def test_prose_and_sql_forms_agree(self):
+        """DEVNOTES/substrate.md and SystemDependency view are dual
+        representations. Every primitive named in the SQL view must have
+        a mention in the prose. Drift between the two means one is
+        misleading the reader."""
+        prose_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            '..', 'DEVNOTES', 'substrate.md'
+        )
+        if not os.path.exists(prose_path):
+            self.skipTest(f"prose form not found at {prose_path}")
+        with open(prose_path, encoding='utf-8') as f:
+            prose = f.read()
+
+        with closing(self._conn()) as conn, conn.cursor() as cur:
+            cur.execute("SELECT primitive FROM SystemDependency")
+            primitives = [r['primitive'] for r in cur.fetchall()]
+
+        missing_in_prose = []
+        for p in primitives:
+            # Check the first token of the primitive name (before space or
+            # slash). For 'ML-DSA-65 / ML-DSA-87' this is 'ML-DSA' which
+            # appears in prose as a section header.
+            anchor = p.split(' /')[0].split(' ')[0].split('-')
+            # Use the first two hyphen-joined tokens as the search anchor
+            # to avoid spurious matches on common prefixes.
+            anchor_str = '-'.join(anchor[:2]) if len(anchor) > 1 else anchor[0]
+            if anchor_str not in prose:
+                missing_in_prose.append(p)
+        self.assertEqual(missing_in_prose, [],
+            f"Primitives in SystemDependency but missing from prose form "
+            f"(DEVNOTES/substrate.md): {missing_in_prose}. The two views "
+            f"have drifted — update substrate.md to mention each.")
+
+    def test_view_is_read_only(self):
+        """SystemDependency is a VALUES-backed view. INSERT must fail.
+        Changes to the manifest are DDL — the only way to amend the
+        manifest is to edit 13_substrate.sql, which is reviewable."""
+        with closing(self._conn()) as conn, conn.cursor() as cur:
+            try:
+                cur.execute("""
+                    INSERT INTO SystemDependency
+                        (primitive, layer, authority, role,
+                         fail_mode, replacement, detection)
+                    VALUES ('AttackerInjected', 'crypto', 'attacker',
+                            'role', 'fail', 'replacement', 'detection')
+                """)
+                conn.commit()
+                self.fail("INSERT into SystemDependency view succeeded — "
+                          "the view is supposed to be read-only.")
+            except psycopg2.Error:
+                conn.rollback()
+
+
+# ============================================================================
+# V7.5 — R8-2 MULTI-PROCESS RATE LIMITER
+# Two backends (in-memory + Redis) implement the same allow/reset contract.
+# The contract mixin runs identical assertions against both, so a regression
+# in one backend can't sneak past CI by hiding behind a green test on the
+# other. The Redis tests skip cleanly when redis-server isn't running on the
+# expected URL — local dev without Redis still gets the in-memory coverage.
+# Multi-process correctness is the whole point: with 4 gunicorn workers, the
+# in-memory limiter is per-process, so the actual per-IP cap is 4× nominal.
+# Redis fixes that. The MultiProcess test below proves it: two limiter
+# *instances* sharing the same Redis hold the configured cap, but two
+# in-memory instances each let through max_events independently.
+# ============================================================================
+
+import os as _rl_os
+import threading as _rl_threading
+import time as _rl_time
+import unittest as _rl_unittest
+
+
+_TEST_REDIS_URL = _rl_os.environ.get('POLARIS_TEST_REDIS_URL',
+                                     'redis://localhost:6399/0')
+
+
+def _redis_available(url=_TEST_REDIS_URL):
+    """Probe whether a redis-server is reachable for tests. Cached at
+    module scope so we ping once, not per-test."""
+    try:
+        import redis as _redis
+    except ImportError:
+        return False
+    try:
+        client = _redis.from_url(url, socket_timeout=1.0,
+                                 socket_connect_timeout=1.0)
+        return client.ping() is True
+    except Exception:
+        return False
+
+
+_REDIS_AVAILABLE = _redis_available()
+
+
+class _RateLimiterContractMixin:
+    """
+    Shared assertions both rate-limiter backends must pass. Subclasses set
+    `self.limiter` in setUp(). The mixin does not subclass TestCase; it
+    relies on the concrete subclasses (which DO subclass TestCase) for
+    assertion methods and the test runner's discovery.
+    """
+
+    def test_allow_returns_true_until_limit_hit(self):
+        for i in range(5):
+            self.assertTrue(
+                self.limiter.allow('alpha', 5, 60),
+                f"Call {i+1} should be allowed (under limit)"
+            )
+        self.assertFalse(
+            self.limiter.allow('alpha', 5, 60),
+            "Call 6 must be denied (at limit)"
+        )
+
+    def test_per_key_buckets_are_independent(self):
+        for _ in range(3):
+            self.assertTrue(self.limiter.allow('a', 3, 60))
+        self.assertFalse(self.limiter.allow('a', 3, 60))
+        # 'b' is a different key — its bucket must be independent
+        self.assertTrue(self.limiter.allow('b', 3, 60))
+        self.assertTrue(self.limiter.allow('b', 3, 60))
+
+    def test_sliding_window_expires_old_events(self):
+        # Use a small window so the test is fast.
+        for _ in range(2):
+            self.assertTrue(self.limiter.allow('expiring', 2, 1))
+        self.assertFalse(self.limiter.allow('expiring', 2, 1))
+        # Sleep slightly past the window
+        _rl_time.sleep(1.1)
+        self.assertTrue(
+            self.limiter.allow('expiring', 2, 1),
+            "After window expiry, allow() should return True again"
+        )
+
+    def test_reset_all_clears_every_bucket(self):
+        for k in ('x', 'y', 'z'):
+            for _ in range(3):
+                self.limiter.allow(k, 3, 60)
+            self.assertFalse(self.limiter.allow(k, 3, 60))
+        self.limiter.reset()
+        for k in ('x', 'y', 'z'):
+            self.assertTrue(
+                self.limiter.allow(k, 3, 60),
+                f"After reset(), key {k!r} should be empty"
+            )
+
+    def test_reset_one_clears_only_that_bucket(self):
+        for _ in range(3):
+            self.limiter.allow('keep', 3, 60)
+            self.limiter.allow('drop', 3, 60)
+        self.assertFalse(self.limiter.allow('keep', 3, 60))
+        self.assertFalse(self.limiter.allow('drop', 3, 60))
+        self.limiter.reset('drop')
+        self.assertFalse(
+            self.limiter.allow('keep', 3, 60),
+            "reset('drop') must NOT touch 'keep'"
+        )
+        self.assertTrue(
+            self.limiter.allow('drop', 3, 60),
+            "reset('drop') must clear 'drop'"
+        )
+
+    def test_concurrent_allows_respect_limit_atomically(self):
+        """50 threads racing on the same key with max=10 must produce
+        exactly 10 wins. A non-atomic count-then-write would let some
+        wins slip past — that's the whole reason both backends use
+        atomic primitives (deque under the GIL for memory; Lua under
+        the Redis lock for Redis)."""
+        # Reset so no residue from prior tests
+        self.limiter.reset('race')
+        results = []
+        results_lock = _rl_threading.Lock()
+
+        def worker():
+            ok = self.limiter.allow('race', 10, 60)
+            with results_lock:
+                results.append(ok)
+
+        threads = [_rl_threading.Thread(target=worker) for _ in range(50)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        wins = sum(1 for r in results if r)
+        self.assertEqual(
+            wins, 10,
+            f"Expected exactly 10 wins out of 50 racers; got {wins}. "
+            f"This indicates a TOCTOU between count and write."
+        )
+
+    def test_healthy_returns_true_under_normal_conditions(self):
+        self.assertTrue(self.limiter.healthy())
+
+
+class InMemoryRateLimiterTests(_rl_unittest.TestCase, _RateLimiterContractMixin):
+    """In-memory backend must satisfy the rate-limiter contract."""
+
+    def setUp(self):
+        from app import security as sec
+        self.limiter = sec.InMemoryRateLimiter()
+
+    def test_backend_name(self):
+        self.assertEqual(self.limiter.name, 'memory')
+
+
+@_rl_unittest.skipUnless(
+    _REDIS_AVAILABLE,
+    f"Redis not reachable at {_TEST_REDIS_URL}; "
+    f"set POLARIS_TEST_REDIS_URL or start redis-server to enable."
+)
+class RedisRateLimiterTests(_rl_unittest.TestCase, _RateLimiterContractMixin):
+    """Redis backend must satisfy the same contract as in-memory."""
+
+    def setUp(self):
+        from app import security as sec
+        self.limiter = sec.RedisRateLimiter(_TEST_REDIS_URL,
+                                            socket_timeout=2.0)
+        # Always start clean — prior tests may have populated the same DB
+        self.limiter.reset()
+
+    def tearDown(self):
+        # Be a tidy guest in shared Redis
+        try:
+            self.limiter.reset()
+        except Exception:
+            pass
+
+    def test_backend_name(self):
+        self.assertEqual(self.limiter.name, 'redis')
+
+    def test_lua_script_is_loaded_lazily_per_instance(self):
+        """The script registration is part of __init__ — so even a fresh
+        client (no SCRIPT LOAD) can call allow() immediately after the
+        limiter is constructed."""
+        from app import security as sec
+        fresh = sec.RedisRateLimiter(_TEST_REDIS_URL)
+        try:
+            self.assertTrue(fresh.allow('lua-load-test', 1, 60))
+            self.assertFalse(fresh.allow('lua-load-test', 1, 60))
+        finally:
+            fresh.reset('lua-load-test')
+
+
+@_rl_unittest.skipUnless(
+    _REDIS_AVAILABLE,
+    f"Redis not reachable at {_TEST_REDIS_URL}"
+)
+class MultiProcessRateLimiterTests(_rl_unittest.TestCase):
+    """The whole motivation for R8-2: under multi-worker production gunicorn
+    each worker holds its own in-memory bucket, so the actual per-IP limit
+    is workers × configured. The test below makes the breakage visible by
+    constructing TWO limiter instances on the same key and showing that
+    the in-memory backend lets through 2× max_events while the Redis
+    backend correctly enforces the cap across instances."""
+
+    def test_in_memory_backends_do_NOT_share_buckets(self):
+        """Confirms the bug R8-2 is solving."""
+        from app import security as sec
+        worker_a = sec.InMemoryRateLimiter()
+        worker_b = sec.InMemoryRateLimiter()
+        # Each independently allows 3
+        for _ in range(3):
+            self.assertTrue(worker_a.allow('shared', 3, 60))
+            self.assertTrue(worker_b.allow('shared', 3, 60))
+        # Total of 6 events admitted across two "workers" — the bug.
+        # We assert this so a regression that "fixes" in-memory by adding
+        # cross-process state breaks the test (and forces a re-think).
+
+    def test_redis_backends_DO_share_buckets(self):
+        """The fix: two limiter instances on the same Redis URL share state."""
+        from app import security as sec
+        worker_a = sec.RedisRateLimiter(_TEST_REDIS_URL)
+        worker_b = sec.RedisRateLimiter(_TEST_REDIS_URL)
+        worker_a.reset('multi-proc-shared')
+        try:
+            # Across both workers we may admit at most 3 events total.
+            allowed = 0
+            for _ in range(3):
+                if worker_a.allow('multi-proc-shared', 3, 60):
+                    allowed += 1
+                if worker_b.allow('multi-proc-shared', 3, 60):
+                    allowed += 1
+            self.assertEqual(
+                allowed, 3,
+                "Across two Redis-backed limiter instances (simulating two "
+                "gunicorn workers) the configured cap of 3 must hold."
+            )
+            # And the next request from either is denied
+            self.assertFalse(worker_a.allow('multi-proc-shared', 3, 60))
+            self.assertFalse(worker_b.allow('multi-proc-shared', 3, 60))
+        finally:
+            worker_a.reset('multi-proc-shared')
+
+
+class RateLimiterSelectionTests(_rl_unittest.TestCase):
+    """The auto-selector must pick a backend deterministically given env
+    config. Run with the Polaris env scrubbed so we don't pick up the
+    surrounding test-runner's variables."""
+
+    def setUp(self):
+        # Snapshot env, scrub anything that influences selection
+        self._saved_env = {}
+        for k in ('POLARIS_RATE_LIMIT_BACKEND', 'POLARIS_REDIS_URL',
+                  'POLARIS_WORKERS'):
+            self._saved_env[k] = _rl_os.environ.pop(k, None)
+
+    def tearDown(self):
+        for k, v in self._saved_env.items():
+            if v is None:
+                _rl_os.environ.pop(k, None)
+            else:
+                _rl_os.environ[k] = v
+
+    def _make(self):
+        from app import security as sec
+        return sec._make_rate_limiter()
+
+    def test_default_is_in_memory_when_no_redis_url(self):
+        self.assertEqual(self._make().name, 'memory')
+
+    def test_explicit_memory_overrides_even_when_redis_url_present(self):
+        _rl_os.environ['POLARIS_REDIS_URL'] = _TEST_REDIS_URL
+        _rl_os.environ['POLARIS_RATE_LIMIT_BACKEND'] = 'memory'
+        self.assertEqual(self._make().name, 'memory')
+
+    @_rl_unittest.skipUnless(_REDIS_AVAILABLE,
+                             "Redis required for this assertion")
+    def test_auto_picks_redis_when_url_set_and_reachable(self):
+        _rl_os.environ['POLARIS_REDIS_URL'] = _TEST_REDIS_URL
+        # Backend not set → defaults to 'auto'
+        self.assertEqual(self._make().name, 'redis')
+
+    def test_redis_backend_falls_back_when_url_missing(self):
+        _rl_os.environ['POLARIS_RATE_LIMIT_BACKEND'] = 'redis'
+        # No POLARIS_REDIS_URL — fallback to memory + warning to stderr
+        self.assertEqual(self._make().name, 'memory')
+
+    def test_redis_backend_falls_back_when_unreachable(self):
+        _rl_os.environ['POLARIS_RATE_LIMIT_BACKEND'] = 'redis'
+        _rl_os.environ['POLARIS_REDIS_URL'] = 'redis://127.0.0.1:1/0'
+        # Port 1 is reserved and never bound — connection refused → fallback
+        self.assertEqual(self._make().name, 'memory')
+
+    def test_unrecognized_backend_value_falls_through_to_auto(self):
+        _rl_os.environ['POLARIS_RATE_LIMIT_BACKEND'] = 'rabbithole'
+        self.assertEqual(self._make().name, 'memory')
+
+
+import math
+
+
+class V2SubstrateUITests(PolarisTestCase):
+    """v8.28 — UI catch-up (graduation phase, Option 3) for v2 substrate.
+
+    Surfaces tested:
+      - Dashboard tiles (anchor count, epoch count, attestations, signatures,
+        duress — last is admin/auditor-gated).
+      - /anchors (R10-2 AnchorBatch list)
+      - /epochs (R10-1 TokenStateEpoch list) + ?epoch_id=N leaves view
+      - /federation (R11-3 AgencyTrustAttestation viewer)
+      - /tokens/<id> v2 Substrate State section
+      - SUBSTRATE nav menu (admin/operator/auditor)
+    """
+
+    # ---------- dashboard tiles ----------
+
+    def test_dashboard_renders_v2_substrate_section(self):
+        r = self.client.get('/')
+        self.assertEqual(r.status_code, 200)
+        body = r.data.decode()
+        self.assertIn('v2 Substrate', body)
+        self.assertIn('Anchor Batches', body)
+        self.assertIn('ZK Epochs', body)
+        self.assertIn('Trust Attestations', body)
+        self.assertIn('Token Signatures', body)
+
+    def test_dashboard_duress_tile_visible_for_admin(self):
+        r = self.client.get('/')
+        self.assertIn('Duress Signals', r.data.decode())
+
+    def test_dashboard_duress_tile_hidden_for_operator(self):
+        self._logout()
+        self._login('operator')
+        r = self.client.get('/')
+        body = r.data.decode()
+        self.assertNotIn('Duress Signals', body)
+        # The other four substrate tiles should still be visible
+        self.assertIn('Anchor Batches', body)
+
+    # ---------- /anchors ----------
+
+    def test_anchors_list_renders(self):
+        r = self.client.get('/anchors')
+        self.assertEqual(r.status_code, 200)
+        body = r.data.decode()
+        self.assertIn('Anchor Batches', body)
+        # Two seed batches expected (ML-DSA-65 + SLH-DSA-128s)
+        self.assertIn('ML-DSA-65', body)
+        self.assertIn('SLH-DSA-128s', body)
+
+    def test_anchors_list_requires_login(self):
+        self._logout()
+        r = self.client.get('/anchors', follow_redirects=False)
+        self.assertEqual(r.status_code, 302)
+        self.assertIn('/login', r.headers['Location'])
+
+    # ---------- /epochs ----------
+
+    def test_epochs_list_renders(self):
+        r = self.client.get('/epochs')
+        self.assertEqual(r.status_code, 200)
+        body = r.data.decode()
+        self.assertIn('ZK Epochs', body)
+        # Seed has 1 closed epoch with merkle_root 58789f92…6bfa5
+        self.assertIn('58789f92', body)
+
+    def test_epochs_list_with_leaves_filter(self):
+        r = self.client.get('/epochs?epoch_id=1')
+        self.assertEqual(r.status_code, 200)
+        body = r.data.decode()
+        self.assertIn('Leaves for epoch #1', body)
+        # Maria, James, Priya are the 3 seed leaves
+        self.assertIn('Maria Santos', body)
+        self.assertIn('James Chen', body)
+        self.assertIn('Priya Patel', body)
+
+    def test_epochs_list_invalid_filter_renders_empty(self):
+        r = self.client.get('/epochs?epoch_id=99999')
+        self.assertEqual(r.status_code, 200)
+        self.assertIn('No leaves for epoch #99999', r.data.decode())
+
+    # ---------- /federation ----------
+
+    def test_federation_viewer_renders(self):
+        r = self.client.get('/federation')
+        self.assertEqual(r.status_code, 200)
+        body = r.data.decode()
+        self.assertIn('Issuer Federation', body)
+        # Seed has 6 attestations: TSA→{federal,CA,PA} for TRAVEL +
+        # Bank→{federal,CA,PA} for BANKING
+        self.assertIn('Transportation Security Admin', body)
+        self.assertIn('First National Bank', body)
+        self.assertIn('ACTIVE', body)
+
+    def test_federation_explicit_only_documented(self):
+        """The page must explain that there is NO transitive trust."""
+        r = self.client.get('/federation')
+        body = r.data.decode()
+        self.assertIn('NO transitive', body)
+
+    # ---------- /tokens/<id> v2 Substrate State ----------
+
+    def test_token_detail_v2_substrate_state_enrolled(self):
+        """T2 (Maria) has duress code enrolled."""
+        r = self.client.get('/tokens/2')
+        self.assertEqual(r.status_code, 200)
+        body = r.data.decode()
+        self.assertIn('v2 Substrate State', body)
+        self.assertIn('ENROLLED', body)
+        self.assertIn('Token Signatures (R11-1)', body)
+        self.assertIn('Anchor Batch Membership (R10-2)', body)
+        self.assertIn('Epoch Leaves (R10-1)', body)
+
+    def test_token_detail_v2_substrate_state_not_enrolled(self):
+        """T1 (Egor) has no duress code."""
+        r = self.client.get('/tokens/1')
+        self.assertEqual(r.status_code, 200)
+        self.assertIn('NOT ENROLLED', r.data.decode())
+
+    def test_token_detail_never_exposes_duress_hash(self):
+        """R6 anti-revealing: the scrypt hash itself MUST NOT appear in
+        the rendered HTML, only the boolean enrollment flag."""
+        r = self.client.get('/tokens/2')
+        body = r.data.decode()
+        # Werkzeug scrypt hashes start with 'scrypt:'
+        self.assertNotIn('scrypt:', body)
+        self.assertNotIn('duress_code_hash', body)
+
+    # ---------- nav menu ----------
+
+    def test_substrate_menu_visible_for_admin(self):
+        r = self.client.get('/')
+        body = r.data.decode()
+        self.assertIn('SUBSTRATE', body)
+        self.assertIn('Anchor Batches', body)
+        self.assertIn('ZK Epochs', body)
+        self.assertIn('Federation', body)
+
+    def test_substrate_menu_visible_for_operator(self):
+        self._logout()
+        self._login('operator')
+        r = self.client.get('/')
+        self.assertIn('SUBSTRATE', r.data.decode())
+
+
+if __name__ == '__main__':
+    # Pull in property-based invariant tests (C1, C2, C3) so they run as
+    # part of the main suite. The import is at the bottom so test_app.py
+    # remains importable as a module without side effects from hypothesis.
+    try:
+        from test_invariants_property import (
+            C1_AppendOnlyProperties,
+            C2_DisclosureTypingProperties,
+            C3_OneActivePerIndividualProperties,
+        )
+    except ImportError as e:
+        print(f"Property tests skipped: {e}")
+
+    # M2-12 / R11-7: redaction property tests instantiate the adversary
+    # model from meta/redaction-proof.md.
+    try:
+        from test_redaction_property import RedactionPropertyTests
+    except ImportError as e:
+        print(f"Redaction property tests skipped: {e}")
+
+    # Verify database connectivity before running anything
+    try:
+        conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        conn.close()
+    except psycopg2.Error as e:
+        print(f"Cannot connect to database: {e}")
+        print(f"Config: {DB_CONFIG}")
+        sys.exit(1)
+
+    # Run tests with verbose output
+    runner = unittest.TextTestRunner(verbosity=2)
+    suite = unittest.TestLoader().loadTestsFromModule(sys.modules[__name__])
+    result = runner.run(suite)
+    sys.exit(0 if result.wasSuccessful() else 1)

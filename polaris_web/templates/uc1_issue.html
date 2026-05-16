@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block title %}UC-1: Issue New Token{% endblock %}
+{% block content %}
+<div class="uc-banner">
+    <div class="uc-id">Use Case 1</div>
+    <h1>New Token Issuance</h1>
+    <div class="uc-desc">
+        Atomic operation wrapping <code>uc1_issue_and_activate</code>. Creates an Individual record,
+        provisions an IdentityToken in RESERVE state, performs hardware-binding ceremony, transitions
+        to ACTIVE, and grants default permissions for the selected contexts. Validates issuing-agency
+        authorization on the chosen algorithm before any writes.
+    </div>
+</div>
+
+<form method="post" class="standard wide">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <h3>Holder Information</h3>
+    <div class="form-row">
+        <div class="form-group">
+            <label for="legal_name">Legal Name</label>
+            <input type="text" id="legal_name" name="legal_name" required maxlength="200">
+        </div>
+        <div class="form-group">
+            <label for="date_of_birth">Date of Birth</label>
+            <input type="date" id="date_of_birth" name="date_of_birth" required>
+        </div>
+        <div class="form-group">
+            <label for="jurisdiction">Jurisdiction</label>
+            <input type="text" id="jurisdiction" name="jurisdiction" required maxlength="10" placeholder="US-PA">
+        </div>
+    </div>
+
+    <h3>Issuance Authority</h3>
+    <div class="form-row">
+        <div class="form-group">
+            <label for="issuing_agency_id">Issuing Agency</label>
+            <select id="issuing_agency_id" name="issuing_agency_id" required>
+                {% for ag in agencies %}
+                    <option value="{{ ag.agency_id }}">#{{ ag.agency_id }} {{ ag.name }} ({{ ag.jurisdiction }})</option>
+                {% endfor %}
+            </select>
+            <span class="help">Authorization-level 4+ agencies only.</span>
+        </div>
+        <div class="form-group">
+            <label for="algorithm_id">Signing Algorithm</label>
+            <select id="algorithm_id" name="algorithm_id" required>
+                {% for alg in algorithms %}
+                    <option value="{{ alg.algorithm_id }}">{{ alg.name }} ({{ alg.security_level_bits }}-bit)</option>
+                {% endfor %}
+            </select>
+            <span class="help">Quantum-resistant algorithms only. Issuance under unauthorized algorithm will be rejected.</span>
+        </div>
+    </div>
+
+    <h3>Hardware Token</h3>
+    <div class="form-row">
+        <div class="form-group">
+            <label for="token_value">Token Value</label>
+            <input type="text" id="token_value" name="token_value" required maxlength="128"
+                   placeholder="TKN-XX-2026-NNNNNN">
+        </div>
+        <div class="form-group">
+            <label for="physical_serial">Physical Serial</label>
+            <input type="text" id="physical_serial" name="physical_serial" required maxlength="64"
+                   placeholder="SN-XX-NNN">
+        </div>
+        <div class="form-group">
+            <label for="hardware_model">Hardware Model</label>
+            <input type="text" id="hardware_model" name="hardware_model" maxlength="50" placeholder="TitanQ-3">
+        </div>
+    </div>
+
+    <h3>Biometric Enrollment</h3>
+    <div class="form-row">
+        <div class="form-group">
+            <label for="biometric_binding_type">Biometric Type</label>
+            <select id="biometric_binding_type" name="biometric_binding_type" required>
+                <option value="NONE">NONE</option>
+                <option value="FINGERPRINT">FINGERPRINT</option>
+                <option value="FACE">FACE</option>
+                <option value="IRIS" selected>IRIS</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="liveness_check_type">Liveness Check</label>
+            <select id="liveness_check_type" name="liveness_check_type">
+                <option value="">— (none) —</option>
+                <option value="PASSIVE">PASSIVE</option>
+                <option value="ACTIVE_CHALLENGE">ACTIVE_CHALLENGE</option>
+                <option value="MULTI_MODAL" selected>MULTI_MODAL</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="witness_agency_id">Witness Agency (optional)</label>
+            <select id="witness_agency_id" name="witness_agency_id">
+                <option value="">— (none) —</option>
+                {% for ag in agencies %}
+                    <option value="{{ ag.agency_id }}">#{{ ag.agency_id }} {{ ag.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+
+    <h3>Permitted Contexts</h3>
+    <div class="form-row">
+        <div class="form-group full">
+            <label for="contexts">Verification Contexts (Ctrl/Cmd-click for multiple)</label>
+            <select id="contexts" name="contexts" multiple required size="7">
+                {% for c in contexts %}
+                    <option value="{{ c.context_id }}" {% if c.context_type in ('BANKING', 'EMPLOYMENT') %}selected{% endif %}>
+                        {{ c.context_type }}{% if c.requires_biometric %} (biometric required){% endif %}
+                    </option>
+                {% endfor %}
+            </select>
+            <span class="help">Each selected context becomes a TokenPermission row at VERIFY level.</span>
+        </div>
+    </div>
+
+    <div class="form-actions">
+        <button type="submit" class="btn btn-gold">Issue and Activate Token</button>
+        <a href="{{ url_for('dashboard') }}" class="btn btn-secondary">Cancel</a>
+    </div>
+</form>
+{% endblock %}

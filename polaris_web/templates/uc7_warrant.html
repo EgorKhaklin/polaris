@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+{% block title %}UC-7: Warrant Audit{% endblock %}
+{% block content %}
+<div class="uc-banner">
+    <div class="uc-id">Use Case 7</div>
+    <h1>Warrant-Authorized Verification History Review</h1>
+    <div class="uc-desc">
+        Wraps <code>uc7_warrant_audit</code>. Reconstructs an individual's verification history under
+        legal authority, returning identifying data only for SELECTIVE and FULL events. ZERO_KNOWLEDGE
+        events are returned with <code>token_id</code> and <code>legal_name</code> redacted to NULL —
+        the schema literally never stored those fields, so the warrant cannot recover them.
+    </div>
+</div>
+
+<form method="post" class="standard wide">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="form-row">
+        <div class="form-group">
+            <label for="individual_id">Subject (Individual ID)</label>
+            <select id="individual_id" name="individual_id" required>
+                <option value="">— select —</option>
+                {% for i in individuals %}
+                    <option value="{{ i.individual_id }}" {% if individual_id == i.individual_id %}selected{% endif %}>
+                        #{{ i.individual_id }} — {{ i.legal_name }} ({{ i.jurisdiction }})
+                    </option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="context_filter">Context Filter (optional)</label>
+            <select id="context_filter" name="context_filter">
+                <option value="">— all contexts —</option>
+                {% for c in ['BANKING', 'EMPLOYMENT', 'HEALTHCARE', 'TRAVEL', 'VOTING', 'MOTOR_VEHICLE', 'GOVERNMENT_BENEFITS'] %}
+                    <option value="{{ c }}">{{ c }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+
+    <div class="form-row">
+        <div class="form-group">
+            <label for="window_start">Window Start (optional)</label>
+            <input type="datetime-local" id="window_start" name="window_start">
+        </div>
+        <div class="form-group">
+            <label for="window_end">Window End (optional)</label>
+            <input type="datetime-local" id="window_end" name="window_end">
+        </div>
+    </div>
+
+    <div class="form-actions">
+        <button type="submit" class="btn btn-gold">Execute Warrant Query</button>
+        <a href="{{ url_for('dashboard') }}" class="btn btn-secondary">Cancel</a>
+    </div>
+</form>
+
+{% if results is not none %}
+<h2>Warrant Results ({{ results|length }} event{{ '' if results|length == 1 else 's' }})</h2>
+{% if results %}
+<table class="data">
+    <thead>
+        <tr>
+            <th>Event</th><th>Timestamp</th><th>Context</th><th>Verifier</th>
+            <th>Outcome</th><th>Disclosure</th><th>Holder</th><th>Token</th><th>Location</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for r in results %}
+        <tr>
+            <td>#{{ r.event_id }}</td>
+            <td>{{ r.event_timestamp.strftime('%Y-%m-%d %H:%M') }}</td>
+            <td>{{ r.context_type }}</td>
+            <td>{{ r.requesting_agency }}</td>
+            <td><span class="pill pill-{{ r.outcome|lower }}">{{ r.outcome }}</span></td>
+            <td><span class="pill pill-{{ r.disclosure_level|lower }}">{{ r.disclosure_level }}</span></td>
+            <td>
+                {%- if r.legal_name %}{{ r.legal_name }}
+                {%- else %}<em style="color: var(--steel-light);">[redacted: ZK]</em>{% endif %}
+            </td>
+            <td>
+                {%- if r.token_id %}#{{ r.token_id }}
+                {%- else %}<em style="color: var(--steel-light);">[redacted: ZK]</em>{% endif %}
+            </td>
+            <td>
+                {%- if r.requestor_location %}{{ r.requestor_location }}
+                {%- else %}<em style="color: var(--steel-light);">—</em>{% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+<p style="font-size: 12px; color: var(--steel); margin-top: 8px;">
+    The warrant query returns events for this individual. ZERO_KNOWLEDGE events show with token-identifying
+    fields redacted; the schema never stored those values for ZK verifications.
+</p>
+{% else %}
+<table class="data">
+    <tbody>
+        <tr><td class="empty">No verification events match the warrant parameters.</td></tr>
+    </tbody>
+</table>
+{% endif %}
+{% endif %}
+{% endblock %}

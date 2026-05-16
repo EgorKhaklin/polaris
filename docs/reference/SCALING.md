@@ -1,0 +1,336 @@
+# Scaling Polaris to 2M+ events
+
+This document covers the v6 architectural changes that take Polaris from
+the 17-event sample state to interactive responsiveness at 2M+ events,
+and the concurrency hardening that ships alongside.
+
+The numbers in this document are measured against a real PostgreSQL 16
+running on a developer-class machine with 2,000,009 verification events
+loaded. Production deployments with proper Postgres tuning, connection
+pooling, and HTTP-layer caching will be substantially faster.
+
+---
+
+## The problem
+
+The original Atlas inlined every event as JSON in the page template:
+
+```jinja
+<script id="atlas-globe-data" type="application/json">{{ globe_nodes|tojson }}</script>
+```
+
+| Events  | Payload  | Render time | Notes |
+|--------:|---------:|------------:|-------|
+|      17 |    8 KB  |       50 ms | sample, fine |
+|     1 K |  300 KB  |      100 ms | acceptable |
+|    10 K |    3 MB  |       1.2 s | sluggish |
+|   100 K |   30 MB  |      ~12 s  | unusable |
+|     1 M |  300 MB  |       OOM   | browser tabs out |
+|     2 M |  600 MB  |       OOM   | architecturally infeasible |
+
+The fix is server-side spatial aggregation, not optimization of the
+client-side rendering loop. No amount of D3 cleverness solves a 600 MB
+JSON payload arriving over the wire.
+
+---
+
+## Architecture
+
+```
+                            ┌────────────────────────────┐
+                            │  PostgreSQL 16             │
+                            │                            │
+                            │  VerificationEvent         │
+                            │   ─ latitude               │
+                            │   ─ longitude              │
+                            │   ─ idx_..._geo            │
+                            │   ─ idx_..._geo_time       │
+                            │   ─ idx_..._time_id        │
+                            │                            │
+                            │  Functions:                │
+                            │   ─ atlas_clusters_*()     │
+                            │   ─ atlas_points_*()       │
+                            │   ─ atlas_stats()          │
+                            │   ─ atlas_recent_events()  │
+                            └────────────┬───────────────┘
+                                         │ ≤ a few KB JSON per call
+                                         │ regardless of table size
+                                         ▼
+                            ┌────────────────────────────┐
+                            │  Flask app.py              │
+                            │   /api/atlas/clusters      │
+                            │   /api/atlas/points        │
+                            │   /api/atlas/stats         │
+                            │   /api/atlas/events        │
+                            │  + bbox validation         │
+                            │  + hard caps               │
+                            └────────────┬───────────────┘
+                                         ▼
+                            ┌────────────────────────────┐
+                            │  atlas-globe.js            │
+                            │   ─ currentBbox()          │
+                            │   ─ chooseGrid(zoom)       │
+                            │   ─ debounced fetcher      │
+                            │   ─ cluster→point switch   │
+                            │   ─ HUD signal updater     │
+                            │   ─ event-feed paginator   │
+                            └────────────────────────────┘
+```
+
+The browser never sees more than a few hundred reticles at a time.
+Server-side aggregation collapses a million events in a 5° grid cell
+into a single cluster row carrying only the centroid + summary counts:
+
+```json
+{ "lat": 40.71, "lon": -74.01, "n_total": 66693,
+  "n_failure": 5311, "n_pq": 39958, "n_zk": 26677, "n_full": 16678 }
+```
+
+That's ~120 bytes regardless of whether the cluster represents 100
+events or 10 million.
+
+---
+
+## Storage
+
+`VerificationEvent` and `TokenLifecycleEvent` gained `latitude` and
+`longitude` columns in v6 (`01_schema.sql`):
+
+```sql
+latitude   DOUBLE PRECISION CHECK (latitude  IS NULL OR (latitude  BETWEEN  -90 AND  90)),
+longitude  DOUBLE PRECISION CHECK (longitude IS NULL OR (longitude BETWEEN -180 AND 180))
+```
+
+Nullable so legacy rows without recorded location remain valid; cluster
+aggregation excludes NULL coordinates so stats stay accurate.
+
+Indexes (`02_indexes.sql`):
+
+| Index                                | Purpose                                  |
+|--------------------------------------|------------------------------------------|
+| `idx_verificationevent_geo`          | Bbox queries from `atlas_clusters_*()`   |
+| `idx_verificationevent_geo_time`     | Time-bounded bbox queries (rare path)    |
+| `idx_verificationevent_time_id`      | Cursor pagination on the event feed      |
+| `idx_tokenlifecycleevent_geo`        | Bbox queries on lifecycle events         |
+| `idx_tokenlifecycleevent_time`       | Top-N for `atlas_recent_events()`        |
+
+All geo indexes are partial (`WHERE latitude IS NOT NULL`) so they
+don't include legacy data points and stay small.
+
+PostGIS would give us proper spatial indexes (GiST on a `geography`
+type, R-tree on `geometry`) and allow polygon queries, but plain B-tree
+composite indexes on (lat, lon) are sufficient for bbox queries — the
+only spatial primitive Atlas needs.
+
+---
+
+## Server-side aggregation (`11_atlas.sql`)
+
+### `atlas_clusters_verifications(min_lat, min_lon, max_lat, max_lon, grid)`
+
+Bins events by `floor(lat / grid), floor(lon / grid)` and returns one
+row per cell with the centroid + diagnostic counts. STABLE function so
+PostgreSQL caches the plan.
+
+```sql
+SELECT avg(ve.latitude), avg(ve.longitude),
+       count(*),
+       count(*) FILTER (WHERE ve.outcome = 'FAILURE'),
+       count(*) FILTER (WHERE ca.quantum_resistant),
+       ...
+FROM VerificationEvent ve
+LEFT JOIN IdentityToken t  ON ve.token_id = t.token_id
+LEFT JOIN CryptographicAlgorithm ca ON ...
+WHERE ve.latitude  BETWEEN p_min_lat AND p_max_lat
+  AND ve.longitude BETWEEN p_min_lon AND p_max_lon
+GROUP BY floor(ve.latitude / p_grid), floor(ve.longitude / p_grid)
+```
+
+### `atlas_points_*()`
+
+Used at high zoom (cluster count ≤ 30, zoom ≥ 2). Returns up to
+`p_limit` individual events with full metadata, ordered by recency.
+Hard-capped at `_ATLAS_MAX_POINTS = 2000` at the API layer.
+
+### `atlas_stats(bbox)`
+
+Computes the four HUD signals in a **single pass** with FILTER
+aggregates. The first iteration referenced a CTE 8 times and ran in
+1428 ms; the rewrite is 511 ms.
+
+### `atlas_recent_events(cursor_ts, cursor_id, limit)`
+
+Two-stage top-N with late metadata join. The first iteration unioned
+2M rows then top-N sorted; rewrite uses the time-id indexes to fetch
+top 50 from each table in O(log n), unions to ~100 rows, then joins
+metadata. Result: 5919 ms → 2 ms (3000× faster).
+
+---
+
+## API endpoints
+
+All four endpoints are auth-required. Bbox parameter format:
+`min_lat,min_lon,max_lat,max_lon` decimal degrees. Antimeridian-spanning bboxes are supported as of v7 via a wrap-aware
+longitude predicate (see Antimeridian section below).
+
+| Endpoint                    | Hard cap          | Purpose |
+|-----------------------------|-------------------|---------|
+| `GET /api/atlas/clusters`   | 5000 clusters     | Aggregated bins for low-zoom |
+| `GET /api/atlas/points`     | 2000 points       | Individual reticles for high-zoom |
+| `GET /api/atlas/stats`      | one row           | HUD signals scoped to bbox |
+| `GET /api/atlas/events`     | 500 events        | Paginated unified feed |
+
+---
+
+## Frontend (atlas-globe.js)
+
+`renderNodes(newData)` uses the d3 enter/update/exit pattern so the
+globe re-renders cleanly on every fetch. Cluster nodes get a sqrt-scaled
+radius and the count rendered inside the ring; point nodes get the full
+reticle ornament with leader line + label.
+
+`scheduleFetch()` is debounced at 220 ms — pan/zoom events trigger one
+batched API call rather than one per frame. AbortController cancels the
+previous fetch when a new one starts.
+
+The cluster→point switchover happens when:
+
+```javascript
+if (data.count <= 30 && zoom >= 2) {
+    // Few enough events to render individuals
+    // Fetch /api/atlas/points instead
+}
+```
+
+The event feed has infinite scroll: when the rail scrolls within 80px
+of the bottom and a `next_cursor` exists, the next page is fetched.
+
+---
+
+## Performance at 2M scale
+
+Measured against the live API (Flask + Postgres) with 2,000,009
+synthetic verification events distributed across 30 cities globally:
+
+| Endpoint                          | Latency  | Notes |
+|-----------------------------------|---------:|-------|
+| `/api/atlas/clusters` whole world | 1176 ms  | Worst case; one-time init |
+| `/api/atlas/clusters` continent   |  645 ms  | 5° grid, 700K events scanned |
+| `/api/atlas/clusters` metro       |  282 ms  | 0.1° grid, 60K events |
+| `/api/atlas/points` metro top-100 |   35 ms  | Index-driven |
+| `/api/atlas/stats` continent      |  537 ms  | Single-pass aggregation |
+| `/api/atlas/events` first page    |   31 ms  | Top-N + late join |
+
+User-perceptible latency at 1M+ scale would benefit from caching at the
+API layer (Redis) keyed by `(bbox, grid, kind)` with a short TTL — a
+typical operator's pan/zoom oscillates over a small set of common views.
+
+---
+
+## List page pagination
+
+`/tokens` and `/verifications` previously rendered every row, which
+would produce a 2M-row HTML table at scale and OOM the browser. Both
+now use page-based pagination (`?page=N&page_size=100`) with hard caps:
+`page_size ∈ [10, 500]`, default 100.
+
+The implementation uses `LIMIT N+1 OFFSET (page-1)*N`, where the +1
+detects whether a next page exists without a separate `count(*)`
+query. **Limitation**: deep pages are slow because OFFSET has to scan
+past skipped rows. Page 1 is 62 ms; page 100 is 1.6 s; page 20000 is
+13.6 s. Cursor pagination would make all pages O(log n) — that's a
+clean follow-up. Filtering (the typical operator workflow) reduces the
+row set so deep pages are rare.
+
+---
+
+## Concurrency hardening
+
+v6 also fixes three race conditions found while doing the scaling work.
+
+### Atomic `failed_login_count` increment (`security.py`)
+
+The previous code was a textbook TOCTOU:
+
+```python
+new_count = user['failed_login_count'] + 1     # read
+cur.execute("UPDATE AppUser SET failed_login_count=%s ...", (new_count,))   # write
+```
+
+Two simultaneous failed logins both read N, both wrote N+1, losing one
+failure. An attacker could spam concurrent failed logins and never trip
+the lockout. The fix:
+
+```python
+cur.execute("UPDATE AppUser SET failed_login_count = failed_login_count + 1 "
+            "WHERE user_id = %s RETURNING failed_login_count", (uid,))
+new_count = cur.fetchone()['failed_login_count']
+```
+
+`UPDATE … SET col = col + 1` is atomic in PostgreSQL and resolves under
+row lock. The lockout `UPDATE` is now also conditional on
+`locked_until IS NULL` so threshold-crossing concurrent failures can't
+double-apply the lockout interval.
+
+Test: `ConcurrencyTests.test_failed_login_count_is_atomic_under_concurrent_load`
+fires 8 parallel failed logins and asserts the counter shows exactly 8.
+
+### `SELECT FOR UPDATE` in `uc4_activate_reserve` (`05_procedures.sql`)
+
+UC-4 now locks the holder row first:
+
+```sql
+PERFORM 1 FROM Individual WHERE individual_id = v_lost_individual_id FOR UPDATE;
+```
+
+Two operators running UC-4 simultaneously for the same holder queue at
+this lock; the second observes the post-T1 state and either succeeds
+or fails cleanly with a domain error.
+
+### `activation_sequence` race fix
+
+The previous code hardcoded `activation_sequence = 2` (functionally
+wrong past a holder's second active token, regardless of concurrency).
+The fix computes `MAX(activation_sequence) + 1` inside the row-locked
+region above, eliminating both the always-2 bug and the TOCTOU race.
+
+### Unique partial index — the bullet-proof guarantee
+
+Already present pre-v6. `uq_one_active_per_person` on
+`IdentityToken(individual_id) WHERE status = 'ACTIVE'` enforces the
+one-active-token invariant at the database level. Two parallel attempts
+to set status=ACTIVE for the same individual: exactly one succeeds, the
+other gets `psycopg2.errors.UniqueViolation`. Test:
+`ConcurrencyTests.test_partial_unique_index_blocks_double_active`.
+
+---
+
+## Stress test reproduction
+
+`polaris_sql/_stress_seed.sql` generates 2M synthetic verification
+events distributed across 30 cities globally with realistic outcome
+and disclosure distributions. To run:
+
+```bash
+psql -d polaris_test -f polaris_sql/_stress_seed.sql
+```
+
+Expect ~90 seconds for the INSERT (pure CPU; no I/O bottleneck).
+`ANALYZE` runs at the end to give the query planner accurate stats.
+
+---
+
+## What's not yet covered
+
+- - **Cursor-based deep pagination** on the list pages — current
+  implementation uses OFFSET, which is slow past page 100.
+- **API-layer caching** — a Redis cache keyed by `(bbox, grid, kind)`
+  with 30s TTL would push p95 latency for repeat views to <50 ms.
+- **Frontend zoom-aware grid auto-sizing** — currently a fixed sliding
+  scale; could be adaptive based on visible cluster density.
+- **Stress test scheduling** — `_stress_seed.sql` is a one-shot script;
+  a proper benchmark suite would run the full curl matrix against
+  multiple data sizes (10K, 100K, 1M, 10M) and produce a regression
+  table.
+
+These are clean follow-ups, not blockers.

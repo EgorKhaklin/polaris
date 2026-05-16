@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block title %}Investigate Token #{{ token.token_id }}{% endblock %}
+{% block content %}
+<h1>
+    Investigate · Token #{{ token.token_id }}
+    <span class="pill pill-{{ token.status|lower }}" style="font-size: 13px; vertical-align: middle;">{{ token.status }}</span>
+    {% if token.has_duress_code %}
+        <span class="pill pill-revoked" style="font-size: 13px; vertical-align: middle;" title="Token has a duress-code enrolled (R11-5 anti-coercion primitive)">DURESS-ENROLLED</span>
+    {% endif %}
+</h1>
+
+<p class="help" style="max-width: 720px;">
+    Investigation surface — single-token chronological view assembled from
+    [v_ontology_token] + [v_ontology_token_timeline]. Distinct from the
+    operational view at <a href="{{ url_for('tokens_detail', tok_id=token.token_id) }}">/tokens/{{ token.token_id }}</a>
+    which exposes state-transition controls. This page is read-only investigative
+    context: the chronological history, the linked holder, the succession
+    chain. Per v9.18 anti-coercion vocation: single-entity focused; no
+    cross-token aggregation.
+</p>
+
+<h2>Semantic record</h2>
+<dl class="detail-grid">
+    <div><dt>Token Value</dt><dd class="mono">{{ token.token_value }}</dd></div>
+    <div><dt>Physical Serial</dt><dd class="mono">{{ token.physical_serial }}</dd></div>
+    <div><dt>Status</dt><dd><span class="pill pill-{{ token.status|lower }}">{{ token.status }}</span></dd></div>
+    <div><dt>Holder</dt><dd>
+        <a href="{{ url_for('investigate_individual', ind_id=token.individual_id) }}">
+            {{ token.individual_legal_name }} (Individual #{{ token.individual_id }})
+        </a>
+    </dd></div>
+    <div><dt>Issuing Agency</dt><dd>{{ token.issuing_agency_name }} (#{{ token.issuing_agency_id }})</dd></div>
+    <div><dt>Algorithm</dt><dd class="mono">{{ token.algorithm_name }} {% if token.quantum_resistant %}<span class="pill pill-active">PQ</span>{% else %}<span class="pill pill-revoked">CLASSICAL</span>{% endif %}</dd></div>
+    <div><dt>Issued</dt><dd>{{ token.issued_date.strftime('%Y-%m-%d %H:%M') }}</dd></div>
+    <div><dt>Activated</dt><dd>{{ token.activated_date.strftime('%Y-%m-%d %H:%M') if token.activated_date else '—' }}</dd></div>
+    <div><dt>Expires</dt><dd>{{ token.expiration_date.strftime('%Y-%m-%d') if token.expiration_date else '—' }}</dd></div>
+    <div><dt>Age</dt><dd>{{ '%.1f'|format(token.age_days) }} days</dd></div>
+    <div><dt>Activation Sequence</dt><dd>{{ token.activation_sequence }}</dd></div>
+    <div><dt>Has Duress Code</dt><dd>{% if token.has_duress_code %}<span class="pill pill-active">YES</span>{% else %}<span class="pill">no</span>{% endif %}</dd></div>
+    <div><dt>Lifetime Events</dt><dd>{{ token.lifecycle_event_count }} lifecycle · {{ token.verification_event_count }} verification · {{ token.signature_count }} signature</dd></div>
+</dl>
+
+<h2>Succession chain</h2>
+<dl class="detail-grid">
+    <div><dt>Predecessor</dt><dd>
+        {% if predecessor %}
+            <a href="{{ url_for('investigate_token', tok_id=predecessor.token_id) }}">
+                Token #{{ predecessor.token_id }}
+            </a>
+            <span class="pill pill-{{ predecessor.status|lower }}" style="font-size: 11px;">{{ predecessor.status }}</span>
+        {% else %}
+            <span class="muted">— (original issuance)</span>
+        {% endif %}
+    </dd></div>
+    <div><dt>Successor</dt><dd>
+        {% if successor %}
+            <a href="{{ url_for('investigate_token', tok_id=successor.token_id) }}">
+                Token #{{ successor.token_id }}
+            </a>
+            <span class="pill pill-{{ successor.status|lower }}" style="font-size: 11px;">{{ successor.status }}</span>
+        {% else %}
+            <span class="muted">— (no successor; current or terminal)</span>
+        {% endif %}
+    </dd></div>
+</dl>
+
+<h2>Chronological timeline ({{ timeline|length }} event{{ '' if timeline|length == 1 else 's' }})</h2>
+<table class="data">
+    <thead>
+        <tr>
+            <th>Timestamp</th>
+            <th>Kind</th>
+            <th>Event</th>
+            <th>Actor / Requester</th>
+            <th>Context / Reason</th>
+            <th>Outcome / Disclosure</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for ev in timeline %}
+        <tr>
+            <td class="mono" style="white-space: nowrap;">{{ ev.event_timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+            <td>
+                {% if ev.event_kind == 'lifecycle' %}
+                    <span class="pill" style="background: #2a3550; color: #d8d8c4;">LIFECYCLE</span>
+                {% else %}
+                    <span class="pill" style="background: #2a4a3a; color: #d8d8c4;">VERIFICATION</span>
+                {% endif %}
+            </td>
+            <td class="mono">{{ ev.event_subtype }}</td>
+            <td>
+                {% if ev.event_kind == 'lifecycle' %}
+                    {{ ev.actor_agency_name or '—' }}
+                {% else %}
+                    {{ ev.requesting_agency_name or '—' }}
+                {% endif %}
+            </td>
+            <td>
+                {% if ev.event_kind == 'lifecycle' %}
+                    {{ ev.reason_code or '—' }}
+                {% else %}
+                    {{ ev.context_type or '—' }}
+                {% endif %}
+            </td>
+            <td>
+                {% if ev.verification_outcome %}
+                    <span class="pill pill-{{ ev.verification_outcome|lower }}">{{ ev.verification_outcome }}</span>
+                    {% if ev.disclosure_level %}
+                        <span class="pill" style="background: #2a3550; color: #889; font-size: 10px;">{{ ev.disclosure_level }}</span>
+                    {% endif %}
+                {% else %}
+                    —
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<p class="help" style="margin-top: 24px;">
+    For operational state-transition controls, see
+    <a href="{{ url_for('tokens_detail', tok_id=token.token_id) }}">/tokens/{{ token.token_id }}</a>.
+    For investigation of the holding individual, see
+    <a href="{{ url_for('investigate_individual', ind_id=token.individual_id) }}">/investigate/individual/{{ token.individual_id }}</a>.
+</p>
+{% endblock %}

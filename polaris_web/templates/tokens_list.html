@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% from "_pager.html" import render_pager %}
+{% block title %}Tokens{% endblock %}
+{% block content %}
+<h1>Identity Tokens</h1>
+<p class="subtitle">The schema's central artifact. Every other relationship originates from or terminates at IdentityToken.</p>
+
+<form method="get" class="filter-row">
+    <div class="form-group">
+        <label for="status">Status filter</label>
+        <select id="status" name="status">
+            <option value="">All statuses</option>
+            {% for s in ['ACTIVE', 'RESERVE', 'DORMANT', 'REVOKED', 'LOST', 'EXPIRED'] %}
+                <option value="{{ s }}" {% if status_filter == s %}selected{% endif %}>{{ s }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="form-group">
+        <label for="individual_id">Individual ID</label>
+        <input type="number" id="individual_id" name="individual_id" min="1" placeholder="any"
+               value="{{ individual_filter or '' }}">
+    </div>
+    <div class="filter-actions">
+        <button type="submit" class="btn btn-sm">Filter</button>
+        <a href="{{ url_for('tokens_list') }}" class="btn btn-sm btn-secondary">Clear</a>
+    </div>
+</form>
+
+<div class="actions-bar">
+    <a href="{{ url_for('uc1_issue') }}" class="btn btn-gold">+ Issue New Token (UC-1)</a>
+    <span class="record-count">{{ rows|length }} tokens</span>
+</div>
+
+<table class="data">
+    <thead>
+        <tr>
+            <th>ID</th><th>Token Value</th><th>Holder</th><th>Issuer</th>
+            <th>Algorithm</th><th>Status</th><th>Issued</th><th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for r in rows %}
+        <tr>
+            <td>#{{ r.token_id }}</td>
+            <td class="mono">{{ r.token_value }}</td>
+            <td>{{ r.legal_name }}</td>
+            <td>{{ r.issuer_name }}</td>
+            <td class="mono">{{ r.alg_name }}</td>
+            <td><span class="pill pill-{{ r.status|lower }}">{{ r.status }}</span></td>
+            <td>{{ r.issued_date.strftime('%Y-%m-%d') }}</td>
+            <td class="actions">
+                <a href="{{ url_for('tokens_detail', tok_id=r.token_id) }}" class="btn btn-sm btn-secondary">Detail</a>
+            </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="8" class="empty">No tokens match the filter.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{{ render_pager(page, has_prev, has_next, page_size,
+                cursor_mode=cursor_mode|default(false),
+                first_cursor=first_cursor|default(none),
+                last_cursor=last_cursor|default(none)) }}
+{% endblock %}

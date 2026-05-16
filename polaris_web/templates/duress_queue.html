@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}Duress Signals{% endblock %}
+{% block content %}
+<h1>Duress Signals</h1>
+<p class="subtitle">
+    Detected compulsion signals (R11-5 / M2-10). When a holder enters their
+    duress code during verification, the system silently records a
+    <code>DuressEvent</code> row here while the user-visible flow proceeds
+    identically. <strong>Admins and auditors only</strong> — operators do
+    NOT have access to this view (R6 anti-revealing posture).
+</p>
+
+<div class="actions-bar">
+    <span class="record-count">{{ rows|length }} signal(s) recorded</span>
+    <span class="record-count" style="margin-left: 1em;">
+        {{ enrolled_count }} of {{ active_token_count }} active token(s) have duress code enrolled
+    </span>
+</div>
+
+{% if not rows %}
+    <div class="empty-state">No duress signals recorded.</div>
+{% else %}
+<table class="data">
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Recorded</th>
+            <th>Holder</th>
+            <th>Token</th>
+            <th>Verifying Agency</th>
+            <th>Context</th>
+            <th>Channel</th>
+            <th>Acknowledged</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for r in rows %}
+        <tr>
+            <td class="mono">#{{ r.event_id }}</td>
+            <td class="mono">{{ r.event_timestamp.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+            <td><strong>{{ r.holder_name }}</strong></td>
+            <td class="mono">#{{ r.token_id }}</td>
+            <td>{{ r.verifying_agency_name }}</td>
+            <td><span class="pill">{{ r.context_type }}</span></td>
+            <td><span class="mono">{{ r.oob_channel }}</span></td>
+            <td>
+                {% if r.oob_notified_at %}
+                    <span class="pill pill-success">{{ r.oob_notified_at.strftime('%Y-%m-%d %H:%M') }}</span>
+                {% else %}
+                    <span class="pill pill-warn">PENDING</span>
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+
+<div class="info-panel">
+    <h2>How duress detection works</h2>
+    <p>
+        Each <code>IdentityToken</code> may optionally carry a Werkzeug
+        scrypt hash of a secondary "duress" code. During verification, the
+        operator's terminal accepts a "Holder verification code (optional)"
+        input. When the holder enters their duress code under coercion:
+    </p>
+    <ol>
+        <li><strong>R1 (constant-time):</strong> <code>check_password_hash</code> compares the input against the stored hash in constant time — a coercer measuring response latency cannot distinguish match from mismatch.</li>
+        <li><strong>R2 (identical observable behavior):</strong> the verification flow proceeds with whatever outcome the operator specified. The coercer-visible response page is identical to a normal verification.</li>
+        <li><strong>R3 (audit-of-record):</strong> a row appears in this table. <code>DuressEvent</code> is the 8th audit-of-record instance, append-only via trigger.</li>
+        <li><strong>R6 (anti-revealing):</strong> the operator-visible <code>/verifications</code> list does NOT join to <code>DuressEvent</code>. Only this page and the JSON API expose duress signals, both gated to admin/auditor role.</li>
+    </ol>
+    <p class="footnote">
+        See <code>DEVNOTES/ships/duress-codes.md</code> for the full mechanism design,
+        the OOB channel future-fields (SMS, Slack, SIEM), and the v1/v2 split.
+    </p>
+</div>
+{% endblock %}

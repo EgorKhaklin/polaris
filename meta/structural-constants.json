@@ -1,0 +1,147 @@
+{
+  "_comment_top": "Canonical structural numbers used by Polaris's cognitive layer. Each entry has a value, a structural justification, an empirical basis, and an enforcement reference. The empirical justification is what makes the number load-bearing rather than decorative; if the number had no empirical effect, it wouldn't be in this file. scripts/ai-coherence.sh asserts these invariants hold across the codebase. test_structural_invariants.py turns each into a unit test. For etymology — which older frameworks each insight is drawn from — see meta/lineage.md.",
+
+  "version": "v8.60",
+  "last_updated": "2026-05-13",
+
+  "constants": {
+    "MISSION_CONSTRAINTS": {
+      "value": 10,
+      "structural": "The constraint set is a closed 10-node lattice (3 pillars × 3 tiers + APEX + MANIFEST). Closure is the constraint: adding C11 requires extending the topology, which forces explicit justification.",
+      "empirical": "Working memory holds 7±2 items; 10 is at the comfortable upper bound for a checklist that humans must internalize. The 10-element closure is also a forcing function: adding C11 requires explicit justification, which prevents ad-hoc constraint accretion.",
+      "enforced_by": "test_structural_invariants.py::test_mission_has_exactly_ten_constraints",
+      "where": "MISSION.md C1-C10",
+      "removable_test": "Could be 9 or 11; either would require restructuring the lattice mapping in meta/constraint-lattice.md. The 10 is therefore a constraint, not a coincidence."
+    },
+
+    "META_CONSTRAINTS": {
+      "value": 1,
+      "structural": "Exactly one meta-constraint (CM) at a different abstraction level from C1-C10. CM occupies the previously-reserved meta-slot in the constraint lattice.",
+      "empirical": "The cognitive layer has 29 ai-* scripts, ~12 meta docs, a 22-pattern catalog, the HYDRA swarm with 7 watchers, the brain map (parser + analyzer + interactive D3 graph at meta/brain-map/), and a structural invariant suite of 113 tests. That's substantial enough to need its own self-monitoring invariant. CM ensures the cognitive layer doesn't drift from its own claims; ai-meta.sh runs six executable checks (script-presence, pattern-warmth, mission-rollup-coherence, ai-help-completeness, soft-coherence-recheck, sanctum-integrity — #6 added v8.20).",
+      "enforced_by": "scripts/ai-meta.sh + test_structural_invariants.py::TestMetaConstraintCM",
+      "where": "MISSION.md §CM + meta/constraint-lattice.md §CM",
+      "removable_test": "Without CM, scripts get referenced in CLAUDE.md but don't exist; patterns sit in the catalog never invoked; constraints are claimed but not exercised. The drift is observable and ai-meta.sh catches it."
+    },
+
+    "ADVERSARY_MODELS": {
+      "value": 11,
+      "structural": "Every constraint (C1-C10 + CM) has a documented adversary model: defender's claim, attacker's optimal play, equilibrium goal, second-best attack, defender's cost, mechanism-design note. The 11 models cover every constraint without exception — closure is the test.",
+      "empirical": "Stating a defense without modeling the attacker turns it into theater. The adversary model makes the strategic structure explicit and lets the agent reason about second-best attacks before they happen.",
+      "enforced_by": "scripts/ai-adversary.sh + test_structural_invariants.py::TestAdversaryLens",
+      "where": "scripts/ai-adversary.sh ADVERSARIES table",
+      "removable_test": "Each adversary model predicts a specific second-best attack. Without the model, the second-best attack is unanticipated. Adding/removing an adversary model is a testable behavioral change in ai-adversary.sh output."
+    },
+
+    "PATTERN_GAME_TYPES": {
+      "value": 22,
+      "structural": "Each of the 22 patterns is annotated with its game-theoretic type (Commitment device, Stackelberg defense, Bayesian game, Defection equilibrium, etc.). One game-type per pattern; same closure as the pattern catalog.",
+      "empirical": "The game-type predicts which failure mode the shadow describes. A 'Bayesian game' shadow looks different from a 'Time-discounted preference' shadow looks different from a 'Defection equilibrium' shadow. The type tells you which is operative.",
+      "enforced_by": "scripts/ai-pattern.sh GAME_TYPES table",
+      "where": "scripts/ai-pattern.sh",
+      "removable_test": "Removing the game-type annotation collapses the catalog to shape+shadow+complement only. The game-type is the strategy-structural layer the shadow rests on."
+    },
+
+    "RISK_CLASSES": {
+      "value": 3,
+      "structural": "Triadic decomposition is the smallest meaningful gradation. 2 collapses to binary (allowed/denied); 4+ over-discriminates and dilutes the categories.",
+      "empirical": "LOW/MEDIUM/HIGH is the natural partition for autonomy decisions. Adding a 4th class (CRITICAL, CATASTROPHIC) historically dilutes HIGH rather than adding signal.",
+      "enforced_by": "test_structural_invariants.py::TestRiskClasses",
+      "where": "meta/autonomy-architecture.md",
+      "removable_test": "Could be 4 (LOW/MEDIUM/HIGH/CATASTROPHIC) but the 4th tier is rare enough that adding it dilutes the others."
+    },
+
+    "FIBONACCI_PRIORITY_WEIGHTS": {
+      "value": [1, 2, 3, 5, 8, 13],
+      "structural": "Combinatorial scaling. The Fibonacci progression encodes that work scales combinatorially with size, not linearly. The ratio approaches the golden ratio φ ≈ 1.618 in the limit.",
+      "empirical": "Linear weights (1,2,3,4,5,6) systematically under-penalize large items because a size-13 task is ~8× a size-2 task in real cost, not 6.5×. Standard in agile estimation.",
+      "enforced_by": "test_structural_invariants.py::TestFibonacciScoring",
+      "where": "scripts/ai-propose.sh risk weighting",
+      "removable_test": "Could be linear; would change which items get recommended. Concrete behavioral effect ⇒ load-bearing."
+    },
+
+    "DEVNOTES_MAX_PER_CATEGORY": {
+      "value": 7,
+      "structural": "Working-memory upper bound. A DEVNOTES file with more than 7 top-level sections is hard to keep in mind during code review, and should be split.",
+      "empirical": "Miller (1956): short-term memory holds ~7 items. DEVNOTES files exceeding 7 sub-sections become hard to keep in mind during code review.",
+      "enforced_by": "scripts/ai-coherence.sh",
+      "where": "DEVNOTES/*.md section count",
+      "removable_test": "Could be 5 or 10; 7 is the empirical sweet spot for retention."
+    },
+
+    "PATTERN_CATALOG_SIZE": {
+      "value": 22,
+      "structural": "Closed taxonomy of recurring software-work shapes. Larger taxonomies fragment; smaller ones over-generalize. 22 is the natural granularity for problem-shape classification.",
+      "empirical": "22 captures the recurring shapes of software work (beginnings, choices, hidden information, breakdowns, renewals, etc.) at a granularity that's neither too coarse to be useful nor too fine to remember.",
+      "enforced_by": "test_structural_invariants.py::TestPatternCatalog",
+      "where": "scripts/ai-pattern.sh pattern table",
+      "removable_test": "Could be 12 (zodiac-style) or 36 (decanate-style). 22 chosen because each pattern in the catalog has a documented complement and shadow; shrinking would force merging distinct shapes."
+    },
+
+    "CHUNKING_TARGETS": {
+      "value": [3, 7, 12],
+      "structural": "Three default decomposition targets covering essential / adequate / exhaustive granularity. Decompositions outside these tend to lose detail (≤2) or fragment (8-11, 13+).",
+      "empirical": "3 = essence; 7 = adequate (Miller's law); 12 = exhaustive. Cross-validated empirically (working-memory bounds) and structurally (recurs in many independent taxonomies).",
+      "enforced_by": "patterns/decomposition-targets.md",
+      "where": "patterns/decomposition-targets.md",
+      "removable_test": "Could be other small integers; 3-7-12 is the empirically-validated heuristic."
+    },
+
+    "GOLDEN_RATIO": {
+      "value": 1.6180339887,
+      "structural": "Asymptotic limit of the Fibonacci priority weights. φ = (1 + √5) / 2. Sets proportional defaults where visual or temporal hierarchy matters.",
+      "empirical": "Used to set proportions: section sizes in long documents, body : appendix ratios, and as the limit of the Fibonacci priority sequence's growth rate. Perceived as more balanced than 1:1 or 1:2.",
+      "enforced_by": "scripts/ai-coherence.sh proportional checks",
+      "where": "Documents with abstract+body+appendix sections; ai-propose.sh weights",
+      "removable_test": "Could use any ratio for visual hierarchy. φ is the empirically-preferred one for human aesthetics."
+    },
+
+    "CROSS_LAYER_PRINCIPLES": {
+      "value": 7,
+      "labels": ["Intent", "Correspondence", "Symmetry", "Polarity", "Cadence", "CauseEffect", "Duality"],
+      "structural": "Seven structural concerns that recur at multiple scales. Most useful: Correspondence — when a pattern at one layer should reflect at adjacent layers (schema↔app↔doc consistency).",
+      "empirical": "ai-coherence.sh checks for missing correspondence (e.g. CHECK constraint at SQL layer should be reflected at form-validation layer, route at API layer should be documented in docs/reference/API.md).",
+      "enforced_by": "test_structural_invariants.py::TestCrossLayerPrinciples",
+      "where": "scripts/ai-coherence.sh",
+      "removable_test": "Could use a different framework (e.g. SOLID has 5). 7 chosen because Correspondence is the structural insight we use most heavily and the catalog of seven covers adjacent concerns useful for code review."
+    },
+
+    "PATTERNS_MIN_SET": {
+      "value": 7,
+      "structural": "Below 7 procedural patterns, recurring task shapes start to lack a recipe; the agent re-invents them each time.",
+      "empirical": "Polaris currently has 9 patterns — comfortable in the [7, 22] range. Coherence check fires if count drops below 7.",
+      "enforced_by": "scripts/ai-coherence.sh patterns count check",
+      "where": "patterns/*.md count",
+      "removable_test": "Empirical; the 7-22 range maps to working-memory bounds at low and discoverability at high."
+    },
+
+    "SOFT_LIMIT_AUDIT_HORIZON_DAYS": {
+      "value": 30,
+      "structural": "Monthly review cycle. If a planning doc hasn't been touched in 30 days, the project is either stable (fine) or stagnant (flag).",
+      "empirical": "ROADMAP staleness threshold. 7 days is too aggressive (vacation, focus on other work); 60 is too lenient (real drift accumulates).",
+      "enforced_by": "scripts/ai-status.sh drift section",
+      "where": "scripts/ai-status.sh",
+      "removable_test": "Could be 7 or 60; 30 is the Goldilocks for monthly work cycles."
+    }
+  },
+
+  "non_constants": {
+    "_comment": "Numbers that LOOK structural but are NOT load-bearing — listed here so future-me knows they're decorative-only and can be removed without harm.",
+    "examples": [
+      "Filename character counts",
+      "Line counts in scripts",
+      "Random commit message word counts"
+    ]
+  },
+
+  "extension_protocol": {
+    "_comment": "How to add a new structural constant without it being larping.",
+    "checklist": [
+      "1. Identify a structural constraint that the constant would impose.",
+      "2. Verify the constraint has empirical effect: a test that fails when the constant changes.",
+      "3. Document the structural reasoning (why this number specifically — not just that the answer happens to be N).",
+      "4. Add to this file with all four fields: value, structural, empirical, enforced_by.",
+      "5. Add a test in test_structural_invariants.py that asserts the constant is honored.",
+      "6. If the test wouldn't fail when the constant changes, the constant is decorative — do NOT add it."
+    ]
+  }
+}

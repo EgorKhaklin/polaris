@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Federation{% endblock %}
+{% block content %}
+<h1>Issuer Federation</h1>
+<p class="subtitle">
+    Explicit-only trust attestations (R11-3 / M2-8 / v8.22). An attesting
+    agency vouches that an attested agency may verify in a context, until
+    <code>valid_until</code> or explicit revocation. The
+    <code>_federation_trust_holds()</code> check gates SUCCESS outcomes
+    on verifications crossing agency boundaries. <strong>NO transitive
+    trust</strong> — if A vouches for B and B vouches for C, A does NOT
+    implicitly vouch for C. Same-agency verifications are implicit.
+</p>
+
+<div class="actions-bar">
+    <span class="record-count">
+        <span class="pill pill-success">{{ counts.active or 0 }} ACTIVE</span>
+        <span class="pill pill-warn" style="margin-left: 0.5em;">{{ counts.expired or 0 }} EXPIRED</span>
+        <span class="pill pill-revoked" style="margin-left: 0.5em;">{{ counts.revoked or 0 }} REVOKED</span>
+    </span>
+</div>
+
+{% if not rows %}
+    <div class="empty-state">No attestations recorded.</div>
+{% else %}
+<table class="data">
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Attesting Agency</th>
+            <th></th>
+            <th>Attested Agency</th>
+            <th>Context</th>
+            <th>Attested</th>
+            <th>Valid Until</th>
+            <th>State</th>
+            <th>Signed By</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for r in rows %}
+        <tr>
+            <td class="mono">#{{ r.attestation_id }}</td>
+            <td>
+                <strong>{{ r.attesting_name }}</strong>
+                <div class="footnote mono">{{ r.attesting_type }}</div>
+            </td>
+            <td class="mono fed-arrow">→</td>
+            <td>
+                <strong>{{ r.attested_name }}</strong>
+                <div class="footnote mono">{{ r.attested_type }}</div>
+            </td>
+            <td><span class="pill">{{ r.context_type }}</span></td>
+            <td class="mono">{{ r.attested_date.strftime('%Y-%m-%d') }}</td>
+            <td class="mono">{{ r.valid_until.strftime('%Y-%m-%d') }}</td>
+            <td>
+                {% if r.state == 'ACTIVE' %}
+                    <span class="pill pill-success">ACTIVE</span>
+                {% elif r.state == 'EXPIRED' %}
+                    <span class="pill pill-warn">EXPIRED</span>
+                {% else %}
+                    <span class="pill pill-revoked">REVOKED</span>
+                    {% if r.revocation_reason %}
+                    <div class="footnote">{{ r.revocation_reason }}</div>
+                    {% endif %}
+                {% endif %}
+            </td>
+            <td class="mono">{{ r.signed_by_username }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endif %}
+
+<div class="info-panel">
+    <h2>How federation gating works</h2>
+    <ol>
+        <li><strong>Same-agency verification:</strong> when the verifying agency is the same as the issuing agency, no attestation lookup is needed. Trust is implicit at issuance.</li>
+        <li><strong>Cross-agency verification:</strong> the <code>verifications_new</code> handler calls <code>_federation_trust_holds(verifier_agency_id, token_id, context_id)</code> before flipping the outcome to SUCCESS. The check joins <code>AgencyTrustAttestation</code> filtered to the context and to today's date, with <code>revocation_date IS NULL</code>.</li>
+        <li><strong>Explicit-only:</strong> there is no recursive walk. A → B and B → C does NOT imply A → C. If you want A → C, write that attestation.</li>
+        <li><strong>Audit-of-record:</strong> <code>AgencyTrustAttestation</code> is the 6th audit-of-record instance. Rows are append-only at the data-content level (an immutability trigger blocks mutation of any field except <code>revocation_date</code> and <code>revocation_reason</code>); revocation is recorded as a state transition, not a delete.</li>
+    </ol>
+    <p class="footnote">
+        Mechanism design: <code>DEVNOTES/ships/federation.md</code>.
+        Concurrency: per-attesting-agency lock is the 5th entry in
+        <code>DEVNOTES/concurrency.md</code>.
+    </p>
+</div>
+{% endblock %}

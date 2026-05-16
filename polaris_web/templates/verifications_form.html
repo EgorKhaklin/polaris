@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}Record Verification{% endblock %}
+{% block content %}
+<h1>Record Verification Event</h1>
+<p class="subtitle">
+    Append a new VerificationEvent. The disclosure-consistency CHECK constraint enforces:
+    ZERO_KNOWLEDGE → token_id NULL; FULL → token_id NOT NULL; SELECTIVE → either.
+</p>
+
+<form method="post" class="standard wide">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="form-row">
+        <div class="form-group">
+            <label for="disclosure_level">Disclosure Level</label>
+            <select id="disclosure_level" name="disclosure_level" required>
+                <option value="SELECTIVE" selected>SELECTIVE (token optional)</option>
+                <option value="FULL">FULL (token required)</option>
+                <option value="ZERO_KNOWLEDGE">ZERO_KNOWLEDGE (token forbidden)</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="outcome">Outcome</label>
+            <select id="outcome" name="outcome" required>
+                <option value="SUCCESS" selected>SUCCESS</option>
+                <option value="FAILURE">FAILURE</option>
+                <option value="EXPIRED">EXPIRED</option>
+                <option value="UNAUTHORIZED">UNAUTHORIZED</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="form-row">
+        <div class="form-group">
+            <label for="token_id">Token (per disclosure rules)</label>
+            <select id="token_id" name="token_id">
+                <option value="">— (none / ZERO_KNOWLEDGE) —</option>
+                {% for t in tokens %}
+                    <option value="{{ t.token_id }}">#{{ t.token_id }} — {{ t.legal_name }} ({{ t.status }})</option>
+                {% endfor %}
+            </select>
+            <span class="help" id="token-hint">For SELECTIVE, optional. The disclosure-consistency check will reject inconsistent combinations.</span>
+        </div>
+        <div class="form-group">
+            <label for="context_id">Context</label>
+            <select id="context_id" name="context_id" required>
+                {% for c in contexts %}
+                    <option value="{{ c.context_id }}">{{ c.context_type }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="requesting_agency_id">Requesting Agency</label>
+            <select id="requesting_agency_id" name="requesting_agency_id" required>
+                {% for ag in agencies %}
+                    <option value="{{ ag.agency_id }}">#{{ ag.agency_id }} {{ ag.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+
+    <div class="form-row">
+        <div class="form-group">
+            <label for="proof_commitment">Proof Commitment (for ZK)</label>
+            <input type="text" id="proof_commitment" name="proof_commitment" maxlength="128"
+                   placeholder="0x..." class="mono">
+            <span class="help">Hash of ZK proof for ZERO_KNOWLEDGE events.</span>
+        </div>
+        <div class="form-group">
+            <label for="requestor_location">Requestor Location (optional)</label>
+            <input type="text" id="requestor_location" name="requestor_location" maxlength="200"
+                   placeholder="City, State">
+        </div>
+    </div>
+
+    {# v9.20 — verification-purpose lineage (Sanctum:
+       sanctum/2026-05-15-verification-purpose-and-audit-access.md
+       Position A). Operator-supplied free-text reason for THIS verification.
+       Anti-coercion-direct: a coerced verification leaves a stated-purpose
+       trail. Max 280 chars (enforced by DB CHECK). #}
+    <div class="form-row">
+        <div class="form-group" style="flex: 1 1 100%;">
+            <label for="requesting_purpose_text">Stated Purpose (optional)</label>
+            <input type="text" id="requesting_purpose_text"
+                   name="requesting_purpose_text" maxlength="280"
+                   placeholder="e.g., border crossing at JFK Terminal 4 — random check"
+                   autocomplete="off">
+            <span class="help">
+                Free-text reason for this specific verification. Stored
+                permanently as audit-of-record (append-only). Leaving blank
+                is acceptable; including a reason creates an evidentiary
+                chain that makes coerced verifications traceable.
+            </span>
+        </div>
+    </div>
+
+    {# R11-5 / M2-10 (v8.24): optional holder code input. R6 anti-revealing
+       posture — the label and hint are deliberately neutral so a coercer
+       glancing at the operator's screen sees "secondary code", not "duress".
+       The backend in app.py reads request.form.get('duress_code'); on match
+       against IdentityToken.duress_code_hash (Werkzeug constant-time
+       comparison), a silent DuressEvent is written and the user-visible
+       verification flow proceeds identically (R2 audit refinement). #}
+    <div class="form-row">
+        <div class="form-group">
+            <label for="duress_code">Holder verification code (optional)</label>
+            <input type="text" id="duress_code" name="duress_code"
+                   maxlength="64" autocomplete="off">
+            <span class="help">Secondary input per token-holder policy. Leave blank if not applicable.</span>
+        </div>
+    </div>
+
+    <div class="form-actions">
+        <button type="submit" class="btn">Record Event</button>
+        <a href="{{ url_for('verifications_list') }}" class="btn btn-secondary">Cancel</a>
+    </div>
+</form>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='verifications-form.js') }}?v=vf001" defer></script>
+{% endblock %}

@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}UC-9: Initiate Recovery{% endblock %}
+{% block content %}
+<div class="uc-banner">
+    <div class="uc-id">Use Case 9 — Phase 1</div>
+    <h1>Initiate Catastrophic-Loss Recovery</h1>
+    <div class="uc-desc">
+        Out-of-band recovery ceremony for the case PDF §9.1 names: a holder loses ALL of their tokens and devices
+        simultaneously. This is phase 1 — open a <code>PENDING</code> request. No token is issued here. A
+        <strong>different</strong> administrator must complete phase 2 after the 48-hour cool-down and after all
+        three out-of-band channels (biometric, sworn statement, witness agency co-sign) are verified.
+        Implements R11-2 / M2-7. The third leg of the
+        <em>"schema doesn't weaponize itself against the holder"</em> triad.
+    </div>
+</div>
+
+{% if not individuals %}
+    <div class="flash flash-error">
+        <span class="flash-icon">⚠</span>
+        <span class="flash-text">Every individual currently has an ACTIVE token. Use UC-4 (Activate Reserve) instead.</span>
+    </div>
+{% endif %}
+
+<form method="post" class="standard">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="form-row">
+        <div class="form-group full">
+            <label for="individual_id">Claimed Individual</label>
+            <select id="individual_id" name="individual_id" required>
+                <option value="">— select —</option>
+                {% for ind in individuals %}
+                    <option value="{{ ind.individual_id }}">
+                        #{{ ind.individual_id }} — {{ ind.legal_name }}
+                        ({{ ind.jurisdiction }}; enrollment: {{ ind.enrollment_status }})
+                    </option>
+                {% endfor %}
+            </select>
+            <span class="help">Only individuals without an ACTIVE token are listed. UC-4 (reserve activation) is the right path otherwise.</span>
+        </div>
+    </div>
+
+    <div class="form-row">
+        <div class="form-group full">
+            <label for="requesting_agency_id">Requesting Agency</label>
+            <select id="requesting_agency_id" name="requesting_agency_id" required>
+                <option value="">— select —</option>
+                {% for ag in agencies %}
+                    <option value="{{ ag.agency_id }}">#{{ ag.agency_id }} — {{ ag.name }} ({{ ag.agency_type }})</option>
+                {% endfor %}
+            </select>
+            <span class="help">The agency on whose behalf the recovery is being initiated.</span>
+        </div>
+    </div>
+
+    <div class="info-panel">
+        <p><strong>What happens after submit:</strong></p>
+        <ol>
+            <li>A <code>RecoveryRequest</code> row is created with status=<code>PENDING</code>.</li>
+            <li>The 48-hour cool-down clock starts.</li>
+            <li>Out-of-band verification (biometric, sworn statement, witness agency) happens externally.</li>
+            <li>A <strong>different</strong> administrator reviews the queue (<a href="{{ url_for('uc9_queue') }}">/uc9/queue</a>) and decides APPROVED or REJECTED.</li>
+        </ol>
+        <p class="footnote">
+            On APPROVED, the procedure transitions all of the individual's non-terminal tokens to LOST
+            (publishing each to RevocationList) and issues a new ACTIVE token with predecessor_token_id=NULL.
+            All transitions are audit-tagged <code>[RECOVERY:&lt;id&gt;]</code> in the lifecycle log.
+        </p>
+    </div>
+
+    <div class="form-actions">
+        <button type="submit" class="btn btn-gold" {% if not individuals %}disabled{% endif %}>Open Recovery Request</button>
+        <a href="{{ url_for('uc9_queue') }}" class="btn btn-secondary">View Queue</a>
+        <a href="{{ url_for('dashboard') }}" class="btn btn-secondary">Cancel</a>
+    </div>
+</form>
+{% endblock %}

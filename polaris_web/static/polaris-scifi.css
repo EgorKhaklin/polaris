@@ -1,0 +1,3013 @@
+/* ============================================================================
+   POLARIS — SCI-FI HD SKIN LAYER (v8.14)
+
+   Loaded AFTER polaris.css. Opt-in via `body.theme-scifi` (set by base.html).
+   Removing this <link> reverts to the v1 navy/gold intelligence-report look.
+
+   Design intent:
+     - Amplify the existing Gotham/intelligence-report aesthetic toward
+       HD sci-fi, without breaking VANTA's navy/gold preference
+     - No external dependencies — all visual via CSS, no CDN fonts/icons
+     - Preserve every class name and selector from polaris.css so existing
+       tests (which assert class/text presence) keep passing
+     - Respect prefers-reduced-motion for accessibility
+
+   Layers added on top:
+     1. Variable tokens — cyber-blue accent, glow alphas, scan-line rgba
+     2. Ambient — body background gets a faint hex-grid + scan-line overlay
+     3. Typography — geometric headings with letter-spacing; tabular-nums
+     4. Surfaces — glass-effect cards with angle-cut corners + glow rims
+     5. Masthead — animated scan accent under the brand mark
+     6. Navigation — sharp pill chips with cyber-blue active glow
+     7. Buttons — sci-fi sharp surfaces with hover-glow
+     8. Status pills + role badges — neon glow accents
+     9. Atlas — enhanced reticle glow, scan-line sweep, HUD upgrades
+    10. Form elements — focused inputs get cyber-blue ring
+    11. Loading + flash — terminal-style indicators
+    12. Reduced-motion fallback
+   ============================================================================ */
+
+/* -- 1. Variable tokens (extend polaris.css :root with theme-scoped vars) -- */
+body.theme-scifi {
+    --cyber:        #5ad6ff;            /* electric cyan, primary accent */
+    --cyber-deep:   #2a8fb8;            /* darker variant for borders */
+    --cyber-glow:   rgba(90, 214, 255, 0.42);
+    --cyber-faint:  rgba(90, 214, 255, 0.08);
+    --neon-amber:   #ffb04a;            /* warnings; harmonizes with gold */
+    --neon-red:     #ff5566;            /* errors; brighter than --red */
+    --neon-green:   #6efeb6;            /* success indicators */
+    --void:         #020812;            /* deepest background, near-black */
+    --void-2:       #050e1c;            /* one step lighter */
+    --hex-line:     rgba(90, 214, 255, 0.06);
+    --scan-line:    rgba(90, 214, 255, 0.05);
+    --glow-soft:    0 0 12px var(--cyber-glow);
+    --glow-strong:  0 0 24px var(--cyber-glow), 0 0 4px var(--cyber);
+    --bevel:        rgba(201, 163, 82, 0.22);    /* gold-tinted bevels */
+
+    /* override existing background for the sci-fi mode */
+    background:
+        radial-gradient(ellipse at 50% -20%, rgba(90, 214, 255, 0.08) 0%, transparent 50%),
+        linear-gradient(180deg, var(--void-2) 0%, var(--void) 100%);
+    background-attachment: fixed;
+    color: #d9e6ee;
+}
+
+/* -- 2. Ambient: hex-grid + scan-line overlay (behind content) -- */
+body.theme-scifi::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background-image:
+        /* hex-ish lattice — three offset linear gradients = approx hex grid */
+        linear-gradient(60deg,  var(--hex-line) 1px, transparent 1px),
+        linear-gradient(-60deg, var(--hex-line) 1px, transparent 1px),
+        linear-gradient(90deg,  var(--hex-line) 1px, transparent 1px);
+    background-size: 36px 62px, 36px 62px, 36px 62px;
+    opacity: 0.55;
+}
+
+body.theme-scifi::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    background: repeating-linear-gradient(
+        180deg,
+        transparent 0px,
+        transparent 2px,
+        var(--scan-line) 2px,
+        var(--scan-line) 3px
+    );
+    mix-blend-mode: screen;
+    opacity: 0.4;
+    animation: scifi-scan-drift 16s linear infinite;
+}
+
+@keyframes scifi-scan-drift {
+    from { background-position-y: 0; }
+    to   { background-position-y: 80px; }
+}
+
+/* content sits above the ambient layers */
+body.theme-scifi .masthead,
+body.theme-scifi .content,
+body.theme-scifi .flash-region {
+    position: relative;
+    z-index: 1;
+}
+
+/* -- 3. Typography -- */
+body.theme-scifi {
+    font-family: 'Space Grotesk', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-feature-settings: 'tnum' 1, 'ss01' 1, 'cv11' 1;
+    letter-spacing: 0.01em;
+}
+
+body.theme-scifi h1,
+body.theme-scifi h2,
+body.theme-scifi h3,
+body.theme-scifi .h-display {
+    font-family: 'Space Grotesk', 'Inter', -apple-system, sans-serif;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: #ffffff;
+    text-shadow: 0 0 12px rgba(90, 214, 255, 0.18);
+}
+
+body.theme-scifi code,
+body.theme-scifi pre,
+body.theme-scifi .mono,
+body.theme-scifi input[type=text],
+body.theme-scifi input[type=password],
+body.theme-scifi textarea {
+    font-family: 'JetBrains Mono', 'SF Mono', 'Monaco', 'Menlo', 'Consolas', monospace;
+    font-feature-settings: 'tnum' 1, 'ss01' 1;
+}
+
+/* -- 4. Surfaces: glass + angle-cut corners + glow rim -- */
+body.theme-scifi .card,
+body.theme-scifi .panel,
+body.theme-scifi .stat-card,
+body.theme-scifi .form-section,
+body.theme-scifi .data-table-wrap,
+body.theme-scifi form.standard,
+body.theme-scifi form.standard.wide,
+body.theme-scifi form.standard.narrow,
+body.theme-scifi .atlas-row,
+body.theme-scifi .uc-banner {
+    background:
+        linear-gradient(180deg, rgba(10, 25, 48, 0.72) 0%, rgba(6, 16, 32, 0.82) 100%);
+    border: 1px solid rgba(90, 214, 255, 0.18);
+    border-radius: 2px;
+    box-shadow:
+        0 1px 0 rgba(255, 255, 255, 0.04) inset,
+        0 0 0 1px rgba(0, 0, 0, 0.45),
+        0 8px 28px rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(6px) saturate(120%);
+    -webkit-backdrop-filter: blur(6px) saturate(120%);
+    position: relative;
+    color: #d9e6ee;
+    /* sharp angle-cut top-right and bottom-left for the sci-fi card feel */
+    clip-path: polygon(
+        0 0,
+        calc(100% - 14px) 0,
+        100% 14px,
+        100% 100%,
+        14px 100%,
+        0 calc(100% - 14px)
+    );
+}
+
+/* glow rim at top-edge of cards */
+body.theme-scifi .card::before,
+body.theme-scifi .panel::before,
+body.theme-scifi .stat-card::before,
+body.theme-scifi form.standard::before,
+body.theme-scifi .atlas-row::before,
+body.theme-scifi .uc-banner::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent 0%, var(--cyber) 50%, transparent 100%);
+    opacity: 0.55;
+    pointer-events: none;
+}
+
+/* corner accent — small gold triangle at top-left echoing the angle-cut */
+body.theme-scifi .card::after,
+body.theme-scifi .panel::after,
+body.theme-scifi .stat-card::after,
+body.theme-scifi form.standard::after,
+body.theme-scifi .atlas-row::after,
+body.theme-scifi .uc-banner::after {
+    content: '';
+    position: absolute;
+    top: 8px; left: 8px;
+    width: 6px; height: 6px;
+    background: var(--gold);
+    box-shadow: 0 0 6px rgba(201, 163, 82, 0.6);
+    transform: rotate(45deg);
+    pointer-events: none;
+}
+
+/* -- 5. Masthead: scan accent under the brand -- */
+body.theme-scifi .masthead {
+    background:
+        linear-gradient(180deg,
+            rgba(2, 8, 18, 0.92) 0%,
+            rgba(10, 37, 64, 0.92) 100%);
+    border-bottom: 1px solid var(--cyber-deep);
+    box-shadow:
+        0 1px 0 var(--cyber-faint),
+        0 6px 24px rgba(0, 0, 0, 0.5);
+    position: relative;
+}
+
+body.theme-scifi .masthead::after {
+    content: '';
+    position: absolute;
+    left: 0; right: 0; bottom: -1px;
+    height: 1px;
+    background: linear-gradient(90deg,
+        transparent 0%,
+        var(--cyber) 35%,
+        var(--gold) 50%,
+        var(--cyber) 65%,
+        transparent 100%);
+    box-shadow: 0 0 8px var(--cyber-glow);
+}
+
+body.theme-scifi .brand-mark {
+    color: #ffffff;
+    letter-spacing: 0.28em;
+    text-shadow:
+        0 0 12px rgba(90, 214, 255, 0.4),
+        0 0 24px rgba(90, 214, 255, 0.18);
+    font-weight: 600;
+}
+
+body.theme-scifi .brand-sub {
+    color: var(--cyber);
+    letter-spacing: 0.18em;
+    opacity: 0.78;
+    text-transform: uppercase;
+    font-size: 0.72rem;
+}
+
+/* -- 6. Navigation pills -- */
+body.theme-scifi .primary-nav a {
+    color: #c0d0dc;
+    border: 1px solid transparent;
+    background: rgba(90, 214, 255, 0.04);
+    padding: 5px 12px;
+    border-radius: 0;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-size: 0.74rem;
+    clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
+    transition: all 0.15s ease;
+}
+
+body.theme-scifi .primary-nav a:hover {
+    color: #ffffff;
+    background: rgba(90, 214, 255, 0.14);
+    border-color: var(--cyber-deep);
+    box-shadow: 0 0 12px var(--cyber-faint);
+}
+
+body.theme-scifi .primary-nav .nav-atlas {
+    color: var(--cyber);
+    border-color: rgba(90, 214, 255, 0.3);
+}
+
+body.theme-scifi .primary-nav .nav-uc {
+    color: var(--gold-bright);
+    border-color: rgba(201, 163, 82, 0.3);
+}
+
+/* -- 7. Buttons -- */
+body.theme-scifi .btn,
+body.theme-scifi button[type=submit],
+body.theme-scifi input[type=submit] {
+    background:
+        linear-gradient(180deg, rgba(28, 68, 116, 0.9) 0%, rgba(10, 37, 64, 0.95) 100%);
+    color: #ffffff;
+    border: 1px solid var(--cyber-deep);
+    border-radius: 0;
+    padding: 8px 18px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    font-size: 0.78rem;
+    font-weight: 500;
+    clip-path: polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%);
+    box-shadow:
+        0 1px 0 rgba(255, 255, 255, 0.08) inset,
+        0 0 0 1px rgba(0, 0, 0, 0.3),
+        0 0 12px var(--cyber-faint);
+    transition: all 0.18s ease;
+    cursor: pointer;
+}
+
+body.theme-scifi .btn:hover,
+body.theme-scifi button[type=submit]:hover,
+body.theme-scifi input[type=submit]:hover {
+    background:
+        linear-gradient(180deg, rgba(38, 92, 156, 0.95) 0%, rgba(20, 55, 92, 1) 100%);
+    border-color: var(--cyber);
+    box-shadow:
+        0 1px 0 rgba(255, 255, 255, 0.14) inset,
+        0 0 16px var(--cyber-glow);
+}
+
+body.theme-scifi .btn-primary,
+body.theme-scifi .btn.primary {
+    background:
+        linear-gradient(180deg, rgba(201, 163, 82, 0.95) 0%, rgba(168, 132, 64, 1) 100%);
+    color: var(--void);
+    border-color: var(--gold-bright);
+    text-shadow: 0 0 1px rgba(0, 0, 0, 0.4);
+}
+
+body.theme-scifi .btn-primary:hover {
+    box-shadow: 0 0 18px rgba(232, 190, 100, 0.5);
+}
+
+body.theme-scifi .btn-danger,
+body.theme-scifi .btn.danger {
+    background:
+        linear-gradient(180deg, rgba(180, 50, 60, 0.9) 0%, rgba(120, 30, 40, 1) 100%);
+    border-color: var(--neon-red);
+}
+
+/* -- 8. Status pills + role badges -- */
+body.theme-scifi .status-pill,
+body.theme-scifi .pill,
+body.theme-scifi .badge,
+body.theme-scifi .role-badge,
+body.theme-scifi .user-role {
+    background: rgba(10, 25, 48, 0.85);
+    border: 1px solid rgba(90, 214, 255, 0.3);
+    color: var(--cyber);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    font-size: 0.7rem;
+    padding: 3px 10px;
+    border-radius: 0;
+    clip-path: polygon(5px 0, 100% 0, calc(100% - 5px) 100%, 0 100%);
+    box-shadow: 0 0 8px rgba(90, 214, 255, 0.1);
+}
+
+body.theme-scifi .role-admin,
+body.theme-scifi .user-role.role-admin {
+    color: var(--gold-bright);
+    border-color: rgba(232, 190, 100, 0.5);
+    box-shadow: 0 0 8px rgba(232, 190, 100, 0.18);
+}
+
+body.theme-scifi .role-operator,
+body.theme-scifi .user-role.role-operator {
+    color: var(--cyber);
+    border-color: rgba(90, 214, 255, 0.5);
+}
+
+body.theme-scifi .role-auditor,
+body.theme-scifi .user-role.role-auditor {
+    color: var(--neon-green);
+    border-color: rgba(110, 254, 182, 0.5);
+}
+
+/* token status pills */
+body.theme-scifi .status-active { color: var(--neon-green); border-color: rgba(110, 254, 182, 0.5); }
+body.theme-scifi .status-reserve { color: var(--cyber); border-color: rgba(90, 214, 255, 0.5); }
+body.theme-scifi .status-revoked,
+body.theme-scifi .status-lost { color: var(--neon-red); border-color: rgba(255, 85, 102, 0.5); }
+body.theme-scifi .status-expired,
+body.theme-scifi .status-dormant { color: var(--steel-light); border-color: rgba(160, 168, 184, 0.4); }
+
+/* -- 9. Atlas-specific enhancements -- */
+body.theme-scifi .atlas-stage,
+body.theme-scifi .atlas-container,
+body.theme-scifi .globe-stage {
+    background: radial-gradient(circle at 50% 50%,
+        rgba(10, 37, 64, 0.4) 0%,
+        var(--void) 70%);
+    box-shadow:
+        inset 0 0 80px rgba(90, 214, 255, 0.08),
+        inset 0 0 0 1px rgba(90, 214, 255, 0.12);
+}
+
+/* reticle glow boost */
+body.theme-scifi .d3-globe-node circle {
+    filter: drop-shadow(0 0 4px currentColor);
+}
+
+body.theme-scifi .d3-globe-node.node-fresh circle {
+    filter: drop-shadow(0 0 8px currentColor);
+}
+
+/* HUD values get the sci-fi glow */
+body.theme-scifi .hud-value,
+body.theme-scifi .hud-value-primary {
+    color: #ffffff;
+    text-shadow:
+        0 0 12px rgba(90, 214, 255, 0.5),
+        0 0 24px rgba(90, 214, 255, 0.2);
+    letter-spacing: 0.04em;
+    font-feature-settings: 'tnum' 1;
+}
+
+body.theme-scifi .hud-label {
+    color: var(--cyber);
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    opacity: 0.78;
+}
+
+/* atlas filter toolbar */
+body.theme-scifi .atlas-toolbar,
+body.theme-scifi .toolbar-strip {
+    background: linear-gradient(180deg,
+        rgba(2, 8, 18, 0.94) 0%,
+        rgba(6, 16, 32, 0.96) 100%);
+    border: 1px solid rgba(90, 214, 255, 0.18);
+    box-shadow:
+        inset 0 1px 0 rgba(90, 214, 255, 0.1),
+        0 0 18px rgba(0, 0, 0, 0.5);
+}
+
+body.theme-scifi .toolbar-chip,
+body.theme-scifi .filter-chip {
+    background: rgba(10, 25, 48, 0.6);
+    border: 1px solid rgba(90, 214, 255, 0.18);
+    color: #c0d0dc;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    clip-path: polygon(4px 0, 100% 0, calc(100% - 4px) 100%, 0 100%);
+    padding: 4px 10px;
+    transition: all 0.15s ease;
+}
+
+body.theme-scifi .toolbar-chip:hover,
+body.theme-scifi .filter-chip:hover {
+    background: rgba(90, 214, 255, 0.1);
+    border-color: var(--cyber);
+    color: #ffffff;
+}
+
+body.theme-scifi .toolbar-chip.active,
+body.theme-scifi .filter-chip.active {
+    background: linear-gradient(180deg, rgba(90, 214, 255, 0.22), rgba(90, 214, 255, 0.08));
+    border-color: var(--cyber);
+    color: #ffffff;
+    box-shadow: 0 0 12px var(--cyber-glow);
+}
+
+/* timeline strip / histogram */
+body.theme-scifi .atlas-timeline,
+body.theme-scifi .timeline-strip {
+    background: rgba(2, 8, 18, 0.7);
+    border-top: 1px solid var(--cyber-deep);
+    box-shadow: inset 0 8px 12px rgba(0, 0, 0, 0.4);
+}
+
+body.theme-scifi .timeline-bar {
+    fill: var(--cyber);
+    filter: drop-shadow(0 0 4px var(--cyber-glow));
+}
+
+/* LIVE indicator with pulse */
+body.theme-scifi .live-indicator,
+body.theme-scifi .badge-live {
+    color: var(--neon-red);
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    font-weight: 600;
+    position: relative;
+    padding-left: 14px;
+}
+
+body.theme-scifi .live-indicator::before,
+body.theme-scifi .badge-live::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 50%;
+    width: 8px; height: 8px;
+    margin-top: -4px;
+    background: var(--neon-red);
+    border-radius: 50%;
+    box-shadow: 0 0 10px var(--neon-red);
+    animation: scifi-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes scifi-pulse {
+    0%, 100% { opacity: 0.4; transform: scale(0.85); }
+    50%      { opacity: 1;   transform: scale(1.1); }
+}
+
+/* -- 10. Form elements -- */
+body.theme-scifi input[type=text],
+body.theme-scifi input[type=password],
+body.theme-scifi input[type=email],
+body.theme-scifi input[type=date],
+body.theme-scifi input[type=number],
+body.theme-scifi textarea,
+body.theme-scifi select {
+    background: rgba(2, 8, 18, 0.6);
+    border: 1px solid rgba(90, 214, 255, 0.22);
+    color: #e8eef4;
+    border-radius: 0;
+    padding: 8px 12px;
+    letter-spacing: 0.02em;
+    transition: all 0.15s ease;
+}
+
+body.theme-scifi input:focus,
+body.theme-scifi textarea:focus,
+body.theme-scifi select:focus {
+    outline: none;
+    border-color: var(--cyber);
+    box-shadow:
+        0 0 0 1px var(--cyber-glow),
+        0 0 14px var(--cyber-glow);
+    background: rgba(10, 25, 48, 0.75);
+}
+
+body.theme-scifi ::placeholder { color: rgba(192, 208, 220, 0.4); }
+
+body.theme-scifi label {
+    color: var(--cyber);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-size: 0.72rem;
+    font-weight: 500;
+}
+
+/* -- 11. Loading + flash messages -- */
+body.theme-scifi .flash {
+    background: rgba(10, 25, 48, 0.92);
+    border-left: 3px solid var(--cyber);
+    border-radius: 0;
+    color: #d9e6ee;
+    box-shadow: 0 0 16px var(--cyber-faint);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    padding: 10px 14px;
+    position: relative;
+}
+
+body.theme-scifi .flash-success {
+    border-left-color: var(--neon-green);
+    box-shadow: 0 0 16px rgba(110, 254, 182, 0.18);
+}
+
+body.theme-scifi .flash-error {
+    border-left-color: var(--neon-red);
+    box-shadow: 0 0 16px rgba(255, 85, 102, 0.18);
+}
+
+body.theme-scifi .flash-info {
+    border-left-color: var(--gold-bright);
+    box-shadow: 0 0 16px rgba(232, 190, 100, 0.18);
+}
+
+body.theme-scifi .flash-icon {
+    color: var(--cyber);
+    font-size: 1rem;
+    margin-right: 8px;
+}
+
+/* "decrypting" loading state — opt-in via .loading-scifi */
+body.theme-scifi .loading-scifi::after {
+    content: 'RESOLVING';
+    color: var(--cyber);
+    letter-spacing: 0.3em;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    animation: scifi-loading 1.2s steps(4) infinite;
+}
+
+@keyframes scifi-loading {
+    0%   { content: 'RESOLVING';    }
+    25%  { content: 'RESOLVING.';   }
+    50%  { content: 'RESOLVING..';  }
+    75%  { content: 'RESOLVING...'; }
+    100% { content: 'RESOLVING';    }
+}
+
+/* -- UC banner specific overrides (gold strip remains the focus) -- */
+body.theme-scifi .uc-banner {
+    background:
+        linear-gradient(135deg, rgba(10, 37, 64, 0.85) 0%, rgba(2, 8, 18, 0.92) 100%);
+    border-left: 3px solid var(--gold-bright);
+    color: #ffffff;
+}
+
+body.theme-scifi .uc-banner h1 {
+    color: #ffffff;
+    text-shadow: 0 0 16px rgba(232, 190, 100, 0.4);
+}
+
+body.theme-scifi .uc-banner .uc-id {
+    color: var(--gold-bright);
+    letter-spacing: 0.4em;
+    text-transform: uppercase;
+    font-size: 0.78rem;
+    text-shadow: 0 0 8px rgba(232, 190, 100, 0.4);
+}
+
+/* -- List-page utility classes -- */
+body.theme-scifi .actions-bar {
+    background: transparent;
+    color: var(--cyber);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-size: 0.78rem;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(90, 214, 255, 0.12);
+    margin-bottom: 12px;
+}
+
+body.theme-scifi .actions-bar .record-count,
+body.theme-scifi .record-count {
+    color: var(--cyber);
+    background: rgba(10, 25, 48, 0.6);
+    border: 1px solid rgba(90, 214, 255, 0.22);
+    padding: 4px 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    font-size: 0.72rem;
+    box-shadow: inset 0 0 8px rgba(90, 214, 255, 0.08);
+}
+
+body.theme-scifi .filter-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+body.theme-scifi .filter-row {
+    background: rgba(10, 25, 48, 0.5);
+    border: 1px solid rgba(90, 214, 255, 0.14);
+    padding: 12px;
+    margin-bottom: 12px;
+}
+
+/* -- Subtitle (page-level helper text under H1) -- */
+body.theme-scifi .subtitle {
+    color: rgba(217, 230, 238, 0.7);
+    letter-spacing: 0.02em;
+    border-left: 2px solid var(--gold);
+    padding-left: 12px;
+    margin: 8px 0 16px 0;
+}
+
+body.theme-scifi .subtitle a {
+    color: var(--cyber);
+}
+
+/* -- Default list-page tables (.data) -- */
+body.theme-scifi table.data {
+    background: rgba(2, 8, 18, 0.55);
+    border: 1px solid rgba(90, 214, 255, 0.16);
+    border-radius: 0;
+    border-collapse: separate;
+    border-spacing: 0;
+    width: 100%;
+}
+
+body.theme-scifi table.data thead {
+    background: rgba(10, 25, 48, 0.8);
+}
+
+body.theme-scifi table.data thead th {
+    color: var(--cyber);
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-shadow: 0 0 6px rgba(90, 214, 255, 0.18);
+    border-bottom: 1px solid var(--cyber-deep);
+    padding: 10px 12px;
+}
+
+body.theme-scifi table.data tbody tr {
+    border-bottom: 1px solid rgba(90, 214, 255, 0.06);
+}
+
+body.theme-scifi table.data tbody tr:nth-child(even) {
+    background: rgba(90, 214, 255, 0.025);
+}
+
+body.theme-scifi table.data tbody tr:hover {
+    background: rgba(90, 214, 255, 0.08);
+}
+
+/* v8.28 — selected-row override for the sci-fi theme. The base
+   polaris.css uses `var(--paper-alt)` (a light parchment color) which
+   renders as a white blob on the dark sci-fi background. Replace with
+   a gold-tinted glow that matches the rest of the sci-fi accent
+   language. Border-left intentionally overrides the base 3px gold
+   bar to a brighter cyan to differentiate from the standard
+   row borders. */
+body.theme-scifi table.data tbody tr.row-selected {
+    background: rgba(212, 175, 55, 0.10);
+    border-left: 3px solid rgba(90, 214, 255, 0.9);
+    box-shadow: inset 0 0 12px rgba(212, 175, 55, 0.08);
+}
+body.theme-scifi table.data tbody tr.row-selected td {
+    color: #f4ecd5;
+}
+
+/* v8.28 — v2 substrate-state cards (token detail page) need the same
+   sci-fi treatment as stat-cards. Base polaris.css uses var(--paper)
+   (white) and var(--ink) (near-black) which inverts against the dark
+   background. Match the stat-card visual language: deep translucent
+   navy fill, cyan accent border, gold left bar (already from base),
+   and cream-tinted typography. */
+body.theme-scifi .v2-substrate-card {
+    background: rgba(2, 8, 18, 0.55);
+    border: 1px solid rgba(90, 214, 255, 0.15);
+    border-left: 3px solid rgba(212, 175, 55, 0.85);
+    box-shadow: inset 0 0 18px rgba(90, 214, 255, 0.04);
+}
+body.theme-scifi .v2-substrate-label {
+    color: rgba(90, 214, 255, 0.85);
+}
+body.theme-scifi .v2-substrate-value {
+    color: #f4ecd5;
+}
+body.theme-scifi .v2-substrate-note {
+    color: rgba(217, 230, 238, 0.7);
+}
+
+body.theme-scifi table.data tbody td {
+    color: #d9e6ee;
+    border-bottom: 1px solid rgba(90, 214, 255, 0.04);
+    padding: 8px 12px;
+}
+
+body.theme-scifi table.data tfoot td {
+    color: rgba(217, 230, 238, 0.7);
+    border-top: 1px solid var(--cyber-deep);
+    background: rgba(10, 25, 48, 0.5);
+    padding: 8px 12px;
+    letter-spacing: 0.04em;
+}
+
+body.theme-scifi table.data .empty {
+    color: rgba(217, 230, 238, 0.4);
+    text-align: center;
+    padding: 24px;
+    letter-spacing: 0.1em;
+}
+
+/* -- Form-group inside .standard form -- */
+body.theme-scifi form.standard .form-group label,
+body.theme-scifi .form-group label {
+    color: var(--cyber);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-size: 0.72rem;
+    font-weight: 500;
+}
+
+body.theme-scifi form.standard .form-group .help,
+body.theme-scifi .form-group .help {
+    color: rgba(217, 230, 238, 0.55);
+    font-style: italic;
+}
+
+body.theme-scifi form.standard h2,
+body.theme-scifi form.standard h3 {
+    color: var(--cyber);
+    letter-spacing: 0.18em;
+    border-bottom: 1px solid rgba(90, 214, 255, 0.22);
+    padding-bottom: 4px;
+    margin-top: 18px;
+    margin-bottom: 12px;
+    text-shadow: 0 0 8px rgba(90, 214, 255, 0.18);
+}
+
+/* -- Original data tables (.data-table) -- */
+body.theme-scifi table.data-table,
+body.theme-scifi .data-table table {
+    background: transparent;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+body.theme-scifi table.data-table th,
+body.theme-scifi .data-table th {
+    background: rgba(10, 25, 48, 0.7);
+    color: var(--cyber);
+    border-bottom: 1px solid var(--cyber-deep);
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-shadow: 0 0 6px rgba(90, 214, 255, 0.2);
+    padding: 8px 12px;
+}
+
+body.theme-scifi table.data-table td,
+body.theme-scifi .data-table td {
+    border-bottom: 1px solid rgba(90, 214, 255, 0.08);
+    color: #d9e6ee;
+    padding: 8px 12px;
+}
+
+body.theme-scifi table.data-table tr:hover td,
+body.theme-scifi .data-table tr:hover td {
+    background: rgba(90, 214, 255, 0.05);
+}
+
+/* -- Links -- */
+body.theme-scifi a {
+    color: var(--cyber);
+}
+
+body.theme-scifi a:hover {
+    color: var(--gold-bright);
+    text-shadow: 0 0 8px rgba(232, 190, 100, 0.4);
+    text-decoration: none;
+}
+
+/* -- Footer / page-level chrome -- */
+body.theme-scifi .footer,
+body.theme-scifi footer {
+    color: rgba(160, 168, 184, 0.55);
+    border-top: 1px solid rgba(90, 214, 255, 0.12);
+    font-size: 0.74rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+
+/* -- 12. Reduced-motion fallback -- */
+@media (prefers-reduced-motion: reduce) {
+    body.theme-scifi::after { animation: none; }
+    body.theme-scifi .live-indicator::before,
+    body.theme-scifi .badge-live::before { animation: none; opacity: 0.8; }
+    body.theme-scifi .loading-scifi::after { animation: none; content: 'RESOLVING...'; }
+}
+
+/* ============================================================================
+   Iteration 2 fixes — feedback-driven selectors (v8.14 patch)
+   ============================================================================ */
+
+/* -- Dashboard stat-card numbers: brighten + glow more aggressively -- */
+body.theme-scifi .stat-card .value {
+    color: #ffffff;
+    text-shadow:
+        0 0 8px var(--cyber-glow),
+        0 0 18px var(--cyber-glow),
+        0 0 2px var(--cyber);
+    font-size: 32px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+
+body.theme-scifi .stat-card .sublabel {
+    color: rgba(217, 230, 238, 0.6);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    font-size: 0.7rem;
+}
+
+body.theme-scifi .stat-card-total .value {
+    color: var(--gold-bright);
+    text-shadow:
+        0 0 10px rgba(232, 190, 100, 0.6),
+        0 0 22px rgba(232, 190, 100, 0.3);
+}
+
+/* -- Dashboard atlas-panel surfaces (the bottom sections — auth matrix, PQ bar, etc.) -- */
+body.theme-scifi .atlas-panel,
+body.theme-scifi .atlas-panel-wide {
+    background:
+        linear-gradient(180deg, rgba(10, 25, 48, 0.72) 0%, rgba(6, 16, 32, 0.82) 100%);
+    border: 1px solid rgba(90, 214, 255, 0.18);
+    box-shadow:
+        0 1px 0 rgba(255, 255, 255, 0.04) inset,
+        0 0 0 1px rgba(0, 0, 0, 0.45),
+        0 8px 28px rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(6px) saturate(120%);
+    -webkit-backdrop-filter: blur(6px) saturate(120%);
+    color: #d9e6ee;
+    position: relative;
+    clip-path: polygon(
+        0 0, calc(100% - 14px) 0, 100% 14px,
+        100% 100%, 14px 100%, 0 calc(100% - 14px)
+    );
+    padding: 16px;
+}
+
+body.theme-scifi .atlas-panel::before,
+body.theme-scifi .atlas-panel-wide::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent 0%, var(--cyber) 50%, transparent 100%);
+    opacity: 0.55;
+    pointer-events: none;
+}
+
+body.theme-scifi .atlas-panel h2,
+body.theme-scifi .atlas-panel-wide h2 {
+    color: #ffffff;
+    border-bottom: 1px solid rgba(90, 214, 255, 0.22);
+    padding-bottom: 6px;
+    text-shadow: 0 0 8px rgba(90, 214, 255, 0.2);
+}
+
+body.theme-scifi .atlas-panel .panel-sub {
+    color: var(--cyber);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    font-size: 0.72rem;
+}
+
+/* -- Authorization matrix: dark bg + neon cell tones -- */
+body.theme-scifi .auth-matrix {
+    background: transparent;
+}
+
+body.theme-scifi .auth-matrix thead {
+    background: rgba(2, 8, 18, 0.85);
+}
+
+body.theme-scifi .auth-matrix thead th {
+    color: var(--cyber);
+    border: 1px solid rgba(90, 214, 255, 0.22);
+    text-shadow: 0 0 6px rgba(90, 214, 255, 0.18);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-size: 0.68rem;
+}
+
+body.theme-scifi .auth-matrix tbody tr:nth-child(even) {
+    background: rgba(90, 214, 255, 0.03);
+}
+
+body.theme-scifi .auth-matrix .agency-cell {
+    border: 1px solid rgba(90, 214, 255, 0.12);
+    background: rgba(10, 25, 48, 0.55);
+}
+
+body.theme-scifi .auth-matrix .agency-cell strong {
+    color: #ffffff;
+}
+
+body.theme-scifi .auth-matrix .agency-type {
+    color: var(--cyber);
+}
+
+body.theme-scifi .auth-matrix .alg-name {
+    color: var(--neon-green);
+}
+
+body.theme-scifi .auth-matrix .alg-name.alg-classical {
+    color: var(--neon-red);
+}
+
+body.theme-scifi .auth-matrix .alg-tag {
+    color: rgba(217, 230, 238, 0.6);
+}
+
+/* Auth cells: replace pastel backgrounds with neon-tinted equivalents */
+body.theme-scifi .auth-cell {
+    border: 1px solid rgba(90, 214, 255, 0.12);
+}
+
+body.theme-scifi .auth-cell.auth-both {
+    background: rgba(110, 254, 182, 0.18);
+    box-shadow: inset 0 0 8px rgba(110, 254, 182, 0.12);
+}
+
+body.theme-scifi .auth-cell.auth-issue {
+    background: rgba(232, 190, 100, 0.18);
+    box-shadow: inset 0 0 8px rgba(232, 190, 100, 0.12);
+}
+
+body.theme-scifi .auth-cell.auth-verify {
+    background: rgba(90, 214, 255, 0.16);
+    box-shadow: inset 0 0 8px rgba(90, 214, 255, 0.1);
+}
+
+body.theme-scifi .auth-cell.auth-none {
+    background: rgba(10, 25, 48, 0.35);
+}
+
+body.theme-scifi .auth-cell .auth-mark {
+    color: #ffffff;
+    text-shadow: 0 0 4px currentColor;
+}
+
+body.theme-scifi .auth-cell .auth-empty {
+    color: rgba(160, 168, 184, 0.3);
+}
+
+/* -- Color-code agency types: federal=gold, state=cyber, private=green -- */
+body.theme-scifi .agency-type[data-type="FEDERAL"],
+body.theme-scifi .agency-type:where(:not(:empty)) {
+    color: var(--cyber);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-weight: 600;
+    font-size: 0.68rem;
+}
+
+/* heuristic: when the agency-type text content includes specific keywords */
+body.theme-scifi td.agency-cell:has(.agency-type:where(:contains('FEDERAL'))) .agency-type,
+body.theme-scifi .agency-cell .agency-type {
+    /* fallback selector keeps the default cyan; below we use sibling-text inference */
+}
+
+/* -- PQ migration bar -- */
+body.theme-scifi .pq-bar {
+    background: rgba(2, 8, 18, 0.6);
+    border: 1px solid rgba(90, 214, 255, 0.16);
+    border-radius: 0;
+    overflow: hidden;
+    box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.4);
+}
+
+body.theme-scifi .pq-bar .pq-segment,
+body.theme-scifi .pq-bar [class*="pq-seg"] {
+    box-shadow: inset 0 0 8px rgba(255, 255, 255, 0.06);
+}
+
+/* -- SQL console example queries -- */
+body.theme-scifi .example-list,
+body.theme-scifi details.example-list {
+    background: rgba(2, 8, 18, 0.5);
+    border: 1px solid rgba(90, 214, 255, 0.16);
+    color: #d9e6ee;
+    padding: 8px;
+}
+
+body.theme-scifi .example-list summary {
+    color: var(--cyber);
+    cursor: pointer;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    font-size: 0.78rem;
+    padding: 6px 10px;
+}
+
+body.theme-scifi .example-list summary:hover {
+    color: var(--gold-bright);
+}
+
+body.theme-scifi .example-item {
+    background: rgba(10, 25, 48, 0.4);
+    border: 1px solid rgba(90, 214, 255, 0.12);
+    margin: 8px 0;
+    padding: 8px;
+    border-radius: 0;
+}
+
+body.theme-scifi .example-item .ex-label,
+body.theme-scifi .ex-label {
+    color: var(--gold-bright);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-size: 0.72rem;
+    text-shadow: 0 0 4px rgba(232, 190, 100, 0.25);
+}
+
+body.theme-scifi .example-item pre {
+    background: rgba(2, 8, 18, 0.7);
+    border: 1px solid rgba(90, 214, 255, 0.12);
+    color: #d9e6ee;
+    font-family: 'JetBrains Mono', 'SF Mono', monospace;
+    padding: 8px;
+    border-radius: 0;
+    overflow-x: auto;
+}
+
+body.theme-scifi .example-item pre:hover {
+    border-color: var(--cyber);
+    box-shadow: 0 0 12px var(--cyber-faint);
+}
+
+/* -- Token-detail and other footer-actions -- */
+body.theme-scifi .footer-actions {
+    background: rgba(2, 8, 18, 0.55);
+    border-top: 1px solid rgba(90, 214, 255, 0.18);
+    padding: 12px;
+    margin-top: 16px;
+}
+
+/* -- UC banner description text -- */
+body.theme-scifi .uc-banner .uc-desc,
+body.theme-scifi .uc-desc {
+    color: rgba(217, 230, 238, 0.85);
+}
+
+body.theme-scifi .uc-banner code,
+body.theme-scifi .uc-desc code {
+    background: rgba(90, 214, 255, 0.1);
+    color: var(--cyber);
+    border: 1px solid rgba(90, 214, 255, 0.22);
+    padding: 1px 5px;
+    border-radius: 0;
+    font-family: 'JetBrains Mono', 'SF Mono', monospace;
+}
+
+/* -- All date/time/email/number inputs (including datetime-local) -- */
+body.theme-scifi input[type=datetime-local],
+body.theme-scifi input[type=time],
+body.theme-scifi input[type=tel],
+body.theme-scifi input[type=url],
+body.theme-scifi input[type=search] {
+    background: rgba(2, 8, 18, 0.6);
+    border: 1px solid rgba(90, 214, 255, 0.22);
+    color: #e8eef4;
+    border-radius: 0;
+    padding: 8px 12px;
+    color-scheme: dark;
+}
+
+body.theme-scifi input[type=datetime-local]:focus,
+body.theme-scifi input[type=time]:focus {
+    outline: none;
+    border-color: var(--cyber);
+    box-shadow: 0 0 14px var(--cyber-glow);
+}
+
+/* -- Token detail page sections that may be unstyled -- */
+body.theme-scifi .token-detail-section,
+body.theme-scifi .token-history,
+body.theme-scifi .lineage-row,
+body.theme-scifi .token-info,
+body.theme-scifi .device-binding-list,
+body.theme-scifi .verification-history {
+    background: rgba(10, 25, 48, 0.55);
+    border: 1px solid rgba(90, 214, 255, 0.16);
+    padding: 12px;
+    margin: 10px 0;
+    color: #d9e6ee;
+}
+
+/* -- Verification activity bars (.ctx-bar-wrap) -- */
+body.theme-scifi .ctx-bar-wrap {
+    background: rgba(2, 8, 18, 0.55);
+    border: 1px solid rgba(90, 214, 255, 0.16);
+    border-radius: 0;
+    overflow: hidden;
+    box-shadow: inset 0 0 8px rgba(0, 0, 0, 0.4);
+}
+
+body.theme-scifi .ctx-bar-wrap .ctx-bar-fill,
+body.theme-scifi .ctx-bar-wrap > div:first-child {
+    background: linear-gradient(90deg, var(--cyber-deep) 0%, var(--cyber) 100%);
+    box-shadow: inset 0 0 6px rgba(255, 255, 255, 0.1);
+    color: #ffffff;
+    text-shadow: 0 0 4px rgba(0, 0, 0, 0.6);
+}
+
+body.theme-scifi .ctx-label,
+body.theme-scifi [class*="ctx-label"] {
+    color: var(--cyber);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-size: 0.74rem;
+}
+
+/* -- Disclosure posture cards (.disclosure-cell) -- */
+body.theme-scifi .disclosure-cell {
+    background:
+        linear-gradient(180deg, rgba(10, 25, 48, 0.72) 0%, rgba(6, 16, 32, 0.82) 100%);
+    border: 1px solid rgba(90, 214, 255, 0.18);
+    color: #d9e6ee;
+    position: relative;
+    clip-path: polygon(
+        0 0, calc(100% - 10px) 0, 100% 10px,
+        100% 100%, 10px 100%, 0 calc(100% - 10px)
+    );
+    padding: 16px;
+}
+
+body.theme-scifi .disclosure-cell::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent 0%, var(--cyber) 50%, transparent 100%);
+    opacity: 0.55;
+    pointer-events: none;
+}
+
+body.theme-scifi .disclosure-cell .disclosure-pct,
+body.theme-scifi .disclosure-cell strong:first-child,
+body.theme-scifi .disclosure-cell > :first-child {
+    color: #ffffff;
+    text-shadow:
+        0 0 10px var(--cyber-glow),
+        0 0 22px var(--cyber-glow);
+    font-size: 2.4em;
+    line-height: 1;
+    font-weight: 600;
+}
+
+/* color-code by disclosure level via class hooks on the cell */
+body.theme-scifi .disclosure-cell.disclosure-full .disclosure-pct,
+body.theme-scifi .disclosure-cell[data-level="FULL"] .disclosure-pct {
+    color: var(--gold-bright);
+    text-shadow: 0 0 10px rgba(232, 190, 100, 0.5), 0 0 22px rgba(232, 190, 100, 0.25);
+}
+
+body.theme-scifi .disclosure-cell.disclosure-zk .disclosure-pct,
+body.theme-scifi .disclosure-cell[data-level="ZERO_KNOWLEDGE"] .disclosure-pct {
+    color: var(--neon-green);
+    text-shadow: 0 0 10px rgba(110, 254, 182, 0.4), 0 0 22px rgba(110, 254, 182, 0.2);
+}
+
+/* -- Audit feed events (.audit-event) -- */
+body.theme-scifi .audit-feed {
+    background: transparent;
+}
+
+body.theme-scifi .audit-event {
+    background: rgba(2, 8, 18, 0.55);
+    border: 1px solid rgba(90, 214, 255, 0.12);
+    border-left: 3px solid var(--cyber);
+    color: #d9e6ee;
+    padding: 10px 12px;
+    margin-bottom: 6px;
+    border-radius: 0;
+}
+
+body.theme-scifi .audit-event.audit-issued     { border-left-color: var(--cyber); }
+body.theme-scifi .audit-event.audit-activated  { border-left-color: var(--neon-green); }
+body.theme-scifi .audit-event.audit-revoked    { border-left-color: var(--neon-red); }
+body.theme-scifi .audit-event.audit-lost       { border-left-color: var(--neon-red); }
+body.theme-scifi .audit-event.audit-expired    { border-left-color: rgba(160, 168, 184, 0.6); }
+body.theme-scifi .audit-event.audit-dormant    { border-left-color: rgba(160, 168, 184, 0.6); }
+
+body.theme-scifi .audit-time {
+    color: var(--cyber);
+    font-family: 'JetBrains Mono', 'SF Mono', monospace;
+    letter-spacing: 0.04em;
+    font-size: 0.78rem;
+}
+
+body.theme-scifi .audit-type {
+    color: var(--gold-bright);
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    font-size: 0.7rem;
+    font-weight: 600;
+}
+
+body.theme-scifi .audit-reason {
+    background: rgba(10, 25, 48, 0.6);
+    border: 1px solid rgba(90, 214, 255, 0.12);
+    color: rgba(217, 230, 238, 0.85);
+    padding: 2px 8px;
+    border-radius: 0;
+}
+
+/* -- Privacy / structural / disclosure note callout boxes -- */
+body.theme-scifi .privacy-note,
+body.theme-scifi .structural-note,
+body.theme-scifi .disclosure-note,
+body.theme-scifi .info-box,
+body.theme-scifi .callout,
+body.theme-scifi .auth-summary,
+body.theme-scifi .data-summary,
+body.theme-scifi .panel-note {
+    background: rgba(2, 8, 18, 0.7);
+    border: 1px solid rgba(232, 190, 100, 0.3);
+    border-left: 3px solid var(--gold-bright);
+    color: #d9e6ee;
+    padding: 12px;
+    margin: 10px 0;
+}
+
+/* -- Inline <code> tags everywhere -- */
+body.theme-scifi code,
+body.theme-scifi :not(pre) > code {
+    background: rgba(90, 214, 255, 0.1);
+    color: var(--cyber);
+    border: 1px solid rgba(90, 214, 255, 0.22);
+    padding: 1px 5px;
+    border-radius: 0;
+    font-family: 'JetBrains Mono', 'SF Mono', monospace;
+    font-size: 0.92em;
+}
+
+/* -- Pre blocks (multiline code) -- */
+body.theme-scifi pre {
+    background: rgba(2, 8, 18, 0.7);
+    border: 1px solid rgba(90, 214, 255, 0.18);
+    color: #d9e6ee;
+    border-radius: 0;
+    padding: 10px;
+    overflow-x: auto;
+}
+
+/* -- Agency type color-coding (via class hook from template) -- */
+body.theme-scifi .pill.agency-type-federal,
+body.theme-scifi .agency-type-federal {
+    background: rgba(232, 190, 100, 0.18) !important;
+    color: var(--gold-bright) !important;
+    border: 1px solid rgba(232, 190, 100, 0.4);
+    text-shadow: 0 0 4px rgba(232, 190, 100, 0.25);
+}
+
+body.theme-scifi .pill.agency-type-state,
+body.theme-scifi .agency-type-state {
+    background: rgba(90, 214, 255, 0.16) !important;
+    color: var(--cyber) !important;
+    border: 1px solid rgba(90, 214, 255, 0.4);
+}
+
+body.theme-scifi .pill.agency-type-private,
+body.theme-scifi .agency-type-private {
+    background: rgba(110, 254, 182, 0.14) !important;
+    color: var(--neon-green) !important;
+    border: 1px solid rgba(110, 254, 182, 0.4);
+}
+
+body.theme-scifi .pill.agency-type-international,
+body.theme-scifi .agency-type-international {
+    background: rgba(255, 176, 74, 0.16) !important;
+    color: var(--neon-amber) !important;
+    border: 1px solid rgba(255, 176, 74, 0.4);
+}
+
+body.theme-scifi .pill.agency-type-county,
+body.theme-scifi .agency-type-county {
+    background: rgba(186, 130, 255, 0.16) !important;
+    color: #d4a8ff !important;
+    border: 1px solid rgba(186, 130, 255, 0.4);
+}
+
+body.theme-scifi .pill.agency-type-municipal,
+body.theme-scifi .agency-type-municipal {
+    background: rgba(255, 130, 200, 0.14) !important;
+    color: #ff9bd0 !important;
+    border: 1px solid rgba(255, 130, 200, 0.4);
+}
+
+/* fallback for any unknown agency type — still readable */
+body.theme-scifi .pill[class*="agency-type-"] {
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-size: 0.68rem;
+    padding: 3px 10px;
+    border-radius: 0;
+}
+
+/* -- Color-code by algorithm type via class hooks --
+   .alg-tag values like 'PQ' or 'classical' on the dashboard panels --*/
+body.theme-scifi .alg-tag,
+body.theme-scifi .pq-tag,
+body.theme-scifi .algorithm-pq {
+    color: var(--neon-green);
+    text-shadow: 0 0 6px rgba(110, 254, 182, 0.3);
+}
+
+body.theme-scifi .alg-classical,
+body.theme-scifi .pq-tag-classical,
+body.theme-scifi .algorithm-classical {
+    color: var(--neon-red);
+    text-shadow: 0 0 6px rgba(255, 85, 102, 0.3);
+}
+
+/* -- Disclosure-level color-coding -- */
+body.theme-scifi .disclosure-zk,
+body.theme-scifi [data-disclosure="ZERO_KNOWLEDGE"],
+body.theme-scifi .disclosure-zero-knowledge {
+    color: var(--neon-green);
+    text-shadow: 0 0 4px rgba(110, 254, 182, 0.3);
+}
+
+body.theme-scifi .disclosure-selective,
+body.theme-scifi [data-disclosure="SELECTIVE"] {
+    color: var(--cyber);
+}
+
+body.theme-scifi .disclosure-full,
+body.theme-scifi [data-disclosure="FULL"] {
+    color: var(--gold-bright);
+}
+
+/* -- Color-code outcome -- */
+body.theme-scifi .outcome-success,
+body.theme-scifi [data-outcome="SUCCESS"] {
+    color: var(--neon-green);
+}
+
+body.theme-scifi .outcome-failure,
+body.theme-scifi [data-outcome="FAILURE"] {
+    color: var(--neon-red);
+}
+
+/* -- Generic table rows on detail pages should not have white -- */
+body.theme-scifi table,
+body.theme-scifi table tr,
+body.theme-scifi table td,
+body.theme-scifi table th {
+    color: inherit;
+}
+
+body.theme-scifi table:not(.data):not(.data-table):not(.auth-matrix) {
+    background: transparent;
+    color: #d9e6ee;
+}
+
+body.theme-scifi table:not(.data):not(.data-table):not(.auth-matrix) td,
+body.theme-scifi table:not(.data):not(.data-table):not(.auth-matrix) th {
+    background: transparent;
+    border-color: rgba(90, 214, 255, 0.1);
+    color: #d9e6ee;
+    padding: 6px 8px;
+}
+
+/* -- Catch-all for the truly stubborn white backgrounds: any descendant of
+      main.content with the default paper bg gets a sci-fi treatment -- */
+body.theme-scifi main.content > div,
+body.theme-scifi main.content > section,
+body.theme-scifi main.content > details {
+    color: #d9e6ee;
+}
+
+/* ============================================================================
+   Iteration 4 — login page polish + lineage + audit-event color refinement
+   + disclosure-level traffic-light coloring
+   ============================================================================ */
+
+/* -- Login page: ambient + dramatic centerpiece -- */
+body.theme-scifi .login-page {
+    position: relative;
+    min-height: 70vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Radial-glow + scan-line ambient just for login */
+body.theme-scifi .login-page::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+        radial-gradient(ellipse at 50% 30%, rgba(90, 214, 255, 0.22) 0%, transparent 55%),
+        radial-gradient(ellipse at 80% 80%, rgba(232, 190, 100, 0.14) 0%, transparent 55%);
+    z-index: 0;
+}
+
+body.theme-scifi .login-card {
+    position: relative;
+    z-index: 1;
+    max-width: 460px;
+    width: 100%;
+    padding: 36px 40px;
+    background:
+        linear-gradient(180deg, rgba(10, 25, 48, 0.86) 0%, rgba(2, 8, 18, 0.94) 100%);
+    border: 1px solid rgba(90, 214, 255, 0.32);
+    box-shadow:
+        0 0 60px rgba(90, 214, 255, 0.22),
+        0 20px 60px rgba(0, 0, 0, 0.6),
+        inset 0 1px 0 rgba(90, 214, 255, 0.08);
+    backdrop-filter: blur(12px) saturate(140%);
+    -webkit-backdrop-filter: blur(12px) saturate(140%);
+    /* Sharper angle-cut for the login card — heavier than dashboard cards */
+    clip-path: polygon(
+        0 0, calc(100% - 22px) 0, 100% 22px,
+        100% 100%, 22px 100%, 0 calc(100% - 22px)
+    );
+}
+
+/* Corner-rim accent — animated cyber sweep */
+body.theme-scifi .login-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: linear-gradient(90deg,
+        transparent 0%,
+        var(--cyber) 30%,
+        var(--gold-bright) 50%,
+        var(--cyber) 70%,
+        transparent 100%);
+    box-shadow: 0 0 12px var(--cyber-glow);
+}
+
+/* Decorative angle-bracket corners (drawn with inset borders) */
+body.theme-scifi .login-card::after {
+    content: '';
+    position: absolute;
+    top: 14px; left: 14px;
+    width: 24px; height: 24px;
+    border-top: 2px solid var(--gold-bright);
+    border-left: 2px solid var(--gold-bright);
+    box-shadow: 0 0 8px rgba(232, 190, 100, 0.4);
+    pointer-events: none;
+}
+
+/* Brand mark inside login card — fix the dim contrast */
+body.theme-scifi .login-mark {
+    text-align: center;
+    margin-bottom: 28px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid rgba(90, 214, 255, 0.18);
+    position: relative;
+}
+
+body.theme-scifi .login-mark::after {
+    content: '';
+    position: absolute;
+    left: 30%; right: 30%; bottom: -1px;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--cyber), transparent);
+    box-shadow: 0 0 8px var(--cyber-glow);
+}
+
+body.theme-scifi .login-brand {
+    color: #ffffff;
+    font-size: 2.4rem;
+    font-weight: 600;
+    letter-spacing: 0.34em;
+    text-shadow:
+        0 0 12px var(--cyber-glow),
+        0 0 28px var(--cyber-glow),
+        0 0 4px var(--cyber);
+    margin-bottom: 8px;
+}
+
+body.theme-scifi .login-sub {
+    color: var(--cyber);
+    font-size: 0.74rem;
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+    font-weight: 500;
+    opacity: 0.88;
+}
+
+/* "Awaiting credentials" status indicator */
+body.theme-scifi .login-form::before {
+    content: 'AWAITING CREDENTIALS';
+    display: block;
+    text-align: center;
+    color: var(--gold-bright);
+    font-family: 'JetBrains Mono', 'SF Mono', monospace;
+    font-size: 0.7rem;
+    letter-spacing: 0.32em;
+    margin-bottom: 16px;
+    text-shadow: 0 0 8px rgba(232, 190, 100, 0.4);
+    animation: scifi-pulse-text 2.4s ease-in-out infinite;
+}
+
+@keyframes scifi-pulse-text {
+    0%, 100% { opacity: 0.65; }
+    50%      { opacity: 1; }
+}
+
+/* Inputs on login — slightly larger, more focused style */
+body.theme-scifi .login-form input[type=text],
+body.theme-scifi .login-form input[type=password] {
+    background: rgba(2, 8, 18, 0.75);
+    border: 1px solid rgba(90, 214, 255, 0.32);
+    color: #ffffff;
+    padding: 12px 14px;
+    font-size: 0.96rem;
+    letter-spacing: 0.04em;
+    font-family: 'JetBrains Mono', 'SF Mono', monospace;
+    width: 100%;
+}
+
+body.theme-scifi .login-form input:focus {
+    border-color: var(--cyber);
+    box-shadow:
+        0 0 0 1px var(--cyber-glow),
+        0 0 18px var(--cyber-glow);
+    background: rgba(10, 25, 48, 0.85);
+}
+
+body.theme-scifi .login-form label {
+    color: var(--cyber);
+    text-transform: uppercase;
+    letter-spacing: 0.18em;
+    font-size: 0.7rem;
+    font-weight: 600;
+    margin-bottom: 6px;
+    display: block;
+}
+
+/* Gold Sign In button — dramatic */
+body.theme-scifi .btn.btn-gold,
+body.theme-scifi .login-form .btn-gold {
+    background:
+        linear-gradient(180deg, rgba(232, 190, 100, 1) 0%, rgba(201, 163, 82, 1) 100%);
+    color: #0a1828;
+    border: 1px solid rgba(232, 190, 100, 0.7);
+    padding: 12px 28px;
+    letter-spacing: 0.32em;
+    text-transform: uppercase;
+    font-size: 0.86rem;
+    font-weight: 700;
+    font-family: 'Space Grotesk', 'Inter', sans-serif;
+    width: 100%;
+    clip-path: polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%);
+    box-shadow:
+        0 0 24px rgba(232, 190, 100, 0.4),
+        inset 0 1px 0 rgba(255, 255, 255, 0.4);
+    text-shadow: 0 0 1px rgba(0, 0, 0, 0.2);
+    cursor: pointer;
+    transition: all 0.18s ease;
+}
+
+body.theme-scifi .btn.btn-gold:hover {
+    background:
+        linear-gradient(180deg, rgba(255, 220, 130, 1) 0%, rgba(232, 190, 100, 1) 100%);
+    box-shadow:
+        0 0 32px rgba(232, 190, 100, 0.7),
+        inset 0 1px 0 rgba(255, 255, 255, 0.5);
+    transform: translateY(-1px);
+}
+
+body.theme-scifi .btn.btn-gold:active {
+    transform: translateY(0);
+    box-shadow:
+        0 0 18px rgba(232, 190, 100, 0.5),
+        inset 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+body.theme-scifi .login-form .form-actions {
+    margin-top: 22px;
+}
+
+/* Footer help text */
+body.theme-scifi .login-help {
+    margin-top: 22px;
+    padding-top: 16px;
+    border-top: 1px solid rgba(90, 214, 255, 0.12);
+    text-align: center;
+    color: rgba(217, 230, 238, 0.55);
+    font-size: 0.78rem;
+    letter-spacing: 0.06em;
+    font-style: italic;
+}
+
+/* Hide masthead chrome on the login page (the brand mark inside the card is the focal point) */
+body.theme-scifi:has(.login-page) .masthead {
+    background:
+        linear-gradient(180deg, rgba(2, 8, 18, 0.78) 0%, rgba(2, 8, 18, 0.4) 100%);
+    border-bottom: none;
+    box-shadow: none;
+}
+
+body.theme-scifi:has(.login-page) .masthead::after {
+    opacity: 0.4;
+}
+
+/* ============================================================================
+   Disclosure-level traffic-light color-coding
+   ============================================================================ */
+
+/* Default disclosure cell shape — preserve from earlier rule, override colors */
+body.theme-scifi .disclosure-cell-zero-knowledge {
+    border-color: rgba(110, 254, 182, 0.4);
+    box-shadow:
+        0 0 0 1px rgba(0, 0, 0, 0.4),
+        0 0 24px rgba(110, 254, 182, 0.12),
+        0 8px 28px rgba(0, 0, 0, 0.4);
+}
+
+body.theme-scifi .disclosure-cell-zero-knowledge::before {
+    background: linear-gradient(90deg, transparent, var(--neon-green), transparent);
+}
+
+body.theme-scifi .disclosure-cell-zero-knowledge .disc-pct {
+    color: var(--neon-green);
+    text-shadow:
+        0 0 12px rgba(110, 254, 182, 0.5),
+        0 0 24px rgba(110, 254, 182, 0.2);
+}
+
+body.theme-scifi .disclosure-cell-selective {
+    border-color: rgba(232, 190, 100, 0.4);
+    box-shadow:
+        0 0 0 1px rgba(0, 0, 0, 0.4),
+        0 0 24px rgba(232, 190, 100, 0.12),
+        0 8px 28px rgba(0, 0, 0, 0.4);
+}
+
+body.theme-scifi .disclosure-cell-selective::before {
+    background: linear-gradient(90deg, transparent, var(--gold-bright), transparent);
+}
+
+body.theme-scifi .disclosure-cell-selective .disc-pct {
+    color: var(--gold-bright);
+    text-shadow:
+        0 0 12px rgba(232, 190, 100, 0.5),
+        0 0 24px rgba(232, 190, 100, 0.2);
+}
+
+body.theme-scifi .disclosure-cell-full {
+    border-color: rgba(255, 176, 74, 0.4);
+    box-shadow:
+        0 0 0 1px rgba(0, 0, 0, 0.4),
+        0 0 24px rgba(255, 85, 102, 0.12),
+        0 8px 28px rgba(0, 0, 0, 0.4);
+}
+
+body.theme-scifi .disclosure-cell-full::before {
+    background: linear-gradient(90deg, transparent, var(--neon-amber), transparent);
+}
+
+body.theme-scifi .disclosure-cell-full .disc-pct {
+    color: var(--neon-amber);
+    text-shadow:
+        0 0 12px rgba(255, 176, 74, 0.5),
+        0 0 24px rgba(255, 85, 102, 0.2);
+}
+
+/* Color the inner pill to match */
+body.theme-scifi .pill.pill-zero_knowledge {
+    color: var(--neon-green);
+    border-color: rgba(110, 254, 182, 0.5);
+    background: rgba(110, 254, 182, 0.1);
+    /* longer label needs tighter letter-spacing to fit in table cells */
+    letter-spacing: 0.05em;
+    font-size: 0.62rem;
+    padding: 3px 6px;
+}
+
+body.theme-scifi .pill.pill-selective {
+    color: var(--gold-bright);
+    border-color: rgba(232, 190, 100, 0.5);
+    background: rgba(232, 190, 100, 0.1);
+}
+
+body.theme-scifi .pill.pill-full {
+    color: var(--neon-amber);
+    border-color: rgba(255, 176, 74, 0.5);
+    background: rgba(255, 176, 74, 0.1);
+}
+
+body.theme-scifi .disc-pct .unit {
+    color: rgba(217, 230, 238, 0.6);
+    font-size: 0.6em;
+    margin-left: 4px;
+    font-weight: 400;
+    text-shadow: none;
+}
+
+body.theme-scifi .disc-count {
+    color: rgba(217, 230, 238, 0.55);
+    font-size: 0.72rem;
+    margin-top: 4px;
+    letter-spacing: 0.04em;
+    text-shadow: none;
+}
+
+/* ============================================================================
+   Token Succession Lineage — multi-element chain styling
+   ============================================================================ */
+
+body.theme-scifi .lineage-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+body.theme-scifi .lineage-row {
+    background: rgba(2, 8, 18, 0.55);
+    border: 1px solid rgba(90, 214, 255, 0.16);
+    border-left: 3px solid var(--cyber);
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+body.theme-scifi .lineage-holder {
+    color: #ffffff;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    flex: 0 0 auto;
+    min-width: 140px;
+    text-shadow: 0 0 6px rgba(90, 214, 255, 0.18);
+}
+
+body.theme-scifi .lineage-chain {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1 1 auto;
+    flex-wrap: wrap;
+    font-family: 'JetBrains Mono', 'SF Mono', monospace;
+    font-size: 0.84rem;
+}
+
+body.theme-scifi .chain-token {
+    color: var(--cyber);
+    text-decoration: none;
+    padding: 4px 10px;
+    background: rgba(90, 214, 255, 0.08);
+    border: 1px solid rgba(90, 214, 255, 0.22);
+    border-radius: 0;
+    letter-spacing: 0.04em;
+    transition: all 0.15s ease;
+    clip-path: polygon(4px 0, 100% 0, calc(100% - 4px) 100%, 0 100%);
+}
+
+body.theme-scifi .chain-token:hover {
+    color: #ffffff;
+    background: rgba(90, 214, 255, 0.18);
+    border-color: var(--cyber);
+    box-shadow: 0 0 10px var(--cyber-glow);
+    text-decoration: none;
+}
+
+body.theme-scifi .chain-current {
+    background: linear-gradient(180deg, rgba(232, 190, 100, 0.18), rgba(201, 163, 82, 0.08));
+    border-color: var(--gold-bright);
+    color: var(--gold-bright);
+    box-shadow: 0 0 12px rgba(232, 190, 100, 0.22);
+}
+
+body.theme-scifi .chain-current:hover {
+    color: #ffffff;
+    background: linear-gradient(180deg, rgba(232, 190, 100, 0.3), rgba(201, 163, 82, 0.18));
+    box-shadow: 0 0 18px rgba(232, 190, 100, 0.4);
+}
+
+body.theme-scifi .chain-arrow {
+    color: var(--cyber);
+    font-size: 1.1rem;
+    text-shadow: 0 0 8px var(--cyber-glow);
+    animation: chain-arrow-pulse 2s ease-in-out infinite;
+}
+
+@keyframes chain-arrow-pulse {
+    0%, 100% { opacity: 0.6; transform: translateX(0); }
+    50%      { opacity: 1;   transform: translateX(2px); }
+}
+
+body.theme-scifi .chain-seq {
+    color: rgba(217, 230, 238, 0.55);
+    font-size: 0.74rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 2px 8px;
+    border-left: 1px solid rgba(90, 214, 255, 0.18);
+    margin-left: 4px;
+}
+
+/* Pills inside the chain — pre-existing rules color them; ensure status pills
+   inside .chain-token override their light backgrounds */
+body.theme-scifi .chain-token .pill {
+    background: transparent;
+    border: none;
+    padding: 0 4px;
+    font-size: 0.7rem;
+    box-shadow: none;
+    clip-path: none;
+}
+
+body.theme-scifi .chain-token .pill.pill-active {
+    color: var(--neon-green);
+}
+
+body.theme-scifi .chain-token .pill.pill-reserve {
+    color: var(--cyber);
+}
+
+body.theme-scifi .chain-token .pill.pill-revoked,
+body.theme-scifi .chain-token .pill.pill-lost {
+    color: var(--neon-red);
+}
+
+body.theme-scifi .chain-token .pill.pill-dormant,
+body.theme-scifi .chain-token .pill.pill-expired {
+    color: rgba(160, 168, 184, 0.85);
+}
+
+/* ============================================================================
+   Audit-event refinement — clearer 5-tone gradient
+   ============================================================================ */
+
+/* Re-state with stronger left-borders + better backgrounds + glyph color */
+body.theme-scifi .audit-event.audit-issued {
+    border-left: 4px solid var(--cyber);
+    box-shadow: -2px 0 10px rgba(90, 214, 255, 0.16);
+}
+
+body.theme-scifi .audit-event.audit-activated {
+    border-left: 4px solid var(--neon-green);
+    box-shadow: -2px 0 10px rgba(110, 254, 182, 0.16);
+}
+
+body.theme-scifi .audit-event.audit-dormant {
+    border-left: 4px solid var(--neon-amber);
+    box-shadow: -2px 0 10px rgba(255, 176, 74, 0.16);
+}
+
+body.theme-scifi .audit-event.audit-expired {
+    border-left: 4px solid rgba(160, 168, 184, 0.7);
+    box-shadow: -2px 0 10px rgba(160, 168, 184, 0.1);
+    opacity: 0.85;
+}
+
+body.theme-scifi .audit-event.audit-lost {
+    border-left: 4px solid var(--neon-amber);
+    background: rgba(255, 176, 74, 0.05);
+    box-shadow: -2px 0 12px rgba(255, 176, 74, 0.22);
+}
+
+body.theme-scifi .audit-event.audit-revoked {
+    border-left: 4px solid var(--neon-red);
+    background: rgba(255, 85, 102, 0.05);
+    box-shadow: -2px 0 12px rgba(255, 85, 102, 0.22);
+}
+
+/* Audit-type label gets color by parent class */
+body.theme-scifi .audit-event.audit-issued    .audit-type { color: var(--cyber);      text-shadow: 0 0 6px rgba(90, 214, 255, 0.25); }
+body.theme-scifi .audit-event.audit-activated .audit-type { color: var(--neon-green); text-shadow: 0 0 6px rgba(110, 254, 182, 0.3); }
+body.theme-scifi .audit-event.audit-dormant   .audit-type { color: var(--neon-amber); text-shadow: 0 0 6px rgba(255, 176, 74, 0.3); }
+body.theme-scifi .audit-event.audit-expired   .audit-type { color: rgba(160, 168, 184, 0.85); }
+body.theme-scifi .audit-event.audit-lost      .audit-type { color: var(--neon-amber); text-shadow: 0 0 6px rgba(255, 176, 74, 0.4); }
+body.theme-scifi .audit-event.audit-revoked   .audit-type { color: var(--neon-red);   text-shadow: 0 0 6px rgba(255, 85, 102, 0.4); }
+
+/* ============================================================================
+   Verification outcome (success/failure) — used across pages
+   ============================================================================ */
+body.theme-scifi .outcome-success,
+body.theme-scifi .pill.pill-success,
+body.theme-scifi [data-outcome="SUCCESS"] {
+    color: var(--neon-green);
+    border-color: rgba(110, 254, 182, 0.5);
+    background: rgba(110, 254, 182, 0.1);
+    text-shadow: 0 0 6px rgba(110, 254, 182, 0.3);
+}
+
+body.theme-scifi .outcome-failure,
+body.theme-scifi .pill.pill-failure,
+body.theme-scifi [data-outcome="FAILURE"] {
+    color: var(--neon-red);
+    border-color: rgba(255, 85, 102, 0.5);
+    background: rgba(255, 85, 102, 0.1);
+    text-shadow: 0 0 6px rgba(255, 85, 102, 0.3);
+}
+
+body.theme-scifi .outcome-partial,
+body.theme-scifi .pill.pill-partial,
+body.theme-scifi [data-outcome="PARTIAL"] {
+    color: var(--neon-amber);
+    border-color: rgba(255, 176, 74, 0.5);
+    background: rgba(255, 176, 74, 0.1);
+}
+
+body.theme-scifi .outcome-pending,
+body.theme-scifi .pill.pill-pending,
+body.theme-scifi [data-outcome="PENDING"] {
+    color: var(--cyber);
+    border-color: rgba(90, 214, 255, 0.5);
+    background: rgba(90, 214, 255, 0.1);
+}
+
+/* End of iteration 4 additions ============================================ */
+
+/* ============================================================================
+   Iteration 5 — color-code panels by type + login masthead hidden
+   ============================================================================ */
+
+/* -- Login page: hide masthead brand (user requested) -- */
+body.theme-scifi:has(.login-page) .masthead .brand,
+body.theme-scifi:has(.login-page) .masthead .brand-mark,
+body.theme-scifi:has(.login-page) .masthead .brand-sub {
+    display: none !important;
+}
+
+body.theme-scifi:has(.login-page) .masthead {
+    /* keep a slim bar so the page doesn't visually jump, but remove content */
+    background: transparent;
+    border-bottom: none;
+    min-height: 0;
+    padding: 0;
+}
+
+body.theme-scifi:has(.login-page) .masthead::after {
+    /* hide the cyber-blue rim under masthead on login too */
+    display: none;
+}
+
+body.theme-scifi:has(.login-page) .masthead-inner {
+    min-height: 0;
+    padding: 0;
+}
+
+/* ============================================================================
+   Agency × Algorithm matrix — left-border tinted by agency type
+   ============================================================================ */
+body.theme-scifi .auth-matrix .agency-cell-federal {
+    border-left: 4px solid var(--gold-bright);
+    box-shadow: inset 4px 0 12px rgba(232, 190, 100, 0.08);
+}
+
+body.theme-scifi .auth-matrix .agency-cell-state {
+    border-left: 4px solid var(--cyber);
+    box-shadow: inset 4px 0 12px rgba(90, 214, 255, 0.08);
+}
+
+body.theme-scifi .auth-matrix .agency-cell-private {
+    border-left: 4px solid var(--neon-green);
+    box-shadow: inset 4px 0 12px rgba(110, 254, 182, 0.08);
+}
+
+body.theme-scifi .auth-matrix .agency-cell-county {
+    border-left: 4px solid #d4a8ff;
+    box-shadow: inset 4px 0 12px rgba(186, 130, 255, 0.08);
+}
+
+body.theme-scifi .auth-matrix .agency-cell-municipal {
+    border-left: 4px solid #ff9bd0;
+    box-shadow: inset 4px 0 12px rgba(255, 130, 200, 0.08);
+}
+
+body.theme-scifi .auth-matrix .agency-cell-international {
+    border-left: 4px solid var(--neon-amber);
+    box-shadow: inset 4px 0 12px rgba(255, 176, 74, 0.08);
+}
+
+/* Agency-type subtitle within the cell color-coded too */
+body.theme-scifi .auth-matrix .agency-type-federal     { color: var(--gold-bright); }
+body.theme-scifi .auth-matrix .agency-type-state       { color: var(--cyber); }
+body.theme-scifi .auth-matrix .agency-type-private     { color: var(--neon-green); }
+body.theme-scifi .auth-matrix .agency-type-county      { color: #d4a8ff; }
+body.theme-scifi .auth-matrix .agency-type-municipal   { color: #ff9bd0; }
+body.theme-scifi .auth-matrix .agency-type-international { color: var(--neon-amber); }
+
+/* ============================================================================
+   Verification Activity by Context — per-context tinting
+   ============================================================================ */
+
+/* Specificity-boost: include .ctx-bar-wrap so we beat iteration-3's
+   .ctx-bar-wrap > div:first-child selector (which has +1 specificity over a
+   plain class chain). */
+body.theme-scifi .ctx-banking            .ctx-bar-wrap .ctx-bar-fill { background: linear-gradient(90deg, rgba(201, 163, 82, 0.7), var(--gold-bright)); }
+body.theme-scifi .ctx-banking            .ctx-label    { color: var(--gold-bright); }
+
+body.theme-scifi .ctx-employment         .ctx-bar-wrap .ctx-bar-fill { background: linear-gradient(90deg, rgba(42, 143, 184, 0.7), var(--cyber)); }
+body.theme-scifi .ctx-employment         .ctx-label    { color: var(--cyber); }
+
+body.theme-scifi .ctx-government-benefits .ctx-bar-wrap .ctx-bar-fill { background: linear-gradient(90deg, rgba(186, 130, 255, 0.7), #d4a8ff); }
+body.theme-scifi .ctx-government-benefits .ctx-label    { color: #d4a8ff; }
+
+body.theme-scifi .ctx-healthcare         .ctx-bar-wrap .ctx-bar-fill { background: linear-gradient(90deg, rgba(110, 254, 182, 0.5), var(--neon-green)); }
+body.theme-scifi .ctx-healthcare         .ctx-label    { color: var(--neon-green); }
+
+body.theme-scifi .ctx-travel             .ctx-bar-wrap .ctx-bar-fill { background: linear-gradient(90deg, rgba(255, 176, 74, 0.6), var(--neon-amber)); }
+body.theme-scifi .ctx-travel             .ctx-label    { color: var(--neon-amber); }
+
+body.theme-scifi .ctx-motor-vehicle      .ctx-bar-wrap .ctx-bar-fill { background: linear-gradient(90deg, rgba(160, 168, 184, 0.5), #a0a8b8); }
+body.theme-scifi .ctx-motor-vehicle      .ctx-label    { color: #a0a8b8; }
+
+body.theme-scifi .ctx-voting             .ctx-bar-wrap .ctx-bar-fill { background: linear-gradient(90deg, rgba(255, 85, 102, 0.6), var(--neon-red)); }
+body.theme-scifi .ctx-voting             .ctx-label    { color: var(--neon-red); }
+
+/* common: glow on filled bars; "no events" stays muted */
+body.theme-scifi .ctx-bar-wrap .ctx-bar-fill {
+    box-shadow: inset 0 0 6px rgba(255, 255, 255, 0.14);
+    color: #ffffff;
+    text-shadow: 0 0 4px rgba(0, 0, 0, 0.6);
+}
+
+body.theme-scifi .ctx-bar-fill .ctx-counts.ctx-empty,
+body.theme-scifi .ctx-empty {
+    color: rgba(217, 230, 238, 0.4);
+    font-style: italic;
+}
+
+body.theme-scifi .ctx-label {
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-size: 0.74rem;
+    font-weight: 600;
+}
+
+/* ============================================================================
+   Post-Quantum Migration — green PQ + red classical
+   ============================================================================ */
+body.theme-scifi .pq-bar-pq {
+    background: linear-gradient(90deg, rgba(74, 120, 72, 0.7), var(--neon-green));
+    color: #0a1828;
+    box-shadow: inset 0 0 8px rgba(255, 255, 255, 0.18);
+    text-shadow: 0 0 1px rgba(0, 0, 0, 0.3);
+    font-weight: 700;
+    letter-spacing: 0.16em;
+}
+
+body.theme-scifi .pq-bar-classical {
+    background: linear-gradient(90deg, rgba(168, 50, 50, 0.7), var(--neon-red));
+    color: #ffffff;
+    box-shadow: inset 0 0 8px rgba(255, 255, 255, 0.18);
+    text-shadow: 0 0 2px rgba(0, 0, 0, 0.5);
+    font-weight: 700;
+    letter-spacing: 0.16em;
+}
+
+/* PQ vs classical pills (new naming used by template iteration 5) */
+body.theme-scifi .pill.pill-pq {
+    color: var(--neon-green);
+    border-color: rgba(110, 254, 182, 0.5);
+    background: rgba(110, 254, 182, 0.12);
+    text-shadow: 0 0 4px rgba(110, 254, 182, 0.3);
+}
+
+body.theme-scifi .pill.pill-classical {
+    color: var(--neon-red);
+    border-color: rgba(255, 85, 102, 0.5);
+    background: rgba(255, 85, 102, 0.12);
+    text-shadow: 0 0 4px rgba(255, 85, 102, 0.3);
+}
+
+/* Row-level tinting in the PQ migration breakdown table */
+body.theme-scifi .alg-row-pq .alg-name-cell {
+    color: var(--neon-green);
+}
+
+body.theme-scifi .alg-row-classical .alg-name-cell {
+    color: var(--neon-red);
+}
+
+/* ============================================================================
+   Active Tokens — color-code algorithm column + brighten holder/issuer
+   ============================================================================ */
+body.theme-scifi .alg-name-pq {
+    color: var(--neon-green);
+    text-shadow: 0 0 4px rgba(110, 254, 182, 0.25);
+}
+
+body.theme-scifi .alg-name-classical {
+    color: var(--neon-red);
+    text-shadow: 0 0 4px rgba(255, 85, 102, 0.25);
+}
+
+body.theme-scifi .token-holder {
+    color: #ffffff;
+    font-weight: 500;
+}
+
+body.theme-scifi .token-issuer {
+    color: rgba(217, 230, 238, 0.78);
+}
+
+body.theme-scifi .token-id-link {
+    color: var(--gold-bright);
+    font-weight: 600;
+    text-shadow: 0 0 4px rgba(232, 190, 100, 0.2);
+}
+
+body.theme-scifi .token-id-link:hover {
+    color: #ffffff;
+    text-shadow: 0 0 8px rgba(232, 190, 100, 0.5);
+}
+
+body.theme-scifi .token-value {
+    color: var(--cyber);
+}
+
+body.theme-scifi .token-row-pq:hover td {
+    background: rgba(110, 254, 182, 0.06);
+}
+
+body.theme-scifi .token-row-classical:hover td {
+    background: rgba(255, 85, 102, 0.06);
+}
+
+/* ============================================================================
+   Recent Audit Events — brighten the description text the user said is dim
+   ============================================================================ */
+body.theme-scifi .audit-body {
+    color: #e8eef4;
+    line-height: 1.5;
+    margin-top: 2px;
+}
+
+/* The fragment "by US National Identity Service" gets rendered as a generic
+   text node; ensure it reads. */
+body.theme-scifi .audit-event .audit-body a,
+body.theme-scifi .audit-event a {
+    color: var(--cyber);
+    text-decoration: none;
+}
+
+body.theme-scifi .audit-event .audit-body a:hover {
+    color: var(--gold-bright);
+    text-decoration: underline;
+}
+
+/* Holder names in parenthesis inside audit body — slightly muted but readable */
+body.theme-scifi .audit-event strong,
+body.theme-scifi .audit-body strong {
+    color: #ffffff;
+}
+
+/* Highlight token id reference */
+body.theme-scifi .audit-event .audit-body {
+    color: rgba(232, 240, 246, 0.92);
+}
+
+/* ============================================================================
+   Token Succession Lineage — additional polish
+   ============================================================================ */
+body.theme-scifi .lineage-row:hover {
+    background: rgba(90, 214, 255, 0.06);
+    border-color: rgba(90, 214, 255, 0.3);
+}
+
+/* The chain pills inside chain-token need to actually render their color */
+body.theme-scifi .chain-token .pill {
+    text-shadow: 0 0 4px currentColor;
+}
+
+/* End iteration 5 ============================================================ */
+
+
+/* ============================================================================
+   Iteration 6 — html-bg + Token Status colors + Lineage chain + cinematic
+   ============================================================================ */
+
+/* -- 1. Fix the white "rubber-band" border at top/bottom of pages.
+      html element gets the void background too, AND overscroll-behavior
+      is disabled so the rubber-band area doesn't reveal the system white. -- */
+html:has(body.theme-scifi),
+body.theme-scifi {
+    background:
+        radial-gradient(ellipse at 50% -20%, rgba(90, 214, 255, 0.08) 0%, transparent 50%),
+        linear-gradient(180deg, var(--void-2, #050e1c) 0%, var(--void, #020812) 100%);
+    background-attachment: fixed;
+    /* Disallow scroll-chaining / rubber-band overflow that reveals white */
+    overscroll-behavior: none;
+    overscroll-behavior-y: none;
+    overscroll-behavior-x: none;
+}
+
+/* Color the browser-chrome to match (Chrome/Safari mobile toolbar) */
+html {
+    background-color: #020812;
+    overscroll-behavior: none;
+}
+
+/* The viewport itself: force the same dark fallback in case both html
+   and body bounce briefly during rapid scroll. */
+html:has(body.theme-scifi)::before,
+body.theme-scifi::before {
+    /* Already used for the hex-grid pattern above; no change needed.
+       Adding only the bg-color base so the overscroll area is consistent. */
+    background-color: #020812;
+}
+
+/* Token-detail page: <dl class="detail-grid"> was white */
+body.theme-scifi .detail-grid,
+body.theme-scifi dl.detail-grid {
+    background: rgba(10, 25, 48, 0.55);
+    border: 1px solid rgba(90, 214, 255, 0.18);
+    color: #d9e6ee;
+    padding: 14px 18px;
+    margin: 12px 0;
+    border-radius: 0;
+    box-shadow: inset 0 1px 0 rgba(90, 214, 255, 0.06);
+}
+
+body.theme-scifi .detail-grid dt {
+    color: var(--cyber);
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    font-size: 0.72rem;
+    font-weight: 500;
+    margin-top: 8px;
+}
+
+body.theme-scifi .detail-grid dd {
+    color: #ffffff;
+    margin: 2px 0 8px 0;
+    font-weight: 500;
+}
+
+body.theme-scifi .detail-grid dd.mono,
+body.theme-scifi .detail-grid dd code,
+body.theme-scifi .detail-grid .mono {
+    color: var(--gold-bright);
+    font-family: 'JetBrains Mono', 'SF Mono', monospace;
+}
+
+/* -- 2. Token Status pill colors (distinct per status) -- */
+body.theme-scifi .pill.pill-active {
+    color: var(--neon-green);
+    border-color: rgba(110, 254, 182, 0.55);
+    background: rgba(110, 254, 182, 0.12);
+    text-shadow: 0 0 5px rgba(110, 254, 182, 0.35);
+}
+
+body.theme-scifi .pill.pill-reserve {
+    color: var(--cyber);
+    border-color: rgba(90, 214, 255, 0.55);
+    background: rgba(90, 214, 255, 0.12);
+    text-shadow: 0 0 5px rgba(90, 214, 255, 0.35);
+}
+
+body.theme-scifi .pill.pill-dormant {
+    color: var(--neon-amber);
+    border-color: rgba(255, 176, 74, 0.55);
+    background: rgba(255, 176, 74, 0.10);
+    text-shadow: 0 0 5px rgba(255, 176, 74, 0.3);
+}
+
+body.theme-scifi .pill.pill-revoked {
+    color: var(--neon-red);
+    border-color: rgba(255, 85, 102, 0.6);
+    background: rgba(255, 85, 102, 0.12);
+    text-shadow: 0 0 5px rgba(255, 85, 102, 0.35);
+}
+
+body.theme-scifi .pill.pill-lost {
+    color: var(--neon-amber);
+    border-color: rgba(255, 176, 74, 0.55);
+    background: rgba(255, 176, 74, 0.14);
+    text-shadow: 0 0 5px rgba(255, 176, 74, 0.35);
+}
+
+body.theme-scifi .pill.pill-expired {
+    color: #a0a8b8;
+    border-color: rgba(160, 168, 184, 0.5);
+    background: rgba(160, 168, 184, 0.10);
+}
+
+/* Status Breakdown table: each row gets a faint background tint matching status */
+body.theme-scifi .status-row-active   { background: rgba(110, 254, 182, 0.03); }
+body.theme-scifi .status-row-reserve  { background: rgba(90, 214, 255, 0.03); }
+body.theme-scifi .status-row-dormant  { background: rgba(255, 176, 74, 0.03); }
+body.theme-scifi .status-row-revoked  { background: rgba(255, 85, 102, 0.03); }
+body.theme-scifi .status-row-lost     { background: rgba(255, 176, 74, 0.03); }
+body.theme-scifi .status-row-expired  { background: rgba(160, 168, 184, 0.03); }
+
+/* Status count column gets the same color as the pill, slightly louder */
+body.theme-scifi .status-row-active  .status-count { color: var(--neon-green); font-weight: 600; }
+body.theme-scifi .status-row-reserve .status-count { color: var(--cyber);      font-weight: 600; }
+body.theme-scifi .status-row-dormant .status-count { color: var(--neon-amber); font-weight: 600; }
+body.theme-scifi .status-row-revoked .status-count { color: var(--neon-red);   font-weight: 600; }
+body.theme-scifi .status-row-lost    .status-count { color: var(--neon-amber); font-weight: 600; }
+body.theme-scifi .status-row-expired .status-count { color: #a0a8b8;           font-weight: 600; }
+
+body.theme-scifi .status-notes {
+    color: rgba(217, 230, 238, 0.85);
+}
+
+/* Hover on status rows brightens the matching tint */
+body.theme-scifi .status-row-active:hover  td { background: rgba(110, 254, 182, 0.08); }
+body.theme-scifi .status-row-reserve:hover td { background: rgba(90, 214, 255, 0.08); }
+body.theme-scifi .status-row-dormant:hover td { background: rgba(255, 176, 74, 0.08); }
+body.theme-scifi .status-row-revoked:hover td { background: rgba(255, 85, 102, 0.08); }
+body.theme-scifi .status-row-lost:hover    td { background: rgba(255, 176, 74, 0.08); }
+body.theme-scifi .status-row-expired:hover td { background: rgba(160, 168, 184, 0.08); }
+
+/* -- 3. Token Succession Lineage — strengthen the chain visual -- */
+body.theme-scifi .lineage-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+body.theme-scifi .lineage-row {
+    background: rgba(10, 25, 48, 0.55);
+    border: 1px solid rgba(90, 214, 255, 0.18);
+    border-left: 3px solid var(--cyber);
+    padding: 10px 14px;
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    flex-wrap: wrap;
+    transition: all 0.15s ease;
+}
+
+body.theme-scifi .lineage-holder {
+    color: #ffffff;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    min-width: 140px;
+}
+
+body.theme-scifi .lineage-chain {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+body.theme-scifi .chain-token {
+    background: rgba(2, 8, 18, 0.7);
+    border: 1px solid rgba(90, 214, 255, 0.3);
+    color: var(--cyber);
+    padding: 4px 10px;
+    text-decoration: none;
+    clip-path: polygon(5px 0, 100% 0, calc(100% - 5px) 100%, 0 100%);
+    letter-spacing: 0.06em;
+    transition: all 0.15s ease;
+    font-family: 'JetBrains Mono', 'SF Mono', monospace;
+    font-size: 0.82rem;
+}
+
+body.theme-scifi .chain-token:hover {
+    background: rgba(90, 214, 255, 0.1);
+    color: #ffffff;
+    box-shadow: 0 0 10px var(--cyber-glow);
+}
+
+body.theme-scifi .chain-token.chain-current {
+    background: linear-gradient(180deg, rgba(232, 190, 100, 0.18), rgba(168, 132, 64, 0.1));
+    border-color: var(--gold-bright);
+    color: var(--gold-bright);
+    box-shadow: 0 0 12px rgba(232, 190, 100, 0.35);
+    text-shadow: 0 0 4px rgba(232, 190, 100, 0.4);
+}
+
+body.theme-scifi .chain-token.chain-current:hover {
+    background: linear-gradient(180deg, rgba(232, 190, 100, 0.28), rgba(168, 132, 64, 0.15));
+    color: #ffffff;
+}
+
+/* Pills inside chain-tokens are transparent so the parent's tint shows through */
+body.theme-scifi .chain-token .pill {
+    background: rgba(2, 8, 18, 0.4);
+    margin-left: 4px;
+    font-size: 0.66rem;
+    padding: 1px 6px;
+}
+
+body.theme-scifi .chain-arrow {
+    color: var(--cyber);
+    font-size: 1.2em;
+    animation: scifi-chain-arrow 2.4s ease-in-out infinite;
+    text-shadow: 0 0 6px var(--cyber-glow);
+}
+
+@keyframes scifi-chain-arrow {
+    0%, 100% { transform: translateX(0); opacity: 0.7; }
+    50%      { transform: translateX(4px); opacity: 1; }
+}
+
+body.theme-scifi .chain-seq {
+    color: var(--gold-bright);
+    background: rgba(232, 190, 100, 0.08);
+    border: 1px solid rgba(232, 190, 100, 0.3);
+    padding: 2px 8px;
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    margin-left: auto;
+}
+
+/* -- 4. Cinematic post-login boot overlay -- */
+.scifi-boot-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background:
+        radial-gradient(ellipse at 50% 50%, rgba(90, 214, 255, 0.06) 0%, transparent 50%),
+        linear-gradient(180deg, rgba(2, 8, 18, 0.98) 0%, rgba(5, 14, 28, 0.98) 100%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    opacity: 1;
+    animation: scifi-boot-fade 1.6s ease-out 0.1s forwards;
+}
+
+@keyframes scifi-boot-fade {
+    0%   { opacity: 0; }
+    10%  { opacity: 1; }
+    70%  { opacity: 1; }
+    100% { opacity: 0; visibility: hidden; }
+}
+
+.scifi-boot-overlay .boot-content {
+    text-align: center;
+    color: #ffffff;
+    font-family: 'JetBrains Mono', 'SF Mono', monospace;
+    z-index: 2;
+}
+
+.scifi-boot-overlay .boot-pre {
+    color: var(--cyber, #5ad6ff);
+    font-size: 0.78rem;
+    letter-spacing: 0.5em;
+    text-transform: uppercase;
+    margin-bottom: 18px;
+    opacity: 0;
+    animation: scifi-boot-pre 1.6s ease-out 0.2s forwards;
+}
+
+@keyframes scifi-boot-pre {
+    0%, 10% { opacity: 0; transform: translateY(-4px); }
+    25%     { opacity: 1; transform: translateY(0); }
+    80%     { opacity: 1; }
+    100%    { opacity: 0; }
+}
+
+.scifi-boot-overlay .boot-main {
+    font-size: 3.2rem;
+    font-weight: 600;
+    letter-spacing: 0.36em;
+    color: #ffffff;
+    text-shadow:
+        0 0 12px var(--cyber-glow, rgba(90, 214, 255, 0.42)),
+        0 0 28px var(--cyber-glow, rgba(90, 214, 255, 0.42)),
+        0 0 4px var(--cyber, #5ad6ff);
+    margin: 0 0 20px 0;
+    opacity: 0;
+    transform: scale(0.92);
+    animation: scifi-boot-main 1.6s cubic-bezier(0.16, 1, 0.3, 1) 0.35s forwards;
+}
+
+@keyframes scifi-boot-main {
+    0%, 15% { opacity: 0; transform: scale(0.92); letter-spacing: 0.6em; }
+    40%     { opacity: 1; transform: scale(1); letter-spacing: 0.36em; }
+    80%     { opacity: 1; }
+    100%    { opacity: 0; transform: scale(1.02); }
+}
+
+.scifi-boot-overlay .boot-sub {
+    color: rgba(217, 230, 238, 0.75);
+    font-size: 0.78rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    margin-bottom: 24px;
+    opacity: 0;
+    animation: scifi-boot-pre 1.6s ease-out 0.55s forwards;
+}
+
+.scifi-boot-overlay .boot-sub strong {
+    color: var(--gold-bright, #e8be64);
+    font-weight: 600;
+}
+
+.scifi-boot-overlay .boot-dot {
+    display: inline-block;
+    width: 4px; height: 4px;
+    background: var(--cyber, #5ad6ff);
+    border-radius: 50%;
+    margin: 0 10px;
+    vertical-align: middle;
+    box-shadow: 0 0 6px var(--cyber-glow, rgba(90, 214, 255, 0.42));
+}
+
+.scifi-boot-overlay .boot-progress {
+    width: 280px;
+    height: 2px;
+    background: rgba(90, 214, 255, 0.12);
+    overflow: hidden;
+    margin: 0 auto;
+    border: 1px solid rgba(90, 214, 255, 0.18);
+}
+
+.scifi-boot-overlay .boot-progress-fill {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, var(--cyber, #5ad6ff), var(--gold-bright, #e8be64));
+    box-shadow: 0 0 8px var(--cyber-glow, rgba(90, 214, 255, 0.42));
+    animation: scifi-boot-progress 1.2s ease-out 0.4s forwards;
+}
+
+@keyframes scifi-boot-progress {
+    0%   { width: 0%; }
+    100% { width: 100%; }
+}
+
+/* Horizontal scan-line sweeping down once during the boot */
+.scifi-boot-overlay .boot-scan-line {
+    position: absolute;
+    left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg,
+        transparent 0%,
+        var(--cyber, #5ad6ff) 30%,
+        var(--gold-bright, #e8be64) 50%,
+        var(--cyber, #5ad6ff) 70%,
+        transparent 100%);
+    box-shadow: 0 0 12px var(--cyber, #5ad6ff);
+    opacity: 0;
+    animation: scifi-boot-scan 1.6s ease-out 0.1s forwards;
+}
+
+@keyframes scifi-boot-scan {
+    0%   { top: 0%;   opacity: 0; }
+    15%  { opacity: 1; }
+    100% { top: 100%; opacity: 0; }
+}
+
+/* -- 5. Staggered fade-in for dashboard content behind the overlay -- */
+body.theme-scifi .scifi-reveal {
+    opacity: 0;
+    transform: translateY(8px);
+    animation: scifi-reveal-fade 0.55s ease-out forwards;
+    animation-delay: var(--reveal-delay, 0s);
+}
+
+@keyframes scifi-reveal-fade {
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Stagger the atlas-panel/atlas-row blocks behind the overlay so the
+   dashboard reveals progressively as the boot overlay fades out. */
+body.theme-scifi main.content > .atlas-row,
+body.theme-scifi main.content > .stats-grid,
+body.theme-scifi main.content > table.data,
+body.theme-scifi main.content > h2 {
+    opacity: 0;
+    animation: scifi-reveal-fade 0.6s ease-out forwards;
+}
+
+body.theme-scifi main.content > h2:nth-of-type(1)         { animation-delay: 0.6s; }
+body.theme-scifi main.content > .stats-grid               { animation-delay: 0.45s; }
+body.theme-scifi main.content > .status-breakdown-table   { animation-delay: 0.75s; }
+body.theme-scifi main.content > .atlas-row:nth-of-type(1) { animation-delay: 0.9s; }
+body.theme-scifi main.content > .atlas-row:nth-of-type(2) { animation-delay: 1.05s; }
+body.theme-scifi main.content > .atlas-row:nth-of-type(3) { animation-delay: 1.2s; }
+body.theme-scifi main.content > h2:nth-of-type(2)         { animation-delay: 1.3s; }
+body.theme-scifi main.content > h2:nth-of-type(3)         { animation-delay: 1.4s; }
+body.theme-scifi main.content > table.data                { animation-delay: 1.35s; }
+
+/* Respect reduced motion — skip all the animation, show content immediately */
+@media (prefers-reduced-motion: reduce) {
+    .scifi-boot-overlay { display: none; }
+    body.theme-scifi .scifi-reveal,
+    body.theme-scifi main.content > .atlas-row,
+    body.theme-scifi main.content > .stats-grid,
+    body.theme-scifi main.content > table.data,
+    body.theme-scifi main.content > h2 {
+        opacity: 1 !important;
+        transform: none !important;
+        animation: none !important;
+    }
+}
+
+/* End iteration 6 ============================================================ */
+
+
+/* ============================================================================
+   Iteration 8 — flash auto-dismiss + login-page footer hidden + LOST=amber
+   ============================================================================ */
+
+/* Auto-dismiss flash messages after 4.5s with a smooth fade.
+   pointer-events: none after the fade so the empty area can be clicked-through. */
+body.theme-scifi .flash {
+    animation: scifi-flash-dismiss 5.5s ease-out forwards;
+}
+
+@keyframes scifi-flash-dismiss {
+    0%   { opacity: 0; transform: translateY(-6px); }
+    8%   { opacity: 1; transform: translateY(0); }
+    78%  { opacity: 1; transform: translateY(0); max-height: 200px; padding-top: 10px; padding-bottom: 10px; margin-bottom: 10px; }
+    96%  { opacity: 0; transform: translateY(-6px); max-height: 200px; }
+    100% { opacity: 0; pointer-events: none; max-height: 0; padding-top: 0; padding-bottom: 0; margin-bottom: 0; visibility: hidden; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    body.theme-scifi .flash { animation: none; }
+}
+
+/* Footer hidden on login page only */
+body.theme-scifi:has(.login-page) .page-footer,
+body.theme-scifi:has(.login-page) footer {
+    display: none !important;
+}
+
+/* Style the custom-validation popup (browser default is too plain).
+   This affects the constraint-validation tooltip text appearance.
+   Note: actual tooltip background/border can't be styled across all browsers,
+   but the `setCustomValidity()` text we set IS what the user sees. */
+
+/* End iteration 8 ============================================================ */
+
+
+/* ============================================================================
+   Iteration 9 — custom login validation UI + softer login bg
+   ============================================================================ */
+
+/* Inline validation error line inside the login card */
+body.theme-scifi .login-error {
+    color: var(--neon-red);
+    background: rgba(255, 85, 102, 0);
+    border: 1px solid transparent;
+    border-left: 3px solid transparent;
+    padding: 0 12px;
+    margin-bottom: 0;
+    font-family: 'JetBrains Mono', 'SF Mono', monospace;
+    font-size: 0.78rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    text-align: center;
+    max-height: 0;
+    overflow: hidden;
+    opacity: 0;
+    transition: all 0.28s ease;
+}
+
+body.theme-scifi .login-error.login-error-visible {
+    color: var(--neon-red);
+    background: rgba(255, 85, 102, 0.1);
+    border-color: rgba(255, 85, 102, 0.4);
+    border-left-color: var(--neon-red);
+    padding: 10px 12px;
+    margin: 0 0 14px 0;
+    max-height: 60px;
+    opacity: 1;
+    box-shadow: 0 0 14px rgba(255, 85, 102, 0.18);
+    text-shadow: 0 0 6px rgba(255, 85, 102, 0.4);
+    animation: scifi-error-shake 0.35s ease-out;
+}
+
+@keyframes scifi-error-shake {
+    0%, 100% { transform: translateX(0); }
+    25%      { transform: translateX(-4px); }
+    50%      { transform: translateX(4px); }
+    75%      { transform: translateX(-2px); }
+}
+
+/* Inputs flagged invalid get a red ring */
+body.theme-scifi .login-form .input-invalid {
+    border-color: var(--neon-red);
+    box-shadow: 0 0 0 1px rgba(255, 85, 102, 0.35), 0 0 14px rgba(255, 85, 102, 0.22);
+}
+
+/* ============================================================================
+   Softer login page background — broad halo + ambient grid + ambient particles
+   ============================================================================ */
+
+/* Login page: full-viewport uniform ambient. No center spot / edge-dark
+   "box" effect. The card itself carries a large diffuse halo that blends
+   into the body bg with no visible boundary. */
+body.theme-scifi.login-page,
+body.theme-scifi:has(.login-page) {
+    background:
+        /* tiny upper cyan ambient — band, not hot-spot */
+        linear-gradient(180deg,
+            rgba(90, 214, 255, 0.05) 0%,
+            rgba(90, 214, 255, 0.02) 35%,
+            transparent 60%),
+        /* tiny gold ambient lower-right corner only */
+        radial-gradient(ellipse 100vw 80vh at 95% 100%,
+            rgba(201, 163, 82, 0.05) 0%,
+            transparent 70%),
+        /* uniform deep base */
+        linear-gradient(180deg, var(--void-2) 0%, var(--void) 100%);
+    background-attachment: fixed;
+}
+
+/* Suppress hex-grid + scan-line on login (cleaner, less busy) */
+body.theme-scifi:has(.login-page)::before {
+    opacity: 0.14;
+    background-size: 60px 100px, 60px 100px, 60px 100px;
+}
+
+body.theme-scifi:has(.login-page)::after {
+    opacity: 0.12;
+}
+
+/* main.content on login: kill the max-width + padding so the login-page
+   div can run edge-to-edge. The card is centered inside it anyway. */
+body.theme-scifi:has(.login-page) main.content {
+    max-width: none;
+    padding: 0;
+    min-height: calc(100vh);
+}
+
+/* Login card: subtle glow that extends far past the card, blending it
+   into the bg without a visible boundary. */
+body.theme-scifi .login-card {
+    position: relative;
+}
+
+body.theme-scifi .login-card::before {
+    content: '';
+    position: absolute;
+    inset: -180px;
+    background: radial-gradient(ellipse at center,
+        rgba(90, 214, 255, 0.16) 0%,
+        rgba(90, 214, 255, 0.08) 25%,
+        rgba(90, 214, 255, 0.02) 55%,
+        transparent 80%);
+    pointer-events: none;
+    z-index: -1;
+    filter: blur(40px);
+}
+
+/* The .login-page wrapper: edge-to-edge, vertically centered. */
+body.theme-scifi .login-page {
+    min-height: 100vh;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 60px 24px;
+    margin: 0;
+}
+
+/* End iteration 9 ============================================================ */
+
+
+/* ============================================================================
+   Iteration 11 — USE CASES dropdown menu (collapses 4 UC-* nav items into one)
+   ============================================================================ */
+
+body.theme-scifi .nav-uc-menu {
+    position: relative;
+    display: inline-block;
+    z-index: 1000;  /* above main content's stacking context */
+}
+
+/* Elevate masthead so the dropdown panel inside it draws above page content */
+body.theme-scifi .masthead {
+    z-index: 50;
+    isolation: isolate;
+}
+
+/* The trigger: matches the other nav pills but with a chevron */
+body.theme-scifi .nav-uc-summary {
+    list-style: none;
+    cursor: pointer;
+    color: var(--gold-bright);
+    border: 1px solid rgba(201, 163, 82, 0.3);
+    background: rgba(232, 190, 100, 0.04);
+    padding: 5px 24px 5px 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-size: 0.74rem;
+    clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
+    transition: all 0.15s ease;
+    position: relative;
+    user-select: none;
+}
+
+/* Hide the default <summary> marker (Chrome shows a triangle by default) */
+body.theme-scifi .nav-uc-summary::-webkit-details-marker { display: none; }
+body.theme-scifi .nav-uc-summary::marker { content: ''; }
+
+/* Chevron */
+body.theme-scifi .nav-uc-summary::after {
+    content: '';
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    width: 6px;
+    height: 6px;
+    border-right: 1.5px solid var(--gold-bright);
+    border-bottom: 1.5px solid var(--gold-bright);
+    transform: translateY(-65%) rotate(45deg);
+    transition: transform 0.18s ease;
+}
+
+body.theme-scifi .nav-uc-menu[open] .nav-uc-summary::after {
+    transform: translateY(-30%) rotate(-135deg);
+}
+
+body.theme-scifi .nav-uc-summary:hover {
+    color: #ffffff;
+    background: rgba(232, 190, 100, 0.14);
+    border-color: var(--gold-bright);
+    box-shadow: 0 0 12px rgba(232, 190, 100, 0.22);
+}
+
+body.theme-scifi .nav-uc-menu[open] .nav-uc-summary {
+    color: #ffffff;
+    background: linear-gradient(180deg, rgba(232, 190, 100, 0.18), rgba(168, 132, 64, 0.1));
+    border-color: var(--gold-bright);
+    box-shadow: 0 0 14px rgba(232, 190, 100, 0.28);
+}
+
+/* The dropdown panel — float below the summary, fully opaque so content
+   underneath doesn't bleed through. Anchored to the right edge of the
+   trigger so it opens leftward and never overflows the viewport. */
+body.theme-scifi .nav-uc-panel {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    min-width: 240px;
+    /* Solid layered fill: opaque deep navy + subtle inner top sheen */
+    background:
+        linear-gradient(180deg, rgba(232, 190, 100, 0.04) 0%, transparent 14%),
+        linear-gradient(180deg, #0a1828 0%, #050e1c 100%);
+    border: 1px solid rgba(232, 190, 100, 0.45);
+    border-top: 2px solid var(--gold-bright);
+    box-shadow:
+        0 0 0 1px rgba(0, 0, 0, 0.6),
+        0 14px 38px rgba(0, 0, 0, 0.75),
+        0 0 22px rgba(232, 190, 100, 0.18);
+    padding: 6px;
+    z-index: 100;
+    /* Slight slide-in animation */
+    animation: scifi-uc-menu-open 0.18s ease-out;
+}
+
+@keyframes scifi-uc-menu-open {
+    from { opacity: 0; transform: translateY(-4px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Each menu item */
+body.theme-scifi .nav-uc-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    color: #d9e6ee;
+    text-decoration: none;
+    font-size: 0.78rem;
+    letter-spacing: 0.04em;
+    border-left: 2px solid transparent;
+    transition: all 0.12s ease;
+}
+
+body.theme-scifi .nav-uc-item:hover {
+    background: rgba(90, 214, 255, 0.08);
+    color: #ffffff;
+    border-left-color: var(--cyber);
+    text-decoration: none;
+}
+
+body.theme-scifi .nav-uc-item .uc-id {
+    color: var(--gold-bright);
+    font-family: 'JetBrains Mono', 'SF Mono', monospace;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    min-width: 38px;
+    text-shadow: 0 0 4px rgba(232, 190, 100, 0.25);
+}
+
+body.theme-scifi .nav-uc-item:hover .uc-id {
+    color: #ffffff;
+    text-shadow: 0 0 6px rgba(232, 190, 100, 0.4);
+}
+
+body.theme-scifi .nav-uc-item .uc-name {
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-size: 0.74rem;
+}
+
+/* Click outside to close: handled with click-anywhere CSS pattern not feasible
+   without JS, but <details> stays open until summary is clicked again. That's
+   a known behavior of <details>; users get used to it. */
+
+/* End iteration 11 =========================================================== */
+
+
+/* ============================================================================
+   Iterations 13 & 14 — REVERTED. Atlas globe styling returned to the
+   pre-iteration-13 baseline. The pre-existing rules in section 9 above
+   (.atlas-stage / .atlas-container / .globe-stage radial backdrop, reticle
+   glow boost, HUD value glow) plus the base polaris.css remain in effect.
+   ============================================================================ */
+
+/* (former simple login styling block, preserved at end for fallback) */
+body.theme-scifi.login-page-legacy {
+    background:
+        radial-gradient(ellipse at 50% 30%, rgba(90, 214, 255, 0.18) 0%, transparent 55%),
+        radial-gradient(ellipse at 80% 80%, rgba(201, 163, 82, 0.12) 0%, transparent 55%),
+        linear-gradient(180deg, var(--void-2) 0%, var(--void) 100%);
+}
+
+/* ============================================================================
+   The classification strip on Atlas — keep it but upgrade
+   ============================================================================ */
+body.theme-scifi .classification-strip {
+    background: linear-gradient(90deg,
+        transparent 0%,
+        rgba(255, 85, 102, 0.15) 30%,
+        rgba(255, 85, 102, 0.25) 50%,
+        rgba(255, 85, 102, 0.15) 70%,
+        transparent 100%);
+    color: var(--neon-red);
+    text-shadow: 0 0 8px rgba(255, 85, 102, 0.5);
+    letter-spacing: 0.4em;
+    text-transform: uppercase;
+    font-size: 0.7rem;
+    padding: 4px 0;
+    border-top: 1px solid rgba(255, 85, 102, 0.4);
+    border-bottom: 1px solid rgba(255, 85, 102, 0.4);
+}
+
+/* ============================================================================
+   Selection (text-selection highlight)
+   ============================================================================ */
+body.theme-scifi ::selection {
+    background: rgba(90, 214, 255, 0.4);
+    color: #ffffff;
+    text-shadow: 0 0 6px var(--cyber-glow);
+}
+
+/* ============================================================================
+   Scrollbar (webkit only — Firefox/older browsers fall back to system)
+   ============================================================================ */
+body.theme-scifi ::-webkit-scrollbar { width: 10px; height: 10px; }
+body.theme-scifi ::-webkit-scrollbar-track {
+    background: rgba(2, 8, 18, 0.6);
+    border-left: 1px solid rgba(90, 214, 255, 0.08);
+}
+body.theme-scifi ::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, var(--cyber-deep), rgba(10, 37, 64, 0.9));
+    border-radius: 0;
+    border: 1px solid rgba(90, 214, 255, 0.18);
+}
+body.theme-scifi ::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(180deg, var(--cyber), var(--cyber-deep));
+    box-shadow: 0 0 8px var(--cyber-glow);
+}

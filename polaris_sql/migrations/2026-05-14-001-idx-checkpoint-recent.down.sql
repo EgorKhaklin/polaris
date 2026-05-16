@@ -1,0 +1,22 @@
+-- ============================================================================
+-- 2026-05-14-001-idx-checkpoint-recent.down.sql
+--
+-- Revert of 2026-05-14-001-idx-checkpoint-recent.up.sql.
+--
+-- DROP: index on LifecycleArchiveCheckpoint(purged_at DESC).
+--
+-- WHY (revertable):
+--   The .up.sql only created an index. No data was touched and no other
+--   schema object depends on this index, so dropping it is fully reversible
+--   to pre-apply state. Operator queries that ordered by purged_at DESC
+--   will fall back to seq-scan-and-sort, which is what they did before
+--   the index existed.
+--
+-- LOCK:
+--   Brief ACCESS EXCLUSIVE on LifecycleArchiveCheckpoint while the index
+--   is dropped; sub-second on the demo DB and on production volumes since
+--   purge events are rare. Not run with DROP INDEX CONCURRENTLY because
+--   the runner wraps each migration in a single transaction (Sanctum §III).
+-- ============================================================================
+
+DROP INDEX IF EXISTS idx_checkpoint_purged_at_desc;

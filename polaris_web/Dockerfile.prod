@@ -1,0 +1,126 @@
+# ============================================================================
+# Polaris — Production Dockerfile (multi-stage)
+#
+# Built under Arc B Phase 1 (v8.77). Distinct from `Dockerfile` (dev) in:
+#   - Multi-stage build: builder + runtime (smaller final image)
+#   - Optional ZK prover (Plonky2 / Rust nightly) bundled at /opt/polaris/zk
+#   - Non-root `polaris` user (uid 1000)
+#   - No dev tools or shell utilities in the runtime layer
+#   - Strict `PYTHONDONTWRITEBYTECODE` + `PYTHONUNBUFFERED`
+#   - Healthcheck via /api/health (structured JSON; v8.77)
+#
+# Build:
+#     docker build -f Dockerfile.prod -t polaris-app:prod .
+#     docker build -f Dockerfile.prod --build-arg POLARIS_ZK_BUILD=0 -t polaris-app:prod-noverify .
+#
+# G-guard alignment:
+#   G3  (read-only watchers)     — n/a at image layer
+#   G27 (TLS required in prod)   — enforced at compose layer, not here
+#   G28 (no secrets in env)      — Dockerfile does NOT set sensitive env vars
+# ============================================================================
+
+# ---------------------------------------------------------------------------
+# Stage 1: Rust builder (Plonky2 ZK prover)
+# ---------------------------------------------------------------------------
+FROM rustlang/rust:nightly-bookworm-slim AS zk-builder
+
+ARG POLARIS_ZK_BUILD=1
+
+WORKDIR /build
+COPY polaris_zk/ ./polaris_zk/
+
+RUN if [ "${POLARIS_ZK_BUILD}" = "1" ]; then \
+      cd polaris_zk && cargo +nightly build --release && \
+      cp target/release/polaris-zk /build/polaris-zk; \
+    else \
+      echo '#!/bin/sh' > /build/polaris-zk && \
+      echo 'echo "zk-binary not built (POLARIS_ZK_BUILD=0)"; exit 1' >> /build/polaris-zk && \
+      chmod +x /build/polaris-zk; \
+    fi
+
+# ---------------------------------------------------------------------------
+# Stage 2: Python builder (deps to a virtual env we can copy)
+# ---------------------------------------------------------------------------
+FROM python:3.12-slim-bookworm AS py-builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        libpq-dev \
+        curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+RUN python -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# v9.05 / Wave 1 / C3: pinned via requirements.txt for reproducibility.
+# (Pre-v9.05 listed 5 packages with loose version specs inline.)
+COPY requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt \
+    && pip install --no-cache-dir 'redis==5.0.*'
+
+# ---------------------------------------------------------------------------
+# Stage 3: Runtime (minimal Debian-slim, non-root)
+# ---------------------------------------------------------------------------
+FROM python:3.12-slim-bookworm AS runtime
+
+LABEL org.opencontainers.image.title="Polaris (production)"
+LABEL org.opencontainers.image.description="National identity token reference implementation"
+LABEL org.opencontainers.image.source="https://github.com/polaris-id/polaris"
+LABEL org.opencontainers.image.licenses="Apache-2.0"
+LABEL org.opencontainers.image.version="8.77"
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libpq5 \
+        curl \
+        ca-certificates \
+        tini \
+    && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
+
+# Non-root user
+RUN useradd --uid 1000 --create-home --shell /usr/sbin/nologin polaris && \
+    mkdir -p /opt/polaris /var/log/polaris && \
+    chown -R polaris:polaris /opt/polaris /var/log/polaris
+
+# Copy Python venv from py-builder
+COPY --from=py-builder /opt/venv /opt/venv
+
+# Copy ZK binary from zk-builder
+COPY --from=zk-builder /build/polaris-zk /opt/polaris/zk
+RUN chmod 0755 /opt/polaris/zk
+
+# Application code:
+#   anchoring.py    R10-2 Merkle helper
+#   zk.py           R10-1 ZK wrapper
+#   webauthn_auth.py v8.97 WebAuthn/MFA module (app.py imports it at startup;
+#                   missing this caused the v8.97-onward image to ImportError)
+#   __version__.py  v9.06 canonical POLARIS_VERSION source (app.py imports it)
+WORKDIR /app
+COPY --chown=polaris:polaris app.py security.py gunicorn.conf.py ./
+COPY --chown=polaris:polaris anchoring.py zk.py webauthn_auth.py __version__.py ./
+COPY --chown=polaris:polaris templates/ ./templates/
+COPY --chown=polaris:polaris static/   ./static/
+
+# Non-sensitive runtime env (G28: nothing here is sensitive)
+ENV PATH="/opt/venv/bin:$PATH" \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    POLARIS_ZK_BINARY=/opt/polaris/zk \
+    POLARIS_PORT=8000 \
+    POLARIS_STATE_DIR=/var/lib/polaris/state \
+    WEB_CONCURRENCY=4
+
+RUN mkdir -p /var/lib/polaris/state && chown polaris:polaris /var/lib/polaris/state
+
+USER polaris
+
+EXPOSE 8000
+
+# Structured /api/health (v8.77 / G29)
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD curl --fail --silent http://localhost:8000/api/health | grep -q '"status":"healthy"' || exit 1
+
+# tini handles signal forwarding + zombie reaping
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["gunicorn", "--config", "gunicorn.conf.py", "app:app"]

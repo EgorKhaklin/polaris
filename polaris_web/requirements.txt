@@ -1,0 +1,51 @@
+# polaris_web/requirements.txt — pinned runtime + dev dependencies
+#
+# v9.05 / Wave 1 / C3 (Sanctum: meta/polaris-self-roadmap-2026-05-14.md).
+# Pre-v9.05 the project had no requirements file; CI inlined a `pip
+# install` step + Dockerfile inlined another set + ai-bootstrap.sh
+# expected packages without naming them. Reproducibility hinged on
+# whatever pip resolved that day. v9.05 closes the gap.
+#
+# Versions captured from the working dev venv on 2026-05-14
+# (Polaris v9.05 ship). Bump intentionally; Hypothesis (test-only)
+# and pytest (test-only) are listed at the bottom.
+#
+# Usage:
+#   python3 -m venv polaris_web/venv
+#   source polaris_web/venv/bin/activate
+#   pip install -r polaris_web/requirements.txt
+#
+# CI uses this file (.github/workflows/ci.yml). Dockerfile.prod
+# uses it. ai-bootstrap.sh checks the venv against it.
+
+# ---- Runtime: Flask web stack ----
+Flask==3.1.3
+Werkzeug==3.1.8
+Jinja2==3.1.6
+itsdangerous==2.2.0
+click==8.3.3
+blinker==1.9.0
+MarkupSafe==3.0.3
+
+# ---- Runtime: WSGI server ----
+gunicorn==26.0.0
+packaging==26.2
+
+# ---- Runtime: Postgres driver ----
+psycopg2-binary==2.9.12
+
+# ---- Runtime: WebAuthn (operator MFA, v8.97) ----
+webauthn==2.7.1
+cbor2==6.1.1
+cryptography==48.0.0
+pyOpenSSL==26.2.0
+pyasn1==0.6.3
+cffi==2.0.0
+pycparser==3.0
+typing_extensions==4.15.0
+
+# ---- Test-only: property testing (10 Hypothesis tests) ----
+hypothesis>=6.0,<7.0
+
+# ---- Optional but recommended: Prometheus client (v8.93 /metrics) ----
+prometheus_client>=0.20,<1.0

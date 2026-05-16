@@ -1,0 +1,401 @@
+#!/usr/bin/env bash
+# ============================================================================
+# polaris-restore.sh — recovery-from-backup with manifest verification
+#
+# v8.81 / Arc B Phase 1.5 (completes the v8.77 backup/restore loop).
+# Inverse of polaris-backup.sh. Reads a timestamped tarball produced by
+# polaris-backup.sh, verifies every component's SHA-256 hash against
+# the in-band MANIFEST.json, then restores:
+#
+#   - PostgreSQL database (pg_restore from the custom-format dump)
+#   - sanctum/ filesystem audit-of-record
+#   - journal/ episodic memory
+#   - polaris_swarm/civitas/treasury-roll.json (Arc F denarii ledger)
+#   - polaris_swarm/civitas/census-roll.json (Arc E citizen registry)
+#
+# Refuses to clobber a non-empty database without --force.
+#
+# Usage:
+#   ./scripts/polaris-restore.sh BACKUP_FILE [options]
+#
+# Options:
+#   --target=<db_name>      Target database to restore into (default: polaris)
+#   --target=docker-stack   Restore via the running docker-compose.prod.yml
+#                           Postgres container instead of a host-level DB
+#   --force                 Allow restore over a non-empty DB (DANGEROUS)
+#   --dry-run               Verify manifest + list what would be restored,
+#                           but make no changes
+#   --skip-fs               Skip filesystem-AoR restore (DB only)
+#   --skip-db               Skip database restore (FS-AoR only)
+#   --verify-schema-version Cross-check schema_version table against
+#                           migrations/*.up.sql on disk after restore.
+#                           Exits EXIT_SCHEMA_MISMATCH=10 if divergent
+#                           (prevents serving half-restored DB). v9.23.
+#
+# Examples:
+#   ./scripts/polaris-restore.sh /var/backups/polaris-20260514T030000Z.tar.gz
+#   ./scripts/polaris-restore.sh polaris-backup.tar.gz --target=polaris_restored
+#   ./scripts/polaris-restore.sh latest.tar.gz --target=docker-stack
+#   ./scripts/polaris-restore.sh latest.tar.gz --dry-run
+#
+# Pattern: every step prints a "[step N/M] ..." line; on any failure
+# the script exits non-zero with a numbered exit code (see EXIT_*).
+# ============================================================================
+
+set -euo pipefail
+
+# Exit codes (greppable in incident response).
+EXIT_OK=0
+EXIT_USAGE=2
+EXIT_BACKUP_MISSING=3
+EXIT_MANIFEST_MISSING=4
+EXIT_MANIFEST_VERIFY_FAIL=5
+EXIT_NON_EMPTY_DB=6
+EXIT_DB_RESTORE_FAIL=7
+EXIT_FS_RESTORE_FAIL=8
+EXIT_DOCKER_MISSING=9
+EXIT_SCHEMA_MISMATCH=10   # v9.23 — schema_version table vs migrations/ diverged
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
+POLARIS_ROOT="$(cd -- "${SCRIPT_DIR}/.." &> /dev/null && pwd)"
+COMPOSE_FILE="${POLARIS_ROOT}/polaris_web/docker-compose.prod.yml"
+
+# Defaults.
+TARGET_DB="polaris"
+USE_DOCKER_STACK=0
+DRY_RUN=0
+FORCE=0
+SKIP_FS=0
+SKIP_DB=0
+VERIFY_SCHEMA=0   # v9.23 — opt-in schema_version cross-check after restore
+BACKUP_FILE=""
+
+usage() {
+    sed -n '2,30p' "$0" | sed 's/^# \{0,1\}//'
+    exit "${EXIT_USAGE}"
+}
+
+# Parse args.
+for arg in "$@"; do
+    case "${arg}" in
+        --target=docker-stack) USE_DOCKER_STACK=1 ;;
+        --target=*)            TARGET_DB="${arg#--target=}" ;;
+        --force)               FORCE=1 ;;
+        --dry-run)             DRY_RUN=1 ;;
+        --skip-fs)             SKIP_FS=1 ;;
+        --skip-db)             SKIP_DB=1 ;;
+        --verify-schema-version) VERIFY_SCHEMA=1 ;;   # v9.23
+        --help|-h)             usage ;;
+        -*)                    echo "error: unknown option ${arg}" >&2; usage ;;
+        *)
+            if [[ -z "${BACKUP_FILE}" ]]; then
+                BACKUP_FILE="${arg}"
+            else
+                echo "error: only one backup file may be specified" >&2
+                usage
+            fi
+            ;;
+    esac
+done
+
+if [[ -z "${BACKUP_FILE}" ]]; then
+    echo "error: backup file is required" >&2
+    usage
+fi
+if [[ ! -f "${BACKUP_FILE}" ]]; then
+    echo "error: backup file not found: ${BACKUP_FILE}" >&2
+    exit "${EXIT_BACKUP_MISSING}"
+fi
+
+BACKUP_FILE="$(cd "$(dirname "${BACKUP_FILE}")" && pwd)/$(basename "${BACKUP_FILE}")"
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+step() { echo "  [${1}] ${2}"; }
+
+run_psql() {
+    if [[ "${USE_DOCKER_STACK}" -eq 1 ]]; then
+        docker compose -f "${COMPOSE_FILE}" exec -T postgres \
+            psql -U postgres "$@"
+    else
+        psql -U "${PGUSER:-postgres}" -d "${TARGET_DB}" "$@" 2>&1 || true
+    fi
+}
+
+run_pg_restore() {
+    local dump="$1"
+    if [[ "${USE_DOCKER_STACK}" -eq 1 ]]; then
+        docker compose -f "${COMPOSE_FILE}" exec -T postgres \
+            pg_restore -U postgres -d "${TARGET_DB}" --clean --if-exists < "${dump}"
+    else
+        pg_restore -U "${PGUSER:-postgres}" -d "${TARGET_DB}" --clean --if-exists "${dump}"
+    fi
+}
+
+cat <<BANNER
+
+  Polaris — restore from backup
+  ─────────────────────────────
+  Backup:      ${BACKUP_FILE}
+  Target DB:   ${TARGET_DB}$([[ "${USE_DOCKER_STACK}" -eq 1 ]] && echo " (via docker compose stack)" || echo "")
+  Dry run:     $([[ "${DRY_RUN}" -eq 1 ]] && echo yes || echo no)
+  Force:       $([[ "${FORCE}" -eq 1 ]] && echo yes || echo no)
+  Skip FS:     $([[ "${SKIP_FS}" -eq 1 ]] && echo yes || echo no)
+  Skip DB:     $([[ "${SKIP_DB}" -eq 1 ]] && echo yes || echo no)
+
+BANNER
+
+# ---------------------------------------------------------------------------
+# Step 1: Extract + verify manifest
+# ---------------------------------------------------------------------------
+WORK=$(mktemp -d)
+trap 'rm -rf "${WORK}"' EXIT
+
+step "1/6" "extracting ${BACKUP_FILE} → ${WORK}…"
+tar -xzf "${BACKUP_FILE}" -C "${WORK}"
+
+# Find the extracted polaris-<ts>/ directory.
+EXTRACTED=$(find "${WORK}" -maxdepth 1 -mindepth 1 -type d -name 'polaris-*' | head -1)
+if [[ -z "${EXTRACTED}" || ! -d "${EXTRACTED}" ]]; then
+    echo "  ✗ extracted backup does not contain a polaris-*/ directory" >&2
+    exit "${EXIT_MANIFEST_MISSING}"
+fi
+
+step "2/6" "verifying MANIFEST.json (SHA-256 hashes)…"
+if [[ ! -f "${EXTRACTED}/MANIFEST.json" ]]; then
+    echo "  ✗ MANIFEST.json missing — backup is malformed" >&2
+    exit "${EXIT_MANIFEST_MISSING}"
+fi
+
+# Use the same verifier Python embeds in polaris-backup.sh.
+if ! python3 - "${EXTRACTED}" <<'PY'
+import json, hashlib, os, sys
+base = sys.argv[1]
+with open(os.path.join(base, "MANIFEST.json")) as f:
+    m = json.load(f)
+ok = True
+for name, expected in m.get("sha256", {}).items():
+    p = os.path.join(base, name)
+    if not os.path.exists(p):
+        print(f"  ✗ {name} missing from archive")
+        ok = False
+        continue
+    h = hashlib.sha256()
+    with open(p, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 16), b""):
+            h.update(chunk)
+    got = h.hexdigest()
+    if got != expected:
+        print(f"  ✗ {name} hash mismatch  expected={expected[:16]}  got={got[:16]}")
+        ok = False
+    else:
+        print(f"  ✓ {name}  ({m.get('size_bytes', {}).get(name, '?')} bytes)")
+print()
+print(f"  manifest declares Polaris version: {m.get('polaris_version', 'unknown')}")
+print(f"  manifest timestamp:                {m.get('timestamp_utc',  'unknown')}")
+if not ok:
+    sys.exit(1)
+PY
+then
+    echo "  ✗ manifest verification failed — refusing to proceed" >&2
+    exit "${EXIT_MANIFEST_VERIFY_FAIL}"
+fi
+
+# ---------------------------------------------------------------------------
+# Step 3: Dry-run summary or proceed
+# ---------------------------------------------------------------------------
+if [[ "${DRY_RUN}" -eq 1 ]]; then
+    step "3/6" "dry-run — listing what would be restored…"
+    echo
+    echo "  Would restore the following components:"
+    [[ "${SKIP_DB}" -eq 0 ]] && \
+        echo "    • PostgreSQL dump  →  database '${TARGET_DB}'"
+    [[ "${SKIP_FS}" -eq 0 ]] && {
+        echo "    • sanctum/         →  ${POLARIS_ROOT}/sanctum/"
+        echo "    • journal/         →  ${POLARIS_ROOT}/journal/"
+        echo "    • treasury-roll.json  →  polaris_swarm/civitas/"
+        echo "    • census-roll.json    →  polaris_swarm/civitas/"
+    }
+    echo
+    echo "  Dry-run complete. Re-run without --dry-run to apply."
+    exit "${EXIT_OK}"
+fi
+
+# ---------------------------------------------------------------------------
+# Step 4: DB pre-flight (non-empty check)
+# ---------------------------------------------------------------------------
+if [[ "${SKIP_DB}" -eq 0 ]]; then
+    if [[ "${USE_DOCKER_STACK}" -eq 1 ]]; then
+        if ! command -v docker >/dev/null 2>&1; then
+            echo "  ✗ docker not on PATH (required for --target=docker-stack)" >&2
+            exit "${EXIT_DOCKER_MISSING}"
+        fi
+        if ! docker compose -f "${COMPOSE_FILE}" ps --status running --quiet 2>/dev/null | grep -q .; then
+            echo "  ✗ docker stack not running (start with polaris-deploy.sh prod)" >&2
+            exit "${EXIT_DOCKER_MISSING}"
+        fi
+    fi
+
+    step "3/6" "pre-flight: checking target DB state…"
+    # Count tables in the public schema; >0 means non-empty.
+    table_count=$(run_psql -tA -d "${TARGET_DB}" -c \
+        "SELECT count(*) FROM information_schema.tables WHERE table_schema='public'" 2>/dev/null | tr -dc '0-9' || echo "0")
+    table_count=${table_count:-0}
+
+    if [[ "${table_count}" != "0" ]] && [[ "${FORCE}" -eq 0 ]]; then
+        echo "  ✗ target DB '${TARGET_DB}' has ${table_count} tables in public schema."
+        echo "     Refusing to clobber. Either:"
+        echo "       (a) drop + recreate the target DB before restore:"
+        echo "             dropdb ${TARGET_DB} && createdb ${TARGET_DB}"
+        echo "       (b) restore into a fresh DB:"
+        echo "             $(basename "$0") <backup> --target=polaris_restored"
+        echo "       (c) pass --force to overwrite (DANGEROUS)"
+        exit "${EXIT_NON_EMPTY_DB}"
+    fi
+
+    if [[ "${table_count}" != "0" ]]; then
+        echo "  ⚠  target DB has ${table_count} tables; --force is in effect"
+    else
+        echo "  ✓ target DB is empty"
+    fi
+else
+    step "3/6" "DB restore skipped (--skip-db)"
+fi
+
+# ---------------------------------------------------------------------------
+# Step 5: Restore PostgreSQL
+# ---------------------------------------------------------------------------
+if [[ "${SKIP_DB}" -eq 0 ]]; then
+    step "4/6" "restoring PostgreSQL → '${TARGET_DB}'…"
+    if ! run_pg_restore "${EXTRACTED}/polaris.dump"; then
+        echo "  ✗ pg_restore failed — DB state may be partial" >&2
+        exit "${EXIT_DB_RESTORE_FAIL}"
+    fi
+
+    restored_tables=$(run_psql -tA -d "${TARGET_DB}" -c \
+        "SELECT count(*) FROM information_schema.tables WHERE table_schema='public'" 2>/dev/null | tr -dc '0-9' || echo "0")
+    echo "  ✓ pg_restore complete (${restored_tables} tables in public schema)"
+else
+    step "4/6" "DB restore skipped"
+fi
+
+# ---------------------------------------------------------------------------
+# Step 6: Restore filesystem AoR
+# ---------------------------------------------------------------------------
+if [[ "${SKIP_FS}" -eq 0 ]]; then
+    step "5/6" "restoring filesystem audit-of-record…"
+    fs_failed=0
+
+    if [[ -f "${EXTRACTED}/sanctum.tar.gz" ]] && [[ -s "${EXTRACTED}/sanctum.tar.gz" ]]; then
+        # Archive existing sanctum/ to a timestamped backup first; restore is non-destructive.
+        if [[ -d "${POLARIS_ROOT}/sanctum" ]]; then
+            preserved="${POLARIS_ROOT}/sanctum.pre-restore.$(date -u +%Y%m%dT%H%M%SZ)"
+            mv "${POLARIS_ROOT}/sanctum" "${preserved}"
+            echo "  • prior sanctum/ preserved at ${preserved}"
+        fi
+        tar -xzf "${EXTRACTED}/sanctum.tar.gz" -C "${POLARIS_ROOT}" \
+            && echo "  ✓ sanctum/ restored" \
+            || { echo "  ✗ sanctum/ restore failed"; fs_failed=1; }
+    else
+        echo "  • sanctum.tar.gz absent or empty — skipping"
+    fi
+
+    if [[ -f "${EXTRACTED}/journal.tar.gz" ]] && [[ -s "${EXTRACTED}/journal.tar.gz" ]]; then
+        if [[ -d "${POLARIS_ROOT}/journal" ]]; then
+            preserved="${POLARIS_ROOT}/journal.pre-restore.$(date -u +%Y%m%dT%H%M%SZ)"
+            mv "${POLARIS_ROOT}/journal" "${preserved}"
+            echo "  • prior journal/ preserved at ${preserved}"
+        fi
+        tar -xzf "${EXTRACTED}/journal.tar.gz" -C "${POLARIS_ROOT}" \
+            && echo "  ✓ journal/ restored" \
+            || { echo "  ✗ journal/ restore failed"; fs_failed=1; }
+    else
+        echo "  • journal.tar.gz absent or empty — skipping"
+    fi
+
+    mkdir -p "${POLARIS_ROOT}/polaris_swarm/civitas"
+    for roll in treasury-roll.json census-roll.json; do
+        src="${EXTRACTED}/${roll}"
+        if [[ -f "${src}" ]] && [[ -s "${src}" ]]; then
+            cp "${src}" "${POLARIS_ROOT}/polaris_swarm/civitas/${roll}"
+            echo "  ✓ ${roll} restored"
+        else
+            echo "  • ${roll} absent or empty — skipping"
+        fi
+    done
+
+    if [[ "${fs_failed}" -ne 0 ]]; then
+        exit "${EXIT_FS_RESTORE_FAIL}"
+    fi
+else
+    step "5/6" "filesystem AoR restore skipped (--skip-fs)"
+fi
+
+# ---------------------------------------------------------------------------
+# Step 6.5 (v9.23): schema-version cross-check.
+# Opt-in via --verify-schema-version. Compares schema_version rows in
+# the restored DB to the migrations/*.up.sql files on disk. If they
+# diverge, exits EXIT_SCHEMA_MISMATCH so a half-restored DB does not
+# silently start serving traffic.
+# ---------------------------------------------------------------------------
+if [[ "${VERIFY_SCHEMA}" -eq 1 && "${SKIP_DB}" -eq 0 ]]; then
+    step "6.5/6" "schema-version cross-check"
+    migrations_dir="${POLARIS_ROOT}/polaris_sql/migrations"
+    if [[ ! -d "${migrations_dir}" ]]; then
+        echo "  • migrations/ directory absent; skipping cross-check"
+    else
+        expected_versions=$(find "${migrations_dir}" -maxdepth 1 -name '*.up.sql' \
+            -exec basename {} .up.sql \; 2>/dev/null | sort -u)
+        if [[ "${USE_DOCKER_STACK}" -eq 1 ]]; then
+            actual_versions=$(docker compose -f "${COMPOSE_FILE}" exec -T postgres \
+                psql -U polaris -d "${TARGET_DB}" -At \
+                -c "SELECT version FROM schema_version ORDER BY version" 2>/dev/null \
+                | sort -u || echo "")
+        else
+            actual_versions=$(psql -d "${TARGET_DB}" -At \
+                -c "SELECT version FROM schema_version ORDER BY version" 2>/dev/null \
+                | sort -u || echo "")
+        fi
+
+        missing_in_db=$(comm -23 <(echo "${expected_versions}") <(echo "${actual_versions}") 2>/dev/null || true)
+        extra_in_db=$(comm -13 <(echo "${expected_versions}") <(echo "${actual_versions}") 2>/dev/null || true)
+
+        if [[ -n "${missing_in_db}" ]]; then
+            echo "  ✗ schema mismatch — migrations on disk but NOT in restored DB:"
+            echo "${missing_in_db}" | sed 's/^/      /'
+            echo "      either run polaris-migrate.sh --up to apply, or restore"
+            echo "      an older codebase matching the backup's vintage."
+            exit "${EXIT_SCHEMA_MISMATCH}"
+        fi
+        if [[ -n "${extra_in_db}" ]]; then
+            echo "  ✗ schema mismatch — migrations in restored DB but NOT on disk:"
+            echo "${extra_in_db}" | sed 's/^/      /'
+            echo "      the backup is from a NEWER codebase than this checkout."
+            exit "${EXIT_SCHEMA_MISMATCH}"
+        fi
+        echo "  ✓ schema_version table matches migrations/ on disk"
+    fi
+fi
+
+# ---------------------------------------------------------------------------
+# Step 7: Final summary
+# ---------------------------------------------------------------------------
+step "6/6" "restore complete."
+cat <<DONE
+
+  Recommended next steps:
+    1. Smoke the restored stack:
+         curl -fsS http://localhost:8000/api/health | jq .
+    2. Re-run the integrity tests:
+         psql -d ${TARGET_DB} -f polaris_sql/08_tests.sql
+    3. If this was a real recovery, rotate every secret next:
+         ./scripts/polaris-rotate-secret.sh polaris_secret_key
+         ./scripts/polaris-rotate-secret.sh polaris_db_password
+         ./scripts/polaris-rotate-secret.sh polaris_db_root_password
+
+  Operator runbook:  docs/operator/OPERATIONS.md § Backup & restore
+
+DONE
+exit "${EXIT_OK}"

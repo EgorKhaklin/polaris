@@ -1,0 +1,206 @@
+{% extends "base.html" %}
+{% block title %}Polaris — Identity Token System{% endblock %}
+{% block body_class %} body-landing{% endblock %}
+{% block content %}
+
+<section class="landing-hero" aria-labelledby="landing-title">
+    <h1 id="landing-title" class="landing-title">POLARIS</h1>
+    <p class="landing-subtitle">A reference implementation of a national identity token system.</p>
+    <p class="landing-tagline">
+        Audit-of-record by construction. Post-quantum from the substrate.
+        One identity per person, zero financial entanglement.
+    </p>
+
+    <div class="landing-cta">
+        <a href="{{ url_for('demo') }}" class="btn btn-gold" data-cta="demo">
+            Try the demo
+            <span class="cta-sub">no sign-in needed</span>
+        </a>
+        <a href="{{ url_for('login') }}" class="btn btn-ghost" data-cta="signin">
+            Sign in
+            <span class="cta-sub">for operators</span>
+        </a>
+    </div>
+
+    <p class="landing-version">
+        Version <strong>{{ polaris_version }}</strong> ·
+        25 tables · 13 procedures · 12 audit-of-record instances ·
+        29 G-guards · {{ structural_invariant_count }} structural invariants
+    </p>
+</section>
+
+<section class="landing-claims" aria-labelledby="claims-title">
+    <h2 id="claims-title" class="landing-section-title">What the schema enforces</h2>
+    <p class="landing-section-lede">
+        Ten hard constraints (C1–C10) are not policies. They are
+        triggers, CHECK constraints, partial unique indexes, and
+        append-only audit trails. The system cannot be operated
+        in a way that violates them.
+    </p>
+
+    <div class="claim-grid">
+        <article class="claim-card" aria-labelledby="claim-c1">
+            <header>
+                <span class="claim-id">C1</span>
+                <h3 id="claim-c1" class="claim-title">Audit of record</h3>
+            </header>
+            <p>
+                Every state change of an identity token writes a
+                <code>TokenLifecycleEvent</code> row. Every
+                verification writes a <code>VerificationEvent</code>.
+                Both tables are append-only at the trigger level.
+                Twelve audit-of-record instances now span schema +
+                filesystem (sanctum, treasury, census).
+            </p>
+        </article>
+
+        <article class="claim-card" aria-labelledby="claim-c2">
+            <header>
+                <span class="claim-id">C2</span>
+                <h3 id="claim-c2" class="claim-title">Zero knowledge</h3>
+            </header>
+            <p>
+                Verifications at the <code>ZERO_KNOWLEDGE</code>
+                disclosure level have <code>token_id IS NULL</code>
+                — enforced by trigger, CHECK, and form coercion.
+                The verification graph cannot be reconstructed
+                from ZK events. A real Plonky2 ZK-SNARK proves
+                membership without revealing which token.
+            </p>
+        </article>
+
+        <article class="claim-card" aria-labelledby="claim-c3">
+            <header>
+                <span class="claim-id">C3</span>
+                <h3 id="claim-c3" class="claim-title">One identity per person</h3>
+            </header>
+            <p>
+                A partial unique index makes a second
+                <code>ACTIVE</code> token for the same individual
+                a database-level error. Concurrent writes lose
+                the race deterministically.
+            </p>
+        </article>
+
+        <article class="claim-card" aria-labelledby="claim-c10">
+            <header>
+                <span class="claim-id">C10</span>
+                <h3 id="claim-c10" class="claim-title">Identity is not money</h3>
+            </header>
+            <p>
+                The schema has no transactions, balances,
+                spending patterns, or merchant codes. Adding any
+                of those would require a constitutional amendment
+                that the agent refuses on sight. The pomerium
+                holds: swarm currency (denarius) and identity
+                tokens are different ledgers.
+            </p>
+        </article>
+    </div>
+
+    <p class="landing-section-aside">
+        Six more constraints round out C1-C10:
+        <strong>C4</strong> atomic failed-login counters (no TOCTOU race);
+        <strong>C5</strong> CSP forbids inline scripts (no <code>script-src 'unsafe-inline'</code>);
+        <strong>C6</strong> server-side disclosure enforcement (client cannot upgrade ZK to FULL);
+        <strong>C7</strong> no hardcoded cryptography (algorithm references the
+        <code>CryptographicAlgorithm</code> table; rotation is a row update);
+        <strong>C8</strong> bounded result sets on all
+        <code>/api/atlas/*</code> endpoints (no unbounded query exhaust);
+        <strong>C9</strong> concurrency hazards tested with real threading,
+        not mocks. The four cards above are the highlight reel for first-time
+        visitors; the canonical text for all ten lives in
+        <a href="https://github.com/anthropics/polaris/blob/main/MISSION.md#the-hard-constraints-do-not-violate">MISSION.md §"The hard constraints"</a>.
+        Anti-coercion is the <em>vocation</em> all ten constraints
+        serve — named in
+        <a href="https://github.com/anthropics/polaris/blob/main/MISSION.md#vocation">MISSION.md §"Vocation"</a>
+        above C1-C10 (v9.11).
+    </p>
+</section>
+
+<section class="landing-substrate" aria-labelledby="substrate-title">
+    <h2 id="substrate-title" class="landing-section-title">Built on real cryptography</h2>
+    <div class="substrate-grid">
+        <div class="substrate-cell">
+            <h3>ML-DSA-65</h3>
+            <p>NIST FIPS 204 lattice-based signatures. Post-quantum secure under the Module-LWE assumption.</p>
+        </div>
+        <div class="substrate-cell">
+            <h3>Plonky2 ZK-SNARK</h3>
+            <p>FRI-based, transparent setup, hash-only commitments. Proves epoch membership without revealing which token.</p>
+        </div>
+        <div class="substrate-cell">
+            <h3>Merkle anchoring</h3>
+            <p>SHA3-256 Merkle commitments over batched anchor sets. Per-leaf inclusion proof is logarithmic in batch size.</p>
+        </div>
+        <div class="substrate-cell">
+            <h3>Multi-sig migration</h3>
+            <p>M-of-N signature schemes per token. Algorithm rotation without invalidating existing tokens.</p>
+        </div>
+        <div class="substrate-cell">
+            <h3>Duress codes</h3>
+            <p>Constant-time comparison. Coercer-visible flow is identical to the legitimate one. <code>DuressEvent</code> row appears in the audit table.</p>
+        </div>
+        <div class="substrate-cell">
+            <h3>Federation</h3>
+            <p>Per-context trust attestations. Agency V accepts agency I for context C until date D. No transitive trust.</p>
+        </div>
+    </div>
+</section>
+
+<section class="landing-cognitive" aria-labelledby="cognitive-title">
+    <h2 id="cognitive-title" class="landing-section-title">A cognitive substrate that watches itself</h2>
+    <p class="landing-section-lede">
+        Polaris's most unusual layer is the one that monitors
+        the rest. Nine HYDRA watchers, thirty-three autonomous
+        Mycelium ants, six Civitas citizens, and a constitutional
+        meta-constraint (CM) that re-evaluates the system against
+        its own claims on every session.
+    </p>
+
+    <ul class="cognitive-list">
+        <li><strong>Sanctum protocol</strong> — every MEDIUM/HIGH-risk decision gets a structured agent-operator consultation on file. 36 sessions and counting.</li>
+        <li><strong>Audit-of-record discipline</strong> — twelve current instances. Nothing happens that the system can't reconstruct.</li>
+        <li><strong>Bounded autonomy</strong> — LOW-risk autonomous, MEDIUM propose-and-wait, HIGH explicit-human-approval. The risk-class lattice is the agent's contract.</li>
+        <li><strong>Constitutional meta-constraint (CM)</strong> — the immortal tenth head. Self-monitoring is the part of the system that survives if every other layer fails.</li>
+    </ul>
+</section>
+
+<section class="landing-deploy" aria-labelledby="deploy-title">
+    <h2 id="deploy-title" class="landing-section-title">Deployable in production</h2>
+    <p class="landing-section-lede">
+        Arc B (May 2026) closed the gap between architectural
+        sophistication and operational reality. The complete
+        production stack ships in the repo.
+    </p>
+
+    <pre class="landing-codeblock" aria-label="Production deployment commands"><code>git clone &lt;polaris repo&gt; &amp;&amp; cd polaris
+./scripts/polaris-generate-secrets.sh
+export POLARIS_DOMAIN=polaris.example.com
+./scripts/polaris-deploy.sh prod
+curl -fsS https://${POLARIS_DOMAIN}/api/health | jq .</code></pre>
+
+    <p class="landing-deploy-after">
+        Within ~90 seconds: Caddy provisions Let's Encrypt TLS,
+        Postgres + Redis + gunicorn come up, <code>/api/health</code>
+        returns structured per-component status. The operator
+        runbook is
+        <a href="https://github.com/anthropics/polaris/blob/main/docs/operator/OPERATIONS.md">OPERATIONS.md</a>;
+        the secrets primer is
+        <a href="https://github.com/anthropics/polaris/blob/main/docs/operator/SECRETS.md">SECRETS.md</a>.
+    </p>
+</section>
+
+<section class="landing-foot" aria-labelledby="foot-title">
+    <h2 id="foot-title" class="landing-section-title">Read more</h2>
+    <ul class="landing-foot-links">
+        <li><a href="https://github.com/anthropics/polaris/blob/main/docs/story/STORY.md">The story</a> — how Polaris went from a course assignment to a reference implementation</li>
+        <li><a href="https://github.com/anthropics/polaris/blob/main/docs/reference/GLOSSARY.md">Glossary</a> — every defined term</li>
+        <li><a href="https://github.com/anthropics/polaris/blob/main/docs/reference/DATA-MODEL.md">Data model</a> — every table, every constraint</li>
+        <li><a href="https://github.com/anthropics/polaris/blob/main/docs/reference/API.md">API reference</a> — every endpoint</li>
+        <li><a href="https://github.com/anthropics/polaris/blob/main/docs/operator/SECURITY.md">Security posture</a> — threat model, controls, audit</li>
+        <li><a href="https://github.com/anthropics/polaris/blob/main/docs/operator/PRIVACY.md">Privacy posture</a> — data minimization, rotation, what the schema doesn't carry</li>
+    </ul>
+</section>
+
+{% endblock %}

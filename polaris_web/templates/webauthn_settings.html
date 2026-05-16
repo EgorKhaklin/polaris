@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}WebAuthn Settings{% endblock %}
+{% block content %}
+
+<section class="page-section">
+    <h1 class="page-title">WebAuthn / Hardware Security Keys</h1>
+
+    {% if deadline_days is not none %}
+        {% if deadline_days < 0 %}
+            <div class="callout callout-error">
+                <strong>Enrollment deadline passed.</strong>
+                After your next logout, you will need a second-admin
+                emergency-login or a printed recovery code to authenticate
+                until you enroll a credential here.
+            </div>
+        {% elif deadline_days <= 7 %}
+            <div class="callout callout-warning">
+                <strong>{{ deadline_days }} day(s) remaining</strong>
+                to enroll a WebAuthn credential. After the deadline, login
+                will require either an enrolled credential or operator
+                recovery (printed code or second-admin pairing).
+            </div>
+        {% else %}
+            <div class="callout callout-info">
+                Enrollment deadline:
+                <strong>{{ deadline_days }} day(s)</strong> from now.
+                Enroll a security key or platform authenticator below to
+                satisfy the requirement.
+            </div>
+        {% endif %}
+    {% endif %}
+
+    <h2 class="section-heading">Enrolled credentials</h2>
+
+    {% if credentials %}
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Label</th>
+                    <th>Transports</th>
+                    <th>Format</th>
+                    <th>Enrolled</th>
+                    <th>Last used</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for c in credentials %}
+                    <tr>
+                        <td>{{ c.device_label or '(unnamed)' }}</td>
+                        <td>{{ c.transports or '—' }}</td>
+                        <td><code>{{ (c.credential_id[:16]) }}…</code></td>
+                        <td>{{ c.enrolled_at.strftime('%Y-%m-%d %H:%M') if c.enrolled_at else '—' }}</td>
+                        <td>{{ c.last_used_at.strftime('%Y-%m-%d %H:%M') if c.last_used_at else '(never)' }}</td>
+                        <td>
+                            <form method="post"
+                                  action="{{ url_for('webauthn_delete_credential', credential_id=c.credential_id) }}"
+                                  style="display:inline;">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="btn btn-danger btn-small"
+                                        data-confirm="Remove this credential? You will need to re-enroll the device to use it again.">
+                                    Remove
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p class="empty-state">
+            You have no enrolled WebAuthn credentials yet.
+        </p>
+    {% endif %}
+
+    <h2 class="section-heading">Enroll a new credential</h2>
+
+    <div class="webauthn-enroll">
+        <div class="form-group">
+            <label for="waLabel">Device label (optional)</label>
+            <input type="text" id="waLabel" maxlength="100"
+                   placeholder="e.g. YubiKey 5C work-laptop"
+                   class="form-control">
+            <small class="form-hint">
+                A human-readable name shown in the table above. Useful when
+                you have more than one key.
+            </small>
+        </div>
+
+        <div class="webauthn-status" id="waStatus" role="status" aria-live="polite">
+            Press the button to begin enrollment.
+        </div>
+
+        <div class="form-actions">
+            <button type="button" id="waEnrollBtn" class="btn btn-gold"
+                    data-csrf-token="{{ csrf_token() }}">
+                Enroll WebAuthn credential
+            </button>
+        </div>
+
+        <div class="webauthn-error" id="waError" role="alert" aria-live="assertive"></div>
+    </div>
+
+    <h2 class="section-heading">Policy</h2>
+    <ul class="policy-list">
+        <li><strong>admin</strong> role: WebAuthn is <em>required</em>
+            (after the enrollment deadline).</li>
+        <li><strong>operator</strong> role: WebAuthn is <em>optional</em>
+            but strongly encouraged. If you enroll a credential, future
+            logins will require it.</li>
+        <li><strong>auditor</strong> role: WebAuthn is <em>not required</em>
+            (read-only role; lower-blast-radius surface).</li>
+    </ul>
+</section>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='webauthn-register.js') }}?v=war001" defer></script>
+{% endblock %}

@@ -1,0 +1,321 @@
+{% extends "base.html" %}
+{% block title %}Token #{{ token.token_id }}{% endblock %}
+{% block content %}
+<h1>
+    Token #{{ token.token_id }}
+    <span class="pill pill-{{ token.status|lower }}" style="font-size: 13px; vertical-align: middle;">{{ token.status }}</span>
+</h1>
+
+<dl class="detail-grid">
+    <div><dt>Token Value</dt><dd class="mono">{{ token.token_value }}</dd></div>
+    <div><dt>Physical Serial</dt><dd class="mono">{{ token.physical_serial }}</dd></div>
+    <div><dt>Hardware Model</dt><dd>{{ token.hardware_model or '—' }}</dd></div>
+    <div><dt>Holder</dt><dd>{{ token.legal_name }} (#{{ token.individual_id }})</dd></div>
+    <div><dt>Issuer</dt><dd>{{ token.issuer_name }}</dd></div>
+    <div><dt>Algorithm</dt><dd class="mono">{{ token.alg_name }} {% if token.quantum_resistant %}<span class="pill pill-active">PQ</span>{% else %}<span class="pill pill-revoked">CLASSICAL</span>{% endif %}</dd></div>
+    <div><dt>Biometric Binding</dt><dd>{{ token.biometric_binding_type }}</dd></div>
+    <div><dt>Liveness Check</dt><dd>{{ token.liveness_check_type or '—' }}</dd></div>
+    <div><dt>Issued</dt><dd>{{ token.issued_date.strftime('%Y-%m-%d %H:%M') }}</dd></div>
+    <div><dt>Activated</dt><dd>{{ token.activated_date.strftime('%Y-%m-%d %H:%M') if token.activated_date else '—' }}</dd></div>
+    <div><dt>Expires</dt><dd>{{ token.expiration_date.strftime('%Y-%m-%d') if token.expiration_date else '—' }}</dd></div>
+    <div><dt>Activation Sequence</dt><dd>{{ token.activation_sequence }}</dd></div>
+    {% if token.predecessor_token_id %}
+    <div><dt>Predecessor</dt><dd><a href="{{ url_for('tokens_detail', tok_id=token.predecessor_token_id) }}">Token #{{ token.predecessor_token_id }}</a></dd></div>
+    {% endif %}
+</dl>
+
+<h2>State Transition</h2>
+<form method="post" action="{{ url_for('tokens_transition', tok_id=token.token_id) }}" class="standard">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="form-row">
+        <div class="form-group">
+            <label for="new_status">Transition To</label>
+            <select id="new_status" name="new_status" required>
+                {% for s in ['ACTIVE', 'DORMANT', 'REVOKED', 'LOST', 'EXPIRED'] %}
+                    {% if s != token.status %}
+                        <option value="{{ s }}">{{ s }}</option>
+                    {% endif %}
+                {% endfor %}
+            </select>
+            <span class="help">The state-machine trigger will reject illegal transitions per Appendix A.</span>
+        </div>
+    </div>
+    <div class="form-actions">
+        <button type="submit" class="btn">Apply Transition</button>
+    </div>
+</form>
+
+<h2>Lifecycle History ({{ lifecycle|length }} event{{ '' if lifecycle|length == 1 else 's' }})</h2>
+<table class="data">
+    <thead>
+        <tr><th>Event</th><th>Type</th><th>Actor</th><th>Timestamp</th><th>Reason</th></tr>
+    </thead>
+    <tbody>
+        {% for e in lifecycle %}
+        <tr>
+            <td>#{{ e.event_id }}</td>
+            <td><strong>{{ e.event_type }}</strong></td>
+            <td>{{ e.actor_name or '—' }}</td>
+            <td>{{ e.event_timestamp.strftime('%Y-%m-%d %H:%M') }}</td>
+            <td class="mono">{{ e.reason_code or '—' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="empty">No lifecycle events.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<h2>Verification Events ({{ verifications|length }})</h2>
+<table class="data">
+    <thead>
+        <tr><th>Event</th><th>Context</th><th>Verifier</th><th>Outcome</th><th>Disclosure</th><th>Timestamp</th></tr>
+    </thead>
+    <tbody>
+        {% for v in verifications %}
+        <tr>
+            <td>#{{ v.event_id }}</td>
+            <td>{{ v.context_type }}</td>
+            <td>{{ v.verifier_name }}</td>
+            <td><span class="pill pill-{{ v.outcome|lower }}">{{ v.outcome }}</span></td>
+            <td><span class="pill pill-{{ v.disclosure_level|lower }}">{{ v.disclosure_level }}</span></td>
+            <td>{{ v.event_timestamp.strftime('%Y-%m-%d %H:%M') }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="empty">No verifications yet (or all were ZERO_KNOWLEDGE — they don't reference this token by design).</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<h2>Device Bindings ({{ devices|length }})</h2>
+<table class="data">
+    <thead>
+        <tr><th>Binding</th><th>Type</th><th>Fingerprint</th><th>Method</th><th>Status</th><th>Authorized</th><th>Expires</th></tr>
+    </thead>
+    <tbody>
+        {% for d in devices %}
+        <tr>
+            <td>#{{ d.binding_id }}</td>
+            <td>{{ d.device_type }}</td>
+            <td class="mono">{{ d.device_fingerprint[:30] }}{% if d.device_fingerprint|length > 30 %}…{% endif %}</td>
+            <td class="mono">{{ d.binding_method }}</td>
+            <td><span class="pill pill-{{ d.status|lower }}">{{ d.status }}</span></td>
+            <td>{{ d.authorized_date.strftime('%Y-%m-%d') }}</td>
+            <td>{{ d.expires_date.strftime('%Y-%m-%d') if d.expires_date else '—' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="empty">No device bindings.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<h2>Blockchain Anchors</h2>
+<table class="data">
+    <thead>
+        <tr><th>Anchor</th><th>DID</th><th>Network</th><th>Anchored</th><th>Status</th></tr>
+    </thead>
+    <tbody>
+        {% for a in anchors %}
+        <tr>
+            <td>#{{ a.anchor_id }}</td>
+            <td class="mono">{{ a.did[:50] }}{% if a.did|length > 50 %}…{% endif %}</td>
+            <td>{{ a.ledger_network }}</td>
+            <td>{{ a.anchored_date.strftime('%Y-%m-%d') }}</td>
+            <td><span class="pill pill-{{ a.status|lower }}">{{ a.status }}</span></td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="empty">Not anchored.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<h2>Revocation Records</h2>
+<table class="data">
+    <thead>
+        <tr><th>ID</th><th>Revoked By</th><th>Reason</th><th>Effective</th><th>Published Location</th></tr>
+    </thead>
+    <tbody>
+        {% for r in revocations %}
+        <tr>
+            <td>#{{ r.revocation_id }}</td>
+            <td>{{ r.revoker_name }}</td>
+            <td>{{ r.reason_code }}</td>
+            <td>{{ r.effective_date }}</td>
+            <td class="mono">{{ r.published_location or '—' }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="empty">No revocations.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<h2>Permissions ({{ permissions|length }})</h2>
+<table class="data">
+    <thead>
+        <tr><th>Context</th><th>Level</th><th>Granted</th></tr>
+    </thead>
+    <tbody>
+        {% for p in permissions %}
+        <tr>
+            <td><strong>{{ p.context_type }}</strong></td>
+            <td>{{ p.permission_level }}</td>
+            <td>{{ p.granted_date.strftime('%Y-%m-%d') }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="3" class="empty">No permissions granted (token is in {{ token.status }} state).</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+{# ================== v2 SUBSTRATE STATE (v8.28) ==================
+   Surfaces the per-token presence in the v2 audit-of-record tables:
+   TokenSignature (R11-1 M:N), AnchorBatch membership via
+   BlockchainAnchor (R10-2), TokenStateEpochLeaf (R10-1), and the
+   non-revealing duress-enrollment flag (R11-5 — boolean only; the
+   hash itself is never surfaced and not joined into operator views). #}
+<h2>v2 Substrate State</h2>
+<div class="v2-substrate-grid">
+    <div class="v2-substrate-card">
+        <div class="v2-substrate-label">Duress Code</div>
+        <div class="v2-substrate-value">
+            {% if duress_enrolled %}
+                <span class="pill pill-success">ENROLLED</span>
+            {% else %}
+                <span class="pill">NOT ENROLLED</span>
+            {% endif %}
+        </div>
+        <div class="v2-substrate-note">
+            R11-5. Hash never displayed (R6 anti-revealing); enrollment
+            visible because it's policy, not content.
+        </div>
+    </div>
+    <div class="v2-substrate-card">
+        <div class="v2-substrate-label">Active Signatures</div>
+        <div class="v2-substrate-value">
+            {{ v2_signatures|selectattr('deprecation_date', 'none')|list|length }}
+            <span class="footnote">/ {{ v2_signatures|length }} total</span>
+        </div>
+        <div class="v2-substrate-note">R11-1 M:N (active + deprecated).</div>
+    </div>
+    <div class="v2-substrate-card">
+        <div class="v2-substrate-label">Anchor Receipts</div>
+        <div class="v2-substrate-value">{{ v2_anchor_batches|length }}</div>
+        <div class="v2-substrate-note">R10-2 BlockchainAnchor rows.</div>
+    </div>
+    <div class="v2-substrate-card">
+        <div class="v2-substrate-label">Epoch Leaves</div>
+        <div class="v2-substrate-value">{{ v2_epoch_leaves|length }}</div>
+        <div class="v2-substrate-note">R10-1 ZK inclusion witnesses.</div>
+    </div>
+</div>
+
+<h3>Token Signatures (R11-1)</h3>
+<table class="data">
+    <thead>
+        <tr><th>ID</th><th>Algorithm</th><th>Signed</th><th>State</th></tr>
+    </thead>
+    <tbody>
+        {% for s in v2_signatures %}
+        <tr>
+            <td class="mono">#{{ s.signature_id }}</td>
+            <td>
+                <span class="pill {% if s.quantum_resistant %}pill-success{% else %}pill-warn{% endif %}">
+                    {{ s.algorithm_name }}
+                </span>
+            </td>
+            <td class="mono">{{ s.signed_at.strftime('%Y-%m-%d %H:%M') }}</td>
+            <td>
+                {% if s.deprecation_date %}
+                    <span class="pill pill-warn">DEPRECATED {{ s.deprecation_date.strftime('%Y-%m-%d') }}</span>
+                {% else %}
+                    <span class="pill pill-success">ACTIVE</span>
+                {% endif %}
+            </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="empty">No signatures recorded.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<h3>Anchor Batch Membership (R10-2)</h3>
+<table class="data">
+    <thead>
+        <tr>
+            <th>Anchor</th>
+            <th>Batched</th>
+            <th>Batch</th>
+            <th>Algorithm</th>
+            <th>On-Chain</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for a in v2_anchor_batches %}
+        <tr>
+            <td class="mono">#{{ a.anchor_id }}</td>
+            <td class="mono">{{ a.anchor_timestamp.strftime('%Y-%m-%d %H:%M') }}</td>
+            <td>
+                {% if a.batch_id %}
+                    <a href="{{ url_for('anchors_list') }}#batch-{{ a.batch_id }}" class="mono">
+                        #{{ a.batch_id }}
+                    </a>
+                {% else %}
+                    <span class="pill pill-warn">PENDING</span>
+                {% endif %}
+            </td>
+            <td>{{ a.algorithm_name or '—' }}</td>
+            <td>
+                {% if a.batch_id and a.committed_to_chain %}
+                    <span class="pill pill-success">{{ a.external_chain or 'COMMITTED' }}</span>
+                {% else %}
+                    <span class="pill">OFF-CHAIN</span>
+                {% endif %}
+            </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="empty">No anchor receipts.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<h3>Epoch Leaves (R10-1)</h3>
+<table class="data">
+    <thead>
+        <tr>
+            <th>Leaf</th>
+            <th>Epoch</th>
+            <th>Valid Until</th>
+            <th>Closed</th>
+            <th>Leaf Hash</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for l in v2_epoch_leaves %}
+        <tr>
+            <td class="mono">#{{ l.leaf_id }}</td>
+            <td>
+                <a href="{{ url_for('epochs_list', epoch_id=l.epoch_id) }}" class="mono">
+                    #{{ l.epoch_id }}
+                </a>
+            </td>
+            <td class="mono">{{ l.valid_until.strftime('%Y-%m-%d') }}</td>
+            <td class="mono">{{ l.closed_at.strftime('%Y-%m-%d %H:%M') }}</td>
+            <td class="mono" title="{{ l.leaf_hash }}">
+                {{ l.leaf_hash[:8] }}…{{ l.leaf_hash[-6:] }}
+            </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="empty">No epoch leaves.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+<div class="footer-actions">
+    <a href="{{ url_for('tokens_list') }}" class="btn btn-secondary">← Back to Token List</a>
+    <span class="filler"></span>
+    <form method="post" action="{{ url_for('tokens_delete', tok_id=token.token_id) }}" style="display:inline;"
+          data-confirm="Delete token #{{ token.token_id }}? This will FAIL because of FK constraints from lifecycle events. Tokens are normally never deleted (audit invariant).">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn btn-danger">Delete Token</button>
+    </form>
+</div>
+{% endblock %}

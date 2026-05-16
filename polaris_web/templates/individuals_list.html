@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% from "_pager.html" import render_pager %}
+{% block title %}Individuals{% endblock %}
+{% block content %}
+<h1>Individuals</h1>
+<p class="subtitle">Natural persons enrolled in the system. Each individual may hold one ACTIVE token plus any number of RESERVE/DORMANT/terminal tokens.</p>
+
+<div class="actions-bar">
+    <a href="{{ url_for('individuals_new') }}" class="btn btn-gold">+ New Individual</a>
+    <a href="{{ url_for('enrollment_summary') }}" class="btn btn-secondary">Enrollment Summary</a>
+    <span class="record-count">{{ rows|length }} on this page</span>
+</div>
+
+<table class="data">
+    <thead>
+        <tr>
+            <th>ID</th><th>Legal Name</th><th>DOB</th>
+            <th>Jurisdiction</th><th>Enrolled</th><th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for r in rows %}
+        <tr>
+            <td>#{{ r.individual_id }}</td>
+            <td><strong>{{ r.legal_name }}</strong></td>
+            <td>{{ r.date_of_birth }}</td>
+            <td class="mono">{{ r.jurisdiction }}</td>
+            <td>{{ r.enrollment_date.strftime('%Y-%m-%d') }}</td>
+            <td class="actions">
+                <a href="{{ url_for('tokens_list', individual_id=r.individual_id) }}" class="btn btn-sm btn-secondary">Tokens</a>
+                <a href="{{ url_for('individuals_edit', ind_id=r.individual_id) }}" class="btn btn-sm btn-secondary">Edit</a>
+                <form method="post" action="{{ url_for('individuals_delete', ind_id=r.individual_id) }}" style="display:inline;"
+                      data-confirm="Delete individual #{{ r.individual_id }}? This will fail if any tokens reference them.">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+                </form>
+            </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="empty">No individuals.</td></tr>
+        {% endfor %}
+    </tbody>
+</table>
+{{ render_pager(page, has_prev, has_next, page_size) }}
+{% endblock %}

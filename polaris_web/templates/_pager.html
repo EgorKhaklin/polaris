@@ -1,0 +1,60 @@
+{# Reusable pager. Two modes:
+   - Page mode (legacy): renders Prev/Next links that bump ?page.
+   - Cursor mode (R7-3, v7): renders Prev/Next links that set ?cursor /
+     ?prev_cursor to opaque cursor strings produced by the route. The route
+     decides which mode is active and passes the appropriate kwargs.
+   Both modes preserve the rest of the query string (filters, page_size).
+   Hard-capped page size is still enforced server-side.
+   Render with: {{ render_pager(page, has_prev, has_next, page_size,
+                                cursor_mode=False) }}                       #}
+
+{% macro render_pager(page, has_prev, has_next, page_size,
+                      cursor_mode=False, first_cursor=none, last_cursor=none,
+                      total_known=none) -%}
+<nav class="pager" aria-label="Pagination">
+    <span class="pager-meta">
+        {%- if cursor_mode -%}
+            Cursor mode · {{ page_size }} per page
+        {%- else -%}
+            Page {{ page }} · {{ page_size }} per page
+        {%- endif -%}
+        {%- if total_known is not none %} · {{ total_known }} total{%- endif -%}
+    </span>
+    <span class="pager-controls">
+        {% set qs = request.args.to_dict() -%}
+        {%- if cursor_mode -%}
+            {# strip stale cursor params so we never accumulate both #}
+            {% set _ = qs.pop('cursor', none) -%}
+            {% set _ = qs.pop('prev_cursor', none) -%}
+            {% set _ = qs.pop('page', none) -%}
+            {% if has_prev and first_cursor is not none -%}
+                {% set qs_prev = qs.copy() -%}
+                {% set _ = qs_prev.update({'prev_cursor': first_cursor}) -%}
+                <a class="pager-link" href="?{{ qs_prev|urlencode }}" rel="prev">← Previous</a>
+            {%- else -%}
+                <span class="pager-link pager-link-disabled">← Previous</span>
+            {%- endif %}
+            {% if has_next and last_cursor is not none -%}
+                {% set qs_next = qs.copy() -%}
+                {% set _ = qs_next.update({'cursor': last_cursor}) -%}
+                <a class="pager-link" href="?{{ qs_next|urlencode }}" rel="next">Next →</a>
+            {%- else -%}
+                <span class="pager-link pager-link-disabled">Next →</span>
+            {%- endif %}
+        {%- else -%}
+            {% if has_prev -%}
+                {% set _ = qs.update({'page': page - 1}) -%}
+                <a class="pager-link" href="?{{ qs|urlencode }}" rel="prev">← Previous</a>
+            {%- else -%}
+                <span class="pager-link pager-link-disabled">← Previous</span>
+            {%- endif %}
+            {% if has_next -%}
+                {% set _ = qs.update({'page': page + 1}) -%}
+                <a class="pager-link" href="?{{ qs|urlencode }}" rel="next">Next →</a>
+            {%- else -%}
+                <span class="pager-link pager-link-disabled">Next →</span>
+            {%- endif %}
+        {%- endif %}
+    </span>
+</nav>
+{%- endmacro %}

@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}{{ action }} Individual{% endblock %}
+{% block content %}
+<h1>{{ action }} Individual{% if row %} #{{ row.individual_id }}{% endif %}</h1>
+
+<form method="post" class="standard narrow">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="form-row">
+        <div class="form-group">
+            <label for="legal_name">Legal Name</label>
+            <input type="text" id="legal_name" name="legal_name" required maxlength="200"
+                   value="{{ row.legal_name if row else '' }}">
+        </div>
+        <div class="form-group">
+            <label for="date_of_birth">Date of Birth</label>
+            <input type="date" id="date_of_birth" name="date_of_birth" required
+                   value="{{ row.date_of_birth if row else '' }}">
+        </div>
+    </div>
+
+    <div class="form-row">
+        <div class="form-group">
+            <label for="jurisdiction">Jurisdiction</label>
+            <input type="text" id="jurisdiction" name="jurisdiction" required maxlength="10"
+                   placeholder="e.g. US-PA"
+                   value="{{ row.jurisdiction if row else '' }}">
+            <span class="help">ISO 3166-2 code (e.g. US-PA, US-CA, US-NY)</span>
+        </div>
+    </div>
+
+    <div class="form-actions">
+        <button type="submit" class="btn">{{ action }}</button>
+        <a href="{{ url_for('individuals_list') }}" class="btn btn-secondary">Cancel</a>
+    </div>
+</form>
+{% endblock %}
