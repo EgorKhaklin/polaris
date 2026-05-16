@@ -1,0 +1,115 @@
+# polaris-id-cli — Python packaging metadata.
+#
+# Built from the Polaris repository's polaris_cli/ subdirectory.
+# Project source-of-truth: https://github.com/EgorKhaklin/polaris
+#
+# Build + publish workflow:
+#     cd polaris_cli
+#     python3 -m build              # produces dist/polaris_id_cli-X.Y.Z-py3-none-any.whl + .tar.gz
+#     twine check dist/*            # validates metadata + README rendering
+#     twine upload dist/*           # actual PyPI upload (needs PYPI_API_TOKEN)
+#
+# Name is `polaris-id-cli` because `polaris-cli` is taken on PyPI by an
+# unrelated "Polaris Cloud" resource-management tool. The `polaris-id`
+# console script keeps `polaris-cli`'s `polaris` script intact for users
+# who have both installed.
+
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "polaris-id-cli"
+version = "9.30.0"
+description = "Command-line interface to the Polaris Identity Token System — UC-1 through UC-9 stored procedures, audit-log tail, ad-hoc SQL, and user-management workflow against a running Polaris Postgres database."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [
+    { name = "Egor Khaklin", email = "EgorKhaklin@users.noreply.github.com" },
+]
+keywords = [
+    "polaris",
+    "identity",
+    "postgres",
+    "cli",
+    "audit",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: System Administrators",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Database :: Front-Ends",
+    "Topic :: Security",
+    "Topic :: System :: Systems Administration",
+]
+
+dependencies = [
+    # psycopg2-binary is required for every command that talks to Postgres —
+    # which is every command except `--help`. Pinned to the 2.9 series to
+    # match polaris_web/requirements.txt; range is left open within the
+    # series so a stock pip install picks up wheel security updates.
+    "psycopg2-binary>=2.9,<3.0",
+]
+
+[project.optional-dependencies]
+# werkzeug is imported lazily inside _require_werkzeug() and only used by
+# the user-management commands (user-create, user-passwd) for scrypt
+# password hashing. Read-only commands (health, list, inspect, query,
+# audit-log) and write commands that go through the SQL procedures
+# (issue, activate-reserve, bind-device, warrant-audit, transition,
+# revoke, recovery-initiate, recovery-complete) do NOT need werkzeug.
+#
+# Operators who use the CLI for user-management should install with:
+#     pip install 'polaris-id-cli[user-mgmt]'
+user-mgmt = [
+    "werkzeug>=3.0,<4.0",
+]
+
+[project.scripts]
+polaris-id = "polaris_cli.polaris:main"
+
+[project.urls]
+Homepage = "https://github.com/EgorKhaklin/polaris"
+Repository = "https://github.com/EgorKhaklin/polaris"
+Documentation = "https://github.com/EgorKhaklin/polaris/blob/main/polaris_cli/README.md"
+Issues = "https://github.com/EgorKhaklin/polaris/issues"
+Changelog = "https://github.com/EgorKhaklin/polaris/blob/main/CHANGELOG.md"
+
+# --------------------------------------------------------------------------
+# Setuptools: explicit package + package-directory mapping. The pyproject.toml
+# lives at the polaris_cli/ directory root, and polaris_cli IS that
+# directory (not a subdirectory under it). The package-dir mapping tells
+# setuptools "the polaris_cli package is the current dir" so that
+# polaris_cli/polaris.py installs as polaris_cli/polaris.py inside the
+# site-packages tree — which is what the `polaris-id = "polaris_cli.polaris:main"`
+# console-script entry point expects.
+# --------------------------------------------------------------------------
+
+[tool.setuptools]
+packages = ["polaris_cli"]
+package-dir = { "polaris_cli" = "." }
+include-package-data = false
+
+# Exclude development files from the wheel via MANIFEST.in (sdist) and
+# explicit exclude-package-data (wheel). The test suite needs a live
+# Polaris database, so shipping it inside the wheel would only confuse
+# downstream consumers.
+
+[tool.setuptools.package-data]
+polaris_cli = []
+
+[tool.setuptools.exclude-package-data]
+polaris_cli = [
+    "test_cli.py",
+    "*.pyc",
+    "__pycache__/*",
+]
