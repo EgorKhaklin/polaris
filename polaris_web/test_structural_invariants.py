@@ -9314,14 +9314,23 @@ class TestWave1V905(unittest.TestCase):
             "lens vocabulary now lives in ARCHITECTURE-OVERVIEW.md")
 
     def test_f2_readme_status_line_current(self):
-        """README must reference a current v9.x version + the hybrid
-        intelligence model. Pin to v9.x major-line, not specific minor
-        (avoids re-failing on every ship)."""
+        """README must reference a current v9.x version somewhere.
+        Pin to v9.x major-line, not specific minor (avoids re-failing
+        on every ship).
+
+        The earlier instance-shape pin on the "hybrid intelligence"
+        marketing phrase was retired when VANTA's publish-pass edit
+        removed that prose. Same instance-shape vs class-shape
+        failure mode named in the v9.29 freeze-amendment-protocol
+        Sanctum: tests that pin specific marketing copy break the
+        moment an operator decides the copy reads better another
+        way. The structural claim the test protects is "README still
+        references a current version" — not any specific phrasing.
+        """
         src = self._read('README.md')
         self.assertRegex(src, r'\bv9\.\d+\b',
-            "README must reference a v9.x version in its status line.")
-        self.assertIn('hybrid intelligence', src.lower(),
-            "README status must name the v9.04 hybrid intelligence model.")
+            "README must reference a v9.x version somewhere "
+            "(status line, in-numbers block, or attribution).")
 
     def test_f3_claude_md_where_x_lives_extended(self):
         """v9.24 trim moved file-map detail to docs/reference/SYSTEM-MAP.md.
