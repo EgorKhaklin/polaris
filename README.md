@@ -102,7 +102,7 @@ A full subcommand reference lives in [`docs/operator/INSTALL.md`](docs/operator/
                  │  27 schema tables                                │
                  │  14 stored procedures (UC-1 .. UC-12 + foresight)│
                  │  67 HTTP routes (incl. /auth/webauthn/*)         │
-                 │  1,355 Python tests · 882 structural invariants  │
+                 │  1,063 Python tests · 882 structural invariants  │
                  │  59 Sanctum strategic-consultation records       │
                  │  9 HYDRA watchers + CM                           │
                  │  33 commander ants + 9 soldier classes + 6 citiz │
@@ -163,7 +163,7 @@ Four layers of verification, all run by the launcher's `test` subcommand.
 ┌─────────────────────────────┬────────┬──────────────────────────────────────────────┐
 │  Layer                      │  Count │  What it covers                              │
 ├─────────────────────────────┼────────┼──────────────────────────────────────────────┤
-│  Python tests (total)       │ 1,355  │  Every Flask route, every form, the use      │
+│  Python tests (total)       │ 1,063  │  Every Flask route, every form, the use      │
 │                             │        │  cases, rate limiter, atlas API, R6 anti-    │
 │                             │        │  revealing posture. Includes property tests  │
 │                             │        │  and structural invariants below.            │
