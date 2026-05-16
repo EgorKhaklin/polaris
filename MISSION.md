@@ -788,7 +788,8 @@ AntColonyWatcher + CivitasWatcher v8.72), see
 
 Decentralized swarm substrate underneath HYDRA. Tiny ants deposit
 **pheromones** onto brain-map nodes via the append-only `Pheromone`
-table (the 11th audit-of-record instance). Synthesis EMERGES from
+table (an additional audit-of-record beyond the canonical 12; has
+archive+purge framework per v9.07). Synthesis EMERGES from
 pheromone density across the brain-map graph; no host calls in
 Phase 1. Operators read the heatmap via `scripts/ai-swarm-bloom.sh`.
 

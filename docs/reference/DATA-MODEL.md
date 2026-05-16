@@ -447,8 +447,9 @@ in v8.3 for server-side filter-chip support.
 
 ## Mycelium substrate (Arc E / E1 / v8.62)
 
-The 11th audit-of-record instance. Cognitive-layer metadata; carries
-no identity-layer payloads.
+An additional audit-of-record beyond the canonical 12 set (the
+canonical set is in `DEVNOTES/audit-of-record.md`). Cognitive-layer
+metadata; carries no identity-layer payloads.
 
 ### `Pheromone`
 

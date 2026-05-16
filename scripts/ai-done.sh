@@ -1,8 +1,8 @@
 #!/bin/bash
 # =============================================================================
-# scripts/ai-done.sh — pre-ship sanity check (v8.6; v8.27 adds #12)
+# scripts/ai-done.sh — pre-ship sanity check (v8.6; v9.24 #14; v9.28 #15)
 #
-# Before claiming a piece of work is "done," twelve things should be true.
+# Before claiming a piece of work is "done," fifteen things should be true.
 # This script checks them all and prints a single clean/dirty verdict.
 # Pre-v8.6 these were checked manually, which means sometimes they
 # weren't checked, which means CHANGELOG entries went missing or tests
@@ -24,6 +24,10 @@
 #      so ai-architect.sh --reflect has substrate to read (v8.27)
 #  13. Brain map refresh — regenerates meta/brain-map/brain-map.html so the
 #      visualization stays in sync with the system (v8.52)
+#  14. HYDRA findings gate — most recent journal/hydra/ brief has 0 ALERTs
+#      (v9.24 / BIG MISSION Tier 1 #1). Override POLARIS_ALLOW_ALERT_SHIPS=1.
+#  15. CM enforces — scripts/_cm_check.py exits 0 (v9.28 / Hydra #5).
+#      Override POLARIS_ALLOW_CM_MISMATCH=1.
 #
 # Usage:
 #     scripts/ai-done.sh          # human-readable report

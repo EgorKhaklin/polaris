@@ -80,7 +80,7 @@ recently modified files, suggested next.
 ./scripts/ai-link-check.sh --ci            # cross-ref resolution
 ./scripts/ai-meta.sh                       # cognitive-layer self-audit
 ./scripts/ai-coherence.sh                  # cross-layer consistency
-./scripts/ai-done.sh                       # pre-ship 14-check gate (v9.24 adds findings-gate)
+./scripts/ai-done.sh                       # pre-ship 15-check gate (v9.24 adds findings-gate; v9.28 adds CM-enforce)
 ```
 
 **Capture decisions during the session:**
@@ -158,7 +158,7 @@ Two remaining honestly-named "accept it never will" items:**
 
 **Pre-ship gates that enforce, not suggest:**
 
-- `scripts/ai-done.sh` — 14 checks; step 14 (v9.24) blocks ship on HYDRA
+- `scripts/ai-done.sh` — 15 checks; step 14 (v9.24) blocks ship on HYDRA
   ALERT-level finding. Override = `POLARIS_ALLOW_ALERT_SHIPS=1`
   (audit-trail line printed).
 - `scripts/pre-commit-scope-check.sh` (v9.24) — refuses commits where

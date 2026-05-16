@@ -152,7 +152,7 @@ fi
 # -----------------------------------------------------------------------------
 printf "\n${DIM}── Swarm + cognitive layer pointers ──${NC}\n"
 printf "  ${DIM}HYDRA: 9 watchers in polaris_hydra/ — \`bash scripts/ai-hydra.sh --full\` (v9.04 hybrid)${NC}\n"
-printf "  ${DIM}Mycelium: 33 commanders + 8 soldier classes — \`bash scripts/ai-swarm-bloom.sh\` for heatmap${NC}\n"
+printf "  ${DIM}Mycelium: 33 commanders + 9 soldier classes (8 workers + 1 priest) + 6 citizens — \`bash scripts/ai-swarm-bloom.sh\` for heatmap${NC}\n"
 printf "  ${DIM}Brain map: \`meta/brain-map/brain-map.html\` — \`bash scripts/ai-brain-map.sh --analyze\` for gap report${NC}\n"
 
 # -----------------------------------------------------------------------------

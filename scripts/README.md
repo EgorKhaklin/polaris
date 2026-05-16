@@ -25,7 +25,7 @@ Plus a few `*.py` helpers that scripts shell out to (`ai_brain_map.py`,
 | [`ai-hydra.sh`](ai-hydra.sh) | HYDRA swarm synthesis (v9.04: `--full / --actions / --save / --diff`) |
 | [`ai-sanctum.sh`](ai-sanctum.sh) | Open / close strategic-consultation sessions |
 | [`ai-journal.sh`](ai-journal.sh) | Episodic memory: capture decisions / learnings / bugs |
-| [`ai-done.sh`](ai-done.sh) | Pre-ship 14-check gate |
+| [`ai-done.sh`](ai-done.sh) | Pre-ship 15-check gate |
 
 The full inventory is one command away:
 
@@ -49,7 +49,7 @@ Grouped by lifecycle (matches `ai-help.sh` output):
 
 ### Working & shipping
 - [`ai-test.sh`](ai-test.sh) — full test suite (handles env + redis + venv)
-- [`ai-done.sh`](ai-done.sh) — 14-check pre-ship gate
+- [`ai-done.sh`](ai-done.sh) — 15-check pre-ship gate
 - [`ai-cache-bust.sh`](ai-cache-bust.sh) — bump CSS/JS `?v=` hashes
 - [`ai-link-check.sh`](ai-link-check.sh) — Markdown + cross-ref resolution
 - [`ai-impact.sh`](ai-impact.sh) — what depends on this file/symbol?

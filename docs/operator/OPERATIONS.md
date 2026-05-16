@@ -867,8 +867,9 @@ extended to those when needed).
 **Source:** Sanctum
 [`sanctum/2026-05-15-pheromone-rotation.md`](../../sanctum/2026-05-15-pheromone-rotation.md)
 Position A — mirror v8.84+v8.87 framework for the Pheromone table
-(the v8.62 Mycelium swarm substrate; the 11th audit-of-record
-instance). Polaris-self-roadmap-2026-05-14 item D5 surfaced the
+(the v8.62 Mycelium swarm substrate; append-only AoR with operator-
+controlled archive+purge, outside the canonical-12 constitutional
+set). Polaris-self-roadmap-2026-05-14 item D5 surfaced the
 ~50K rows/day growth projection.
 
 **Why a separate carve-out from audit-log:** Pheromone uses its

@@ -28,11 +28,12 @@ Five channels:
          alongside commanders, but the asymmetry is itself a signal)
 
   2. **Per-soldier-class freshness (v9.04).** Reads
-     `PheromoneSnapshot.per_soldier_class`. For each of the 8 known
-     v9.03 soldier classes (route_pinger, file_mtime, process_alive,
-     disk_usage, log_tail, db_table_size, heartbeat_freshness,
-     sanctum_freshness), checks `is_silent` (no deposit in >2h or
-     ever). Emits one drift finding listing all silent classes.
+     `PheromoneSnapshot.per_soldier_class`. For each of the 9 known
+     soldier classes (8 v9.03 workers: route_pinger, file_mtime,
+     process_alive, disk_usage, log_tail, db_table_size,
+     heartbeat_freshness, sanctum_freshness; plus 1 v9.11 priest:
+     soldier_swarm_witness), checks `is_silent` (no deposit in >2h
+     or ever). Emits one drift finding listing all silent classes.
      This is the load-bearing v9.04 add: a missing soldier class
      used to silently disappear from observability; now it surfaces
      within 2h.
@@ -255,10 +256,10 @@ class AntColonyWatcher(Watcher):
                         detail_lines.append(f"{name} (never)")
                 findings.append(Finding(
                     severity="drift",
-                    title=(f"{len(silent_classes)}/8 soldier class(es) "
-                           f"silent >2h"),
+                    title=(f"{len(silent_classes)}/{len(snap.per_soldier_class)} "
+                           f"soldier class(es) silent >2h"),
                     detail=(
-                        f"v9.03 soldier class(es) silent for >2h "
+                        f"soldier class(es) silent for >2h "
                         f"(or never seen): "
                         f"{', '.join(detail_lines)}. Either the "
                         f"soldier ant cron stopped, or the class "

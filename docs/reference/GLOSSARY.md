@@ -420,8 +420,8 @@ Examples: `SchemaWatcher` (C1-C9 schema invariants),
 
 **Mycelium** — the autonomous-action swarm layer. 33 ants across
 11 legions (9 Republican + 2 Imperial). Each ant scans one
-specific drift surface and lays a pheromone in
-`polaris_swarm/pheromones.db` when it finds something. Code in
+specific drift surface and lays a pheromone in the `Pheromone`
+PostgreSQL table when it finds something. Code in
 `polaris_swarm/`. Read-only at the substrate level (G6); ant
 findings drive operator attention via the bloom heatmap.
 
@@ -438,10 +438,14 @@ Roman tactics (TESTUDO, TRIPLEX_ACIES, CUNEUS, VEXILLATIO,
 AUXILIA) to coordinate its ants.
 
 **Pheromone** — a structured drift signal laid by an ant. Recorded
-in the `pheromones.db` SQLite store with intensity, decay rate,
-provenance (which ant deposited it). Read by the bloom-renderer to
-produce the operator-facing heatmap. The 11th audit-of-record
-candidate; not a schema AoR but a runtime AoR.
+in the `Pheromone` PostgreSQL table with intensity, decay rate,
+provenance (which ant deposited it). Append-only via
+`trg_pheromone_append_only`; archive+purge framework via
+`uc_pheromone_archive_purge()` per v9.07. Read by the bloom-renderer
+to produce the operator-facing heatmap. An additional audit-of-record
+beyond the canonical 12 set in `DEVNOTES/audit-of-record.md` (the
+canonical set is bounded; Pheromone has the operator-controlled
+purge path that the canonical set forbids).
 
 **Civitas** — the citizen layer. 6 civilian classes parallel to the
 9 Republican legions: Plebs, Equites, Augures, Censores,
