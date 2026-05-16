@@ -2,9 +2,19 @@
 name = "polaris_zk"
 version = "0.1.0"
 edition = "2021"
-authors = ["VANTA <noreply@polaris.dev>"]
-description = "ZK-SNARK Merkle-inclusion prover/verifier for Polaris M2-1 (R10-1). Plonky2 + Poseidon."
-license = "MIT"
+authors = ["Egor Khaklin <EgorKhaklin@users.noreply.github.com>"]
+description = "ZK-SNARK Merkle-inclusion prover/verifier for the Polaris Identity Token System (M2-1 / R10-1). Plonky2 + Poseidon. Post-quantum-comfortable; no trusted setup; FRI-based."
+license = "Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/EgorKhaklin/polaris"
+homepage = "https://github.com/EgorKhaklin/polaris"
+documentation = "https://docs.rs/polaris_zk"
+keywords = ["zk-snark", "plonky2", "merkle", "identity", "post-quantum"]
+categories = ["cryptography"]
+# Plonky2 currently requires nightly Rust (uses feature(specialization)).
+# The crate's rust-toolchain.toml pins nightly. Downstream consumers
+# should be aware: `rustup install nightly && cargo +nightly build`.
+rust-version = "1.75.0"
 
 [[bin]]
 name = "polaris-zk"
