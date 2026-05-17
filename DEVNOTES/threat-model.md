@@ -1,5 +1,7 @@
 # DEVNOTES/threat-model.md
 
+<!-- coherence:taxonomy-allowed — STRIDE is a standard taxonomy (S, T, R, I, D, E) + scope + deferred + coverage + how-to-use; consolidating S+T+R+I+D+E would invert the entire frame -->
+
 STRIDE-categorized threat model for Polaris. Every threat is mapped
 to a control or explicitly listed as ACCEPTED / DEFERRED with
 rationale.

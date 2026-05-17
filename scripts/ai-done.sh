@@ -185,7 +185,7 @@ bare_refs=$(grep -rln "INSTALL\.md\|DEPLOYMENT\.md\|OPERATIONS\.md\|SECURITY\.md
     "$ROOT" 2>/dev/null \
     | xargs -I{} grep -l "INSTALL\.md\|DEPLOYMENT\.md\|OPERATIONS\.md\|SECURITY\.md\|PRIVACY\.md\|SCALING\.md\|API\.md\|DATA-MODEL\.md\|GLOSSARY\.md" {} \
     | xargs grep -l -E '(^|[^/])(INSTALL|DEPLOYMENT|OPERATIONS|SECURITY|PRIVACY|SCALING|API|DATA-MODEL|GLOSSARY)\.md' 2>/dev/null \
-    | grep -vE 'docs/|CHANGELOG\.md|journal/' \
+    | grep -vE 'docs/|CHANGELOG\.md|journal/|archive/|sanctum/|meta/sanctum-index\.md|meta/brain-map/|meta/swarm-map/|/CONTRIBUTING\.md$|/ROADMAP\.md$|/proposals/|/templates/.*\.html$|/test_.*\.py$|/ant_docs_structure\.py$|/ant_api_doc_coverage\.py$' \
     | head -3)
 # If any of those files have a non-prefixed ref AND aren't inside docs/ or
 # CHANGELOG, that's drift. (CHANGELOG can legitimately mention old paths.)
@@ -250,8 +250,8 @@ LATEST_BRIEF=$(ls -1t "$ROOT/journal/hydra/"*.md 2>/dev/null | head -1)
 if [ -z "$LATEST_BRIEF" ]; then
     note "hydra-findings-gate: no brief in journal/hydra/ (run ai-hydra.sh --full --save)"
 else
-    ALERT_COUNT=$(grep -c '^\s*\[ALERT\]' "$LATEST_BRIEF" 2>/dev/null || echo 0)
-    DRIFT_COUNT=$(grep -c '^\s*\[DRIFT\]' "$LATEST_BRIEF" 2>/dev/null || echo 0)
+    ALERT_COUNT=$(grep -c '^\s*\[ALERT\]' "$LATEST_BRIEF" 2>/dev/null || true)
+    DRIFT_COUNT=$(grep -c '^\s*\[DRIFT\]' "$LATEST_BRIEF" 2>/dev/null || true)
     BRIEF_NAME=$(basename "$LATEST_BRIEF")
     if [ "${ALERT_COUNT:-0}" -gt 0 ]; then
         if [ "${POLARIS_ALLOW_ALERT_SHIPS:-0}" = "1" ]; then

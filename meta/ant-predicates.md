@@ -1,9 +1,14 @@
 # meta/ant-predicates.md — falsifiable predicate per commander ant
 
 **Origin:** BIG MISSION Sanctum (`sanctum/2026-05-16-cognitive-substrate-must-bite.md`), Tier 1 #2.
-**Status:** Enumeration complete for v9.24. DEPRECATION_CANDIDATE marks
-those whose predicate could not be made falsifiable on first pass —
-operator has one grace cycle (v9.25) to add a predicate before deletion.
+**Status:** Enumeration complete for v9.24. v9.25 grace cycle resolved
+2026-05-17 (joint Architect/Anti-Architect review): of 5 DEPRECATION_
+CANDIDATE entries, 4 strengthened in-place (ant_release_velocity,
+ant_recent_churn, ant_build_freshness, ant_rust_toolchain) and 1
+marked for cut (ant_pattern_warmth — overlap with cognitive_watcher).
+The DEPRECATION_CANDIDATE marker is retained in the prose below for
+provenance; the in-body label has been removed from the 4 strengthened
+entries and replaced with v9.25 DECISION: CUT on the 1 cut.
 **Cadence:** Re-audit on every ant added or modified.
 
 ---
@@ -85,12 +90,14 @@ in CHANGELOG.md.` Falsifiable by string compare.
 
 #### legio_performance
 
-**ant_release_velocity** — `The count of "## v9.\d+" headers in
-CHANGELOG.md added since polaris_web/__version__.py git mtime is ≤ 1
-(no skipped versions).` Falsifiable by git log + grep count.
-**DEPRECATION_CANDIDATE** — predicate weak; "skipped versions" is
-plausible but not load-bearing. Operator: replace with a load-bearing
-release-cadence predicate OR delete in v9.25.
+**ant_release_velocity** — `Consecutive "## v9.\d+" headers in
+CHANGELOG.md never skip a minor version (v9.N → v9.N+1, never
+v9.N → v9.N+2). The trailing 10 ships' inter-ship-interval has
+no gap > 7 days (matches v9.x cadence floor).` Falsifiable by
+grep-and-parse over CHANGELOG.md headers + date arithmetic.
+Strengthened v9.25 (was: "skipped versions ≤ 1" — weak heuristic;
+the no-skip-minor-version claim is load-bearing because version
+numbers ARE the audit-of-record per C1).
 
 **ant_ship_burst** — `Per-day count of CHANGELOG ship headers is ≤ 5
 (empirically chosen ceiling for the v9.x trajectory; exceeding it is
@@ -107,14 +114,15 @@ last 30 days.` Falsifiable by file scan + git log.
 date is within 7 days of the polaris_web/__version__.py mtime.`
 Falsifiable by date parse.
 
-**ant_recent_churn** — `Git log --since='7 days ago' shows ≥1 commit
-OR sanctum/2026-05-12-post-v2-steady-state-declaration.md flags
-steady-state mode active.` Falsifiable by git log + file presence.
-**DEPRECATION_CANDIDATE** — predicate's "steady-state mode active"
-clause is operator-dependent and currently doesn't reflect VANTA's
-post-v2 trajectory accurately (the steady-state declaration is
-overridden by the v8.31 heavy-production posture). Operator: rewrite
-or delete in v9.25.
+**ant_recent_churn** — `For each directory in {polaris_web/,
+polaris_sql/, polaris_hydra/, polaris_swarm/}: count of git-touched
+files in the last 24h does NOT exceed 75% of total source files in
+that directory (concentrated-churn anomaly threshold; 75% mirrors
+the trajectory_watcher's file-churn-cluster ceiling).` Falsifiable
+by git log --since='24 hours ago' --name-only | uniq -c per
+directory. Strengthened v9.25 (was: "steady-state mode active"
+operator-dependent clause — replaced with a directory-level
+concentration metric the trajectory_watcher already validates).
 
 #### legio_cognitive
 
@@ -130,15 +138,29 @@ polaris_foresight/.` Falsifiable by mtime compare.
 **ant_pattern_warmth** — `Every patterns/*.md file has been git-touched
 (any commit modifying it) within the last 180 days.` Falsifiable by
 git log per file.
-**DEPRECATION_CANDIDATE** — "warmth via git touch" is a heuristic
-not a load-bearing claim. A pattern can be load-bearing AND untouched.
-Operator: replace with referenced-by-N predicate OR delete in v9.25.
+**v9.25 DECISION: CUT** — joint Architect/Anti-Architect review
+2026-05-17: predicate is heuristic-not-falsifiable ("a load-bearing
+pattern can be untouched for years and still load-bearing"); overlap
+with `cognitive_watcher` which already enforces pattern catalog
+correspondence via ai-meta. The cognitive layer does not need two
+weak claims when one strong claim exists.
+**Cut-execution plan** (deferred to dedicated v9.25 ship under
+structural-invariant discipline; not session-level work):
+1. Remove `polaris_swarm/ants/ant_pattern_warmth.py`
+2. Remove import + registration in `polaris_swarm/ants/__init__.py`
+3. Remove from `polaris_swarm/legions/legio_cognitive.py` TACTIC
+4. Remove from `polaris_swarm/civitas/treasury.py` STEADY_STATE_ANTS
+5. Remove from `scripts/ai-swarm-health.sh` legion-counts allowlist
+6. Update `polaris_web/test_structural_invariants.py` references
+7. Update this file's Summary count (33 → 32 commander ants)
+8. Add a new structural invariant: `ant_pattern_warmth` is NOT in the
+   ants/ inventory (regression guard).
 
 #### legio_docs
 
 **ant_api_doc_coverage** — `Every Flask route declared in
 polaris_web/app.py (@app.route('...')) appears in
-docs/reference/API.md, and every API.md entry has a corresponding
+docs/reference/API.md, and every docs/reference/API.md entry has a corresponding
 route.` Falsifiable by grep + diff.
 
 **ant_devnotes_ships_coverage** — `Every CHANGELOG ## v entry for v8.x
@@ -184,13 +206,14 @@ __init_subclass__ banner.` Falsifiable by ls + grep.
 
 #### legio_engineer
 
-**ant_build_freshness** — `polaris_zk/target/release/polaris-zk binary
-exists AND is newer than any .rs file under polaris_zk/src/.`
-Falsifiable by mtime + file existence.
-**DEPRECATION_CANDIDATE** — the binary often doesn't exist in fresh
-clones (cargo build hasn't run). Operator: either build-in-CI guarantees
-this (T2#9) OR rewrite as conditional ("if target/release exists, then
-freshness invariant holds") OR delete in v9.25.
+**ant_build_freshness** — `IF polaris_zk/target/release/polaris-zk
+exists THEN it must be newer than every .rs file under polaris_zk/src/.
+Conditional invariant: claim makes no assertion in fresh clones where
+cargo build has not yet run; only fires when a stale binary exists.`
+Falsifiable by mtime + file existence. Strengthened v9.25 (was:
+unconditional existence-AND-freshness — failed in fresh clones; now
+conditional, only fires on the real failure mode of "binary exists
+but is stale").
 
 **ant_stale_script** — `Every scripts/ai-*.sh and scripts/polaris-*.sh
 has been invoked (per shell history OR git-touch) within the last 90
@@ -210,24 +233,35 @@ markers in core code paths (polaris_web/, polaris_sql/, polaris_hydra/,
 polaris_swarm/, polaris_foresight/, polaris_zk/) is zero. DEVNOTES/ is
 exempt (it's allowed to document known debt).` Falsifiable by grep.
 
-**ant_rust_toolchain** — `polaris_zk/rust-toolchain.toml's `channel`
-value is a Rust toolchain that exists on rustup's stable + nightly
-manifest within the last 30 days.` Falsifiable by file read + manifest
-check.
-**DEPRECATION_CANDIDATE** — "rustup manifest within last 30 days" is
-network-dependent. Either rewrite as offline ("toolchain matches the
-pin in cargo.lock") OR delete in v9.25.
+**ant_rust_toolchain** — `polaris_zk/rust-toolchain.toml exists AND
+its `channel` value is one of {"stable", "nightly", "beta"} OR is a
+semver-formatted toolchain string ("1.NN.N"). The check is offline:
+the value is read from the file; no network call is made.` Falsifiable
+by file read + string match against the allowed set / semver regex.
+Strengthened v9.25 (was: "rustup manifest within last 30 days" —
+network-dependent and CI-flaky; the offline form is sufficient because
+unknown channel values fail cargo invocation locally, surfacing the
+real failure mode without needing network state).
 
 ---
 
 ## Summary
 
 - **Predicates written:** 33 of 33 (100%)
-- **DEPRECATION_CANDIDATE flagged:** 5 (ant_release_velocity,
-  ant_recent_churn, ant_pattern_warmth, ant_build_freshness,
-  ant_rust_toolchain)
-- **Operator grace cycle:** v9.25 — operator either rewrites the 5
-  flagged predicates as falsifiable OR deletes the corresponding ant.
+- **DEPRECATION_CANDIDATE flagged in v9.24:** 5
+  (ant_release_velocity, ant_recent_churn, ant_pattern_warmth,
+  ant_build_freshness, ant_rust_toolchain)
+- **v9.25 grace-cycle resolution (joint Architect/Anti-Architect
+  2026-05-17):**
+  - **Strengthened (4)**: ant_release_velocity, ant_recent_churn,
+    ant_build_freshness, ant_rust_toolchain — predicates rewritten
+    above as falsifiable claims that no longer carry the
+    DEPRECATION_CANDIDATE marker.
+  - **Marked for cut (1)**: ant_pattern_warmth — overlap with
+    cognitive_watcher's pattern-catalog enforcement. Cut-execution
+    plan recorded above; file/code surgery deferred to a dedicated
+    v9.25 ship (touches 9 files including test_structural_invariants;
+    not session-level work).
 - **Structural invariant:**
   `test_every_commander_ant_has_predicate_in_index` verifies that the
   count of `ant_*.py` files matches the count of named ants in this

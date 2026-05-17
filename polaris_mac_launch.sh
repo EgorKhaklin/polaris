@@ -638,7 +638,7 @@ launch_native() {
     # v9.02: kick off a one-shot Mycelium swarm bloom in the background
     # so the dev launcher always has fresh pheromones — closes the
     # HYDRA ant_colony "zero pheromones in 72h" ALERT for dev users.
-    # In production, the every-6h cron (OPERATIONS.md § Mycelium swarm
+    # In production, the every-6h cron (docs/operator/OPERATIONS.md § Mycelium swarm
     # cron schedule) handles this; the dev launcher doesn't install
     # crons so the one-shot covers the gap. ~30-90s in the background;
     # log to /tmp/polaris_swarm_oneshot.log; never blocks startup.
@@ -651,7 +651,7 @@ launch_native() {
     # pheromones in 72h" ALERT for dev users with both commander
     # peaks AND soldier background. Production handles via the
     # every-6h cron (commanders) + every-30min cron (soldiers) per
-    # OPERATIONS.md § Mycelium swarm cron schedule.
+    # docs/operator/OPERATIONS.md § Mycelium swarm cron schedule.
     #
     # `polaris_swarm.colony --hybrid --duration 30`:
     #   - commanders: full --swarm phase (legions + civitas)

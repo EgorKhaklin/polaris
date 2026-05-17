@@ -26,7 +26,7 @@
 # tarball together reconstitute every purged row. Non-repudiation
 # survives the deletion IF the archive remains durable. Operator-set
 # archive custody is the load-bearing operational concern (see
-# OPERATIONS.md § Backup & restore).
+# docs/operator/OPERATIONS.md § Backup & restore).
 #
 # Usage:
 #   ./scripts/polaris-purge.sh \

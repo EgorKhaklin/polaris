@@ -1,5 +1,7 @@
 # Prior-art analysis: BettaFish + MiroFish
 
+<!-- coherence:taxonomy-allowed — six analysis lenses + decisions + conclusion + cross-refs; structure is content-determined, not over-decomposed -->
+
 **Authored:** 2026-05-12 (post-v8.43, immediately after Arc D close)
 **Method:** Swarm-as-lens. The HYDRA six-watcher domain set
 (schema, cognitive, security, mission, adversary, performance) was

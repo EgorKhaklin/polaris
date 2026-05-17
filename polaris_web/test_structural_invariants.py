@@ -14741,5 +14741,158 @@ class TestWave30V930(unittest.TestCase):
                 f"v9.30 CHANGELOG must reference '{marker}'")
 
 
+class TestSanctum_WatcherCoverageCompletion_2026_05_17(unittest.TestCase):
+    """Structural invariants from sanctum/2026-05-17-watcher-coverage-
+    completion.md (Position C+B-trigger, decided 2026-05-17).
+
+    Decision: every schema table in polaris_sql/01_schema.sql is either
+    read by ≥1 HYDRA watcher OR carries a non-empty, non-placeholder
+    `-- coverage:exempt — <rationale>` marker in the comment block
+    immediately above its CREATE TABLE statement.
+
+    The B-trigger clause: if a marked-exempt table starts producing real
+    drift findings the schema-watcher misses, that table promotes to a
+    focused watcher-build under its own Sanctum. Until that happens, the
+    test enforces the coverage CLAIM:
+
+        every table is either watched OR has a recorded reason for not
+        being watched.
+
+    This is the cognitive-layer claim made testable per the Architect's
+    drift→test discipline + the Anti-Architect's "the gap is theoretical,
+    not operational" position.
+    """
+    ROOT = os.path.normpath(os.path.join(os.path.dirname(__file__), '..'))
+
+    def _read(self, rel):
+        with open(os.path.join(self.ROOT, rel), encoding="utf-8",
+                  errors="replace") as f:
+            return f.read()
+
+    def _create_table_lines(self, schema_src):
+        """Return [(table_name_lower, line_index)] for every CREATE TABLE.
+        Strips SQL line-comments so 'CREATE TABLE so that' in prose is
+        not misinterpreted as a table named 'so'.
+        """
+        out = []
+        for i, line in enumerate(schema_src.splitlines()):
+            # Strip the comment portion before regex match
+            cut = line.find("--")
+            scan = line[:cut] if cut >= 0 else line
+            m = re.match(
+                r"^\s*CREATE TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)",
+                scan, re.IGNORECASE,
+            )
+            if m:
+                out.append((m.group(1).lower(), i))
+        return out
+
+    def _watched_tables(self):
+        """Return the set of tables that appear in any watcher's SQL."""
+        watched = set()
+        watcher_dir = os.path.join(self.ROOT, "polaris_hydra", "watchers")
+        for f in glob.glob(os.path.join(watcher_dir, "*.py")):
+            with open(f, encoding="utf-8", errors="replace") as fh:
+                text = fh.read()
+            for m in re.finditer(
+                r"(?i)\b(?:FROM|JOIN|INTO|UPDATE|TABLE)\s+([a-zA-Z_]\w*)",
+                text,
+            ):
+                # Filter out PostgreSQL keywords + system schemas
+                name = m.group(1).lower()
+                if name in (
+                    "if", "exists", "not", "table", "select", "where",
+                    "information_schema", "pg_catalog", "pg_class", "as",
+                ):
+                    continue
+                watched.add(name)
+        return watched
+
+    def _exempt_rationales(self, schema_src):
+        """Walk back from each CREATE TABLE to find a coverage:exempt
+        marker. Return dict {table_name: rationale_string}."""
+        out = {}
+        raw_lines = schema_src.splitlines()
+        for tname, i in self._create_table_lines(schema_src):
+            for j in range(i - 1, max(-1, i - 10), -1):
+                prev = raw_lines[j].strip()
+                if not prev:
+                    continue
+                if not prev.startswith("--"):
+                    break
+                mm = re.search(
+                    r"coverage:exempt\s*[—\-]+\s*(.+)$", prev,
+                )
+                if mm:
+                    out[tname] = mm.group(1).strip()
+                    break
+        return out
+
+    def test_every_table_watched_or_exempt(self):
+        """Every schema table is either watched by ≥1 watcher OR has
+        a coverage:exempt marker. The decision contract of
+        sanctum/2026-05-17-watcher-coverage-completion.md."""
+        schema_src = self._read("polaris_sql/01_schema.sql")
+        tables = {t for t, _ in self._create_table_lines(schema_src)}
+        watched = self._watched_tables() & tables
+        exempt = set(self._exempt_rationales(schema_src).keys()) & tables
+        uncovered = tables - watched - exempt
+        self.assertEqual(
+            uncovered, set(),
+            f"Sanctum 2026-05-17 violation: {len(uncovered)} table(s) are "
+            f"neither watched nor exempt-with-rationale: "
+            f"{sorted(uncovered)}. Either build a watcher for them OR "
+            f"add a `-- coverage:exempt — <rationale>` comment above "
+            f"their CREATE TABLE in 01_schema.sql."
+        )
+
+    def test_no_placeholder_rationales(self):
+        """Exemption rationales must be substantive — no TODO/TBD
+        placeholders. Per the Anti-Architect's marker-honesty clause."""
+        schema_src = self._read("polaris_sql/01_schema.sql")
+        rationales = self._exempt_rationales(schema_src)
+        placeholders = ("todo", "tbd", "fill in", "fixme", "...", "tk")
+        offenders = {
+            t: r for t, r in rationales.items()
+            if r.lower().strip() in placeholders
+            or len(r.strip()) < 10
+        }
+        self.assertEqual(
+            offenders, {},
+            f"Coverage rationales must be substantive (≥10 chars, no "
+            f"TODO/TBD). Offenders: {offenders}"
+        )
+
+    def test_exempt_markers_reference_real_tables(self):
+        """Every coverage:exempt marker must precede a real CREATE TABLE.
+        Catches the failure mode where a marker drifts to point at a
+        renamed/removed table."""
+        schema_src = self._read("polaris_sql/01_schema.sql")
+        rationale_table_names = set(self._exempt_rationales(schema_src).keys())
+        all_table_names = {t for t, _ in self._create_table_lines(schema_src)}
+        orphan_markers = rationale_table_names - all_table_names
+        self.assertEqual(
+            orphan_markers, set(),
+            f"coverage:exempt markers without a real CREATE TABLE: "
+            f"{sorted(orphan_markers)}"
+        )
+
+    def test_sanctum_file_exists_and_decided(self):
+        """The 2026-05-17 Sanctum file exists and reached DECIDED state.
+        Provenance check for the structural claim above."""
+        sanctum_path = os.path.join(
+            self.ROOT, "sanctum", "2026-05-17-watcher-coverage-completion.md",
+        )
+        self.assertTrue(os.path.exists(sanctum_path),
+            "sanctum/2026-05-17-watcher-coverage-completion.md must exist"
+        )
+        with open(sanctum_path, encoding="utf-8") as f:
+            text = f.read()
+        self.assertIn("Position C+B-trigger", text,
+            "Sanctum must record the decided position")
+        self.assertIn("DECIDED", text,
+            "Sanctum must have transitioned past OPEN")
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

@@ -214,25 +214,92 @@ def main() -> int:
     print()
 
     # §III: Blind spots
+    # v9.25 (sanctum/2026-05-17-watcher-coverage-completion.md Position
+    # C+B-trigger): tables without a direct watcher are not all "blind
+    # spots." A table may carry a coverage-exempt marker recorded as a
+    # structured SQL comment immediately above its CREATE TABLE line.
+    # The marker form is:
+    #     -- coverage:exempt — <rationale text>
+    # Parsed-non-empty rationales are reported as POSITIVE coverage
+    # ("exempt with rationale"). Tables without watcher AND without
+    # marker are the true blind spots.
     print(f"{PURPLE}§III. Coverage blind spots{NC}")
-    # Which schema tables are never touched by any watcher?
     all_sql = set()
     for p in profiles:
         all_sql.update(p["sql_tables"])
-    # Read known tables from CHANGELOG file-map (cheap; not perfect)
     schema_src = (ROOT / "polaris_sql" / "01_schema.sql").read_text(errors="replace")
+    # Strip SQL line-comments before extracting CREATE TABLE — a comment
+    # containing "CREATE TABLE so that" otherwise yields a spurious "so".
+    stripped_lines = []
+    for line in schema_src.splitlines():
+        idx = line.find("--")
+        if idx >= 0:
+            stripped_lines.append(line[:idx])
+        else:
+            stripped_lines.append(line)
+    stripped = "\n".join(stripped_lines)
     known_tables = set()
-    for m in re.finditer(r"CREATE TABLE\s+(\w+)", schema_src, re.IGNORECASE):
-        known_tables.add(m.group(1).lower())
-    missing_tables = sorted(known_tables - all_sql)
-    if missing_tables:
-        print(f"  {Y}Tables no watcher reads:{NC} {len(missing_tables)}")
-        for t in missing_tables[:15]:
+    for m in re.finditer(
+        r"CREATE TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)",
+        stripped, re.IGNORECASE,
+    ):
+        name = m.group(1).lower()
+        if name not in ("if",):  # defensive: skip IF (shouldn't reach here)
+            known_tables.add(name)
+
+    # Parse coverage-exempt markers (Position C from the 2026-05-17 Sanctum)
+    exempt_rationales: dict[str, str] = {}
+    raw_lines = schema_src.splitlines()
+    for i, line in enumerate(raw_lines):
+        # Look for CREATE TABLE statements in raw text
+        m = re.match(
+            r"\s*CREATE TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)",
+            line, re.IGNORECASE,
+        )
+        if not m:
+            continue
+        tname = m.group(1).lower()
+        # Walk back through any number of consecutive comment lines for
+        # the marker. Allow whitespace and additional comment lines
+        # between the marker and the CREATE TABLE.
+        for j in range(i - 1, max(-1, i - 10), -1):
+            prev = raw_lines[j].strip()
+            if not prev:
+                continue
+            if not prev.startswith("--"):
+                break
+            mm = re.search(
+                r"coverage:exempt\s*[—\-]+\s*(.+)$", prev,
+            )
+            if mm:
+                rationale = mm.group(1).strip()
+                # Reject obvious placeholders to keep the marker honest.
+                if rationale and rationale.lower() not in (
+                    "todo", "tbd", "fill in", "fixme", "...",
+                ):
+                    exempt_rationales[tname] = rationale
+                    break
+
+    unwatched = known_tables - all_sql
+    exempt = sorted(t for t in unwatched if t in exempt_rationales)
+    blind = sorted(t for t in unwatched if t not in exempt_rationales)
+
+    if blind:
+        print(f"  {Y}Tables no watcher reads AND no exempt marker:{NC} {len(blind)}")
+        for t in blind[:15]:
             print(f"    · {t}")
-        if len(missing_tables) > 15:
-            print(f"    {DIM}... and {len(missing_tables) - 15} more{NC}")
+        if len(blind) > 15:
+            print(f"    {DIM}... and {len(blind) - 15} more{NC}")
     else:
-        print(f"  {G}Every schema table is touched by at least one watcher.{NC}")
+        print(f"  {G}Every schema table is either watched or exempt with rationale.{NC}")
+    if exempt:
+        print(f"  {G}Tables exempt-with-rationale (Position C, 2026-05-17):{NC} {len(exempt)}")
+        for t in exempt[:5]:
+            r = exempt_rationales[t]
+            r_short = r[:80] + ("…" if len(r) > 80 else "")
+            print(f"    {DIM}·{NC} {t}: {DIM}{r_short}{NC}")
+        if len(exempt) > 5:
+            print(f"    {DIM}... and {len(exempt) - 5} more exempt tables{NC}")
     print()
 
     # §IV: Overlap (correlation potential)

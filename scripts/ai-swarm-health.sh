@@ -253,7 +253,34 @@ if [ "$TREASURY_TABLE_EXISTS" = "t" ]; then
         printf "  Ants with negative balance: ${Y}%s${NC} (persistent-silence penalty signal)\n" "$NEGATIVE_COUNT"
     fi
 else
-    printf "  ${DIM}AntBalance table not present in this schema.${NC}\n"
+    # Treasury lives in polaris_swarm/civitas/treasury-roll.json (Quaestor ledger),
+    # not in a SQL table. Read from the JSON if present so the operator sees the
+    # real balance picture rather than a missing-table message.
+    TREASURY_JSON="$ROOT/polaris_swarm/civitas/treasury-roll.json"
+    if [ -f "$TREASURY_JSON" ]; then
+        python3 - "$TREASURY_JSON" <<'PY' || printf "  ${DIM}(treasury-roll.json present but unreadable)${NC}\n"
+import json, sys
+from collections import Counter
+with open(sys.argv[1]) as f:
+    roll = json.load(f)
+events = roll.get("events", []) if isinstance(roll, dict) else []
+balances = Counter()
+for e in events:
+    balances[e.get("ant", "?")] += e.get("amount", 0)
+if not balances:
+    print("  Treasury ledger empty.")
+else:
+    vals = list(balances.values())
+    neg = sum(1 for v in vals if v < 0)
+    print(f"  Source:                treasury-roll.json (Quaestor JSON ledger; no SQL table)")
+    print(f"  Net balance:           {sum(vals)} denarii  across {len(vals)} ant(s) · {len(events)} events")
+    print(f"  Min/max ant balance:   {min(vals)} / {max(vals)}")
+    if neg:
+        print(f"  Ants with negative balance: {neg} (persistent-silence penalty signal — F5)")
+PY
+    else
+        printf "  ${DIM}AntBalance table not present, and no treasury-roll.json found.${NC}\n"
+    fi
 fi
 printf "\n"
 

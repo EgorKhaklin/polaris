@@ -2,7 +2,7 @@
 # ============================================================================
 # polaris-archive.sh — selective export of audit-log rows to cold storage
 #
-# v8.84 / Arc B Phase 2 — closes the OPERATIONS.md storage-growth gap
+# v8.84 / Arc B Phase 2 — closes the docs/operator/OPERATIONS.md storage-growth gap
 # WITHOUT compromising C1 (the rows stay in the hot tables; the archive
 # is a backup, not a move). The "rotate-from-hot" half of an archive
 # policy is genuinely constitutional — it touches C1's append-only

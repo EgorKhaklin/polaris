@@ -29,7 +29,7 @@
 # archive tarball together reconstitute every purged row. Non-
 # repudiation survives the deletion IF the archive remains durable.
 # Operator-set archive custody is the load-bearing operational concern
-# (see OPERATIONS.md § Pheromone archive + purge).
+# (see docs/operator/OPERATIONS.md § Pheromone archive + purge).
 #
 # Usage:
 #   ./scripts/polaris-pheromone-purge.sh \

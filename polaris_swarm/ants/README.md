@@ -51,7 +51,7 @@ each module exports one Ant subclass. Discovered automatically by
   - `ant_build_freshness` — Rust + Python build artifact age
   - `ant_rust_toolchain` — `rust-toolchain.toml` pin currency
 - **legio_docs** — documentation discipline
-  - `ant_api_doc_coverage` — routes vs API.md entries
+  - `ant_api_doc_coverage` — routes vs docs/reference/API.md entries
   - `ant_readme_counts` — every directory has a README
   - `ant_devnotes_ships_coverage` — major ships have DEVNOTES/ships entries
   - `ant_docs_structure` — docs/ subdirectory layout integrity

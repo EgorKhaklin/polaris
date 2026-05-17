@@ -1,5 +1,7 @@
 # Cognitive-layer threat model
 
+<!-- coherence:taxonomy-allowed — T-CL-1 through T-CL-5 are distinct threat classes; scope + vocation + cadence are meta-sections; consolidating would obscure threat enumeration -->
+
 **Origin:** BIG MISSION Sanctum (`sanctum/2026-05-15-big-mission.md`),
 item Critical #2
 **Status:** Constitutional record — threats NAMED; mitigations proposed

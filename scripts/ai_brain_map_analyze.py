@@ -40,7 +40,7 @@ from datetime import datetime, timezone
 def load_graph(repo_root: pathlib.Path) -> dict:
     """Extract the embedded JSON from meta/brain-map/brain-map.html, plus
     the version string from the HTML title bar."""
-    html_path = repo_root / "meta" / "brain-map.html"
+    html_path = repo_root / "meta" / "brain-map" / "brain-map.html"
     if not html_path.is_file():
         raise FileNotFoundError(
             f"{html_path} not found. Run scripts/ai-brain-map.sh first."

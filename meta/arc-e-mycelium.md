@@ -69,7 +69,7 @@ E1. ✅ **Mycelium Phase 1 — pheromone substrate** (`v8.62`).
     decay determinism, no LLM in swarm package). First-run finding:
     the colony's `ant_api_doc_coverage` immediately surfaced a real
     drift the v8.61 ai-coherence check had missed — `/api/heartbeat`
-    was documented as `GET` in API.md but is `POST` in code.
+    was documented as `GET` in [`docs/reference/API.md`](../docs/reference/API.md) but is `POST` in code.
     Mid-ship doc fix folded in.
 
 E2. ✅ **Expand the cohort to 12 ants** *(delivered v8.63)*.

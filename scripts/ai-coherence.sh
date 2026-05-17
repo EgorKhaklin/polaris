@@ -182,21 +182,38 @@ if os.path.isdir(patterns_dir):
     else:
         bad(f"patterns/ has only {n_patterns} files; constants require ≥ {min_set}")
 
-# 5. DEVNOTES_MAX_PER_CATEGORY: each DEVNOTES file should have ≤ 7 top-level sections
+# 5. DEVNOTES_MAX_PER_CATEGORY: each DEVNOTES file should have ≤ 7 top-level
+# sections. v9.25 exemption (joint Architect/Anti-Architect 2026-05-17):
+# files containing the marker `<!-- coherence:taxonomy-allowed -->` in their
+# first 10 lines are exempt — taxonomies (STRIDE, threat enumerations,
+# concurrency-pattern catalogs, lens analyses) are content-determined and
+# resist consolidation by design. The marker is the operator's explicit
+# claim that the section count is load-bearing.
 devnotes_dir = os.path.join(root, 'DEVNOTES')
 max_sections = constants['DEVNOTES_MAX_PER_CATEGORY']['value']
 oversized = []
+exempted = []
 if os.path.isdir(devnotes_dir):
     for f in glob.glob(os.path.join(devnotes_dir, '*.md')):
         body = open(f).read()
         sections = len(re.findall(r"^## ", body, re.MULTILINE))
         if sections > max_sections + 1:
-            oversized.append((os.path.basename(f), sections))
+            # Check for the taxonomy-allowed marker in the first 10 lines.
+            head = '\n'.join(body.splitlines()[:10])
+            if 'coherence:taxonomy-allowed' in head:
+                exempted.append((os.path.basename(f), sections))
+            else:
+                oversized.append((os.path.basename(f), sections))
     if oversized:
         for fn, s in oversized:
             warn(f"DEVNOTES/{fn} has {s} top-level sections (Miller's law suggests ≤ {max_sections})")
-    else:
+    if exempted:
+        for fn, s in exempted:
+            good(f"DEVNOTES/{fn} has {s} sections — TAXONOMY-EXEMPT marker present")
+    if not oversized and not exempted:
         good(f"all DEVNOTES files within {max_sections}-section working-memory limit")
+    elif not oversized:
+        good(f"all non-exempt DEVNOTES files within {max_sections}-section limit")
 
 # 6. PATTERN_CATALOG_SIZE == 22
 pat_sh = os.path.join(root, 'scripts/ai-pattern.sh')

@@ -1,5 +1,7 @@
 # DEVNOTES/concurrency.md
 
+<!-- coherence:taxonomy-allowed — hazard inventory + 7 lock-pattern sections (UC-8, UC-9, etc. per use-case) + catalog summary; each pattern is a distinct concurrency hazard with its own lock, test, and rationale -->
+
 What concurrency hazards exist, what protects against each, and what the
 test for each protection is. Read before changing anything in
 `05_procedures.sql`, `security.py::authenticate`, or any path that

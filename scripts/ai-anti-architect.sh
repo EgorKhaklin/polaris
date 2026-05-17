@@ -191,7 +191,7 @@ emit_retroactive_audit() {
 
     # The Anti-Architect's standing concern: ratio enforcement
     local l1_count
-    l1_count=$(echo "$ratio" | grep -oE 'L1×[0-9]+' | grep -oE '[0-9]+')
+    l1_count=$(echo "$ratio" | grep -oE 'L1×[0-9]+' | sed 's/L1×//')
     if [[ "$l1_count" -lt 1 ]]; then
         printf "  ${R}REFUSAL THRESHOLD CROSSED:${NC} 0 Layer-1 ships in last 5. The S2 cadence rule is violated.\n"
     elif [[ "$l1_count" -lt 2 ]]; then

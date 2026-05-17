@@ -32,7 +32,7 @@
 > commit deferred to operator per Git Safety Protocol. **D5-impl**
 > — Pheromone rotation framework: migration + LifecyclePheromone
 > Checkpoint table + uc_pheromone_archive_purge procedure + 2
-> operator scripts + G32+G33 + OPERATIONS.md; end-to-end drill
+> operator scripts + G32+G33 + [`docs/operator/OPERATIONS.md`](../docs/operator/OPERATIONS.md); end-to-end drill
 > verified (2 rows force-purged, checkpoint written, post-COMMIT
 > raw DELETE rejected). **J1** — ai-dashboard.sh composes 7
 > sections into one screen. **J4** — treasury-60d-sim-review-
@@ -579,7 +579,7 @@ faster.
 
 **Fix:** Add `.pre-commit-config.yaml` that runs the structural
 invariants suite + ai-link-check + ai-meta. Document in
-OPERATIONS.md.
+[`docs/operator/OPERATIONS.md`](../docs/operator/OPERATIONS.md).
 
 **Risk class:** LOW.
 

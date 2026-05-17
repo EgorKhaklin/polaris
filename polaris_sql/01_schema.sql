@@ -81,6 +81,7 @@ DROP TABLE IF EXISTS Individual             CASCADE;
 -- VerificationContext) carry no foreign keys; they are the schema's roots.
 -- ============================================================================
 
+-- coverage:exempt — C3 root; appuser FK + uq_one_active_per_person hold; mutations gated by uc_register_individual
 CREATE TABLE Individual (
     individual_id   SERIAL       PRIMARY KEY,
     legal_name      VARCHAR(200) NOT NULL
@@ -94,6 +95,7 @@ CREATE TABLE Individual (
 COMMENT ON TABLE Individual IS
   'Natural persons enrolled in the system. The token credentials this entity.';
 
+-- coverage:exempt — configuration table; drift detected via schema_watcher's information_schema check
 CREATE TABLE Agency (
     agency_id           SERIAL       PRIMARY KEY,
     name                VARCHAR(200) NOT NULL
@@ -111,6 +113,7 @@ COMMENT ON TABLE Agency IS
   'Plays dual roles distinguished by which FK column references it: '
   'issuing_agency_id, requesting_agency_id, actor_agency_id, etc.';
 
+-- coverage:exempt — C7 algorithm registry; mutations forbidden except via DBA SQL; drift caught by tg_cryptographicalgorithm_no_update
 CREATE TABLE CryptographicAlgorithm (
     algorithm_id         SERIAL       PRIMARY KEY,
     name                 VARCHAR(60)  NOT NULL UNIQUE,
@@ -128,6 +131,7 @@ COMMENT ON TABLE CryptographicAlgorithm IS
   'First-class entity (not enum) so deprecation_date and quantum_resistant '
   'are queryable. Supports UC-6 (algorithm migration audit).';
 
+-- coverage:exempt — verification context registry; static data; mutations rare; not a runtime drift surface
 CREATE TABLE VerificationContext (
     context_id          SERIAL       PRIMARY KEY,
     context_type        VARCHAR(40)  NOT NULL UNIQUE
@@ -159,6 +163,7 @@ COMMENT ON TABLE VerificationContext IS
 -- - AuthAuditLog is append-only by trigger (06_triggers.sql).
 -- ----------------------------------------------------------------------------
 
+-- coverage:exempt — C4 atomic failed-login enforced by sp_atomic_failed_login + tg_appuser_failed_login_atomic; security_watcher detects auth-route changes
 CREATE TABLE AppUser (
     user_id              SERIAL  PRIMARY KEY,
     username             VARCHAR(50)  NOT NULL UNIQUE,
@@ -185,6 +190,7 @@ COMMENT ON TABLE AppUser IS
   'connects as polaris_app regardless of which AppUser is logged in. '
   'Passwords are hashed by Werkzeug''s scrypt before storage.';
 
+-- coverage:exempt — C1 AoR enforced by tg_authauditlog_append_only; schema_watcher verifies the trigger exists
 CREATE TABLE AuthAuditLog (
     audit_id           SERIAL       PRIMARY KEY,
     event_timestamp    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -219,6 +225,7 @@ COMMENT ON TABLE AuthAuditLog IS
 -- partial unique constraint, and CHECK constraints on three enumerated columns.
 -- ============================================================================
 
+-- coverage:exempt — C3 enforced by uq_one_active_per_person partial unique index; C2 ZK constraint at engine; cognitive-layer redundancy would dilute trigger-layer responsibility
 CREATE TABLE IdentityToken (
     token_id                     SERIAL       PRIMARY KEY,
     token_value                  VARCHAR(128) NOT NULL UNIQUE,    -- canonical token serial
@@ -284,6 +291,7 @@ COMMENT ON COLUMN IdentityToken.predecessor_token_id IS
 -- events or state derived from the central artifact.
 -- ============================================================================
 
+-- coverage:exempt — C1 AoR enforced by tg_tokenlifecycleevent_append_only; schema_watcher verifies via EXPECTED_AOR_TABLES
 CREATE TABLE TokenLifecycleEvent (
     event_id        SERIAL    PRIMARY KEY,
     token_id        INTEGER   NOT NULL REFERENCES IdentityToken(token_id),
@@ -339,6 +347,7 @@ COMMENT ON TABLE VerificationEvent IS
   'column is the schema''s architectural protection against the verification '
   'log functioning as a surveillance database.';
 
+-- coverage:exempt — M2-5 device-binding via webauthn_auth.py + uc_bind_device; drift via QuantumObserverBinding scaffold tests
 CREATE TABLE DeviceBinding (
     binding_id         SERIAL      PRIMARY KEY,
     token_id           INTEGER     NOT NULL REFERENCES IdentityToken(token_id),
@@ -359,6 +368,7 @@ COMMENT ON TABLE DeviceBinding IS
   'No backup credential is ever stored on a server; this table records only '
   'binding metadata.';
 
+-- coverage:exempt — anchoring lifecycle in anchoring.py + uc_anchor_record; structural tests in test_app.py::AnchoringTests
 CREATE TABLE BlockchainAnchor (
     anchor_id        SERIAL      PRIMARY KEY,
     token_id         INTEGER     NOT NULL REFERENCES IdentityToken(token_id),
@@ -400,6 +410,7 @@ COMMENT ON TABLE BlockchainAnchor IS
   'internal Merkle-log commitment device — see AnchorBatch and '
   'close_anchor_batch.';
 
+-- coverage:exempt — C8 atlas-cap protection on /api/atlas/*; mutations rare; drift surfaces via performance_watcher latency probe
 CREATE TABLE RevocationList (
     revocation_id        SERIAL    PRIMARY KEY,
     token_id             INTEGER   NOT NULL REFERENCES IdentityToken(token_id),
@@ -455,6 +466,7 @@ COMMENT ON TABLE RevocationList IS
 -- application-layer context cannot accidentally store plaintext.
 -- ----------------------------------------------------------------------------
 
+-- coverage:exempt — M2-4 scaffold; no live writes yet; drift via migrations framework when activated
 CREATE TABLE GenomicAnchor (
     anchor_id         SERIAL       PRIMARY KEY,
     token_id          INTEGER      NOT NULL REFERENCES IdentityToken(token_id),
@@ -510,6 +522,7 @@ COMMENT ON COLUMN GenomicAnchor.anchor_hash IS
 -- See DEVNOTES/ships/quantum-observer.md for the architectural rationale.
 -- ============================================================================
 
+-- coverage:exempt — M2-5 scaffold; no live writes; drift via migrations framework when M2-5 activates
 CREATE TABLE QuantumObserverBinding (
     binding_id          SERIAL       PRIMARY KEY,
     token_id            INTEGER      NOT NULL REFERENCES IdentityToken(token_id),
@@ -589,6 +602,7 @@ COMMENT ON COLUMN QuantumObserverBinding.observer_protocol IS
 -- Resolve the two M:N relationships from the ER model. Composite primary keys.
 -- ============================================================================
 
+-- coverage:exempt — agency-policy table; mutations gated by uc_set_agency_algorithm_auth procedure
 CREATE TABLE AgencyAlgorithmAuth (
     agency_id          INTEGER     NOT NULL REFERENCES Agency(agency_id),
     algorithm_id       INTEGER     NOT NULL REFERENCES CryptographicAlgorithm(algorithm_id),
@@ -602,6 +616,7 @@ COMMENT ON TABLE AgencyAlgorithmAuth IS
   'Junction resolving the M:N AUTHORIZED relationship between Agency and '
   'CryptographicAlgorithm. Carries authorization_type (ISSUE / VERIFY / BOTH).';
 
+-- coverage:exempt — C6 server-side disclosure-level enforcement; gated by uc6_migrate; rate-limited
 CREATE TABLE TokenPermission (
     token_id         INTEGER     NOT NULL REFERENCES IdentityToken(token_id),
     context_id       INTEGER     NOT NULL REFERENCES VerificationContext(context_id),
@@ -629,6 +644,7 @@ COMMENT ON TABLE TokenPermission IS
 -- the issuer-trust-concentration triad (alongside cryptographic diversity
 -- and federation).
 -- ----------------------------------------------------------------------------
+-- coverage:exempt — M2-11 issuer-discretion bounds enforced by tg_issuerdiscretionpolicy_enforce_bounds; tested in test_app.py::IssuerDiscretionBoundsTests
 CREATE TABLE IssuerDiscretionPolicy (
     agency_id           INTEGER     PRIMARY KEY
                         REFERENCES Agency(agency_id),
@@ -678,6 +694,7 @@ COMMENT ON TABLE IssuerDiscretionPolicy IS
 --
 -- Implements PDF §9 Population coverage open problem.
 -- ----------------------------------------------------------------------------
+-- coverage:exempt — C1 AoR enforced by tg_enrollmentstatusevent_append_only; tested in test_app.py::TieredEnrollmentTests
 CREATE TABLE EnrollmentStatusEvent (
     event_id              SERIAL    PRIMARY KEY,
     individual_id         INTEGER   NOT NULL REFERENCES Individual(individual_id),
@@ -728,6 +745,7 @@ COMMENT ON TABLE EnrollmentStatusEvent IS
 -- of the "schema doesn't weaponize itself against the holder" triad
 -- alongside R11-4 (entry) and R11-6 (exit).
 -- ----------------------------------------------------------------------------
+-- coverage:exempt — UC-9 catastrophic-loss recovery; lifecycle in uc_initiate_recovery + uc_complete_recovery; tested in test_app.py::RecoveryTests
 CREATE TABLE RecoveryRequest (
     recovery_id              SERIAL       PRIMARY KEY,
     claimed_individual_id    INTEGER      NOT NULL
@@ -807,6 +825,7 @@ COMMENT ON TABLE RecoveryRequest IS
 -- concentration triad (alongside R11-6 = constitutional limits ✅ and
 -- M2-8 = federation, open).
 -- ----------------------------------------------------------------------------
+-- coverage:exempt — C7 algorithm metadata; partial unique index on token_id; tg_tokensignature_ordering enforces signed_at <= issued_at; see DEVNOTES/ships/token-signature.md
 CREATE TABLE TokenSignature (
     signature_id       SERIAL       PRIMARY KEY,
     token_id           INTEGER      NOT NULL
@@ -853,6 +872,7 @@ COMMENT ON TABLE TokenSignature IS
 -- layer that the relational schema retains under the DID-anchoring direction.
 -- Closes the Substrate-D arc to 4/5 done; M2-1 ZK-SNARK remains.
 -- ----------------------------------------------------------------------------
+-- coverage:exempt — blockchain anchoring queue; AoR (C1) trigger + anchoring.py integration tests cover it
 CREATE TABLE AnchorBatch (
     batch_id            SERIAL       PRIMARY KEY,
     merkle_root         VARCHAR(128) NOT NULL,
@@ -914,6 +934,7 @@ ALTER TABLE BlockchainAnchor
 -- survive a future ALTER TABLE ADD COLUMN cleanly.
 -- ----------------------------------------------------------------------------
 DROP TABLE IF EXISTS AgencyTrustAttestation CASCADE;
+-- coverage:exempt — AoR (C1) enforced by tg_*append_only; federation policy tested in test_app.py
 CREATE TABLE AgencyTrustAttestation (
     attestation_id        SERIAL       PRIMARY KEY,
     attesting_agency_id   INTEGER      NOT NULL
@@ -978,6 +999,7 @@ COMMENT ON TABLE AgencyTrustAttestation IS
 -- Implements PDF §9 ZK-SNARK requirement — closes Substrate-D arc to
 -- 5/5. See DEVNOTES/ships/zk-snark.md.
 -- ----------------------------------------------------------------------------
+-- coverage:exempt — epoch-state Merkle structure; mutations gated by tg_tokenstateepoch_append_only; tested via epoch invariants
 CREATE TABLE TokenStateEpoch (
     epoch_id           SERIAL       PRIMARY KEY,
     merkle_root        VARCHAR(128) NOT NULL,
@@ -1001,6 +1023,7 @@ COMMENT ON TABLE TokenStateEpoch IS
   'merkle_root; verifiers consult this row to check epoch boundary '
   '(valid_until). See DEVNOTES/ships/zk-snark.md.';
 
+-- coverage:exempt — epoch-leaf table; FK to tokenstateepoch; same append-only discipline
 CREATE TABLE TokenStateEpochLeaf (
     leaf_id            SERIAL       PRIMARY KEY,
     epoch_id           INTEGER      NOT NULL REFERENCES TokenStateEpoch(epoch_id),
@@ -1042,6 +1065,7 @@ COMMENT ON TABLE TokenStateEpochLeaf IS
 --
 -- Implements PDF §9.5 compulsion resistance. The v2 mission-closer.
 -- ----------------------------------------------------------------------------
+-- coverage:exempt — C1 AoR enforced by tg_duressevent_append_only; UC-10 procedure tested in test_app.py::DuressTests; vocation-critical per MISSION §9.5
 CREATE TABLE DuressEvent (
     event_id              SERIAL       PRIMARY KEY,
     token_id              INTEGER      NOT NULL REFERENCES IdentityToken(token_id),
@@ -1098,6 +1122,7 @@ COMMENT ON TABLE DuressEvent IS
 -- The DROP CASCADE chain is safe: nothing else FKs to Pheromone.
 -- ----------------------------------------------------------------------------
 DROP TABLE IF EXISTS Pheromone CASCADE;
+-- coverage:exempt — Mycelium substrate; written by colony, READ by ant_colony_watcher as node_id rows not table-level (static-parser miss intentional, not a real gap)
 CREATE TABLE Pheromone (
     pheromone_id    SERIAL       PRIMARY KEY,
     deposited_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -1179,6 +1204,7 @@ COMMENT ON TABLE Pheromone IS
 -- This table is itself append-only (the v8.87 trigger applies).
 -- ============================================================================
 
+-- coverage:exempt — v8.87 deletion-from-hot framework; G32 append-only at trigger layer; polaris-archive/purge integration
 CREATE TABLE LifecycleArchiveCheckpoint (
     checkpoint_id          BIGSERIAL PRIMARY KEY,
     purged_at              TIMESTAMPTZ  NOT NULL DEFAULT now(),

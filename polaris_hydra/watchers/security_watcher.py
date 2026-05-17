@@ -315,9 +315,11 @@ class SecurityWatcher(Watcher):
 
         # No 'unsafe-inline' for scripts. The string can legitimately
         # appear in style-src (e.g. style-src 'self' 'unsafe-inline'),
-        # but it must NEVER appear within script-src.
+        # but it must NEVER appear within script-src. The negated class
+        # also excludes `"` and `\n` so the match cannot leak across a
+        # Python source-string boundary into the next CSP segment.
         script_src_unsafe = re.search(
-            r"script-src[^;]*'unsafe-inline'", text, flags=re.IGNORECASE
+            r"script-src[^;\"\n]*'unsafe-inline'", text, flags=re.IGNORECASE
         )
         if script_src_unsafe:
             findings.append(Finding(

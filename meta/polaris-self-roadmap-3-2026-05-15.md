@@ -134,7 +134,8 @@ tier is F5-exempt; non-constitutional).
 **Decision: defer to v9.10 (would touch v9.03 soldier tier
 inventory; wants its own structural invariant changes).** v9.09
 ships an alternative: `ai-brain-map.sh` gains a `--auto` flag
-that's safe to call from cron; document in OPERATIONS.md cadence
+that's safe to call from cron; document in
+[`docs/operator/OPERATIONS.md`](../docs/operator/OPERATIONS.md) cadence
 table.
 
 #### F. ai-sanctum.sh search subcommand

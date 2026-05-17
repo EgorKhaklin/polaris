@@ -153,7 +153,8 @@ shift; recommended Path A (preserve window). Today is 2026-05-15
 
 **Observed:** ant_colony_watcher channel 2 fires in dev because
 the soldier cron isn't running locally. In prod (per v9.01
-OPERATIONS.md cron schedule), soldiers run every 30min for 60s.
+[`docs/operator/OPERATIONS.md`](../docs/operator/OPERATIONS.md) cron
+schedule), soldiers run every 30min for 60s.
 
 **Architect's stance:** **EXPECTED in dev.** The signal is correct
 behavior; the operator interprets. Could add a "dev-mode

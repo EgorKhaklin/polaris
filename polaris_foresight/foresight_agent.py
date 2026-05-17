@@ -284,9 +284,22 @@ class ForesightAgent:
         """§IV — Vocation-aligned gaps. STRUCTURALLY REQUIRED non-empty
         per Anti-Architect modification.
 
-        For each of the seven anti-coercion primitives, scan the last
-        N=30 ships in CHANGELOG. If a primitive hasn't been touched
-        (no mention in any of the 30), surface as a vocation gap.
+        For each of the seven anti-coercion primitives, check three
+        signals (v9.25 tightening — joint Architect/Anti-Architect
+        2026-05-17): the CHANGELOG-mention signal alone produced
+        false positives because process-level ships (e.g. v9.28-v9.30
+        cognitive-layer work) don't name primitives in their headers
+        while the primitive's source files ARE actively maintained.
+        A primitive is flagged ONLY when all three signals are absent:
+
+          1. No mention in last 30 CHANGELOG entries
+          2. No DEVNOTES/ships/*.md file matching the primitive
+          3. No source file under the primitive's surface path
+             modified in the last 90 days
+
+        Falsifiable by the conjunction; less prone to AP1 (self-
+        observation without ground-touch) than the prior pure-CHANGELOG
+        check.
         """
         body = []
         citations = ["MISSION.md §Vocation", "CHANGELOG.md (last 30 ships)"]
@@ -295,12 +308,90 @@ class ForesightAgent:
         entries = re.split(r"^## v[0-9]+\.[0-9]+", cl, flags=re.MULTILINE)[:31]
         scope = "\n".join(entries)
         scope_lower = scope.lower()
+
+        # Map each primitive to the surface where it lives (file globs +
+        # DEVNOTES slug). Used to ground the "no recent work" claim in
+        # filesystem reality rather than CHANGELOG-string presence.
+        primitive_surfaces = {
+            "TokenSignature": {
+                "files": ["polaris_web/pqc_signing.py", "polaris_sql/01_schema.sql"],
+                "devnote": "token-signature",
+                "grep_in_files": "TokenSignature",
+            },
+            "multi-signature migration": {
+                "files": ["polaris_web/anchoring.py", "polaris_sql/01_schema.sql"],
+                "devnote": "multi-sig-migration",
+                "grep_in_files": "multi-sig|multi_sig|MultiSig",
+            },
+            "WebAuthn-MFA": {
+                "files": ["polaris_web/webauthn_auth.py"],
+                "devnote": "webauthn",
+                "grep_in_files": "webauthn|WebAuthn",
+            },
+            "federation trust graph": {
+                "files": ["polaris_web/templates/federation_viewer.html",
+                          "polaris_sql/10_auth.sql"],
+                "devnote": "federation",
+                "grep_in_files": "federation",
+            },
+            "redaction-proof": {
+                "files": ["polaris_web/test_redaction_property.py",
+                          "polaris_sql/06_triggers.sql"],
+                "devnote": "redaction-proof",
+                "grep_in_files": "redaction",
+            },
+            "audit-of-record": {
+                "files": ["polaris_sql/06_triggers.sql",
+                          "polaris_sql/01_schema.sql"],
+                "devnote": None,  # spread across schema; no single DEVNOTES
+                "grep_in_files": "audit_of_record|AuditLog",
+            },
+            "duress-code": {
+                "files": ["polaris_sql/01_schema.sql",
+                          "proposals/R11-5-duress-codes.md"],
+                "devnote": "duress-codes",
+                "grep_in_files": "duress",
+            },
+        }
+
+        import time
+        now = time.time()
+        ninety_days = 90 * 24 * 3600
+
         for primitive in ANTI_COERCION_PRIMITIVES:
-            if primitive.lower() not in scope_lower:
+            in_changelog = primitive.lower() in scope_lower
+            surface = primitive_surfaces.get(primitive, {})
+            # DEVNOTES signal
+            devnote_slug = surface.get("devnote")
+            has_devnote = bool(devnote_slug) and any(
+                (self.repo_root / "DEVNOTES" / "ships" / f"{slug}.md").exists()
+                for slug in [devnote_slug]
+            )
+            # Filesystem-recency signal
+            file_paths = surface.get("files", [])
+            file_recent = False
+            for fp in file_paths:
+                p = self.repo_root / fp
+                if p.exists():
+                    if (now - p.stat().st_mtime) < ninety_days:
+                        file_recent = True
+                        break
+            # Only flag if ALL three signals say "cold"
+            if not in_changelog and not has_devnote and not file_recent:
                 body.append(
-                    f"- **{primitive}** has no mention in last 30 CHANGELOG entries. "
-                    f"This is a vocation gap; consider whether the primitive needs "
-                    f"a maintenance pass, hardening, or test coverage refresh."
+                    f"- **{primitive}** is cold on all three signals "
+                    f"(no CHANGELOG mention in last 30 ships, no "
+                    f"DEVNOTES/ships/*.md, no source file modified in 90d). "
+                    f"This is a vocation gap; consider a maintenance pass, "
+                    f"hardening, or test coverage refresh."
+                )
+            elif not in_changelog and not has_devnote:
+                # CHANGELOG-cold but file-recent: docs gap, not work gap.
+                body.append(
+                    f"- **{primitive}** is CHANGELOG-cold but source is "
+                    f"recently modified; the gap is documentation, not work. "
+                    f"Consider adding a DEVNOTES/ships/*.md to capture the "
+                    f"primitive's current state."
                 )
         # Also check the "candidate" surface from polaris_sql for
         # foresight signals (when DB-helpers exist)

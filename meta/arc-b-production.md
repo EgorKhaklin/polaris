@@ -110,7 +110,8 @@ tests. Do it with documentation."* Phase 1 ships:
 - **With tests:** 8 new structural invariants (G27 TLS, G28
   no-env-secrets, G29 health contract, non-root, security headers,
   scripts-executable, secrets-gitignored, stack-files-present)
-- **With documentation:** OPERATIONS.md (~700 lines) + SECRETS.md
+- **With documentation:** [`docs/operator/OPERATIONS.md`](../docs/operator/OPERATIONS.md)
+  (~700 lines) + [`docs/operator/SECRETS.md`](../docs/operator/SECRETS.md)
   (~400 lines), in addition to this strategic record
 
 ## What Phase 1 does NOT do
