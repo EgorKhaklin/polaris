@@ -75,6 +75,7 @@ import security
 import anchoring
 import zk
 import webauthn_auth
+import observability  # v9.31 freeze condition 6 — operator-readable metrics surface
 
 # v8.93 — Prometheus-compatible /metrics endpoint. The dependency is
 # optional at runtime: if prometheus_client is unavailable, /metrics
@@ -409,6 +410,15 @@ def _metrics_after_request(response):
         except Exception:
             # Metrics MUST never break the response path. Swallow.
             pass
+    # v9.31 freeze condition 6: operator-readable observability (separate
+    # from Prometheus; no-backend by design). Counts every served request
+    # and tags 5xx as errors. No-op if observability module fails to load.
+    try:
+        observability.record_request()
+        if response.status_code >= 500:
+            observability.record_error()
+    except Exception:
+        pass
     return response
 
 
@@ -626,6 +636,11 @@ def webauthn_assert_finish():
                 username=pending.get('username'),
                 user_id=pending['user_id'],
                 detail='credential not found or wrong user')
+            try:
+                observability.record_auth_failure(
+                    kind='webauthn', username=pending.get('username', ''))
+            except Exception:
+                pass
             return jsonify(error='invalid credential'), 401
 
         try:
@@ -637,6 +652,11 @@ def webauthn_assert_finish():
                 username=pending.get('username'),
                 user_id=pending['user_id'],
                 detail=str(e)[:480])
+            try:
+                observability.record_auth_failure(
+                    kind='webauthn', username=pending.get('username', ''))
+            except Exception:
+                pass
             return jsonify(error='invalid assertion'), 401
 
         webauthn_auth.update_credential_after_use(
@@ -1944,6 +1964,36 @@ def api_health():
     }
     code = 503 if overall == 'unhealthy' else 200
     return jsonify(body), code
+
+
+@app.route('/api/metrics')
+def api_metrics():
+    """Operator-readable application metrics (v9.31 freeze condition 6).
+
+    No metrics backend by design (no Prometheus exporter, no StatsD).
+    Operators pipe stdout structured logs wherever they like; this
+    endpoint exposes the in-process counters as JSON for grep + jq.
+
+    Headline fields per `polaris_web/observability.py` (v9.27 / Tier 8 #11):
+
+        request_rate_per_minute    — trailing-5-minute average throughput
+        error_rate_per_minute      — trailing-5-minute 5xx + uncaught
+        auth_failures_per_minute   — trailing-5-minute failed-login + WebAuthn
+        duress_events_total        — monotonic count since process start
+        uptime_seconds             — seconds since process started
+        process_id                 — OS pid
+
+    `duress_events_total` is the load-bearing anti-coercion alarm. A
+    coerced operator's duress code raises a row that no one reads is
+    the failure mode the v9.27 Sanctum joint resolution called out;
+    this endpoint makes the signal observable. **NON-ZERO IS THE
+    ANTI-COERCION ALARM. Page immediately.**
+
+    No auth required — uptime monitors + operator scripts need access
+    without secrets, and the four counters expose no per-user data.
+    """
+    snapshot = observability.MetricsSnapshot.collect()
+    return jsonify(snapshot.to_dict()), 200
 
 
 @app.route('/.well-known/security.txt')
@@ -4042,6 +4092,19 @@ def _check_and_record_duress(token_id, context_id, requesting_agency_id, duress_
                 (token_id, context_id, requesting_agency_id, 'AUDIT_TABLE'),
             )
             conn.commit()
+        # v9.31 freeze condition 6: operator-readable duress counter +
+        # structured log line. The headline anti-coercion metric per
+        # T8#11 — if the operator is not alerting on this, the duress
+        # feature (R11-5 / M2-10) is decorative.
+        try:
+            observability.record_duress_event(
+                individual_id=token_id,
+                agency_id=requesting_agency_id,
+            )
+        except Exception:
+            # The duress flow MUST NOT visibly fail on observability
+            # error (same posture as the DB-record swallow below).
+            pass
     except psycopg2.Error:
         # The verification flow must NOT visibly fail if duress recording
         # fails (e.g., DB constraint violation). The coercer would notice.

@@ -10,10 +10,12 @@
       "node_id": "soldier_log_tail surfaced 1 signal(s)",
       "raised_at_utc": "2026-05-15T03:18:27+00:00Z",
       "raised_at_version": "2026-05-14-2318",
-      "resolved_at_utc": null,
-      "resolved_at_version": null,
-      "resolved_commit_sha": null,
-      "imported_from": "journal/hydra/2026-05-14-2318.md"
+      "resolved_at_utc": "2026-05-17T03:24:00+00:00Z",
+      "resolved_at_version": "9.31-prep",
+      "resolved_commit_sha": "2b60179",
+      "imported_from": "journal/hydra/2026-05-14-2318.md",
+      "resolution_note": "security_watcher.py CSP regex hardened: negated character class extended with `\"` and `\\n` to prevent script-src match leaking across source-line boundaries into style-src. Eliminates the false-positive class that was surfacing this signal repeatedly.",
+      "resolution_provenance": "journal/2026-05-17.md 03:24 entry"
     },
     {
       "finding_id": "FND-F5C8676AFE",
@@ -43,10 +45,12 @@
       "node_id": "Treasury skewed strongly negative",
       "raised_at_utc": "2026-05-15T03:18:27+00:00Z",
       "raised_at_version": "2026-05-14-2318",
-      "resolved_at_utc": null,
-      "resolved_at_version": null,
-      "resolved_commit_sha": null,
-      "imported_from": "journal/hydra/2026-05-14-2318.md"
+      "resolved_at_utc": "2026-05-17T04:09:00+00:00Z",
+      "resolved_at_version": "9.31-prep",
+      "resolved_commit_sha": "2b60179",
+      "imported_from": "journal/hydra/2026-05-14-2318.md",
+      "resolution_note": "Position B treasury rebalance executed via treasury-roll.json; ai-treasury-report.sh display bug fixed (historical-vs-rate). Post-rebalance ratio 1.73:1 within Position B target.",
+      "resolution_provenance": "journal/2026-05-17.md 04:09 entry"
     },
     {
       "finding_id": "FND-894E0D34A2",
@@ -175,10 +179,12 @@
       "node_id": "8/8 soldier class(es) silent >2h",
       "raised_at_utc": "2026-05-15T04:46:13+00:00Z",
       "raised_at_version": "2026-05-15-0046",
-      "resolved_at_utc": null,
-      "resolved_at_version": null,
-      "resolved_commit_sha": null,
-      "imported_from": "journal/hydra/2026-05-15-0046.md"
+      "resolved_at_utc": "2026-05-17T03:31:00+00:00Z",
+      "resolved_at_version": "9.31-prep",
+      "resolved_commit_sha": "2b60179",
+      "imported_from": "journal/hydra/2026-05-15-0046.md",
+      "resolution_note": "Mycelium swarm woken: polaris_web/venv created with psycopg2+flask; soldier-tier 10s yielded 20 deposits; full commander deployment yielded 35+11 deposits. Soldiers no longer silent at run-time.",
+      "resolution_provenance": "journal/2026-05-17.md 03:31 entry"
     },
     {
       "finding_id": "FND-DB6E31FB02",

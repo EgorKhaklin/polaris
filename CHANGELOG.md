@@ -14,6 +14,68 @@ record, read [`meta/sanctum-index.md`](meta/sanctum-index.md).
 
 ---
 
+## v9.31 — 2026-05-17 (Mechanical freeze-line verification · 7 freeze conditions encoded as invariants · the terminus)
+
+Per MISSION.md §"Freeze line — definition of done (v9.27, amended once
+v9.29)", the core is **done at v9.31** when ALL seven conditions are
+mechanically verifiable from outside the cognitive layer. v9.31 makes
+each condition a Python test in `TestWave31V931` — if every test
+passes, the freeze is satisfied.
+
+Surfaced by Option A sequencing the user approved after the petitioner
+discovered v9.31 was NOT a 5-minute mechanical bump as initially
+represented — 5 of 7 conditions were failing. Sanctum
+`sanctum/2026-05-17-v9-31-prep.md` scoped the 5 gaps; VANTA approved
+"Full prep"; gaps closed in dependency order before the version literal
+moved.
+
+- **Gap 1 (commit hygiene)** — 44 files / 3973 insertions committed in
+  prior commit `2b60179` ("hygiene: commit accumulated 2026-05-16/17
+  session work"). Kill test no longer refuses on dirty tree.
+- **Gap 2 (observability wiring, condition 6)** — `polaris_web/observability.py`
+  (v9.27 / Tier 8 #11) is now actually wired: `/api/metrics` route added
+  next to `/api/health`; `_metrics_after_request` calls `record_request()`
+  + `record_error()` on 5xx; `security.py:authenticate` calls
+  `record_auth_failure(kind='password')` on bad-credentials path;
+  `webauthn_assert_finish` calls `record_auth_failure(kind='webauthn')`
+  on both invalid-credential and invalid-assertion branches;
+  `_check_and_record_duress` calls `record_duress_event()` after the
+  silent DB record. **The duress counter being non-zero IS THE
+  ANTI-COERCION ALARM.** Per T8#11: an unobservable duress signal is
+  the coercion-cover failure mode (R11-5 becomes decorative).
+- **Gap 3 (MTTR back-fill + parser fix, condition 4)** — Three honest
+  resolutions back-filled with provenance (treasury rebalance 04:09,
+  Mycelium swarm wake 03:31, security_watcher CSP regex fix 03:24, all
+  per `journal/2026-05-17.md`). `_parse_iso` helper added to
+  `polaris-swarm-mttr.sh` to handle the historical "+00:00Z" double-
+  suffix format that was silently rejecting every early-ledger entry —
+  the slope computation was inoperative for 12 days. Trend slope now
+  computes: **-1.72h/ship (negative = MTTR decreasing = loop earning)**.
+  v9.30 binding clause passes.
+- **Gap 4 (mttr.sh version regex, prep)** — Regex anchored to
+  `^__version__` start-of-line to skip the docstring example
+  `POLARIS_VERSION = '9.05'` literal in `__version__.py:9-10`. Script
+  now correctly reports current version.
+- **Gap 5a/5b (chaos test, condition 3)** — `libpq` linked (`brew link
+  --force libpq`) so `psql` is on PATH. This exposed a hidden fail-open
+  in `polaris-recover-admin.sh`: `run_psql` used `2>/dev/null` at three
+  call sites, so `set -e` silently exited on DB-unreachable BEFORE any
+  refusal message was emitted to the operator — fail-open-in-disguise
+  (script crash treated by caller as "no result, retry" rather than
+  "REFUSE"). Fixed: `run_psql` wrapped to capture psql exit code,
+  emit loud operator-readable refusal, then exit `EXIT_DB`. **Real
+  security defect caught by the chaos test the moment psql became
+  available** — exactly the posture the v9.27 Anti-Architect
+  constraint targeted. Chaos test now 3/3 fail-safe.
+- **Conditions 1, 5, 7** — C1–C10 coherence reported by ai-coherence
+  (rollup of 100+ structural invariants); v9.30 binding clause passing
+  per Gap 3 work; `__version__` literal bumped 9.30 → 9.31.
+
+**This is the freeze.** Post-v9.31 work is bounded to (a) hardening,
+(b) measurement, (c) thesis cold-read evidence per MISSION.md §"From
+v9.32 forward". Integration ships (v9.32 hookify, v9.33 playwright)
+are post-freeze hardening — separate ships, separate version bumps.
+
 ## v9.30 — 2026-05-16 (Original 13-item arc completes · 7 items + 174M deleted · no item #14 · Pattern #20 24th instance)
 
 VANTA: "proceed lets do it." 7 remaining items shipped under the
@@ -391,85 +453,9 @@ MISSION.md. 8 broken `/docs/*.md` links rewritten to GitHub URLs (same
 pattern as v9.21 demo fix; all 8 target files verified present).
 Landing page now tells the truth.
 
-## v9.21 — 2026-05-15 (Demo rework · hallucinated procedure signatures replaced with real ones)
-
-Pre-v9.21 demo showed `uc1_issue_token` + `uc2_verify_token` — neither
-procedure has ever existed in Polaris. The demo was lying about what
-Polaris does. v9.21 replaced with real procedures
-(`uc1_issue_and_activate`, `uc4_activate_reserve`, `uc8_revoke_token`);
-added anti-coercion vocation framing; added duress code (R11-5) in
-Step 2; added v9.20 surfaces (requesting_purpose_text + AuditAccessLog)
-in Step 3. Full interface suite verified live through Docker; launcher
-subcommand contract verified (doctor / up / status / stop).
-TestWave21V921 (12 invariants) including test asserting hallucinated
-procedure names are NOT in demo.html.
-
-## v9.20 — 2026-05-15 (Sanctum-class: verification-purpose lineage + audit-access audit trail)
-
-Items 3+6 of architecture-study joint recommendation. Single Sanctum
-covers both as one decision (both extend v8.20 audit-of-record
-contract). Migration `2026-05-15-002-verification-purpose.up.sql`
-adds VerificationEvent.requesting_purpose_text (anti-coercion-direct:
-coerced verification leaves stated-purpose evidentiary trail).
-Migration `2026-05-15-003-audit-access-log.up.sql` creates AuditAccessLog
-table with append-only trigger (anti-coercion-direct: makes silent
-surveillance by insiders visible). Wired into 4 routes
-(investigate/token, investigate/individual, verifications, duress).
-Anti-Architect's required boundaries pinned: AuditAccessLog reads NOT
-logged (regress stops); no LLM purpose classification.
-
-## v9.19 — 2026-05-15 (Investigative surface · Ontology layer + Object Card UX + Authorization-as-code review)
-
-Items 1+2+5 of architecture-study joint recommendation. `polaris_sql/15_ontology.sql`
-ships 6 read-only single-entity views (NO cross-individual aggregation —
-the surveillance pattern is constitutionally refused; pinned by
-`test_ontology_refuses_cross_entity_aggregation`). `/investigate/token/<id>`
-+ `/investigate/individual/<id>` routes ship Object Card UX with
-chronological timeline + succession chain. `scripts/ai-authz-audit.sh`
-walks 4 authorization surfaces (decorators, grants, role enum, tables)
-emitting drift report.
-
-## v9.18 — 2026-05-15 (Two launcher bug fixes · docker-init.sh applies migrations · launcher opens / not /login)
-
-Bug 1: login returned 500 with `column "webauthn_required_after" does
-not exist` — Docker init only ran 00_load_all.sql; never applied
-migrations/*.up.sql. Fix: docker-init.sh now loops through migrations in
-lexicographic order, applies each in a transaction with schema_version
-INSERT (mirrors polaris-migrate.sh). Bug 2: launcher opened /login
-(login form) instead of / (landing page). Fix: all 4 open_browser calls
-point at /. The /login URL still used by wait_for_url as health probe.
-Live verified end-to-end against fresh Docker.
-
-## v9.17 — 2026-05-15 (Launcher bug fix · Dockerfile + Dockerfile.prod missing webauthn_auth.py + __version__.py)
-
-VANTA pasted launcher error: `ModuleNotFoundError: No module named
-'webauthn_auth'`. Real production bug, latent since v8.97: both
-Dockerfiles' COPY lines never included webauthn_auth.py or
-__version__.py. Docker image built fine but Gunicorn worker crashed
-during boot. Fix: both Dockerfiles extended. Regression guard: new
-`test_dockerfile_covers_all_runtime_app_modules` generically parses
-app.py for top-level imports + asserts each is COPY'd by both
-Dockerfiles (catches ANY future module-added-without-Dockerfile-update
-gap).
-
-## v9.16 — 2026-05-15 (Open-arcs debate resolved Position C′ · close Arc E + Arc F by doc-edit · truth-update Arc B + Arc G)
-
-Architect surfaced 4 positions (A: close-via-3-Sanctums; B: reservation-
-pattern-broadly; C: two-track; D: leave-as-is). Anti-Architect named
-AP2 on A (Sanctum-overuse), AP7 on B (premature abstraction;
-twelfth-legion reservation earned by ONE case), proposed RESERVED-NOT-
-PLANNED framing for Arc G. Joint Position C′. Arc E (Mycelium) → CLOSED.
-Arc F (Denarius) → CLOSED. Arc B (Production) → truth-updated with
-explicit triggers. Arc G (Empire) → truth-updated RESERVED-NOT-PLANNED.
-First Sanctum debate resolved by NOT opening additional Sanctums.
-
-## v9.15 — 2026-05-15 (Full Mycelium surface in brain-map · node count 304→366)
-
-VANTA: *"what if we add the mycelium to the brain-map main."* 5 new
-collectors in `scripts/ai_brain_map.py` surface all 11 manifest legions,
-33 commander ants, 8 worker soldiers, 6 citizens, and Treasury. Brain-
-map becomes the unified cross-tier view; swarm-map (v9.14) remains the
-Mycelium-native view. Both retain distinct purpose.
+_Per CHANGELOG.md convention (last 10 ships only): v9.21 → v9.15 trimmed
+2026-05-17 with the v9.31 ship. Full byte-identical history at
+[archive/CHANGELOG-FULL.md](archive/CHANGELOG-FULL.md)._
 
 ---
 

@@ -163,15 +163,31 @@ if ! [[ "${WINDOW_MINUTES}" =~ ^[0-9]+$ ]] || [[ "${WINDOW_MINUTES}" -lt 1 ]] ||
 fi
 
 run_psql() {
+    # Fail-safe-never-open: if psql cannot connect, REFUSE LOUDLY with
+    # operator-readable output before exiting. The prior implementation
+    # leaked connection errors to /dev/null at the call sites, allowing
+    # `set -e` to silently exit on DB failure — violating the chaos-test
+    # posture (db_unreachable_mid_recovery scenario, v9.27 T8#10).
+    local _out _rc
     if [[ "${USE_DOCKER_STACK}" -eq 1 ]]; then
-        docker compose -f "${COMPOSE_FILE}" exec -T postgres \
-            psql -U postgres -d polaris -tA "$@"
+        _out=$(docker compose -f "${COMPOSE_FILE}" exec -T postgres \
+            psql -U postgres -d polaris -tA "$@" 2>&1)
+        _rc=$?
     else
-        psql -h "${POLARIS_DB_HOST:-localhost}" \
+        _out=$(psql -h "${POLARIS_DB_HOST:-localhost}" \
+             -p "${POLARIS_DB_PORT:-5432}" \
              -U "${POLARIS_DB_USER:-postgres}" \
              -d "${POLARIS_DB_NAME:-polaris}" \
-             -tA "$@"
+             -tA "$@" 2>&1)
+        _rc=$?
     fi
+    if [[ "${_rc}" -ne 0 ]]; then
+        echo "error: refusing — database call failed (could not connect to ${POLARIS_DB_HOST:-localhost}:${POLARIS_DB_PORT:-5432})" >&2
+        echo "       psql exit=${_rc}; tail: ${_out}" >&2
+        echo "       polaris-recover-admin REFUSES to open emergency-login window without DB confirmation." >&2
+        exit "${EXIT_DB}"
+    fi
+    printf '%s' "${_out}"
 }
 
 # v9.02: --recovery-code path — verify the supplied mnemonic against
@@ -205,7 +221,7 @@ if [[ "${RECOVERY_CODE_SOURCE}" == "-" ]]; then
         WHERE username = '${TARGET}'
           AND role = 'admin'
           AND is_active = TRUE
-    " 2>/dev/null | tr -d '[:space:]')
+    " | tr -d '[:space:]')
 
     if [[ -z "${stored_hash}" ]]; then
         echo "error: target '${TARGET}' has no bound recovery code." >&2
@@ -230,7 +246,7 @@ else
         WHERE user_id = ${AUTHORIZING_USER_ID}
           AND role = 'admin'
           AND is_active = TRUE
-    " 2>/dev/null | tr -d '[:space:]')
+    " | tr -d '[:space:]')
     if [[ -z "${auth_row}" ]]; then
         echo "error: authorizing user_id=${AUTHORIZING_USER_ID} not found, not admin, or inactive" >&2
         exit "${EXIT_AUTHORIZER}"
@@ -245,7 +261,7 @@ target_row=$(run_psql -c "
     WHERE username = '${TARGET}'
       AND role = 'admin'
       AND is_active = TRUE
-" 2>/dev/null | tr -d '[:space:]')
+" | tr -d '[:space:]')
 if [[ -z "${target_row}" ]]; then
     echo "error: target '${TARGET}' not found, not admin, or inactive" >&2
     exit "${EXIT_TARGET}"

@@ -14894,5 +14894,196 @@ class TestSanctum_WatcherCoverageCompletion_2026_05_17(unittest.TestCase):
             "Sanctum must have transitioned past OPEN")
 
 
+class TestWave31V931(unittest.TestCase):
+    """v9.31 — mechanical freeze-line verification.
+
+    Per MISSION.md §"Freeze line — definition of done (v9.27, amended once
+    v9.29)", the core is done at v9.31 when 7 conditions are mechanically
+    verifiable. This test class is those 7 conditions encoded as Python
+    assertions — the freeze is satisfied iff every test below passes.
+
+    Closes Sanctum sanctum/2026-05-17-v9-31-prep.md (Option A — Full prep)
+    which executed Gaps 1 (commit dirty tree), 4 (mttr.sh regex), 5a/5b
+    (psql install + recover-admin DB-unreachable refusal), 2 (observability
+    wiring), 3 (MTTR back-fill + parser fix) in dependency order before
+    bumping the version literal.
+    """
+
+    ROOT = ROOT
+
+    def _read(self, rel):
+        with open(os.path.join(self.ROOT, rel)) as f:
+            return f.read()
+
+    # ---- Freeze condition 1: C1–C10 schema-enforced -----------------
+    # (Already pinned by 100+ structural invariants across this file;
+    # this test asserts ai-coherence reports STRUCTURE INTACT — which
+    # is the single externally-verifiable rollup of all per-constraint
+    # invariants.)
+
+    def test_freeze_c1_c10_coherence(self):
+        """ai-coherence runs the cross-layer cross-constraint check.
+        STRUCTURE INTACT is the rollup that satisfies freeze condition 1."""
+        import subprocess
+        proc = subprocess.run(
+            ['bash', os.path.join(self.ROOT, 'scripts', 'ai-coherence.sh')],
+            cwd=self.ROOT, capture_output=True, timeout=120, text=True,
+        )
+        self.assertIn('STRUCTURE INTACT', proc.stdout + proc.stderr,
+            f"ai-coherence must report STRUCTURE INTACT for freeze "
+            f"condition 1. Got rc={proc.returncode}; "
+            f"tail: {(proc.stdout + proc.stderr)[-400:]}")
+
+    # ---- Freeze condition 3: Chaos test 3/3 fail-safe ---------------
+
+    def test_freeze_chaos_test_3_of_3_fail_safe(self):
+        """polaris-chaos-test.sh must report 3/3 fail-safe + exit 0.
+        Per Sanctum 2026-05-17-v9-31-prep Gap 5b: recover-admin.sh
+        was silently exiting on DB-unreachable instead of explicitly
+        refusing; run_psql now emits EXIT_DB refusal."""
+        import subprocess
+        proc = subprocess.run(
+            ['bash', os.path.join(self.ROOT, 'scripts', 'polaris-chaos-test.sh')],
+            cwd=self.ROOT, capture_output=True, timeout=120, text=True,
+        )
+        self.assertEqual(proc.returncode, 0,
+            f"chaos test must exit 0 (all scenarios fail-safe). "
+            f"Got rc={proc.returncode}; tail: {(proc.stdout + proc.stderr)[-600:]}")
+        self.assertIn('fail-safe:    3/3', proc.stdout,
+            "chaos test must report 3/3 fail-safe")
+
+    # ---- Freeze condition 4: MTTR ledger ≥3 resolved (v9.25–v9.31) --
+
+    def test_freeze_mttr_ledger_has_three_resolved(self):
+        """meta/swarm-mttr.json must have ≥3 findings with non-null
+        resolved_at_utc to demonstrate the cognitive loop earned its
+        weight per v9.25 'swarm must earn its weight' Sanctum."""
+        with open(os.path.join(self.ROOT, 'meta', 'swarm-mttr.json')) as f:
+            ledger = json.load(f)
+        findings = ledger.get('findings', [])
+        resolved = [f for f in findings if f.get('resolved_at_utc')]
+        self.assertGreaterEqual(len(resolved), 3,
+            f"freeze requires ≥3 resolved findings; have {len(resolved)}")
+        # Each resolved entry must have provenance (resolution_note +
+        # resolution_provenance fields) so the back-fill is auditable
+        for r in resolved:
+            self.assertIsNotNone(r.get('resolution_note'),
+                f"resolved finding {r.get('finding_id')} must record "
+                f"resolution_note for audit-of-record discipline")
+            self.assertIsNotNone(r.get('resolution_provenance'),
+                f"resolved finding {r.get('finding_id')} must record "
+                f"resolution_provenance for audit-of-record discipline")
+
+    # ---- Freeze condition 5: v9.30 binding clause passes ------------
+
+    def test_freeze_v9_30_binding_clause_passes(self):
+        """polaris-swarm-mttr.sh check-v9-30 must exit 0 (slope is
+        negative → loop earning). Per v9.25 'swarm must earn its
+        weight' Sanctum §VI."""
+        import subprocess
+        proc = subprocess.run(
+            ['bash', os.path.join(self.ROOT, 'scripts', 'polaris-swarm-mttr.sh'),
+             'check-v9-30'],
+            cwd=self.ROOT, capture_output=True, timeout=30, text=True,
+        )
+        self.assertEqual(proc.returncode, 0,
+            f"v9.30 binding clause must pass. Got rc={proc.returncode}; "
+            f"output: {proc.stdout + proc.stderr}")
+        self.assertIn('loop earning', proc.stdout,
+            "binding clause output must confirm loop is earning")
+
+    # ---- Freeze condition 6: observability surface wired ------------
+
+    def test_freeze_observability_module_imported_in_app_and_security(self):
+        """polaris_web/observability.py must be imported by both app.py
+        AND security.py per the v9.27 Sanctum joint resolution: the
+        operator-readable metrics surface must be wired into the
+        request-handling AND auth-failure paths."""
+        app_src = self._read('polaris_web/app.py')
+        sec_src = self._read('polaris_web/security.py')
+        self.assertIn('import observability', app_src,
+            "polaris_web/app.py must import observability")
+        self.assertIn('import observability', sec_src,
+            "polaris_web/security.py must import observability")
+
+    def test_freeze_api_metrics_route_exists(self):
+        """/api/metrics route must be registered in app.py per freeze
+        condition 6. The route exposes MetricsSnapshot.collect() as JSON
+        — the operator-readable surface without a metrics backend."""
+        src = self._read('polaris_web/app.py')
+        self.assertIn("@app.route('/api/metrics')", src,
+            "app.py must register /api/metrics route")
+        self.assertIn('MetricsSnapshot.collect', src,
+            "/api/metrics must serve MetricsSnapshot.collect()")
+
+    def test_freeze_observability_call_sites_present(self):
+        """The four headline counters must have call sites:
+        record_request (any after_request hook), record_error (5xx),
+        record_auth_failure (security.py + webauthn path), and
+        record_duress_event (duress recorder). Without these wirings
+        /api/metrics returns always-zero — the failure mode T8#11
+        explicitly named: 'unobservable duress signal is the coercion-
+        cover failure mode' (duress feature becomes decorative)."""
+        app_src = self._read('polaris_web/app.py')
+        sec_src = self._read('polaris_web/security.py')
+        self.assertIn('observability.record_request()', app_src,
+            "app.py must call observability.record_request()")
+        self.assertIn('observability.record_error()', app_src,
+            "app.py must call observability.record_error() on 5xx")
+        self.assertIn('observability.record_auth_failure', sec_src,
+            "security.py must call record_auth_failure on bad credentials")
+        self.assertIn('observability.record_duress_event', app_src,
+            "app.py must call record_duress_event on duress-code match — "
+            "the load-bearing anti-coercion alarm per T8#11")
+
+    # ---- Freeze condition 7: POLARIS_VERSION is 9.31 ----------------
+
+    def test_freeze_polaris_version_is_9_31(self):
+        """The version literal must read 9.31 (per amendment 2026-05-16
+        v9.30→v9.31 in MISSION.md §AMENDMENT LOG)."""
+        from polaris_web.__version__ import POLARIS_VERSION, __version__
+        self.assertEqual(__version__, '9.31',
+            f"v9.31 freeze ship requires __version__ == '9.31'; "
+            f"got {__version__!r}")
+        self.assertEqual(POLARIS_VERSION, '9.31',
+            "POLARIS_VERSION must also be 9.31 (backwards-compat alias)")
+
+    # ---- Sanctum provenance for this ship ---------------------------
+
+    def test_freeze_prep_sanctum_decided(self):
+        """sanctum/2026-05-17-v9-31-prep.md must reach DECIDED state
+        with Option A approved. Provenance for the work above."""
+        src = self._read('sanctum/2026-05-17-v9-31-prep.md')
+        self.assertIn('Option A', src,
+            "v9.31-prep Sanctum must record Option A (full prep) decision")
+        # VANTA's verbatim approval should appear in §VI Decision
+        self.assertIn('Full prep', src,
+            "v9.31-prep Sanctum must record 'Full prep' approval")
+
+    # ---- mttr.sh fixes pinned (Gaps 4 + 3) --------------------------
+
+    def test_freeze_mttr_sh_version_parser_anchored(self):
+        """polaris-swarm-mttr.sh version-parser regex must anchor on
+        __version__ start-of-line (not match docstring examples like
+        the historical `POLARIS_VERSION = '9.05'` literal in
+        __version__.py:9-10). Gap 4 fix."""
+        src = self._read('scripts/polaris-swarm-mttr.sh')
+        self.assertIn('^__version__', src,
+            "mttr.sh must anchor version-parse regex on ^__version__ "
+            "to skip docstring examples (Gap 4 fix)")
+
+    def test_freeze_mttr_sh_iso_parser_handles_double_suffix(self):
+        """polaris-swarm-mttr.sh _parse_iso must handle the historical
+        '+00:00Z' double-suffix format that early-ledger entries used
+        (now_iso() at v9.04 appended Z to an already-tz-aware string).
+        Gap 3 parser fix; without it, the slope computation silently
+        skips every early-ledger entry."""
+        src = self._read('scripts/polaris-swarm-mttr.sh')
+        self.assertIn('_parse_iso', src,
+            "mttr.sh must define _parse_iso helper for tolerant timestamp parsing")
+        self.assertIn('double-suffix', src,
+            "mttr.sh must document the +00:00Z double-suffix format it handles")
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

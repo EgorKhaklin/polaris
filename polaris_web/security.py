@@ -52,6 +52,8 @@ from flask import (
 )
 from werkzeug.security import generate_password_hash, check_password_hash
 
+import observability  # v9.31 freeze condition 6 — counter call-sites for auth failures
+
 
 # ----------------------------------------------------------------------------
 # Configuration constants
@@ -550,6 +552,14 @@ def authenticate(get_conn, username, password):
 
             # Verify password
             if not check_password_hash(user['password_hash'], password):
+                # v9.31 freeze condition 6: operator-readable auth-failure
+                # counter + structured log. Fires once per bad-credential
+                # check regardless of subsequent lockout branch.
+                try:
+                    observability.record_auth_failure(kind='password',
+                                                     username=username)
+                except Exception:
+                    pass
                 # Atomic increment + return-the-new-value. This is critical
                 # for concurrency: under load, two simultaneous failed logins
                 # against the same account both read failed_login_count=N

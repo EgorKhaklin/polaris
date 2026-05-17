@@ -67,7 +67,9 @@ findings = ledger.setdefault("findings", [])
 current_version = "unknown"
 try:
     vf = Path(version_file).read_text()
-    m = re.search(r'POLARIS_VERSION[:\s=]+["\']([^"\']+)["\']', vf)
+    # anchor to start-of-line to skip docstring examples (e.g. the
+    # `POLARIS_VERSION = '9.05'` literal in __version__.py's history note)
+    m = re.search(r'^__version__\s*[:=].*?["\']([^"\']+)["\']', vf, re.MULTILINE)
     if m:
         current_version = m.group(1)
 except Exception:
@@ -85,6 +87,27 @@ def find_by_id(fid):
     return None
 
 
+def _parse_iso(ts_str):
+    """Parse a ledger ISO-8601 timestamp.
+
+    Handles three formats that have appeared in ledger history:
+      - "2026-05-17T04:09:00Z"               (bare Z)
+      - "2026-05-17T04:09:00+00:00"          (bare offset)
+      - "2026-05-17T04:09:00+00:00Z"         (early-ledger double-suffix
+                                              from now_iso() at v9.04
+                                              when it appended Z to an
+                                              already-tz-aware iso string)
+
+    Without this normalization, the slope computation silently skips
+    every early-ledger entry — caught during v9.31-prep when the trend
+    appeared empty despite 3 resolved findings.
+    """
+    s = ts_str
+    if s.endswith("Z") and (s[-7:-1].startswith("+") or s[-7:-1].startswith("-")):
+        s = s[:-1]  # strip the redundant trailing Z when offset already present
+    return datetime.fromisoformat(s.replace("Z", "+00:00"))
+
+
 def stable_finding_id(ant, node_id, raised_version):
     h = hashlib.sha256(f"{ant}|{node_id}|{raised_version}".encode()).hexdigest()
     return f"FND-{h[:10].upper()}"
@@ -98,8 +121,8 @@ def compute_per_version_mttr():
         if not f.get("resolved_at_utc"):
             continue
         try:
-            raised = datetime.fromisoformat(f["raised_at_utc"].replace("Z", "+00:00"))
-            resolved = datetime.fromisoformat(f["resolved_at_utc"].replace("Z", "+00:00"))
+            raised = _parse_iso(f["raised_at_utc"])
+            resolved = _parse_iso(f["resolved_at_utc"])
         except (KeyError, ValueError):
             continue
         hours = (resolved - raised).total_seconds() / 3600.0
@@ -172,7 +195,7 @@ elif action == "resolve":
     f_obj["resolved_commit_sha"] = commit_sha
     with open(ledger_path, "w") as f:
         json.dump(ledger, f, indent=2)
-    raised = datetime.fromisoformat(f_obj["raised_at_utc"].replace("Z", "+00:00"))
+    raised = _parse_iso(f_obj["raised_at_utc"])
     hours = (datetime.now(timezone.utc) - raised).total_seconds() / 3600.0
     print(f"polaris-swarm-mttr: resolved {fid} ({f_obj['ant']} on "
           f"{f_obj['node_id']}); MTTR = {hours:.1f}h")
