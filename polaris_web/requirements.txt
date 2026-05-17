@@ -49,3 +49,9 @@ hypothesis>=6.0,<7.0
 
 # ---- Optional but recommended: Prometheus client (v8.93 /metrics) ----
 prometheus_client>=0.20,<1.0
+
+# ---- Optional test-only: Playwright (v9.33 Atlas-globe E2E) ----
+# After installing this package, run `playwright install chromium` once
+# to download the browser binary (~250MB). polaris_web/test_e2e_atlas.py
+# gracefully skips if either the package OR the browser is unavailable.
+playwright>=1.40,<2.0

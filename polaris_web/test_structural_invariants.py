@@ -15197,13 +15197,6 @@ class TestWave32V932(unittest.TestCase):
             "hook script must emit audit-trail line on bypass "
             "(prevents AppendOnlyBypass-class invisible escape)")
 
-    def test_v932_version_bumped(self):
-        """Post-freeze hardening ship still gets a version bump per
-        CLAUDE.md ship sequence step 6 (one ship per version)."""
-        from polaris_web.__version__ import __version__
-        self.assertEqual(__version__, '9.32',
-            f"v9.32 ship requires __version__ == '9.32'; got {__version__!r}")
-
     def test_v932_changelog_entry_exists(self):
         """v9.32 CHANGELOG entry must be at the top (post-freeze
         hardening narrative + freeze-clause justification)."""
@@ -15215,6 +15208,103 @@ class TestWave32V932(unittest.TestCase):
         self.assertIn('hardening', src.split('## v9.32', 1)[1][:1500].lower(),
             "v9.32 CHANGELOG entry must explicitly justify as hardening "
             "per MISSION.md §'From v9.32 forward'")
+
+
+class TestWave33V933(unittest.TestCase):
+    """v9.33 — Playwright Atlas-globe E2E (post-freeze measurement).
+
+    Closes the follow-up commitment from sanctum/2026-05-17-plugin-
+    installation-tier2.md (Option A) — wire Playwright into a real
+    test surface. Per MISSION.md §"From v9.32 forward, (b) Measurement":
+    extends the test suite to a surface (WebGL globe + HUD + CSP)
+    that the structural/route suites cannot exercise.
+
+    Scope discipline: scaffold + 3 smoke tests, NOT exhaustive coverage.
+    The structural invariants below pin the wiring; the actual E2E
+    tests skip-gracefully when Playwright/browser unavailable, so the
+    suite stays green on machines without the 250MB browser dependency.
+    """
+
+    ROOT = ROOT
+
+    def _read(self, rel):
+        with open(os.path.join(self.ROOT, rel)) as f:
+            return f.read()
+
+    def test_v933_e2e_test_file_exists(self):
+        """polaris_web/test_e2e_atlas.py must exist (scaffold pinned)."""
+        path = os.path.join(self.ROOT, 'polaris_web/test_e2e_atlas.py')
+        self.assertTrue(os.path.isfile(path),
+            "polaris_web/test_e2e_atlas.py must exist")
+
+    def test_v933_e2e_uses_domcontentloaded_not_networkidle(self):
+        """E2E must wait_until='domcontentloaded' per pre-known gotcha
+        #6 (CLAUDE.md): the Polaris page fires a 10s heartbeat POST so
+        wait_until='networkidle' never resolves. Pinning this prevents
+        future agents from rediscovering the cost."""
+        src = self._read('polaris_web/test_e2e_atlas.py')
+        self.assertIn('wait_until="domcontentloaded"', src,
+            "E2E must use wait_until='domcontentloaded' per gotcha #6")
+        self.assertNotIn('wait_until="networkidle"', src,
+            "E2E must NOT use wait_until='networkidle' (hangs because "
+            "of 10s heartbeat — gotcha #6)")
+
+    def test_v933_e2e_skips_gracefully_without_playwright(self):
+        """E2E must SKIP (not fail) when Playwright is unavailable —
+        the structural suite must stay green on machines without the
+        250MB browser dependency. Test by importing and counting skips."""
+        import subprocess
+        proc = subprocess.run(
+            ['python3', '-m', 'unittest', 'polaris_web.test_e2e_atlas', '-v'],
+            cwd=self.ROOT, capture_output=True, text=True, timeout=30,
+        )
+        # Exit 0 = green; skips don't fail the suite
+        self.assertEqual(proc.returncode, 0,
+            f"E2E must exit 0 (skip ≠ fail). Got rc={proc.returncode}; "
+            f"output: {(proc.stdout + proc.stderr)[-400:]}")
+        # Output must indicate skip behavior is reachable
+        self.assertIn('skipped', proc.stdout + proc.stderr,
+            "E2E must skip (not run) when Playwright unavailable")
+
+    def test_v933_e2e_skips_when_app_unreachable(self):
+        """E2E must SKIP (not hang) when no Polaris app is reachable —
+        the test framework must not block on a 30s socket timeout when
+        operator hasn't started the stack."""
+        src = self._read('polaris_web/test_e2e_atlas.py')
+        self.assertIn('_app_reachable', src,
+            "E2E must define an _app_reachable() preflight to gate skip")
+        self.assertIn('skipUnless(_app_reachable()', src,
+            "E2E class must @skipUnless(_app_reachable()) to avoid hang")
+
+    def test_v933_playwright_in_requirements(self):
+        """playwright must be in polaris_web/requirements.txt under a
+        clear dev-dependency comment so operators can pip install it
+        without guessing the version pin."""
+        src = self._read('polaris_web/requirements.txt')
+        self.assertIn('playwright', src,
+            "polaris_web/requirements.txt must list playwright")
+        self.assertIn('v9.33', src,
+            "playwright entry must reference v9.33 ship for provenance")
+
+    def test_v933_e2e_documents_activation_steps(self):
+        """E2E module docstring must show the operator the exact steps
+        to activate the suite (pip install + playwright install
+        chromium + launch app + run). Without this, the scaffold is
+        AP6 (form without substance) — operator can't actually run it."""
+        src = self._read('polaris_web/test_e2e_atlas.py')
+        self.assertIn('pip install playwright', src,
+            "E2E docstring must show pip install command")
+        self.assertIn('playwright install chromium', src,
+            "E2E docstring must show browser install command")
+        self.assertIn('polaris_mac_launch.sh', src,
+            "E2E docstring must reference the launcher to start app")
+
+    # Note: no `test_v933_version_bumped` — see v9.32 ship for why
+    # per-ship `__version__ == 'X.Y'` tests are AP6 (form without
+    # substance): they verify once at ship time, then guarantee
+    # failure on the next ship. The threshold-style invariant in
+    # TestWave31V931.test_freeze_polaris_version_at_or_past_9_31
+    # covers the constitutional case.
 
 
 if __name__ == '__main__':

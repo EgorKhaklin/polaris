@@ -33527,45 +33527,255 @@
       "node_id": "mission:section:Arc E (Mycelium)",
       "reason": "persistent_silence",
       "timestamp": "2026-05-17T19:27:27.681142+00:00"
+    },
+    {
+      "amount": -1,
+      "ant": "ant_api_doc_coverage",
+      "node_id": "route:/api/metrics",
+      "reason": "persistent_silence",
+      "timestamp": "2026-05-17T19:31:28.083552+00:00"
+    },
+    {
+      "amount": -1,
+      "ant": "ant_build_freshness",
+      "node_id": "build:pycache_orphan",
+      "reason": "persistent_silence",
+      "timestamp": "2026-05-17T19:31:28.083552+00:00"
+    },
+    {
+      "amount": -1,
+      "ant": "ant_build_freshness",
+      "node_id": "build:zk_binary_missing",
+      "reason": "persistent_silence",
+      "timestamp": "2026-05-17T19:31:28.083552+00:00"
+    },
+    {
+      "amount": -1,
+      "ant": "ant_done_list_arithmetic",
+      "node_id": "mission:section:Arc D (Swarm/HYDRA)",
+      "reason": "persistent_silence",
+      "timestamp": "2026-05-17T19:31:28.083552+00:00"
+    },
+    {
+      "amount": -1,
+      "ant": "ant_done_list_arithmetic",
+      "node_id": "mission:section:Arc E (Mycelium)",
+      "reason": "persistent_silence",
+      "timestamp": "2026-05-17T19:31:28.083552+00:00"
+    },
+    {
+      "amount": -1,
+      "ant": "ant_api_doc_coverage",
+      "node_id": "route:/api/metrics",
+      "reason": "persistent_silence",
+      "timestamp": "2026-05-17T19:31:29.537079+00:00"
+    },
+    {
+      "amount": -1,
+      "ant": "ant_build_freshness",
+      "node_id": "build:pycache_orphan",
+      "reason": "persistent_silence",
+      "timestamp": "2026-05-17T19:31:29.537079+00:00"
+    },
+    {
+      "amount": -1,
+      "ant": "ant_build_freshness",
+      "node_id": "build:zk_binary_missing",
+      "reason": "persistent_silence",
+      "timestamp": "2026-05-17T19:31:29.537079+00:00"
+    },
+    {
+      "amount": -1,
+      "ant": "ant_done_list_arithmetic",
+      "node_id": "mission:section:Arc D (Swarm/HYDRA)",
+      "reason": "persistent_silence",
+      "timestamp": "2026-05-17T19:31:29.537079+00:00"
+    },
+    {
+      "amount": -1,
+      "ant": "ant_done_list_arithmetic",
+      "node_id": "mission:section:Arc E (Mycelium)",
+      "reason": "persistent_silence",
+      "timestamp": "2026-05-17T19:31:29.537079+00:00"
+    },
+    {
+      "amount": -1,
+      "ant": "ant_api_doc_coverage",
+      "node_id": "route:/api/metrics",
+      "reason": "persistent_silence",
+      "timestamp": "2026-05-17T19:31:58.301983+00:00"
+    },
+    {
+      "amount": -1,
+      "ant": "ant_build_freshness",
+      "node_id": "build:pycache_orphan",
+      "reason": "persistent_silence",
+      "timestamp": "2026-05-17T19:31:58.301983+00:00"
+    },
+    {
+      "amount": -1,
+      "ant": "ant_build_freshness",
+      "node_id": "build:zk_binary_missing",
+      "reason": "persistent_silence",
+      "timestamp": "2026-05-17T19:31:58.301983+00:00"
+    },
+    {
+      "amount": -1,
+      "ant": "ant_done_list_arithmetic",
+      "node_id": "mission:section:Arc D (Swarm/HYDRA)",
+      "reason": "persistent_silence",
+      "timestamp": "2026-05-17T19:31:58.301983+00:00"
+    },
+    {
+      "amount": -1,
+      "ant": "ant_done_list_arithmetic",
+      "node_id": "mission:section:Arc E (Mycelium)",
+      "reason": "persistent_silence",
+      "timestamp": "2026-05-17T19:31:58.301983+00:00"
+    },
+    {
+      "amount": -1,
+      "ant": "ant_api_doc_coverage",
+      "node_id": "route:/api/metrics",
+      "reason": "persistent_silence",
+      "timestamp": "2026-05-17T19:31:59.756375+00:00"
+    },
+    {
+      "amount": -1,
+      "ant": "ant_build_freshness",
+      "node_id": "build:pycache_orphan",
+      "reason": "persistent_silence",
+      "timestamp": "2026-05-17T19:31:59.756375+00:00"
+    },
+    {
+      "amount": -1,
+      "ant": "ant_build_freshness",
+      "node_id": "build:zk_binary_missing",
+      "reason": "persistent_silence",
+      "timestamp": "2026-05-17T19:31:59.756375+00:00"
+    },
+    {
+      "amount": -1,
+      "ant": "ant_done_list_arithmetic",
+      "node_id": "mission:section:Arc D (Swarm/HYDRA)",
+      "reason": "persistent_silence",
+      "timestamp": "2026-05-17T19:31:59.756375+00:00"
+    },
+    {
+      "amount": -1,
+      "ant": "ant_done_list_arithmetic",
+      "node_id": "mission:section:Arc E (Mycelium)",
+      "reason": "persistent_silence",
+      "timestamp": "2026-05-17T19:31:59.756375+00:00"
+    },
+    {
+      "amount": -1,
+      "ant": "ant_api_doc_coverage",
+      "node_id": "route:/api/metrics",
+      "reason": "persistent_silence",
+      "timestamp": "2026-05-17T19:33:39.266549+00:00"
+    },
+    {
+      "amount": -1,
+      "ant": "ant_build_freshness",
+      "node_id": "build:pycache_orphan",
+      "reason": "persistent_silence",
+      "timestamp": "2026-05-17T19:33:39.266549+00:00"
+    },
+    {
+      "amount": -1,
+      "ant": "ant_build_freshness",
+      "node_id": "build:zk_binary_missing",
+      "reason": "persistent_silence",
+      "timestamp": "2026-05-17T19:33:39.266549+00:00"
+    },
+    {
+      "amount": -1,
+      "ant": "ant_done_list_arithmetic",
+      "node_id": "mission:section:Arc D (Swarm/HYDRA)",
+      "reason": "persistent_silence",
+      "timestamp": "2026-05-17T19:33:39.266549+00:00"
+    },
+    {
+      "amount": -1,
+      "ant": "ant_done_list_arithmetic",
+      "node_id": "mission:section:Arc E (Mycelium)",
+      "reason": "persistent_silence",
+      "timestamp": "2026-05-17T19:33:39.266549+00:00"
+    },
+    {
+      "amount": -1,
+      "ant": "ant_api_doc_coverage",
+      "node_id": "route:/api/metrics",
+      "reason": "persistent_silence",
+      "timestamp": "2026-05-17T19:33:40.695519+00:00"
+    },
+    {
+      "amount": -1,
+      "ant": "ant_build_freshness",
+      "node_id": "build:pycache_orphan",
+      "reason": "persistent_silence",
+      "timestamp": "2026-05-17T19:33:40.695519+00:00"
+    },
+    {
+      "amount": -1,
+      "ant": "ant_build_freshness",
+      "node_id": "build:zk_binary_missing",
+      "reason": "persistent_silence",
+      "timestamp": "2026-05-17T19:33:40.695519+00:00"
+    },
+    {
+      "amount": -1,
+      "ant": "ant_done_list_arithmetic",
+      "node_id": "mission:section:Arc D (Swarm/HYDRA)",
+      "reason": "persistent_silence",
+      "timestamp": "2026-05-17T19:33:40.695519+00:00"
+    },
+    {
+      "amount": -1,
+      "ant": "ant_done_list_arithmetic",
+      "node_id": "mission:section:Arc E (Mycelium)",
+      "reason": "persistent_silence",
+      "timestamp": "2026-05-17T19:33:40.695519+00:00"
     }
   ],
   "last_pass_fingerprints": {
-    "ant_api_doc_coverage::route:/api/metrics": 18,
-    "ant_build_freshness::build:pycache_orphan": 29,
-    "ant_build_freshness::build:zk_binary_missing": 34,
-    "ant_done_list_arithmetic::mission:section:Arc D (Swarm/HYDRA)": 552,
-    "ant_done_list_arithmetic::mission:section:Arc E (Mycelium)": 603,
-    "ant_test_gap::module:polaris_hydra/action_promotion.py": 312,
-    "ant_test_gap::module:polaris_hydra/action_queue.py": 366,
-    "ant_test_gap::module:polaris_hydra/brief_archive.py": 366,
-    "ant_test_gap::module:polaris_hydra/correlation.py": 366,
-    "ant_test_gap::module:polaris_hydra/host.py": 606,
-    "ant_test_gap::module:polaris_hydra/oracles.py": 242,
-    "ant_test_gap::module:polaris_hydra/pheromone_reader.py": 366,
-    "ant_test_gap::module:polaris_hydra/watchers/adversary_watcher.py": 606,
-    "ant_test_gap::module:polaris_hydra/watchers/ant_colony_watcher.py": 589,
-    "ant_test_gap::module:polaris_hydra/watchers/base.py": 606,
-    "ant_test_gap::module:polaris_hydra/watchers/civitas_watcher.py": 589,
-    "ant_test_gap::module:polaris_hydra/watchers/cognitive_watcher.py": 606,
-    "ant_test_gap::module:polaris_hydra/watchers/mission_watcher.py": 606,
-    "ant_test_gap::module:polaris_hydra/watchers/performance_watcher.py": 606,
-    "ant_test_gap::module:polaris_hydra/watchers/schema_watcher.py": 606,
-    "ant_test_gap::module:polaris_hydra/watchers/security_watcher.py": 606,
-    "ant_test_gap::module:polaris_hydra/watchers/trajectory_watcher.py": 606,
-    "ant_test_gap::module:polaris_web/__version__.py": 344,
-    "ant_test_gap::module:polaris_web/anchoring.py": 606,
-    "ant_test_gap::module:polaris_web/gunicorn.conf.py": 606,
-    "ant_test_gap::module:polaris_web/observability.py": 156,
-    "ant_test_gap::module:polaris_web/pqc_signing.py": 242,
-    "ant_test_gap::module:polaris_web/security.py": 606,
-    "ant_test_gap::module:polaris_web/webauthn_auth.py": 417,
-    "ant_test_gap::module:polaris_web/zk.py": 606,
-    "ant_todo_debt::file:polaris_swarm/ants/README.md": 335,
-    "ant_todo_debt::file:polaris_swarm/ants/ant_todo_debt.py": 606,
-    "ant_todo_debt::file:polaris_swarm/civitas/treasury.py": 575,
-    "ant_todo_debt::file:scripts/ai-done.sh": 606,
-    "ant_todo_debt::file:scripts/ai-pattern.sh": 606,
-    "ant_todo_debt::file:scripts/ai-status.sh": 606
+    "ant_api_doc_coverage::route:/api/metrics": 24,
+    "ant_build_freshness::build:pycache_orphan": 35,
+    "ant_build_freshness::build:zk_binary_missing": 40,
+    "ant_done_list_arithmetic::mission:section:Arc D (Swarm/HYDRA)": 558,
+    "ant_done_list_arithmetic::mission:section:Arc E (Mycelium)": 609,
+    "ant_test_gap::module:polaris_hydra/action_promotion.py": 318,
+    "ant_test_gap::module:polaris_hydra/action_queue.py": 372,
+    "ant_test_gap::module:polaris_hydra/brief_archive.py": 372,
+    "ant_test_gap::module:polaris_hydra/correlation.py": 372,
+    "ant_test_gap::module:polaris_hydra/host.py": 612,
+    "ant_test_gap::module:polaris_hydra/oracles.py": 248,
+    "ant_test_gap::module:polaris_hydra/pheromone_reader.py": 372,
+    "ant_test_gap::module:polaris_hydra/watchers/adversary_watcher.py": 612,
+    "ant_test_gap::module:polaris_hydra/watchers/ant_colony_watcher.py": 595,
+    "ant_test_gap::module:polaris_hydra/watchers/base.py": 612,
+    "ant_test_gap::module:polaris_hydra/watchers/civitas_watcher.py": 595,
+    "ant_test_gap::module:polaris_hydra/watchers/cognitive_watcher.py": 612,
+    "ant_test_gap::module:polaris_hydra/watchers/mission_watcher.py": 612,
+    "ant_test_gap::module:polaris_hydra/watchers/performance_watcher.py": 612,
+    "ant_test_gap::module:polaris_hydra/watchers/schema_watcher.py": 612,
+    "ant_test_gap::module:polaris_hydra/watchers/security_watcher.py": 612,
+    "ant_test_gap::module:polaris_hydra/watchers/trajectory_watcher.py": 612,
+    "ant_test_gap::module:polaris_web/__version__.py": 350,
+    "ant_test_gap::module:polaris_web/anchoring.py": 612,
+    "ant_test_gap::module:polaris_web/gunicorn.conf.py": 612,
+    "ant_test_gap::module:polaris_web/observability.py": 162,
+    "ant_test_gap::module:polaris_web/pqc_signing.py": 248,
+    "ant_test_gap::module:polaris_web/security.py": 612,
+    "ant_test_gap::module:polaris_web/webauthn_auth.py": 423,
+    "ant_test_gap::module:polaris_web/zk.py": 612,
+    "ant_todo_debt::file:polaris_swarm/ants/README.md": 341,
+    "ant_todo_debt::file:polaris_swarm/ants/ant_todo_debt.py": 612,
+    "ant_todo_debt::file:polaris_swarm/civitas/treasury.py": 581,
+    "ant_todo_debt::file:scripts/ai-done.sh": 612,
+    "ant_todo_debt::file:scripts/ai-pattern.sh": 612,
+    "ant_todo_debt::file:scripts/ai-status.sh": 612
   },
-  "last_pass_taken": "2026-05-17T19:27:27.681178+00:00"
+  "last_pass_taken": "2026-05-17T19:33:40.695563+00:00"
 }

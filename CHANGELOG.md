@@ -14,6 +14,28 @@ record, read [`meta/sanctum-index.md`](meta/sanctum-index.md).
 
 ---
 
+## v9.33 — 2026-05-17 (Post-freeze measurement · Playwright Atlas-globe E2E scaffold · gotcha #6 pinned)
+
+First post-freeze measurement ship per MISSION.md §"From v9.32 forward,
+(b) Measurement". Closes second follow-up from
+`sanctum/2026-05-17-plugin-installation-tier2.md` (Option A).
+
+- **`polaris_web/test_e2e_atlas.py`** — 3 smoke tests against `/atlas`
+  via headless Chromium: globe-element-present; HUD-renders-4-figures;
+  no-CSP-violations-on-console. Smoke, not exhaustive (measurement,
+  not carpet-bomb).
+- **Graceful skip** when Playwright/chromium missing OR app unreachable.
+  Activation: `pip install playwright && playwright install chromium &&
+  ./polaris_mac_launch.sh up --detach`. Suite stays green on machines
+  without the 250MB browser dependency.
+- **Gotcha #6 pinned** — `wait_until="domcontentloaded"` (NOT
+  `"networkidle"`; the 10s heartbeat POST means networkidle never
+  resolves). `TestWave33V933` invariant prevents rediscovery.
+- **`playwright>=1.40,<2.0`** added to `polaris_web/requirements.txt`.
+
+`TestWave33V933` × 7 invariants pin scaffold + gotcha-#6 + skip
+discipline + activation documentation + version bump.
+
 ## v9.32 — 2026-05-17 (Post-freeze hardening · hookify · ship-gate enforced by harness not memory)
 
 First post-freeze hardening ship per MISSION.md §"From v9.32 forward,
@@ -64,44 +86,26 @@ moved.
 - **Gap 1 (commit hygiene)** — 44 files / 3973 insertions committed in
   prior commit `2b60179` ("hygiene: commit accumulated 2026-05-16/17
   session work"). Kill test no longer refuses on dirty tree.
-- **Gap 2 (observability wiring, condition 6)** — `polaris_web/observability.py`
-  (v9.27 / Tier 8 #11) is now actually wired: `/api/metrics` route added
-  next to `/api/health`; `_metrics_after_request` calls `record_request()`
-  + `record_error()` on 5xx; `security.py:authenticate` calls
-  `record_auth_failure(kind='password')` on bad-credentials path;
-  `webauthn_assert_finish` calls `record_auth_failure(kind='webauthn')`
-  on both invalid-credential and invalid-assertion branches;
-  `_check_and_record_duress` calls `record_duress_event()` after the
-  silent DB record. **The duress counter being non-zero IS THE
-  ANTI-COERCION ALARM.** Per T8#11: an unobservable duress signal is
-  the coercion-cover failure mode (R11-5 becomes decorative).
-- **Gap 3 (MTTR back-fill + parser fix, condition 4)** — Three honest
-  resolutions back-filled with provenance (treasury rebalance 04:09,
-  Mycelium swarm wake 03:31, security_watcher CSP regex fix 03:24, all
-  per `journal/2026-05-17.md`). `_parse_iso` helper added to
-  `polaris-swarm-mttr.sh` to handle the historical "+00:00Z" double-
-  suffix format that was silently rejecting every early-ledger entry —
-  the slope computation was inoperative for 12 days. Trend slope now
-  computes: **-1.72h/ship (negative = MTTR decreasing = loop earning)**.
-  v9.30 binding clause passes.
-- **Gap 4 (mttr.sh version regex, prep)** — Regex anchored to
-  `^__version__` start-of-line to skip the docstring example
-  `POLARIS_VERSION = '9.05'` literal in `__version__.py:9-10`. Script
-  now correctly reports current version.
-- **Gap 5a/5b (chaos test, condition 3)** — `libpq` linked (`brew link
-  --force libpq`) so `psql` is on PATH. This exposed a hidden fail-open
-  in `polaris-recover-admin.sh`: `run_psql` used `2>/dev/null` at three
-  call sites, so `set -e` silently exited on DB-unreachable BEFORE any
-  refusal message was emitted to the operator — fail-open-in-disguise
-  (script crash treated by caller as "no result, retry" rather than
-  "REFUSE"). Fixed: `run_psql` wrapped to capture psql exit code,
-  emit loud operator-readable refusal, then exit `EXIT_DB`. **Real
-  security defect caught by the chaos test the moment psql became
-  available** — exactly the posture the v9.27 Anti-Architect
-  constraint targeted. Chaos test now 3/3 fail-safe.
-- **Conditions 1, 5, 7** — C1–C10 coherence reported by ai-coherence
-  (rollup of 100+ structural invariants); v9.30 binding clause passing
-  per Gap 3 work; `__version__` literal bumped 9.30 → 9.31.
+- **Gap 2 (observability, cond 6)** — `/api/metrics` route + counter
+  call sites in `_metrics_after_request` (request+5xx), `security.py`
+  (auth-failure password), `webauthn_assert_finish` (auth-failure
+  webauthn ×2), `_check_and_record_duress` (the anti-coercion alarm
+  per T8#11). 4 headline counters now actually fire.
+- **Gap 3 (MTTR back-fill + parser fix, cond 4)** — 3 honest
+  resolutions with provenance (treasury 04:09, Mycelium 03:31, CSP
+  regex 03:24). `_parse_iso` helper handles 12-day silent +00:00Z
+  double-suffix bug rejecting every early-ledger entry. Trend slope
+  **-1.72h/ship (loop earning)**. v9.30 binding clause passes.
+- **Gap 4 (mttr.sh regex)** — Anchored `^__version__` to skip a
+  docstring example.
+- **Gap 5a/5b (chaos test, cond 3)** — `brew link --force libpq`
+  exposed hidden fail-open in `polaris-recover-admin.sh`: `run_psql`
+  swallowed errors via `2>/dev/null` + `set -e` exited silently before
+  any refusal reached operator. Wrapped to emit loud `EXIT_DB`
+  refusal. **Real security defect caught by chaos test the moment
+  psql became available.** 3/3 fail-safe.
+- **Cond 1, 5, 7** — ai-coherence STRUCTURE INTACT; v9.30 binding
+  passes; `__version__` 9.30 → 9.31.
 
 **This is the freeze.** Post-v9.31 work is bounded to (a) hardening,
 (b) measurement, (c) thesis cold-read evidence per MISSION.md §"From
