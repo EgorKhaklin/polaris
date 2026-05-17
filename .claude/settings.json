@@ -1,0 +1,16 @@
+{
+  "_doc": "Project Claude Code settings (committed; applies to anyone working on the repo). Per-user overrides go in .claude/settings.local.json. v9.32 adds the hookify-integration PreToolUse hook scoped to ship commits only.",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash $CLAUDE_PROJECT_DIR/scripts/polaris-ai-done-hook.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

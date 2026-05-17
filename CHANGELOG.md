@@ -14,6 +14,38 @@ record, read [`meta/sanctum-index.md`](meta/sanctum-index.md).
 
 ---
 
+## v9.32 — 2026-05-17 (Post-freeze hardening · hookify · ship-gate enforced by harness not memory)
+
+First post-freeze hardening ship per MISSION.md §"From v9.32 forward,
+(a) Hardening". Closes follow-up commitment from
+`sanctum/2026-05-17-plugin-installation-tier2.md` (Option A).
+
+Before v9.32: CLAUDE.md step 12 ("`ai-done.sh` must report READY")
+was memory-dependent. v9.32 makes it harness-enforced.
+
+- **`scripts/polaris-ai-done-hook.sh`** — PreToolUse hook scoped to
+  ship commits only: triggers iff bash matches `git commit` AND
+  `polaris_web/__version__.py` is staged. Runs `ai-done.sh`; exit
+  non-zero blocks. Hygiene commits / branch ops / non-commit bash pass
+  through.
+- **`.claude/settings.json`** — registers the hook with
+  `$CLAUDE_PROJECT_DIR` for portability across operator checkouts.
+- **Override:** `POLARIS_HOOK_BYPASS=1` skips the gate but emits an
+  audit-trail line to stderr (visible in session log) — v9.26
+  AppendOnlyBypass discipline applied to this hook.
+
+Also v9.32 corrected an in-flight bug in the v9.31 freeze invariant
+`test_freeze_polaris_version_is_9_31`: original assertion pinned
+`== '9.31'` which would fail on every post-freeze ship.
+Generalized to `≥ (9, 31)` tuple-compare so freezing ≠ stopping —
+hardening is explicitly permitted by the same MISSION.md clause that
+enforces the freeze.
+
+`TestWave32V932` × 7 invariants pin: hook script exists + executable;
+settings.json wires the hook; passes through non-ship bash; passes
+through non-ship commits; bypass documented with audit-trail; version
+bumped; CHANGELOG justifies as hardening.
+
 ## v9.31 — 2026-05-17 (Mechanical freeze-line verification · 7 freeze conditions encoded as invariants · the terminus)
 
 Per MISSION.md §"Freeze line — definition of done (v9.27, amended once
@@ -421,40 +453,8 @@ move). 6 of 8 anti-patterns surfaced (AP1, AP3, AP4, AP6, AP7, AP8). 16
 new artifacts. TestWave24V924 invariants pin every ship. `POLARIS_VERSION`
 9.23 → 9.24.
 
-## v9.23 — 2026-05-15 (BIG MISSION composite I · 12-item Architect + Anti-Architect debate · Pattern #20 18th instance)
-
-VANTA: *"BIG MISSION. (Architect + Antiarchitect Agents discusses each one
-... Vanta Sanctum authorized."* First BIG MISSION ship; 12 items across
-Critical/High/Medium tiers. **Critical:** WebAuthn rollout helper +
-operator runbook (`scripts/polaris-set-webauthn-deadline.sh` +
-`docs/operator/WEBAUTHN-ROLLOUT.md`; audit confirmed v8.97 infrastructure
-100% complete — no rebuild); cognitive-layer threat model
-(`DEVNOTES/threat-model-cognitive.md` covers 5 threat classes T-CL-1..T-CL-5);
-polaris-restore.sh hardened with `--verify-schema-version` flag +
-`EXIT_SCHEMA_MISMATCH=10`. **High:** ONE TLA+ demonstrator for C3 (Anti-
-Architect refused broad scope per AP7); single-region DR runbook (Anti-
-Architect refused multi-region per v9.16 RESERVED-NOT-PLANNED clause);
-RASP rule catalog (12 rules; IMPLEMENTED vs GAP labels); RED-TEAM-SCOPE.md
-(agent ships spec; operator commissions exercise per AP8 refusal of
-red-team simulation). **Medium:** QuantumObserverBinding deferral-rationale
-doc; token-volume loadtest script with honest accounting; QUICKSTART.md +
-ARCHITECTURE-OVERVIEW.md onboarding docs; polaris-cron-install.sh wiring
-existing v8.84/v8.87/v9.07 scripts (not new archival framework);
-top-level CONTRIBUTING.md + SECURITY.md. 13 new artifacts. TestWave23V923
-(32 invariants). Pattern #20 Constitutional Discipline 18th instance.
-
-## v9.22 — 2026-05-15 (Landing-page repair · C4-C9 honest accounting · 8 broken /docs/*.md links → GitHub URLs)
-
-VANTA caught two real bugs on the public landing page. Architect's
-instinct: add C4-C9 as more claim cards. Anti-Architect refused
-(AP3: would convert 4-card highlight into 10-card feature list).
-Joint: keep 4 cards + add one paragraph naming C4-C9 + link to
-MISSION.md. 8 broken `/docs/*.md` links rewritten to GitHub URLs (same
-pattern as v9.21 demo fix; all 8 target files verified present).
-Landing page now tells the truth.
-
-_Per CHANGELOG.md convention (last 10 ships only): v9.21 → v9.15 trimmed
-2026-05-17 with the v9.31 ship. Full byte-identical history at
+_Per CHANGELOG.md convention (last 10 ships only): v9.23 → v9.15 trimmed
+2026-05-17 with v9.31 + v9.32 ships. Full byte-identical history at
 [archive/CHANGELOG-FULL.md](archive/CHANGELOG-FULL.md)._
 
 ---

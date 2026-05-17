@@ -15038,15 +15038,23 @@ class TestWave31V931(unittest.TestCase):
 
     # ---- Freeze condition 7: POLARIS_VERSION is 9.31 ----------------
 
-    def test_freeze_polaris_version_is_9_31(self):
-        """The version literal must read 9.31 (per amendment 2026-05-16
-        v9.30→v9.31 in MISSION.md §AMENDMENT LOG)."""
+    def test_freeze_polaris_version_at_or_past_9_31(self):
+        """The version literal must be at or past 9.31 (the freeze
+        threshold per amendment 2026-05-16 v9.30→v9.31 in MISSION.md
+        §AMENDMENT LOG). Post-freeze hardening ships (v9.32+) continue
+        to satisfy this invariant — freezing ≠ stopping; hardening
+        is explicitly permitted by MISSION.md §'From v9.32 forward'.
+
+        Original v9.31 ship pinned `== '9.31'` which was wrong-by-design:
+        the freeze invariant should pin a *threshold*, not a *single
+        version*. Fixed in v9.32 to assert tuple-compared ≥(9, 31)."""
         from polaris_web.__version__ import POLARIS_VERSION, __version__
-        self.assertEqual(__version__, '9.31',
-            f"v9.31 freeze ship requires __version__ == '9.31'; "
-            f"got {__version__!r}")
-        self.assertEqual(POLARIS_VERSION, '9.31',
-            "POLARIS_VERSION must also be 9.31 (backwards-compat alias)")
+        self.assertEqual(__version__, POLARIS_VERSION,
+            "POLARIS_VERSION must alias __version__ (no divergence)")
+        # Parse "MAJOR.MINOR" → tuple for ordered comparison
+        major, minor = (int(x) for x in __version__.split('.'))
+        self.assertGreaterEqual((major, minor), (9, 31),
+            f"freeze requires version ≥ 9.31; got {__version__!r}")
 
     # ---- Sanctum provenance for this ship ---------------------------
 
@@ -15083,6 +15091,130 @@ class TestWave31V931(unittest.TestCase):
             "mttr.sh must define _parse_iso helper for tolerant timestamp parsing")
         self.assertIn('double-suffix', src,
             "mttr.sh must document the +00:00Z double-suffix format it handles")
+
+
+class TestWave32V932(unittest.TestCase):
+    """v9.32 — hookify integration (post-freeze hardening).
+
+    Closes the follow-up commitment from sanctum/2026-05-17-plugin-
+    installation-tier2.md (Option A) — wire the `hookify` plugin's
+    discipline into the actual workflow. Per CLAUDE.md ship sequence
+    step 12 ("Pre-ship gate: bash scripts/ai-done.sh. Must report
+    READY."), the gate was previously "operator must remember"; v9.32
+    converts it to "harness enforces" via a Claude Code PreToolUse hook
+    scoped to ship commits (commits that stage polaris_web/__version__.py).
+
+    Hygiene commits, branch ops, and non-commit bash calls pass through
+    unchanged. Override: POLARIS_HOOK_BYPASS=1 (audit-trail line is
+    still emitted so the bypass is visible).
+
+    Per MISSION.md §"From v9.32 forward, all work is one of: (a)
+    Hardening" — wiring a memory-dependent gate as a harness-enforced
+    hook is the canonical hardening case.
+    """
+
+    ROOT = ROOT
+
+    def _read(self, rel):
+        with open(os.path.join(self.ROOT, rel)) as f:
+            return f.read()
+
+    def test_v932_hook_script_exists_and_executable(self):
+        """scripts/polaris-ai-done-hook.sh must exist and be executable
+        (the harness invokes it via bash; non-executable would fail at
+        the shebang line)."""
+        path = os.path.join(self.ROOT, 'scripts/polaris-ai-done-hook.sh')
+        self.assertTrue(os.path.isfile(path),
+            "polaris-ai-done-hook.sh must exist")
+        self.assertTrue(os.access(path, os.X_OK),
+            "polaris-ai-done-hook.sh must be executable (chmod +x)")
+
+    def test_v932_settings_json_wires_hook(self):
+        """.claude/settings.json must register the polaris-ai-done-hook.sh
+        as a PreToolUse hook on Bash. Without this wiring, the gate is
+        defined but never fires — pure decoration. The hook must use
+        $CLAUDE_PROJECT_DIR so the path works across operator checkouts."""
+        with open(os.path.join(self.ROOT, '.claude/settings.json')) as f:
+            settings = json.load(f)
+        hooks = settings.get('hooks', {})
+        pre_tool_use = hooks.get('PreToolUse', [])
+        self.assertTrue(
+            any(matcher.get('matcher') == 'Bash'
+                and any('polaris-ai-done-hook.sh' in h.get('command', '')
+                        for h in matcher.get('hooks', []))
+                for matcher in pre_tool_use),
+            "settings.json must register polaris-ai-done-hook.sh as a "
+            "PreToolUse hook on Bash"
+        )
+        # Path must be project-relative via CLAUDE_PROJECT_DIR — otherwise
+        # the hook breaks on any operator whose repo lives elsewhere
+        raw = self._read('.claude/settings.json')
+        self.assertIn('$CLAUDE_PROJECT_DIR', raw,
+            "hook command must use $CLAUDE_PROJECT_DIR for portability")
+
+    def test_v932_hook_passes_through_non_commit_bash(self):
+        """Hook must NOT fire ai-done on non-git-commit bash calls
+        (e.g., `ls`, `cat`, normal tooling). Test by feeding a synthetic
+        payload and asserting exit 0 with no ai-done invocation."""
+        import subprocess
+        payload = '{"tool_name":"Bash","tool_input":{"command":"ls -la"}}'
+        proc = subprocess.run(
+            ['bash', os.path.join(self.ROOT, 'scripts', 'polaris-ai-done-hook.sh')],
+            input=payload, capture_output=True, text=True, timeout=10,
+        )
+        self.assertEqual(proc.returncode, 0,
+            f"non-commit bash must pass through. Got rc={proc.returncode}; "
+            f"stderr: {proc.stderr[:300]}")
+        # Should NOT have invoked ai-done (no "ai-done" or "ship commit
+        # detected" in stderr)
+        self.assertNotIn('ship commit detected', proc.stderr,
+            "non-commit bash must NOT trigger ship-commit branch")
+
+    def test_v932_hook_passes_through_git_commit_without_version_bump(self):
+        """Hook must NOT fire ai-done on git commits that DON'T stage
+        polaris_web/__version__.py (hygiene commits, doc-only commits,
+        etc.). This is the scope decision: only ship commits are gated."""
+        import subprocess
+        payload = '{"tool_name":"Bash","tool_input":{"command":"git commit -m hygiene"}}'
+        proc = subprocess.run(
+            ['bash', os.path.join(self.ROOT, 'scripts', 'polaris-ai-done-hook.sh')],
+            input=payload, capture_output=True, text=True, timeout=10,
+            cwd=self.ROOT,
+        )
+        self.assertEqual(proc.returncode, 0,
+            f"non-ship git commit must pass through. Got rc={proc.returncode}; "
+            f"stderr: {proc.stderr[:300]}")
+
+    def test_v932_hook_documents_bypass_with_audit_trail(self):
+        """The bypass mechanism (POLARIS_HOOK_BYPASS=1) must be
+        documented inline AND emit an audit-trail line when used.
+        Without visibility, a bypass becomes an invisible escape hatch
+        — exactly the AppendOnlyBypass pattern v9.26 caught."""
+        src = self._read('scripts/polaris-ai-done-hook.sh')
+        self.assertIn('POLARIS_HOOK_BYPASS', src,
+            "hook script must document POLARIS_HOOK_BYPASS override")
+        self.assertIn('audit-trail visible', src,
+            "hook script must emit audit-trail line on bypass "
+            "(prevents AppendOnlyBypass-class invisible escape)")
+
+    def test_v932_version_bumped(self):
+        """Post-freeze hardening ship still gets a version bump per
+        CLAUDE.md ship sequence step 6 (one ship per version)."""
+        from polaris_web.__version__ import __version__
+        self.assertEqual(__version__, '9.32',
+            f"v9.32 ship requires __version__ == '9.32'; got {__version__!r}")
+
+    def test_v932_changelog_entry_exists(self):
+        """v9.32 CHANGELOG entry must be at the top (post-freeze
+        hardening narrative + freeze-clause justification)."""
+        src = self._read('CHANGELOG.md')
+        self.assertIn('## v9.32', src,
+            "CHANGELOG.md must have v9.32 entry")
+        # Must justify as post-freeze hardening (per MISSION.md freeze
+        # clause: post-v9.32 work is hardening/measurement/cold-read)
+        self.assertIn('hardening', src.split('## v9.32', 1)[1][:1500].lower(),
+            "v9.32 CHANGELOG entry must explicitly justify as hardening "
+            "per MISSION.md §'From v9.32 forward'")
 
 
 if __name__ == '__main__':

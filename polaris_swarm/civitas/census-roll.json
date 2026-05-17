@@ -6,201 +6,201 @@
     "ant_adversary_walk_complete": {
       "class": "ant",
       "first_seen": "2026-05-14T00:29:12.216940+00:00",
-      "last_seen": "2026-05-17T19:10:06.609341+00:00",
+      "last_seen": "2026-05-17T19:27:27.678051+00:00",
       "legion_at_birth": "legio_adversary"
     },
     "ant_aor_immutability": {
       "class": "ant",
       "first_seen": "2026-05-14T00:29:12.216940+00:00",
-      "last_seen": "2026-05-17T19:10:06.609341+00:00",
+      "last_seen": "2026-05-17T19:27:27.678051+00:00",
       "legion_at_birth": "legio_schema"
     },
     "ant_api_doc_coverage": {
       "class": "ant",
       "first_seen": "2026-05-14T00:29:12.216940+00:00",
-      "last_seen": "2026-05-17T19:10:06.609341+00:00",
+      "last_seen": "2026-05-17T19:27:27.678051+00:00",
       "legion_at_birth": "legio_performance"
     },
     "ant_atlas_endpoint_health": {
       "class": "ant",
       "first_seen": "2026-05-14T00:29:12.216940+00:00",
-      "last_seen": "2026-05-17T19:10:06.609341+00:00",
+      "last_seen": "2026-05-17T19:27:27.678051+00:00",
       "legion_at_birth": "legio_performance"
     },
     "ant_brain_map_freshness": {
       "class": "ant",
       "first_seen": "2026-05-14T01:37:05.430246+00:00",
-      "last_seen": "2026-05-17T19:10:06.609341+00:00",
+      "last_seen": "2026-05-17T19:27:27.678051+00:00",
       "legion_at_birth": "legio_cognitive"
     },
     "ant_build_freshness": {
       "class": "ant",
       "first_seen": "2026-05-14T02:21:02.623528+00:00",
-      "last_seen": "2026-05-17T19:10:06.609341+00:00",
+      "last_seen": "2026-05-17T19:27:27.678051+00:00",
       "legion_at_birth": "legio_engineer"
     },
     "ant_changelog_gap": {
       "class": "ant",
       "first_seen": "2026-05-14T01:37:05.430246+00:00",
-      "last_seen": "2026-05-17T19:10:06.609341+00:00",
+      "last_seen": "2026-05-17T19:27:27.678051+00:00",
       "legion_at_birth": "legio_trajectory"
     },
     "ant_csp_health": {
       "class": "ant",
       "first_seen": "2026-05-14T00:29:12.216940+00:00",
-      "last_seen": "2026-05-17T19:10:06.609341+00:00",
+      "last_seen": "2026-05-17T19:27:27.678051+00:00",
       "legion_at_birth": "legio_security"
     },
     "ant_dependency_in_use": {
       "class": "ant",
       "first_seen": "2026-05-14T00:29:12.216940+00:00",
-      "last_seen": "2026-05-17T19:10:06.609341+00:00",
+      "last_seen": "2026-05-17T19:27:27.678051+00:00",
       "legion_at_birth": "legio_substrate"
     },
     "ant_devnotes_ships_coverage": {
       "class": "ant",
       "first_seen": "2026-05-14T00:29:12.216940+00:00",
-      "last_seen": "2026-05-17T19:10:06.609341+00:00",
+      "last_seen": "2026-05-17T19:27:27.678051+00:00",
       "legion_at_birth": "legio_docs"
     },
     "ant_docs_structure": {
       "class": "ant",
       "first_seen": "2026-05-14T00:29:12.216940+00:00",
-      "last_seen": "2026-05-17T19:10:06.609341+00:00",
+      "last_seen": "2026-05-17T19:27:27.678051+00:00",
       "legion_at_birth": "legio_docs"
     },
     "ant_done_list_arithmetic": {
       "class": "ant",
       "first_seen": "2026-05-14T00:29:12.216940+00:00",
-      "last_seen": "2026-05-17T19:10:06.609341+00:00",
+      "last_seen": "2026-05-17T19:27:27.678051+00:00",
       "legion_at_birth": "legio_mission"
     },
     "ant_fk_cascade_guard": {
       "class": "ant",
       "first_seen": "2026-05-14T00:29:12.216940+00:00",
-      "last_seen": "2026-05-17T19:10:06.609341+00:00",
+      "last_seen": "2026-05-17T19:27:27.678051+00:00",
       "legion_at_birth": "legio_schema"
     },
     "ant_journal_silence": {
       "class": "ant",
       "first_seen": "2026-05-14T00:29:12.216940+00:00",
-      "last_seen": "2026-05-17T19:10:06.609341+00:00",
+      "last_seen": "2026-05-17T19:27:27.678051+00:00",
       "legion_at_birth": "legio_trajectory"
     },
     "ant_legion_doctrine_health": {
       "class": "ant",
       "first_seen": "2026-05-14T01:37:05.430246+00:00",
-      "last_seen": "2026-05-17T19:10:06.609341+00:00",
+      "last_seen": "2026-05-17T19:27:27.678051+00:00",
       "legion_at_birth": "legio_cognitive"
     },
     "ant_mission_drift": {
       "class": "ant",
       "first_seen": "2026-05-14T02:21:02.623528+00:00",
-      "last_seen": "2026-05-17T19:10:06.609341+00:00",
+      "last_seen": "2026-05-17T19:27:27.678051+00:00",
       "legion_at_birth": "legio_praetorian"
     },
     "ant_pattern_warmth": {
       "class": "ant",
       "first_seen": "2026-05-14T00:29:12.216940+00:00",
-      "last_seen": "2026-05-17T19:10:06.609341+00:00",
+      "last_seen": "2026-05-17T19:27:27.678051+00:00",
       "legion_at_birth": "legio_cognitive"
     },
     "ant_principle_invariant": {
       "class": "ant",
       "first_seen": "2026-05-14T02:21:02.623528+00:00",
-      "last_seen": "2026-05-17T19:10:06.609341+00:00",
+      "last_seen": "2026-05-17T19:27:27.678051+00:00",
       "legion_at_birth": "legio_praetorian"
     },
     "ant_proposal_stagnation": {
       "class": "ant",
       "first_seen": "2026-05-14T02:00:56.058737+00:00",
-      "last_seen": "2026-05-17T19:10:06.609341+00:00",
+      "last_seen": "2026-05-17T19:27:27.678051+00:00",
       "legion_at_birth": "legio_trajectory"
     },
     "ant_readme_counts": {
       "class": "ant",
       "first_seen": "2026-05-14T00:29:12.216940+00:00",
-      "last_seen": "2026-05-17T19:10:06.609341+00:00",
+      "last_seen": "2026-05-17T19:27:27.678051+00:00",
       "legion_at_birth": "legio_docs"
     },
     "ant_recent_churn": {
       "class": "ant",
       "first_seen": "2026-05-14T01:37:05.430246+00:00",
-      "last_seen": "2026-05-17T19:10:06.609341+00:00",
+      "last_seen": "2026-05-17T19:27:27.678051+00:00",
       "legion_at_birth": "legio_trajectory"
     },
     "ant_release_velocity": {
       "class": "ant",
       "first_seen": "2026-05-14T02:21:02.623528+00:00",
-      "last_seen": "2026-05-17T19:10:06.609341+00:00",
+      "last_seen": "2026-05-17T19:27:27.678051+00:00",
       "legion_at_birth": "legio_engineer"
     },
     "ant_rust_toolchain": {
       "class": "ant",
       "first_seen": "2026-05-14T00:29:12.216940+00:00",
-      "last_seen": "2026-05-17T19:10:06.609341+00:00",
+      "last_seen": "2026-05-17T19:27:27.678051+00:00",
       "legion_at_birth": "legio_substrate"
     },
     "ant_sanctum_outcome": {
       "class": "ant",
       "first_seen": "2026-05-14T00:29:12.216940+00:00",
-      "last_seen": "2026-05-17T19:10:06.609341+00:00",
+      "last_seen": "2026-05-17T19:27:27.678051+00:00",
       "legion_at_birth": "legio_mission"
     },
     "ant_self_model_accuracy": {
       "class": "ant",
       "first_seen": "2026-05-14T01:37:05.430246+00:00",
-      "last_seen": "2026-05-17T19:10:06.609341+00:00",
+      "last_seen": "2026-05-17T19:27:27.678051+00:00",
       "legion_at_birth": "legio_cognitive"
     },
     "ant_ship_burst": {
       "class": "ant",
       "first_seen": "2026-05-14T00:29:12.216940+00:00",
-      "last_seen": "2026-05-17T19:10:06.609341+00:00",
+      "last_seen": "2026-05-17T19:27:27.678051+00:00",
       "legion_at_birth": "legio_trajectory"
     },
     "ant_stale_script": {
       "class": "ant",
       "first_seen": "2026-05-14T00:29:12.216940+00:00",
-      "last_seen": "2026-05-17T19:10:06.609341+00:00",
+      "last_seen": "2026-05-17T19:27:27.678051+00:00",
       "legion_at_birth": "legio_cognitive"
     },
     "ant_substrate_catalog": {
       "class": "ant",
       "first_seen": "2026-05-14T00:29:12.216940+00:00",
-      "last_seen": "2026-05-17T19:10:06.609341+00:00",
+      "last_seen": "2026-05-17T19:27:27.678051+00:00",
       "legion_at_birth": "legio_substrate"
     },
     "ant_swarm_inventory_drift": {
       "class": "ant",
       "first_seen": "2026-05-14T01:37:05.430246+00:00",
-      "last_seen": "2026-05-17T19:10:06.609341+00:00",
+      "last_seen": "2026-05-17T19:27:27.678051+00:00",
       "legion_at_birth": "legio_docs"
     },
     "ant_test_gap": {
       "class": "ant",
       "first_seen": "2026-05-14T01:37:05.430246+00:00",
-      "last_seen": "2026-05-17T19:10:06.609341+00:00",
+      "last_seen": "2026-05-17T19:27:27.678051+00:00",
       "legion_at_birth": "legio_performance"
     },
     "ant_todo_debt": {
       "class": "ant",
       "first_seen": "2026-05-14T01:37:05.430246+00:00",
-      "last_seen": "2026-05-17T19:10:06.609341+00:00",
+      "last_seen": "2026-05-17T19:27:27.678051+00:00",
       "legion_at_birth": "legio_cognitive"
     },
     "ant_treasury_health": {
       "class": "ant",
       "first_seen": "2026-05-14T01:37:05.430246+00:00",
-      "last_seen": "2026-05-17T19:10:06.609341+00:00",
+      "last_seen": "2026-05-17T19:27:27.678051+00:00",
       "legion_at_birth": "legio_cognitive"
     },
     "ant_unbumped_version": {
       "class": "ant",
       "first_seen": "2026-05-14T01:37:05.430246+00:00",
-      "last_seen": "2026-05-17T19:10:06.609341+00:00",
+      "last_seen": "2026-05-17T19:27:27.678051+00:00",
       "legion_at_birth": "legio_docs"
     }
   },
-  "last_census_taken": "2026-05-17T19:10:06.609341+00:00"
+  "last_census_taken": "2026-05-17T19:27:27.678051+00:00"
 }
