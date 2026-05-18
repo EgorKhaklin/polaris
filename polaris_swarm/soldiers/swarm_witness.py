@@ -131,6 +131,16 @@ class SwarmWitnessSoldier(Soldier):
         # Build per-worker map; absent workers are silent in the window.
         seen: dict[str, dict[str, Any]] = {}
         for depositor, count, last, avg_int in rows:
+            # Postgres TIMESTAMP WITHOUT TIME ZONE comes back as a naive
+            # datetime from psycopg2; subtracting an aware datetime raises
+            # TypeError. Polaris stores all timestamps in UTC by
+            # convention, so promote `last` to tz-aware before the diff.
+            # (v9.34 fix; silently crashed every soldier-tier wake since
+            # v9.11 because the swarm-witness `crashed:` line went to
+            # stderr without failing the colony — graceful-failure by
+            # design, decorative-by-accident in this case.)
+            if last.tzinfo is None:
+                last = last.replace(tzinfo=timezone.utc)
             seen[depositor] = {
                 "deposits": int(count),
                 "last_age_minutes": round(

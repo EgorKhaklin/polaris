@@ -14,6 +14,55 @@ record, read [`meta/sanctum-index.md`](meta/sanctum-index.md).
 
 ---
 
+## v9.34 — 2026-05-17 (Post-freeze hardening · swarm cron cadence · 2 long-latent defects closed)
+
+Real defect closed: `polaris-cron-install.sh` wired `ai-hydra` (read-
+side audit) but NOT the deposit-side colony runners. HYDRA's
+`ant_colony` "zero pheromones in window" ALERT had been firing as
+baseline since v9.03 — exactly the failure mode the cron-schedule
+docs already promised was solved. Two new cron entries (matching
+`docs/operator/OPERATIONS.md` documented cadence): soldier-tier
+wake every 30 min for 60s, commander deployment every 6h.
+
+- **`scripts/polaris-mycelium-wake.sh`** — new wrapper. Cron calls
+  it instead of inline python. Sources `${POLARIS_ROOT}/polaris.env`
+  (gitignored, operator-managed) so credentials stay out of
+  `crontab -l`. Dev defaults for POLARIS_DB_HOST/PORT/NAME/USER;
+  PASSWORD intentionally never defaulted (must come from
+  polaris.env, `.pgpass`, or peer auth).
+- **`scripts/polaris-cron-install.sh`** — adds 2 entries between
+  the existing markers, lists wrapper in `required_scripts` gate so
+  install refuses if wrapper missing.
+- **`.gitignore`** — `polaris.env` now ignored so operator following
+  the documented env pattern can't accidentally commit credentials.
+
+Also closes a latent crash in `polaris_swarm/soldiers/swarm_witness.py`
+(introduced v9.11): naive-vs-aware datetime subtraction silently
+crashed every soldier-tier wake under the colony's graceful-failure
+swallower. The priest tier was decorative-by-accident for ~30 ships.
+Fix: promote `last` to tz-aware before subtracting (`last.tzinfo is
+None` guard so future psycopg2 upgrades don't double-localize).
+
+AP3 caught in flight: first draft of cron entries hardcoded
+`POLARIS_DB_PASSWORD=polaris_dev_password` inline in the operator's
+crontab. The Anti-Architect catch on `--dry-run` output forced the
+wrapper redesign — credentials never leak to `crontab -l`.
+
+`TestWave34V934` × 9 invariants pin: wrapper exists + executable +
+no hardcoded password + sources polaris.env; `.gitignore` covers
+polaris.env; cron entries present with correct cadence + call the
+wrapper + no inline DB_PASSWORD; wrapper in `required_scripts` gate;
+swarm_witness datetime fix in place with naive-input guard.
+
+Verified end-to-end this session: HYDRA `ant_colony` ALERT
+("zero pheromones") → DRIFT ("ok") after 1 soldier wake + 1
+commander wake. 135 deposits in last 6h (68 commander + 67 soldier).
+Remaining HYDRA drifts (treasury skew, real ERROR log signals) are
+the system working as designed — surfacing real signal, not
+masking silence.
+
+Activation: `./scripts/polaris-cron-install.sh` (operator action).
+
 ## v9.33 — 2026-05-17 (Post-freeze measurement · Playwright Atlas-globe E2E scaffold · gotcha #6 pinned)
 
 First post-freeze measurement ship per MISSION.md §"From v9.32 forward,
@@ -458,8 +507,9 @@ new artifacts. TestWave24V924 invariants pin every ship. `POLARIS_VERSION`
 9.23 → 9.24.
 
 _Per CHANGELOG.md convention (last 10 ships only): v9.23 → v9.15 trimmed
-2026-05-17 with v9.31 + v9.32 ships. Full byte-identical history at
-[archive/CHANGELOG-FULL.md](archive/CHANGELOG-FULL.md)._
+2026-05-17 with v9.31 + v9.32 ships. v9.24+ entries stay in CHANGELOG.md
+until an explicit archive-extension Sanctum (not yet opened). Pre-v9.24
+history at [archive/CHANGELOG-FULL.md](archive/CHANGELOG-FULL.md)._
 
 ---
 

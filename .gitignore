@@ -107,6 +107,7 @@ state/
 .env
 .env.local
 .env.*.local
+polaris.env   # v9.34: sourced by polaris-mycelium-wake.sh (operator-managed)
 secrets.json
 credentials.json
 

@@ -12,6 +12,8 @@
 #   Daily      04:00 UTC  polaris-pheromone-archive.sh + purge (90-day cutoff)
 #   Quarterly  03:00 1st  DR drill (restore latest to scratch DB)
 #   Daily      05:00 UTC  polaris-cog-self-audit (HYDRA + Mycelium snapshot)
+#   Every 30m  *:00,30    Mycelium soldier-tier wake 60s (v9.34)
+#   Every 6h   0,6,12,18  Mycelium commander deployment (v9.34)
 #
 # All cadences are documented for retention policy:
 #
@@ -83,6 +85,7 @@ required_scripts=(
     "polaris-pheromone-archive.sh"
     "polaris-pheromone-purge.sh"
     "polaris-restore.sh"
+    "polaris-mycelium-wake.sh"
 )
 missing=()
 for s in "${required_scripts[@]}"; do
@@ -121,6 +124,21 @@ ${MARKER_BEGIN}
 
 # Daily cognitive-layer self-audit at 05:00 UTC — HYDRA + Mycelium snapshot
 0 5 * * *   ${SCRIPTS_DIR}/ai-hydra.sh --full --save 2>&1 | logger -t polaris-cog-audit
+
+# v9.34 — Mycelium soldier-tier wake every 30 min for 60s (matches the
+# documented cadence in docs/operator/OPERATIONS.md §"Mycelium swarm
+# cron schedule"). Pre-v9.34 the cron section wired HYDRA (read-side
+# audit) but NOT the deposit-side colony runners — the swarm went
+# silent the moment a manual wake ended; the HYDRA ant_colony watcher
+# would fire its 72h ALERT under normal use. Wrapper sources env from
+# polaris.env (gitignored, operator-managed) so credentials stay out
+# of the operator's crontab.
+*/30 * * * *   ${SCRIPTS_DIR}/polaris-mycelium-wake.sh --soldiers 2>&1 | logger -t polaris-soldier-colony
+
+# v9.34 — Mycelium commander deployment every 6h (full two-phase:
+# legions + civitas). Soldier tier handles high-cadence telemetry;
+# commanders handle deeper periodic checks via legion tactics.
+0 */6 * * *   ${SCRIPTS_DIR}/polaris-mycelium-wake.sh --commander 2>&1 | logger -t polaris-commander-colony
 
 ${MARKER_END}
 EOF
@@ -220,6 +238,8 @@ echo "    - yearly audit-log rotate (02:00 Jan 1)"
 echo "    - daily Pheromone rotation (04:00 UTC, 90-day cutoff)"
 echo "    - quarterly DR drill dry-run (03:00 1st of Jan/Apr/Jul/Oct)"
 echo "    - daily cog-self-audit HYDRA brief (05:00 UTC)"
+echo "    - Mycelium soldier-tier wake every 30 min for 60s (v9.34)"
+echo "    - Mycelium commander deployment every 6h (v9.34)"
 echo
 echo "  to view: ${CRONTAB} -l"
 echo "  to remove: $(basename "$0") --uninstall"

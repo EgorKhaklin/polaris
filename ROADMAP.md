@@ -1786,6 +1786,20 @@ Scoped to Phase 3:
 
 ## Post-freeze candidates (surfaced 2026-05-17 polish pass)
 
+### ⬜ Archive-extension Sanctum (CHANGELOG aging-out mechanism)
+
+v9.24 compressed CHANGELOG to "last 10 ships only" + claimed
+"no entry was edited or deleted" for the archive (byte-frozen pre-
+v9.24). v9.34 surfaced the tension: as new ships accumulate, v9.24+
+entries age out of the last-10 window but the archive can't grow
+without amending v9.24's freeze claim. Currently each ship trims
+old narratives; v9.34 caught this by losing the v9.24 entry entirely
+to a trim and restoring it. Real fix: extend `archive/CHANGELOG-FULL.md`
+with a "post-v9.24 section" + amend v9.24's claim to allow APPENDS
+(not edits/deletions). Risk: HIGH (touches an AoR claim). Defer
+until 12+ post-v9.24 ships have accumulated so the extension is
+worth its Sanctum cost.
+
 ### ⬜ Apparatus-reduction Sanctum (sanctum-scope cut-deeper signal)
 
 `polaris-sanctum-status` reports ratio 0.29 (14 core / 48 apparatus
