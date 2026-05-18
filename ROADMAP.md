@@ -1784,6 +1784,31 @@ Scoped to Phase 3:
 
 ---
 
+## Post-freeze candidates (surfaced 2026-05-17 polish pass)
+
+### ⬜ Apparatus-reduction Sanctum (sanctum-scope cut-deeper signal)
+
+`polaris-sanctum-status` reports ratio 0.29 (14 core / 48 apparatus
+ACTIVE) — APPARATUS-DOMINANT, "cut deeper" trigger fired since v9.29.
+This is its own HIGH-risk Sanctum: identify SUPERSEDED-but-not-marked
+sanctums and apparatus sanctums whose decisions have been embodied as
+invariants, transition them to SUPERSEDED, observe whether ratio
+improves.
+
+- **Justification under freeze:** (b) Measurement — the sanctum-status
+  scorecard is part of the cognitive-loop earning measurement; reducing
+  apparatus weight without losing audit-of-record is a measurement
+  refinement, not new scope.
+- **Risk:** HIGH (touches every Sanctum file's classification + the
+  ratio definition itself).
+- **Cost:** requires careful walk-through of all ACTIVE sanctums; AP2
+  would fire if opened without execution intent. Defer until a
+  dedicated session.
+- **Surfaced by:** 2026-05-17 polish pass joint Architect ↔ Anti-
+  Architect review (Class C item).
+
+---
+
 ## Process notes
 
 - Items move from `docs/BACKLOG.md` → ROADMAP.md when they have mission

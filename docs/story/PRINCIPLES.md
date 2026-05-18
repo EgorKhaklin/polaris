@@ -107,7 +107,7 @@ The risk classes resolve the ambiguity by naming the line explicitly.
 
 > _The cognitive layer guards itself. Six executable checks catch drift between the layer's claims and the running system._
 
-**What it solves.** A system that audits its application code while leaving its own auditing infrastructure unaudited has a blind spot. The cognitive layer of Polaris (39 ai-* scripts, 22-pattern catalog, 4 meta docs, 9 watchers, 59 Sanctums, 882 structural invariants) is substantial enough to need its own self-monitoring. Without that, scripts get referenced in CLAUDE.md but stop existing on disk; patterns sit in the catalog never invoked; constraints are claimed in MISSION.md but never exercised; structural-invariant tests get retired without leaving a trace. The drift is observable, accumulates silently, and erodes trust in the layer faster than any single ship.
+**What it solves.** A system that audits its application code while leaving its own auditing infrastructure unaudited has a blind spot. The cognitive layer of Polaris (39 ai-* scripts, 22-pattern catalog, 4 meta docs, 9 watchers, 64 Sanctums, 909 structural invariants) is substantial enough to need its own self-monitoring. Without that, scripts get referenced in CLAUDE.md but stop existing on disk; patterns sit in the catalog never invoked; constraints are claimed in MISSION.md but never exercised; structural-invariant tests get retired without leaving a trace. The drift is observable, accumulates silently, and erodes trust in the layer faster than any single ship.
 
 CM (the meta-constraint, named in MISSION.md alongside C1–C10) closes the blind spot.
 

@@ -101,7 +101,7 @@ the operator's governance, but the governance itself is operator-side.
 
 | Control | Polaris contribution | Evidence query |
 |---|---|---|
-| CC5.1 — Selects + develops control activities | C1-C10 are the load-bearing controls; each has structural-invariant test coverage (62 schema-CHECK tests + 882 structural tests + Hypothesis property tests) | `cat MISSION.md \| grep -E "^### C[0-9]"` |
+| CC5.1 — Selects + develops control activities | C1-C10 are the load-bearing controls; each has structural-invariant test coverage (62 schema-CHECK tests + 909 structural tests + Hypothesis property tests) | `cat MISSION.md \| grep -E "^### C[0-9]"` |
 | CC5.2 — Selects + develops controls over technology | docker-compose.prod.yml + Caddyfile (TLS via Let's Encrypt, HSTS, security headers per G27); WebAuthn-MFA (v8.97); rate limiter (R8-2) | `docker compose -f polaris_web/docker-compose.prod.yml config` |
 | CC5.3 — Deploys via policies + procedures | scripts/polaris-deploy.sh (idempotent); scripts/polaris-migrate.sh (audited schema changes); scripts/polaris-create-operator.sh (audited account creation) | `ls scripts/polaris-*.sh \| wc -l` |
 

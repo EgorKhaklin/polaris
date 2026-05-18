@@ -9,8 +9,9 @@ is reference.
 ## What Polaris is
 
 National identity-token reference implementation in production-grade
-prose. v9.30. 27 schema tables, ~4K-line Flask app, 1063 Python tests
-+ 882 structural invariants + 19 Hypothesis property tests. 9 HYDRA
+prose. v9.33 (freeze at v9.31; v9.32 + v9.33 are post-freeze hardening
++ measurement). 27 schema tables, ~4K-line Flask app, 1077 Python tests
++ 909 structural invariants + 19 Hypothesis property tests. 9 HYDRA
 mortal heads + CM immortal. Mycelium swarm: 33 commanders + 6
 citizens + 9 soldier classes (8 workers + 1 priest soldier_swarm_witness
 added v9.11). Vocation (v9.11): anti-coercion identity substrate.

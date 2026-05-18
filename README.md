@@ -91,8 +91,8 @@ A full subcommand reference lives in [`docs/operator/INSTALL.md`](docs/operator/
                  │  27 schema tables                                │
                  │  14 stored procedures (UC-1 .. UC-12 + foresight)│
                  │  67 HTTP routes (incl. /auth/webauthn/*)         │
-                 │  1,063 Python tests · 882 structural invariants  │
-                 │  59 Sanctum strategic-consultation records       │
+                 │  1,077 Python tests · 909 structural invariants  │
+                 │  64 Sanctum strategic-consultation records       │
                  │  9 HYDRA watchers + CM                           │
                  │  33 commander ants + 6 citiz + 9 soldier classes │
                  │  4 constitutional principles + 1 vocation        │
@@ -152,13 +152,13 @@ Four layers of verification, all run by the launcher's `test` subcommand.
 ┌─────────────────────────────┬────────┬──────────────────────────────────────────────┐
 │  Layer                      │  Count │  What it covers                              │
 ├─────────────────────────────┼────────┼──────────────────────────────────────────────┤
-│  Python tests (total)       │ 1,063  │  Every Flask route, every form, the use      │
+│  Python tests (total)       │ 1,077  │  Every Flask route, every form, the use      │
 │                             │        │  cases, rate limiter, atlas API, R6 anti-    │
 │                             │        │  revealing posture. Includes property tests  │
 │                             │        │  and structural invariants below.            │
 │  Hypothesis property tests  │   19   │  Adversarial inputs against C1, C2, C3 and   │
 │                             │        │  the M2-12 redaction-proof. Needs hypothesis.│
-│  Structural invariants      │  882   │  The cognitive layer's claims about itself:  │
+│  Structural invariants      │  909   │  The cognitive layer's claims about itself:  │
 │                             │        │  constraint lattice, pattern catalog, CM,    │
 │                             │        │  Sanctum integrity, HYDRA shape, freeze line.│
 └─────────────────────────────┴────────┴──────────────────────────────────────────────┘

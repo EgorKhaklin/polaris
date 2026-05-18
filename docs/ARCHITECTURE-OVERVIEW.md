@@ -352,7 +352,7 @@ Sanctum decision and its outcome.
 - ~1063 Python tests across 165 TestCase classes
 - 19 Hypothesis property tests for C1, C2, C3
 - 62 schema-CHECK regression tests
-- 882 structural-invariant tests
+- 909 structural-invariant tests
 - 171 SQL self-tests in 08_tests.sql + section S in 08_tests.sql +
   section T in 12_v7_constraints.sql
 

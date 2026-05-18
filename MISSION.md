@@ -580,7 +580,7 @@ the *agent*, not on VANTA.
 8. ✅ Threat model: STRIDE-categorized, every threat mapped to a control (DEVNOTES/threat-model.md)
 9. ✅ Antimeridian-spanning bbox queries (wrap-aware predicate; 11_atlas.sql)
 10. ✅ Cursor pagination on list pages (achieved v7.4 — keyset cursors on /tokens and /verifications)
-11. ✅ Property-based tests for invariants (10 Hypothesis tests on C1, C2, C3 in test_invariants_property.py)
+11. ✅ Property-based tests for invariants (19 Hypothesis tests on C1, C2, C3 in test_invariants_property.py)
 12. ✅ Multi-process rate limiter (Redis-backed) (achieved v7.5 — `InMemoryRateLimiter` + `RedisRateLimiter` with auto-selection)
 13. ✗ External IdP integration (OIDC) — RETIRED 2026-05-09 (out of v1 scope; not on v2; do not auto-propose)
 14. ✗ Banking-on-Polaris reference architecture (separate repo) — RETIRED 2026-05-09 (correct answer is a separate repo consuming Polaris over HTTP; tracked in `memory/deferred_items.md`; not on v2)

@@ -28,7 +28,7 @@ agent reasons about it.**
 |---|---|
 | [`architect.md`](architect.md) | The Polaris Architect persona spec (HYDRA's synthesis voice) |
 | [`sanctum-protocol.md`](sanctum-protocol.md) | Strategic-consultation protocol (the Sanctum) |
-| [`sanctum-index.md`](sanctum-index.md) | Chronological index of all 59 Sanctum sessions |
+| [`sanctum-index.md`](sanctum-index.md) | Chronological index of all 64 Sanctum sessions |
 | [`claude-90s.md`](claude-90s.md) | 90-second onboarding primer (v9.06 / J3 — read this first in a new session) |
 
 ### Per-arc strategic records
