@@ -321,8 +321,8 @@ fi
 # Tests in test_app.py vs production routes
 if [ -f "$ROOT/polaris_web/test_app.py" ] && [ -f "$ROOT/polaris_web/app.py" ]; then
     local routes tests
-    routes=$(grep -c "^@app.route" "$ROOT/polaris_web/app.py" 2>/dev/null || echo 0)
-    tests=$(grep -cE "^    def test_" "$ROOT/polaris_web/test_app.py" 2>/dev/null || echo 0)
+    routes=$(grep -c "^@app.route" "$ROOT/polaris_web/app.py" 2>/dev/null || true)
+    tests=$(grep -cE "^    def test_" "$ROOT/polaris_web/test_app.py" 2>/dev/null || true)
     if [ "$tests" -lt "$routes" ]; then
         warn "tests ($tests) < routes ($routes) — coverage may be lagging"
     else

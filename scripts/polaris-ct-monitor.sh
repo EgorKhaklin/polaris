@@ -122,7 +122,7 @@ if [[ "$LIST_KNOWN" -eq 1 ]]; then
     if [[ ! -s "$ALLOWLIST_FILE" ]]; then
         echo "  (empty allowlist; first run will populate)"
     else
-        local_count=$(grep -cE '^[0-9a-fA-F]{64}$' "$ALLOWLIST_FILE" || echo 0)
+        local_count=$(grep -cE '^[0-9a-fA-F]{64}$' "$ALLOWLIST_FILE" || true)
         echo "  $local_count known fingerprint(s) in $ALLOWLIST_FILE:"
         grep -E '^[0-9a-fA-F]{64}$' "$ALLOWLIST_FILE" | while IFS= read -r fp; do
             echo "    ${fp:0:16}…"

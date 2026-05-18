@@ -14,6 +14,58 @@ record, read [`meta/sanctum-index.md`](meta/sanctum-index.md).
 
 ---
 
+## v9.43 — 2026-05-18 (Post-freeze hardening · class-shaped bash bug · `grep -c ... || echo 0` double-emits 0)
+
+scope: cognitive-layer · ship_marker: grep-c-double-output · vocation: cognitive-layer self-coherence (CM #6) · pattern20_instance: drift→test promotion loop + class-shaped vs instance-shaped fix
+
+Surfaced 2026-05-18 by `bash scripts/ai-reflect.sh` against a fresh
+journal with no `^## SESSION` lines:
+
+    scripts/ai-reflect.sh: line 114: [: 0\n0: integer expression expected
+
+The idiom `grep -c <pattern> file 2>/dev/null || echo 0` is broken.
+`grep -c` always prints a count to stdout — including `0` on no
+match — and exits 1 only in that case. The fallback fires AFTER the
+count is already printed, double-emitting `0`. The variable receives
+`0\n0`, which breaks any subsequent `[ "$var" -ge N ]` integer
+compare. The cognitive-layer self-reflection script's session-count
+check therefore failed silently on every journal day with no
+SESSION markers (every day this session).
+
+**Class-shaped fix** — same anti-pattern existed in **10 places
+across 6 scripts**:
+
+- `scripts/ai-reflect.sh` × 7 (the surfacer)
+- `scripts/ai-status.sh` × 2 (routes + tests counts)
+- `scripts/ai-coherence.sh` × 2 (schema_checks + routes)
+- `scripts/ai-context-digest.sh` × 1 (test_count)
+- `scripts/polaris-ct-monitor.sh` × 1 (local_count)
+- `scripts/ai-architect.sh` × 1 (decisions per journal)
+
+Replaced all with `|| true`. `grep -c` already prints the count;
+`|| true` only neutralizes the non-zero exit code without re-emitting.
+
+**Tests** (TestWave43V943, 2 cases):
+- `test_v943_no_grep_c_double_output_pattern` — class-shaped
+  regression guard scanning `scripts/*.sh`; refuses any new
+  `grep -c ... || echo 0` form
+- `test_v943_reflect_runs_without_integer_error` — end-to-end:
+  `bash ai-reflect.sh` must emit zero `integer expression expected`
+  lines on stderr+stdout
+
+**CM tie-in.** CM #6: cognitive-layer claims must be auditable. When
+`ai-reflect.sh` produced `0\n0` garble, the self-reflection surface
+was degraded silently. Fixing it (a) restores the surface and (b)
+adds a class-shaped test so the next instance is caught at CI time,
+not at HYDRA-pass time three days later.
+
+**Personas.** Architect: drift→test promotion (arch-2026-05-18-003)
+applied again — every cognitive-layer self-defect should become a
+class-shaped invariant if the class is more than one. Anti-Architect:
+no dissent on scope. Risk class LOW (maintenance fix to scripts;
+zero constitutional surface; zero behavioral change for callers
+because `grep -c` already prints the count).
+
 ## v9.42 — 2026-05-18 (Post-freeze hardening · HYDRA watcher false-positive cleanup · two drift-in-the-watcher fixes)
 
 scope: cognitive-layer · ship_marker: hydra-watcher-cleanup · vocation: anti-surveillance (watcher honesty) · pattern20_instance: drift→test promotion loop (arch-2026-05-18-003)
@@ -378,38 +430,6 @@ First post-freeze measurement ship per MISSION.md §"From v9.32 forward,
 
 `TestWave33V933` × 7 invariants pin scaffold + gotcha-#6 + skip
 discipline + activation documentation + version bump.
-
-## v9.32 — 2026-05-17 (Post-freeze hardening · hookify · ship-gate enforced by harness not memory)
-
-First post-freeze hardening ship per MISSION.md §"From v9.32 forward,
-(a) Hardening". Closes follow-up commitment from
-`sanctum/2026-05-17-plugin-installation-tier2.md` (Option A).
-
-Before v9.32: CLAUDE.md step 12 ("`ai-done.sh` must report READY")
-was memory-dependent. v9.32 makes it harness-enforced.
-
-- **`scripts/polaris-ai-done-hook.sh`** — PreToolUse hook scoped to
-  ship commits only: triggers iff bash matches `git commit` AND
-  `polaris_web/__version__.py` is staged. Runs `ai-done.sh`; exit
-  non-zero blocks. Hygiene commits / branch ops / non-commit bash pass
-  through.
-- **`.claude/settings.json`** — registers the hook with
-  `$CLAUDE_PROJECT_DIR` for portability across operator checkouts.
-- **Override:** `POLARIS_HOOK_BYPASS=1` skips the gate but emits an
-  audit-trail line to stderr (visible in session log) — v9.26
-  AppendOnlyBypass discipline applied to this hook.
-
-Also v9.32 corrected an in-flight bug in the v9.31 freeze invariant
-`test_freeze_polaris_version_is_9_31`: original assertion pinned
-`== '9.31'` which would fail on every post-freeze ship.
-Generalized to `≥ (9, 31)` tuple-compare so freezing ≠ stopping —
-hardening is explicitly permitted by the same MISSION.md clause that
-enforces the freeze.
-
-`TestWave32V932` × 7 invariants pin: hook script exists + executable;
-settings.json wires the hook; passes through non-ship bash; passes
-through non-ship commits; bypass documented with audit-trail; version
-bumped; CHANGELOG justifies as hardening.
 
 ---
 

@@ -15311,14 +15311,24 @@ class TestWave32V932(unittest.TestCase):
             "(prevents AppendOnlyBypass-class invisible escape)")
 
     def test_v932_changelog_entry_exists(self):
-        """v9.32 CHANGELOG entry must be at the top (post-freeze
-        hardening narrative + freeze-clause justification)."""
-        src = self._read('CHANGELOG.md')
-        self.assertIn('## v9.32', src,
-            "CHANGELOG.md must have v9.32 entry")
+        """v9.32 CHANGELOG entry must exist in the audit-of-record
+        (CHANGELOG.md OR archive/CHANGELOG-FULL.md per v9.38 archive-
+        extension pattern). AP6 relaxation v9.43: original pinned to
+        CHANGELOG.md only, but the 10-stable + 1-in-flight convention
+        naturally moves older entries to archive over time."""
+        live = self._read('CHANGELOG.md')
+        archive = self._read('archive/CHANGELOG-FULL.md')
+        location = None
+        if '## v9.32' in live:
+            location = live
+        elif '## v9.32' in archive:
+            location = archive
+        self.assertIsNotNone(location,
+            "v9.32 entry must exist in CHANGELOG.md or "
+            "archive/CHANGELOG-FULL.md (audit-of-record discipline)")
         # Must justify as post-freeze hardening (per MISSION.md freeze
         # clause: post-v9.32 work is hardening/measurement/cold-read)
-        self.assertIn('hardening', src.split('## v9.32', 1)[1][:1500].lower(),
+        self.assertIn('hardening', location.split('## v9.32', 1)[1][:1500].lower(),
             "v9.32 CHANGELOG entry must explicitly justify as hardening "
             "per MISSION.md §'From v9.32 forward'")
 
@@ -16103,6 +16113,68 @@ class TestWave42V942(unittest.TestCase):
         finally:
             if self.ROOT in sys.path:
                 sys.path.remove(self.ROOT)
+
+
+class TestWave43V943(unittest.TestCase):
+    """v9.43 — cognitive-layer script bug class: grep -c double-output.
+
+    `grep -c` always prints a count to stdout, even on no matches
+    (where it exits 1). The anti-pattern `grep -c ... || echo 0`
+    therefore double-emits `0` on no-match: grep prints `0` and exits
+    1, triggering `echo 0` to print another `0`. The variable receives
+    `0\\n0`, which breaks any subsequent integer compare:
+
+        [: 0\\n0: integer expression expected
+
+    Surfaced 2026-05-18 by `bash scripts/ai-reflect.sh` against a
+    journal with no `^## SESSION` lines. Class-shaped: the same idiom
+    existed in 10 places across 6 scripts (ai-reflect.sh ×7,
+    ai-status.sh ×2, ai-coherence.sh ×2, ai-context-digest.sh ×1,
+    polaris-ct-monitor.sh ×1, ai-architect.sh ×1). v9.43 replaces
+    every instance with `|| true` (grep already prints the 0).
+
+    Class-shaped regression guard: the file scan below refuses any new
+    `grep -c <pattern> ... || echo 0` form in `scripts/`. Per the
+    Architect's drift→test promotion principle, the catch becomes a
+    standing invariant rather than a one-time fix.
+    """
+
+    ROOT = ROOT
+
+    def _read(self, rel):
+        with open(os.path.join(self.ROOT, rel)) as f:
+            return f.read()
+
+    def test_v943_no_grep_c_double_output_pattern(self):
+        """No `grep -c ... || echo 0` in scripts/. grep -c already
+        prints a number; the fallback double-emits 0 on no-match."""
+        import glob
+        pattern = re.compile(r'grep\s+-c[^|]*\|\|\s*echo\s+0')
+        offenders = []
+        for path in glob.glob(os.path.join(self.ROOT, 'scripts', '*.sh')):
+            with open(path) as f:
+                for i, line in enumerate(f, 1):
+                    if pattern.search(line):
+                        offenders.append(
+                            f"{os.path.relpath(path, self.ROOT)}:{i}"
+                        )
+        self.assertEqual([], offenders,
+            f"`grep -c ... || echo 0` produces `0\\n0` on no-match "
+            f"(grep prints the count even on exit 1; the || fires "
+            f"AFTER). Use `|| true` instead. Offenders: {offenders}")
+
+    def test_v943_reflect_runs_without_integer_error(self):
+        """End-to-end: ai-reflect.sh emits no 'integer expression
+        expected' error against any current-state journal."""
+        import subprocess
+        result = subprocess.run(
+            ['bash', os.path.join(self.ROOT, 'scripts', 'ai-reflect.sh')],
+            capture_output=True, text=True, timeout=30,
+        )
+        combined = result.stdout + result.stderr
+        self.assertNotIn('integer expression expected', combined,
+            f"ai-reflect.sh must run clean; output had bash arithmetic "
+            f"error. Full output:\n{combined[:2000]}")
 
 
 if __name__ == '__main__':

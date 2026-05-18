@@ -156,7 +156,7 @@ section_tests() {
     grep -E "^class [A-Z][A-Za-z0-9_]+(Test|Tests)" "$WEB_DIR/test_app.py" \
         | sed -E 's/^class ([^:(]+)\(.*$/  \1/' \
         | sort
-    TEST_COUNT=$(grep -cE "    def test_" "$WEB_DIR/test_app.py" 2>/dev/null || echo 0)
+    TEST_COUNT=$(grep -cE "    def test_" "$WEB_DIR/test_app.py" 2>/dev/null || true)
     echo
     echo "  Total test methods: $TEST_COUNT"
 }

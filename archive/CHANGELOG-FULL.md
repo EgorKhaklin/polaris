@@ -17959,6 +17959,38 @@ AoR amendment, decided + shipped v9.38) to permit APPENDS to this
 file (still no edits or deletions of existing rows). Section
 boundary below; entries newest-first under this section.
 
+## v9.32 — 2026-05-17 (Post-freeze hardening · hookify · ship-gate enforced by harness not memory)
+
+First post-freeze hardening ship per MISSION.md §"From v9.32 forward,
+(a) Hardening". Closes follow-up commitment from
+`sanctum/2026-05-17-plugin-installation-tier2.md` (Option A).
+
+Before v9.32: CLAUDE.md step 12 ("`ai-done.sh` must report READY")
+was memory-dependent. v9.32 makes it harness-enforced.
+
+- **`scripts/polaris-ai-done-hook.sh`** — PreToolUse hook scoped to
+  ship commits only: triggers iff bash matches `git commit` AND
+  `polaris_web/__version__.py` is staged. Runs `ai-done.sh`; exit
+  non-zero blocks. Hygiene commits / branch ops / non-commit bash pass
+  through.
+- **`.claude/settings.json`** — registers the hook with
+  `$CLAUDE_PROJECT_DIR` for portability across operator checkouts.
+- **Override:** `POLARIS_HOOK_BYPASS=1` skips the gate but emits an
+  audit-trail line to stderr (visible in session log) — v9.26
+  AppendOnlyBypass discipline applied to this hook.
+
+Also v9.32 corrected an in-flight bug in the v9.31 freeze invariant
+`test_freeze_polaris_version_is_9_31`: original assertion pinned
+`== '9.31'` which would fail on every post-freeze ship.
+Generalized to `≥ (9, 31)` tuple-compare so freezing ≠ stopping —
+hardening is explicitly permitted by the same MISSION.md clause that
+enforces the freeze.
+
+`TestWave32V932` × 7 invariants pin: hook script exists + executable;
+settings.json wires the hook; passes through non-ship bash; passes
+through non-ship commits; bypass documented with audit-trail; version
+bumped; CHANGELOG justifies as hardening.
+
 ## v9.31 — 2026-05-17 (Mechanical freeze-line verification · 7 freeze conditions encoded as invariants · the terminus)
 
 Per MISSION.md §"Freeze line — definition of done (v9.27, amended once

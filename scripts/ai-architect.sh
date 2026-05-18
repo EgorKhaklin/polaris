@@ -177,7 +177,7 @@ emit_state() {
     last_journal=$(ls -1t "$ROOT/journal/"[0-9]*-[0-9]*.md 2>/dev/null | head -1)
     if [ -n "$last_journal" ]; then
         local decisions
-        decisions=$(grep -cE '^- \*\*decision\*\*' "$last_journal" 2>/dev/null || echo 0)
+        decisions=$(grep -cE '^- \*\*decision\*\*' "$last_journal" 2>/dev/null || true)
         printf "\n  Last journal: ${DIM}%s${NC} (%s decision(s))\n" "$(basename "$last_journal" .md)" "$decisions"
     fi
 }

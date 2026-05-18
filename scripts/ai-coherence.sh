@@ -100,7 +100,7 @@ fi
 
 # Verify constraint count == 10 in MISSION.md
 local c_count
-c_count=$(grep -cE "^\| C[0-9]+ \|" "$ROOT/MISSION.md" 2>/dev/null || echo 0)
+c_count=$(grep -cE "^\| C[0-9]+ \|" "$ROOT/MISSION.md" 2>/dev/null || true)
 if [ "$c_count" -eq 10 ]; then
     ok "MISSION.md has exactly 10 constraints (C1-C10)"
 elif [ "$c_count" -lt 10 ]; then
@@ -301,7 +301,7 @@ fi
 # Check 2: Every CHECK constraint in 01_schema.sql should be reflected in
 # at least one test (schema ↔ test correspondence)
 local schema_checks tests_for_checks
-schema_checks=$(grep -cE "^[[:space:]]+CHECK \(" "$ROOT/polaris_sql/01_schema.sql" 2>/dev/null || echo 0)
+schema_checks=$(grep -cE "^[[:space:]]+CHECK \(" "$ROOT/polaris_sql/01_schema.sql" 2>/dev/null || true)
 tests_for_checks=$(grep -hE "check.constraint|CheckViolation|chk_|_check'" \
     "$ROOT/polaris_web/test_app.py" \
     "$ROOT/polaris_web/test_invariants_property.py" \
@@ -314,8 +314,8 @@ fi
 
 # Check 3: Every /api/* route should be documented in docs/reference/API.md (route ↔ doc)
 local routes documented
-routes=$(grep -cE "^@app.route\('/api/" "$ROOT/polaris_web/app.py" 2>/dev/null || echo 0)
-documented=$(grep -cE '^### `(GET|POST) /api/' "$ROOT/docs/reference/API.md" 2>/dev/null || echo 0)
+routes=$(grep -cE "^@app.route\('/api/" "$ROOT/polaris_web/app.py" 2>/dev/null || true)
+documented=$(grep -cE '^### `(GET|POST) /api/' "$ROOT/docs/reference/API.md" 2>/dev/null || true)
 if [ "$documented" -ge "$((routes - 2))" ]; then
     ok "API routes ($routes) documented in docs/reference/API.md ($documented entries) — Correspondence preserved"
 else

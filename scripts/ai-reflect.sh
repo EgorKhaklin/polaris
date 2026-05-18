@@ -53,13 +53,13 @@ if [ -f "$JOURNAL" ]; then
     LEARNINGS=$(grep -E "^- \*\*learning\*\*" "$JOURNAL" 2>/dev/null || true)
     BUGS=$(grep -E "^- \*\*bug\*\*" "$JOURNAL" 2>/dev/null || true)
     DECISIONS=$(grep -E "^- \*\*decision\*\*" "$JOURNAL" 2>/dev/null || true)
-    SESSIONS=$(grep -cE "^## SESSION " "$JOURNAL" 2>/dev/null || echo 0)
+    SESSIONS=$(grep -cE "^## SESSION " "$JOURNAL" 2>/dev/null || true)
 
     printf "${BOLD}Today's journal:${NC}  %s sessions, %s learnings, %s bugs, %s decisions\n" \
         "${SESSIONS:-0}" \
-        "$(echo "$LEARNINGS" | grep -c '^-' || echo 0)" \
-        "$(echo "$BUGS" | grep -c '^-' || echo 0)" \
-        "$(echo "$DECISIONS" | grep -c '^-' || echo 0)"
+        "$(echo "$LEARNINGS" | grep -c '^-' || true)" \
+        "$(echo "$BUGS" | grep -c '^-' || true)" \
+        "$(echo "$DECISIONS" | grep -c '^-' || true)"
 else
     printf "${BOLD}Today's journal:${NC}  ${DIM}(no journal file — nothing to consolidate)${NC}\n"
     LEARNINGS=""; BUGS=""; DECISIONS=""; SESSIONS=0
@@ -144,9 +144,9 @@ if [ -f "$JOURNAL" ]; then
 ## REFLECTION $TIME
 
 - Sessions today:   $SESSIONS
-- Learnings logged: $(echo "$LEARNINGS" | grep -c '^-' || echo 0)
-- Bugs logged:      $(echo "$BUGS" | grep -c '^-' || echo 0)
-- Decisions logged: $(echo "$DECISIONS" | grep -c '^-' || echo 0)
+- Learnings logged: $(echo "$LEARNINGS" | grep -c '^-' || true)
+- Bugs logged:      $(echo "$BUGS" | grep -c '^-' || true)
+- Decisions logged: $(echo "$DECISIONS" | grep -c '^-' || true)
 - Files modified:   $(echo "$RECENT_FILES" | wc -l)
 
 EOF
