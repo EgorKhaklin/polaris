@@ -181,7 +181,7 @@ After every recovery, the operator runs:
 # Audit-of-record integrity
 ./scripts/ai-meta.sh
 
-# Verify all 12 audit-of-record instances are intact
+# Verify all 10 audit-of-record instances are intact
 ./scripts/ai-status.sh | grep audit-of-record
 
 # Verify HYDRA + Mycelium can read post-restore state

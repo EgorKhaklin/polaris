@@ -102,8 +102,9 @@ Polaris has three concentric layers and a fourth perpendicular layer:
 
 ### Layer 1: Data substrate (`polaris_sql/`)
 
-PostgreSQL 16. 27 tables, 14 stored procedures, 20 triggers, 12
-audit-of-record instances (9 schema + 3 filesystem), 33 schema-level
+PostgreSQL 16. 27 tables, 14 stored procedures, 20 triggers, 10
+audit-of-record instances (9 schema + 1 filesystem; v9.41
+reclassification dropped two derived caches), 33 schema-level
 guards (G-guards G1-G33). Migrations framework (v8.95) records
 SHA-256 hashes; append-only by trigger.
 

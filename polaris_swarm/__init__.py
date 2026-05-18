@@ -4,7 +4,7 @@ A stigmergic ant-colony pattern that grows underneath HYDRA. Ants are
 tiny deterministic Python modules under `polaris_swarm/ants/`. Each
 ant scans one slice of the project and deposits **pheromones** onto
 brain-map nodes via the `Pheromone` table (an additional audit-of-record
-beyond the canonical 12; has archive+purge framework per v9.07).
+beyond the canonical 10; has archive+purge framework per v9.07).
 
 No ant imports any other ant. No host calls anything. Synthesis is
 emergent: the pattern of pheromone density across brain-map nodes

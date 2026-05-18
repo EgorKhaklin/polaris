@@ -19,7 +19,7 @@ session start. Ten hard constraints, all enforced at the database
 level (trigger / partial unique index / CHECK constraint), not at the
 policy level:
 
-- **C1** audit-of-record (9 schema instances + 3 filesystem instances; 12 total)
+- **C1** audit-of-record (9 schema instances + 1 filesystem instance; 10 total — v9.41 reclassification dropped 2 derived caches)
 - **C2** zero-knowledge (verification graph not reconstructable)
 - **C3** one identity per person (partial unique index)
 - **C4** atomic failed-login counter (no TOCTOU)

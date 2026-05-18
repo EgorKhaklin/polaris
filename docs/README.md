@@ -53,7 +53,7 @@ Three documents that together cover the why, the what, and the how. Added v8.59 
 - **Per-day decision log** → `journal/`.
 - **Strategic option proposals** → `proposals/`.
 - **Sanctum strategic-consultation records** (v8.19+) → `sanctum/`, indexed at `meta/sanctum-index.md`. Each major decision (MEDIUM/HIGH risk, cross-arc, or cognitive-layer structural change) is recorded here. Protocol at `meta/sanctum-protocol.md`; entry script `scripts/ai-sanctum.sh`.
-- **Audit-of-record principle** (v8.20) → `DEVNOTES/audit-of-record.md`. Defines the cross-cutting pattern shared by TokenLifecycleEvent, VerificationEvent, EnrollmentStatusEvent, RecoveryRequest, TokenSignature, AnchorBatch (v8.21), AgencyTrustAttestation (v8.22), TokenStateEpoch (v8.23), DuressEvent (v8.24), the Sanctum directory, plus census-roll.json (v8.66) and treasury-roll.json (v8.68); **12 instances total (9 schema + 3 filesystem)**.
+- **Audit-of-record principle** (v8.20) → `DEVNOTES/audit-of-record.md`. Defines the cross-cutting pattern shared by TokenLifecycleEvent, VerificationEvent, EnrollmentStatusEvent, RecoveryRequest, TokenSignature, AnchorBatch (v8.21), AgencyTrustAttestation (v8.22), TokenStateEpoch (v8.23), DuressEvent (v8.24), and the Sanctum directory; **10 instances total (9 schema + 1 filesystem)** — v9.41 reclassification dropped two derived caches (`census-roll.json`, `treasury-roll.json`) that were incorrectly counted as AoR at v8.66/v8.68.
 
 ## Re-evaluation triggers
 

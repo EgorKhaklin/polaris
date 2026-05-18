@@ -71,13 +71,23 @@ A schema element qualifies as an audit-of-record if and only if:
    to a separate event-log table, the element is not an
    audit-of-record.
 
-## The current instances (12 total: 9 schema + 3 filesystem)
+## The current instances (10 total: 9 schema + 1 filesystem)
 
-Count corrected in v8.32 maintenance pass (8 → 10). v8.66 added
-`census-roll.json` (Arc E civitas registry) and v8.68 added
-`treasury-roll.json` (Arc F denarii ledger) as the second and third
-filesystem-AoR instances, bringing the canonical count to 12 (9
-schema + 3 filesystem). Listed in the order the principle was applied.
+Count corrected in v8.32 maintenance pass (8 → 10), expanded to 12
+at v8.66 + v8.68 (`census-roll.json` + `treasury-roll.json` added as
+filesystem instances), and **reclassified back to 10 at v9.41**
+(the Class B1 reclassification: `census-roll.json` and
+`treasury-roll.json` are derived caches, not source-of-truth, and
+therefore fail the AoR criterion "fully reconstructs operation
+history without joining elsewhere" — both are computed from
+`Pheromone` table deposits (schema-AoR #2 + the ant-module presence
+in `polaris_swarm/ants/`)). The historical rows for these two are
+preserved in git history (v8.66/v8.68 ships intact); going forward,
+they are operator-local cache files and gitignored.
+
+The canonical 10 are listed in the order the principle was applied.
+The reclassification rationale is in the v9.41 audit-trail comment
+immediately after the table.
 
 | # | Element | Operation it records | Bounded mutation | DELETE rule |
 |---|---|---|---|---|
@@ -91,8 +101,38 @@ schema + 3 filesystem). Listed in the order the principle was applied.
 | 8 | **`TokenStateEpoch`** (v8.23 / R10-1 / M2-1) | Per-epoch Merkle commitment of the active-token set (ZK-SNARK base) | None — fully append-only after closure | Forbidden by `enforce_epoch_immutability` trigger |
 | 9 | **`DuressEvent`** (v8.24 / R11-5 / M2-10) | Detected compulsion signals (silent OOB alert for verifier under coercion) | `oob_notified_at` only — set once when a responder acknowledges (forward-only) | Forbidden by `reject_audit_modification` trigger |
 | 10 | **`sanctum/*.md` sessions** | Strategic agent-operator consultations (OPEN → DECIDED → CLOSED/REJECTED) | §VI Decision, §VII Outcome, `Status` field — filled by `ai-sanctum.sh close` | Convention: not file-system-enforced, but `ai-meta.sh` CM check #6 (v8.20) flags missing/incomplete sessions |
-| 11 | **`polaris_swarm/civitas/census-roll.json`** (v8.66) | Civitas-tier ant + soldier + citizen registry (first-seen / last-seen / legion-at-birth) | Last-seen timestamp updates only; first-seen frozen | Convention: write only via `polaris_swarm/civitas/censor_roll_keeper.py`; structural-invariant tests enforce shape |
-| 12 | **`polaris_swarm/civitas/treasury-roll.json`** (v8.68) | Denarius ledger of trust deposits / withdrawals by ant per evidence | Append-only entry list; balance derives from sum | Convention: write only via `polaris_swarm/civitas/treasury.py`; structural-invariant tests enforce monotonic append |
+
+### v9.41 reclassification (why the count dropped from 12 to 10)
+
+`polaris_swarm/civitas/census-roll.json` (was #11) and
+`polaris_swarm/civitas/treasury-roll.json` (was #12) were declared
+filesystem-AoR instances at v8.66 / v8.68 respectively. The v9.41
+audit found that classification was wrong: both files are **derived
+caches**, not source-of-truth.
+
+- `census-roll.json` lists which ants / soldiers / citizens have
+  been observed. The source-of-truth is the actual presence of
+  `polaris_swarm/ants/ant_*.py` modules + the citizen modules in
+  `polaris_swarm/civitas/` — i.e., the code itself. The roll is a
+  cached projection.
+- `treasury-roll.json` records denarius reward/penalty events per
+  ant. The source-of-truth is `Pheromone` table deposits (schema-AoR
+  instance #2 in the v9.04 hybrid model) plus the reward function
+  in `polaris_swarm/civitas/treasury.py`. The roll is a cached sum.
+
+By the AoR criterion ("fully reconstructs operation history without
+joining elsewhere"), both fail — they reconstruct from the schema
++ source code respectively. They are caches over real AoR sources.
+
+Operationally, the reclassification fixes a tooling problem the
+v8.66/v8.68 classification had introduced: every read-side swarm
+scan rewrites these files (with new `last_seen` timestamps, new
+balance sums), dirtying the working tree and blocking the kill
+test. By moving them to gitignored operator-local state, the kill
+test stays clean and the tree-cleanliness invariant holds.
+
+The historical v8.66/v8.68 ships and their CHANGELOG entries
+remain intact. This is a reclassification, not a retraction.
 
 ### Conformance grading
 
@@ -101,11 +141,9 @@ schema + 3 filesystem). Listed in the order the principle was applied.
 `TokenSignature`, `AnchorBatch`, `AgencyTrustAttestation`,
 `TokenStateEpoch`, `DuressEvent`). The ninth (`RecoveryRequest`) has
 partial enforcement via partial unique index + procedure discipline.
-The three filesystem instances (`sanctum/*.md`, `census-roll.json`,
-`treasury-roll.json`) are filesystem-level with CM-check coverage
-(`ai-meta.sh` CM check #6) plus structural-invariant tests that
-validate shape and append-only discipline. This asymmetry is honest,
-not aspirational:
+The one filesystem instance (`sanctum/*.md`) is filesystem-level
+with CM-check coverage (`ai-meta.sh` CM check #6). This asymmetry
+is honest, not aspirational:
 
 - `RecoveryRequest` could be tightened with a dedicated trigger
   similar to `enforce_token_signature_immutability` — a future

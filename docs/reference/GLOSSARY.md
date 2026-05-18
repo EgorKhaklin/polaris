@@ -223,15 +223,17 @@ modified or deleted. Enforced by trigger
 **Audit-of-record** — a schema element whose own state plus
 append-only or bounded-mutation invariants fully reconstructs the
 operation it records, without a separate event-log table.
-Canonicalized in `DEVNOTES/audit-of-record.md`. **Twelve current
-instances** (post v8.20): 9 schema instances —
+Canonicalized in `DEVNOTES/audit-of-record.md`. **Ten current
+instances** (post v9.41 reclassification): 9 schema instances —
 `TokenLifecycleEvent`, `VerificationEvent`, `EnrollmentStatusEvent`,
 `AnchorBatch`, `RecoveryRequest`, `TokenSignature`,
-`AgencyTrustAttestation`, `TokenStateEpoch`, `DuressEvent` — and 3
-filesystem instances: `sanctum/*.md` strategic-consultation
-sessions, `polaris_swarm/civitas/treasury-roll.json` (Arc F denarii
-ledger), `polaris_swarm/civitas/census-roll.json` (Arc E civitas
-registry).
+`AgencyTrustAttestation`, `TokenStateEpoch`, `DuressEvent` — and 1
+filesystem instance: `sanctum/*.md` strategic-consultation sessions.
+(`polaris_swarm/civitas/treasury-roll.json` and `census-roll.json`
+were filesystem-AoR at v8.66 / v8.68 but reclassified at v9.41 as
+derived caches over `Pheromone`-table deposits + source-code ant
+presence; see `DEVNOTES/audit-of-record.md` §"v9.41 reclassification"
+for the criterion check.)
 
 **CHECK constraint** — a row-level invariant declared in the
 schema. Polaris has 74 CHECK constraints across its 27 tables; they

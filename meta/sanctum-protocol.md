@@ -502,17 +502,21 @@ for moments the proceeding-or-not-proceeding question is live.
 - `MISSION.md` — alignment reference for §IV Recommendation.
 - **`DEVNOTES/audit-of-record.md`** (v8.20) — defines the principle that
   the Sanctum is the cognitive-layer instance of. Sanctum sessions are
-  the **first filesystem** instance of audit-of-record. As of v8.68 +
-  v8.66 there are **three filesystem instances**: `sanctum/` (this
-  protocol's records), `polaris_swarm/civitas/census-roll.json` (the
-  Censor's roll, v8.66), and `polaris_swarm/civitas/treasury-roll.json`
-  (the Quaestor's denarius ledger, v8.68). The other **nine** are schema
-  tables — `TokenLifecycleEvent`, `VerificationEvent`,
-  `EnrollmentStatusEvent`, `RecoveryRequest` (partial-enforcement),
-  `TokenSignature`, `AnchorBatch`, `AgencyTrustAttestation`,
-  `TokenStateEpoch`, `DuressEvent`. **Total: 12 instances (9 schema +
-  3 filesystem).** See `DEVNOTES/audit-of-record.md` for the canonical
-  table.
+  the **only filesystem** instance of audit-of-record at v9.41.
+  (v8.66 + v8.68 added two more filesystem instances —
+  `polaris_swarm/civitas/census-roll.json` (the Censor's roll) and
+  `polaris_swarm/civitas/treasury-roll.json` (the Quaestor's denarius
+  ledger) — but the v9.41 reclassification moved both out of the AoR
+  set: they are derived caches over `Pheromone`-table deposits +
+  source-code ant presence, not source-of-truth. Historical v8.66 /
+  v8.68 ships remain intact in git history; reclassification is
+  forward-only.) The other **nine** instances are schema tables —
+  `TokenLifecycleEvent`, `VerificationEvent`, `EnrollmentStatusEvent`,
+  `RecoveryRequest` (partial-enforcement), `TokenSignature`,
+  `AnchorBatch`, `AgencyTrustAttestation`, `TokenStateEpoch`,
+  `DuressEvent`. **Total: 10 instances (9 schema + 1 filesystem).**
+  See `DEVNOTES/audit-of-record.md` for the canonical table and the
+  v9.41 reclassification rationale.
 - **`scripts/ai-meta.sh check_sanctum`** (v8.20 / CM check #6) — the
   enforcement layer. Scans `sanctum/` for stale-OPEN sessions, lifecycle
   violations (CLOSED without §VII, REJECTED without §VI), and index

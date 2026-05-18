@@ -2250,14 +2250,20 @@ class TestBrainMapGraphCoverage(unittest.TestCase):
             self.assertTrue(os.path.isfile(path),
                 f"brain-map asset missing: {path}")
 
+    @unittest.skip(
+        "v9.41 reclassification — meta/brain-map/brain-map.html is "
+        "now gitignored auto-gen state (per the Class B1 decision in "
+        "commit e56b310). The file is regenerable via "
+        "scripts/ai-brain-map.sh and exists locally for any operator "
+        "who has run that script; pinning its presence as a CI-level "
+        "invariant conflicts with the gitignore. The brain-map's "
+        "structural invariants (categories, layers, node-counts) are "
+        "exercised by the parser/render path tests that DO have the "
+        "file locally — see ai-brain-map.sh's pre-commit invocation."
+    )
     def test_brain_map_html_present(self):
-        """The generated HTML must exist. `ai-done.sh` regenerates
-        it; if this fails after `ai-brain-map.sh` was last run,
-        either the generator crashed or someone deleted the file."""
-        path = os.path.join(self.ROOT, 'meta', 'brain-map', 'brain-map.html')
-        self.assertTrue(os.path.isfile(path),
-            "meta/brain-map/brain-map.html not present — run "
-            "scripts/ai-brain-map.sh to regenerate.")
+        """RETIRED at v9.41. See @unittest.skip decorator above."""
+        pass
 
     def test_brain_map_covers_all_categories(self):
         """Floor counts by node type. The parser must extract at
@@ -2890,29 +2896,18 @@ class TestMyceliumCivitas(unittest.TestCase):
         finally:
             sys.path.pop(0)
 
+    @unittest.skip(
+        "v9.41 reclassification — polaris_swarm/civitas/census-roll.json "
+        "moved from filesystem-AoR to gitignored derived cache. The "
+        "source-of-truth for civitas-tier membership is the actual "
+        "presence of polaris_swarm/ants/ant_*.py modules + the citizen "
+        "modules in polaris_swarm/civitas/ (i.e., the code itself); the "
+        "roll is a cached projection. See DEVNOTES/audit-of-record.md "
+        "§'v9.41 reclassification' for the AoR-criterion check."
+    )
     def test_census_roll_json_exists_with_append_only_marker(self):
-        """E8.G14 — census-roll.json must exist and document its
-        append-only-discipline status. The Censor maintains this
-        file as filesystem-AoR (the 2nd filesystem-AoR instance
-        after `sanctum/` itself).
-        """
-        roll_path = os.path.join(
-            self.ROOT, 'polaris_swarm', 'civitas', 'census-roll.json'
-        )
-        self.assertTrue(os.path.isfile(roll_path),
-            "polaris_swarm/civitas/census-roll.json missing")
-        with open(roll_path) as fh:
-            roll = json.load(fh)
-        # The roll must declare its G14 status in metadata
-        self.assertIn("_g_guard", roll,
-            "census-roll.json must carry the _g_guard metadata field "
-            "declaring its append-only-discipline status")
-        self.assertIn("G14", roll["_g_guard"],
-            f"census-roll.json _g_guard must reference G14; "
-            f"got {roll['_g_guard']!r}")
-        self.assertIn("entries", roll,
-            "census-roll.json must have an `entries` field "
-            "(the per-ant census records)")
+        """RETIRED at v9.41. See @unittest.skip decorator above."""
+        pass
 
     def test_run_swarm_exists_and_returns_two_phase_result(self):
         """E8.TWO_PHASE — run_swarm exists in colony.py and is the
@@ -3112,32 +3107,20 @@ class TestArcFDenarius(unittest.TestCase):
         finally:
             sys.path.pop(0)
 
+    @unittest.skip(
+        "v9.41 reclassification — polaris_swarm/civitas/treasury-roll.json "
+        "moved from filesystem-AoR to gitignored derived cache. The "
+        "source-of-truth for denarii events is `Pheromone`-table "
+        "deposits (schema-AoR instance #2 in the v9.04 hybrid model) "
+        "plus the reward function in `polaris_swarm/civitas/treasury.py`; "
+        "the roll is a cached sum. See DEVNOTES/audit-of-record.md "
+        "§'v9.41 reclassification' for the AoR-criterion check. The "
+        "reward-function determinism (G16) is still pinned by "
+        "test_reward_function_is_deterministic below."
+    )
     def test_treasury_roll_is_filesystem_aor(self):
-        """F1.G15 — treasury-roll.json exists and declares
-        filesystem-AoR (append-only-discipline) status. It is the
-        3rd filesystem-AoR instance after sanctum/ and
-        census-roll.json. The roll's events list is the audit
-        trail; balances are computed from it, not stored.
-        """
-        roll_path = os.path.join(
-            self.ROOT, 'polaris_swarm', 'civitas', 'treasury-roll.json'
-        )
-        self.assertTrue(os.path.isfile(roll_path),
-            "polaris_swarm/civitas/treasury-roll.json missing")
-        with open(roll_path) as fh:
-            roll = json.load(fh)
-        self.assertIn("_g_guards", roll,
-            "treasury-roll.json must carry the _g_guards metadata "
-            "field declaring G15+G16 status")
-        self.assertIn("G15", roll["_g_guards"],
-            f"treasury-roll.json _g_guards must reference G15 "
-            f"(filesystem-AoR); got {roll['_g_guards']!r}")
-        self.assertIn("events", roll,
-            "treasury-roll.json must have an `events` list "
-            "(the per-ant denarii ledger)")
-        self.assertIsInstance(roll["events"], list,
-            "treasury-roll.json events must be a list, not a "
-            "state snapshot — G15 append-only discipline")
+        """RETIRED at v9.41. See @unittest.skip decorator above."""
+        pass
 
     def test_reward_function_is_deterministic(self):
         """F1.G16 — `treasury.compute_rewards` is a pure function:
@@ -3200,19 +3183,22 @@ class TestArcFDenarius(unittest.TestCase):
         reference an Individual, a token, or a holder. The
         pomerium (C10: identity ≠ money) does not move.
 
-        Test: scan the existing treasury-roll.json events list
-        and verify no event field contains 'individual_id',
-        'token_id', 'holder', or similar identity-layer fields.
-        Verify the DenariusEvent dataclass shape doesn't allow
-        such fields by construction.
+        Two checks:
+          1. The DenariusEvent dataclass shape forbids identity-layer
+             fields by construction. Load-bearing; always runs.
+          2. If `polaris_swarm/civitas/treasury-roll.json` exists on
+             disk (it's gitignored auto-gen state after the v9.41
+             reclassification — present locally for any operator who
+             has run the swarm, absent in CI), scan it for forbidden
+             identity-layer field names. Best-effort runtime check.
         """
         sys.path.insert(0, self.ROOT)
         try:
             from polaris_swarm.civitas.treasury import DenariusEvent
             import dataclasses
 
-            # The dataclass should only allow ant + amount + reason +
-            # node_id + timestamp. No identity-layer fields.
+            # Check 1 — dataclass shape (always runs; this is the
+            # load-bearing structural invariant).
             allowed_fields = {"timestamp", "ant", "amount", "reason", "node_id"}
             actual_fields = {f.name for f in dataclasses.fields(DenariusEvent)}
             self.assertEqual(actual_fields, allowed_fields,
@@ -3221,19 +3207,21 @@ class TestArcFDenarius(unittest.TestCase):
                 f"fields may be added (token_id, individual_id, "
                 f"holder, etc.) — the pomerium holds.")
 
-            # Scan the existing roll for any forbidden tokens
+            # Check 2 — runtime roll scan if the file is present
+            # locally (v9.41: gitignored auto-gen cache; absent in CI).
             roll_path = os.path.join(
                 self.ROOT, 'polaris_swarm', 'civitas', 'treasury-roll.json'
             )
-            with open(roll_path) as fh:
-                roll = json.load(fh)
-            forbidden = ("individual_id", "token_id", "holder",
-                         "polaris_identity", "monetary_claim")
-            roll_text = json.dumps(roll)
-            for f in forbidden:
-                self.assertNotIn(f, roll_text,
-                    f"treasury-roll.json contains forbidden "
-                    f"identity-layer field {f!r}; C10 violated")
+            if os.path.isfile(roll_path):
+                with open(roll_path) as fh:
+                    roll = json.load(fh)
+                forbidden = ("individual_id", "token_id", "holder",
+                             "polaris_identity", "monetary_claim")
+                roll_text = json.dumps(roll)
+                for f in forbidden:
+                    self.assertNotIn(f, roll_text,
+                        f"treasury-roll.json contains forbidden "
+                        f"identity-layer field {f!r}; C10 violated")
         finally:
             sys.path.pop(0)
 
@@ -4563,28 +4551,45 @@ class TestSanctumAndArchitectUpgradePostV8_73(unittest.TestCase):
 
     ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 
-    def test_sanctum_protocol_aor_count_is_twelve(self):
-        """v8.74.1 — `meta/sanctum-protocol.md` must state the
-        canonical AoR count as 12 instances (9 schema + 3
-        filesystem). Pre-v8.74 it stated 10 (9 schema + 1
-        filesystem) — stale since v8.66 (census-roll.json) + v8.68
-        (treasury-roll.json) added the second and third
-        filesystem-AoR instances."""
+    def test_sanctum_protocol_aor_count_is_ten(self):
+        """v9.41 reclassification — `meta/sanctum-protocol.md` must
+        state the canonical AoR count as 10 instances (9 schema + 1
+        filesystem). History of the pin: v8.74.1 first pinned 12
+        instances (after v8.66/v8.68 expanded the filesystem set to
+        three with census-roll.json + treasury-roll.json); v9.41
+        contracted back to 10 instances on the grounds that the two
+        added files were derived caches over `Pheromone` + source-code,
+        not source-of-truth.
+
+        The test pins the count + asserts the one filesystem instance
+        (`sanctum/`) remains named. It also asserts the two removed
+        files are mentioned (as reclassified, not as AoR) so the
+        history is traceable from the protocol doc."""
         path = os.path.join(self.ROOT, 'meta', 'sanctum-protocol.md')
         with open(path) as fh:
             body = fh.read()
         # Allow whitespace between segments (markdown may wrap)
         self.assertRegex(
             body,
-            r"12 instances\s*\(9 schema\s*\+\s*3 filesystem\)",
+            r"10 instances\s*\(9 schema\s*\+\s*1 filesystem\)",
             "sanctum-protocol.md must explicitly state the canonical "
-            "AoR count as 12 instances (9 schema + 3 filesystem)",
+            "AoR count as 10 instances (9 schema + 1 filesystem) "
+            "after the v9.41 reclassification",
         )
-        # The three FS-AoR instances must each be named
-        for fs_aor in ("sanctum/", "census-roll.json", "treasury-roll.json"):
-            self.assertIn(fs_aor, body,
-                f"sanctum-protocol.md must reference the {fs_aor!r} "
-                f"filesystem-AoR instance in its cross-references")
+        # The one current FS-AoR instance must be named
+        self.assertIn("sanctum/", body,
+            "sanctum-protocol.md must reference the 'sanctum/' "
+            "filesystem-AoR instance in its cross-references")
+        # The two reclassified files must be mentioned (so the
+        # reclassification history is traceable from the protocol doc)
+        for reclassified in ("census-roll.json", "treasury-roll.json"):
+            self.assertIn(reclassified, body,
+                f"sanctum-protocol.md must reference the "
+                f"{reclassified!r} reclassification history so future "
+                f"readers can trace the v8.66/v8.68 → v9.41 path")
+        self.assertIn("v9.41", body,
+            "sanctum-protocol.md must name v9.41 as the reclassification "
+            "version (paper-trail marker)")
 
     def test_architect_persona_drift_log_populated(self):
         """v8.74.2 — `meta/architect.md` persona drift log must be
@@ -5038,13 +5043,15 @@ class TestArchDocCompletenessSuite(unittest.TestCase):
                 f"must keep pace with the technical arcs or the "
                 f"reference-implementation claim weakens.")
 
-    def test_glossary_acknowledges_aor_count_is_twelve(self):
-        """GLOSSARY.md's audit-of-record entry must say twelve.
+    def test_glossary_acknowledges_aor_count_is_ten(self):
+        """GLOSSARY.md's audit-of-record entry must say ten.
 
-        The entry is the bold-heading **Audit-of-record** — distinct
-        from the term's appearance in the table of contents. We
-        anchor on the bold heading so we don't false-positive on
-        the ToC.
+        v9.41 reclassification: the count dropped from 12 to 10 when
+        `census-roll.json` + `treasury-roll.json` were reclassified as
+        derived caches rather than filesystem-AoR instances. The entry
+        is the bold-heading **Audit-of-record** — distinct from the
+        term's appearance in the table of contents. We anchor on the
+        bold heading so we don't false-positive on the ToC.
         """
         gloss = self._read('docs/reference/GLOSSARY.md')
         # Anchor on the bold heading
@@ -5053,15 +5060,16 @@ class TestArchDocCompletenessSuite(unittest.TestCase):
             "GLOSSARY.md must contain a bold **Audit-of-record** entry.")
         para = gloss[idx:idx + 1200]
         has_count = (
-            'twelve' in para.lower()
-            or ' 12 ' in para
-            or '12 current' in para
-            or '(twelve' in para.lower()
-            or '12 instances' in para
+            ' ten ' in para.lower()
+            or ' 10 ' in para
+            or '10 current' in para
+            or '(ten' in para.lower()
+            or '10 instances' in para
+            or '**Ten ' in para
         )
         self.assertTrue(has_count,
             "GLOSSARY.md audit-of-record entry must reference the "
-            "current count (12 instances). Got first 600 chars of "
+            "current count (10 instances). Got first 600 chars of "
             f"AoR paragraph: {para[:600]!r}")
 
 
@@ -9090,17 +9098,19 @@ class TestWave1V905(unittest.TestCase):
             "compute_rewards must route through is_treasury_exempt() so "
             "soldier_* exemption is honored (v9.05 / A1).")
 
+    @unittest.skip(
+        "v9.41 reclassification — treasury-roll.json is now gitignored "
+        "derived state (no longer filesystem-AoR); content-level audit "
+        "markers like the v9.05 _audit entry are not enforceable at "
+        "CI level. The v9.05 F5-soldier-exemption fix itself is still "
+        "pinned by test_a1_compute_rewards_routes_through_is_treasury_exempt "
+        "above (which checks the SOURCE — `polaris_swarm/civitas/treasury.py` — "
+        "not the cache). See DEVNOTES/audit-of-record.md §'v9.41 "
+        "reclassification' for the rationale."
+    )
     def test_a1_treasury_roll_has_v905_audit_marker(self):
-        roll_path = os.path.join(self.ROOT,
-            'polaris_swarm/civitas/treasury-roll.json')
-        with open(roll_path) as f:
-            roll = json.load(f)
-        audit = roll.get('_audit', [])
-        v905_entries = [e for e in audit
-                        if isinstance(e, dict) and e.get('ship') == 'v9.05']
-        self.assertEqual(len(v905_entries), 1,
-            "treasury-roll.json must have exactly one v9.05 _audit entry "
-            "documenting the F5-soldier-exemption fix.")
+        """RETIRED at v9.41. See @unittest.skip decorator above."""
+        pass
 
     # ---- A2: MISSION test-count drift -------------------------------
 
@@ -11478,19 +11488,18 @@ class TestWave15V915(unittest.TestCase):
             self.assertIn(f'self.{name}()', src,
                 f"build() must call self.{name}() (v9.15)")
 
+    @unittest.skip(
+        "v9.41 reclassification — meta/brain-map/brain-map.html is "
+        "gitignored auto-gen state; pinning its rendered content at CI "
+        "level conflicts with the gitignore. The Mycelium-parser wiring "
+        "is still pinned by test_brain_map_build_wires_mycelium_parsers "
+        "(above) — it checks that ai_brain_map.py CALLS the parsers, "
+        "which is the structural claim. Whether the output file exists "
+        "is operator-local."
+    )
     def test_brain_map_output_grows_with_mycelium(self):
-        """The rendered brain-map.html must contain legion + ant nodes
-        after v9.15 (not just the reserved-twelfth from v9.14)."""
-        src = self._read('meta/brain-map/brain-map.html')
-        # At least one Republican legion + at least one commander ant
-        # should appear in the rendered JSON island.
-        self.assertIn('"republican_legion"', src,
-            "brain-map.html must include republican_legion node type")
-        self.assertIn('"commander_ant"', src,
-            "brain-map.html must include commander_ant node type")
-        # Treasury anchor
-        self.assertIn('"treasury"', src,
-            "brain-map.html must include the treasury node")
+        """RETIRED at v9.41. See @unittest.skip decorator above."""
+        pass
 
     # ---- POLARIS_VERSION (timeless: ≥ 9.15) ------------------------
     # v9.16's TestWave16V916 pins the exact value; this test is the
@@ -14676,14 +14685,19 @@ class TestWave30V930(unittest.TestCase):
 
     # ---- Item 11: brain-map generator marker ------------------------
 
+    @unittest.skip(
+        "v9.41 reclassification — meta/brain-map/brain-map.html is "
+        "gitignored auto-gen state. The marker invariant is preserved "
+        "at the GENERATOR level by test_brain_map_generator_emits_marker "
+        "below (which checks scripts/ai_brain_map.py emits the AUTO-"
+        "GENERATED marker in its HTML template). That's the class-shape "
+        "claim — every regeneration carries the marker by construction; "
+        "we don't need to check a copy of the output that may or may "
+        "not be present locally."
+    )
     def test_brain_map_has_auto_generated_marker(self):
-        src = self._read('meta/brain-map/brain-map.html')
-        self.assertIn('AUTO-GENERATED', src,
-            "brain-map.html must carry AUTO-GENERATED marker (v9.30 "
-            "item 11; pins that file is generated by ai_brain_map.py, "
-            "not hand-edited)")
-        self.assertIn('ai_brain_map.py', src,
-            "brain-map.html marker must name the generator script")
+        """RETIRED at v9.41. See @unittest.skip decorator above."""
+        pass
 
     def test_brain_map_generator_emits_marker(self):
         """Generator must contain the marker template — so regenerating
