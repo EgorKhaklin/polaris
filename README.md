@@ -86,7 +86,7 @@ A full subcommand reference lives in [`docs/operator/INSTALL.md`](docs/operator/
 ```
                  ┌──────────────────────────────────────────────────┐
                  │              Polaris in numbers                  │
-                 │              (current as of v9.37)               │
+                 │              (current as of v9.38)               │
                  ├──────────────────────────────────────────────────┤
                  │  27 schema tables                                │
                  │  14 stored procedures (UC-1 .. UC-12 + foresight)│

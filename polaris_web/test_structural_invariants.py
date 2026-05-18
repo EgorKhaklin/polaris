@@ -13283,18 +13283,18 @@ class TestWave24V924(unittest.TestCase):
             f.seek(0)
             src = f.read()
         ship_count = src.count('\n## v')
-        # Convention check: last-10 + headroom. v9.34 capped at 12; v9.36
-        # raised to 14 after rapid shakedown ships accumulated. Cap is
-        # NOT a constitutional ceiling — the archive-extension Sanctum
-        # in ROADMAP.md is the real fix; this cap forces it to be
-        # opened once the headroom runs out (the Anti-Architect's
-        # "discomfort surface" pattern: keep the friction visible).
-        self.assertLessEqual(ship_count, 14,
-            f"CHANGELOG.md must follow the 'last 10 ships' convention; "
-            f"counted {ship_count} ship entries. The archive-extension "
-            f"Sanctum (ROADMAP.md, surfaced after v9.34) is now ripe "
-            f"— open it next session to actually archive v9.24+ entries "
-            f"instead of relaxing this cap again.")
+        # Convention: last-10 ships + 1 for the in-flight current ship.
+        # v9.34 capped at 12; v9.36 raised to 14 under cap-relax friction;
+        # v9.38 archive-extension Sanctum closed that drift cycle by
+        # actually moving aged-out entries to archive/CHANGELOG-FULL.md.
+        # Cap restored to 11 (10 stable + 1 in-flight). Past entries
+        # past index 10 live byte-identical in the post-v9.24 archive
+        # section.
+        self.assertLessEqual(ship_count, 11,
+            f"CHANGELOG.md must hold last 10 ships + 1 in-flight; "
+            f"counted {ship_count}. Move oldest to archive via the "
+            f"v9.38 pattern (extend 'Post-v9.24' section in "
+            f"archive/CHANGELOG-FULL.md).")
         # Sanity bound: average lines/ship
         if ship_count > 0:
             avg = line_count / ship_count
@@ -13718,9 +13718,17 @@ class TestWave25V925(unittest.TestCase):
     # ---- CHANGELOG v9.25 entry ----------------------------------
 
     def test_changelog_has_v9_25_entry(self):
-        src = self._read('CHANGELOG.md')
+        """v9.38 moved v9.25 to archive per the archive-extension
+        Sanctum; this test now checks whichever file currently holds
+        the entry (CHANGELOG until aging, archive thereafter)."""
+        try:
+            src = self._read('CHANGELOG.md')
+            if '## v9.25' not in src:
+                src = self._read('archive/CHANGELOG-FULL.md')
+        except FileNotFoundError:
+            src = self._read('archive/CHANGELOG-FULL.md')
         self.assertIn('## v9.25', src,
-            "CHANGELOG.md must have v9.25 entry")
+            "v9.25 ship-record must be preserved (CHANGELOG.md or archive)")
         v925 = src[src.index('## v9.25'):]
         next_ver = v925.find('\n## v', 1)
         if next_ver > 0:
@@ -13730,7 +13738,7 @@ class TestWave25V925(unittest.TestCase):
                        'binding clause', 'escape', 'fault_injection',
                        'v9.30'):
             self.assertIn(marker, v925_flat,
-                f"v9.25 CHANGELOG must reference '{marker}'")
+                f"v9.25 ship-record must reference '{marker}'")
 
 
 class TestWave26V926(unittest.TestCase):
@@ -13787,9 +13795,15 @@ class TestWave26V926(unittest.TestCase):
             f"POLARIS_VERSION must be >= 9.26; got {POLARIS_VERSION}")
 
     def test_changelog_has_v9_26_entry(self):
-        src = self._read('CHANGELOG.md')
+        """v9.38 archive-extension may have moved v9.26 to archive."""
+        try:
+            src = self._read('CHANGELOG.md')
+            if '## v9.26' not in src:
+                src = self._read('archive/CHANGELOG-FULL.md')
+        except FileNotFoundError:
+            src = self._read('archive/CHANGELOG-FULL.md')
         self.assertIn('## v9.26', src,
-            "CHANGELOG.md must have v9.26 entry")
+            "v9.26 ship-record must be preserved (CHANGELOG or archive)")
         v926 = src[src.index('## v9.26'):]
         next_ver = v926.find('\n## v', 1)
         if next_ver > 0:
@@ -13798,7 +13812,7 @@ class TestWave26V926(unittest.TestCase):
         for marker in ('appendonlybypass', '100%', 'coverage gap',
                        'fix-from-v9.25'):
             self.assertIn(marker, v926_flat,
-                f"v9.26 CHANGELOG must reference '{marker}'")
+                f"v9.26 ship-record must reference '{marker}'")
 
 
 class TestWave27V927(unittest.TestCase):
@@ -14074,9 +14088,15 @@ class TestWave27V927(unittest.TestCase):
     # ---- CHANGELOG v9.27 entry -----------------------------------
 
     def test_changelog_has_v9_27_entry(self):
-        src = self._read('CHANGELOG.md')
+        """v9.38 archive-extension may have moved v9.27 to archive."""
+        try:
+            src = self._read('CHANGELOG.md')
+            if '## v9.27' not in src:
+                src = self._read('archive/CHANGELOG-FULL.md')
+        except FileNotFoundError:
+            src = self._read('archive/CHANGELOG-FULL.md')
         self.assertIn('## v9.27', src,
-            "CHANGELOG.md must have v9.27 entry")
+            "v9.27 ship-record must be preserved (CHANGELOG or archive)")
         v927 = src[src.index('## v9.27'):]
         next_ver = v927.find('\n## v', 1)
         if next_ver > 0:
@@ -14087,7 +14107,7 @@ class TestWave27V927(unittest.TestCase):
                        'chaos', 'observability', 'cold-read',
                        'abandonment'):
             self.assertIn(marker, v927_flat,
-                f"v9.27 CHANGELOG must reference '{marker}'")
+                f"v9.27 ship-record must reference '{marker}'")
 
 
 class TestWave28V928(unittest.TestCase):
@@ -15726,6 +15746,81 @@ class TestWave37V937(unittest.TestCase):
         src = self._read('scripts/ai-swarm-bloom.sh')
         self.assertIn('import psycopg2', src,
             "find_python must verify psycopg2 importable")
+
+
+class TestWave38V938(unittest.TestCase):
+    """v9.38 — Archive-extension Sanctum (HIGH — AoR amendment).
+
+    v9.24 compressed CHANGELOG.md to "last 10 ships" + claimed
+    "no entry was edited or deleted" for archive/CHANGELOG-FULL.md.
+    As v9.25+ ships accumulated, the last-10 convention required
+    moving v9.24+ entries OUT of CHANGELOG.md, but the archive
+    couldn't grow without amending the byte-frozen claim. v9.34 +
+    v9.36 deferred via cap relaxation (12→14). v9.38 does the
+    actual fix.
+
+    Decided in `sanctum/2026-05-17-changelog-archive-extension.md`
+    (HIGH-risk; pre-authorized by VANTA "have the changelog at 10
+    latest ships, the other ones move to the archive changelog").
+
+    Amendment: archive grows APPENDS-only (no edits or deletions of
+    existing entries). Past v9.x entries preserved byte-identical
+    in their new archive location.
+    """
+
+    ROOT = ROOT
+
+    def _read(self, rel):
+        with open(os.path.join(self.ROOT, rel)) as f:
+            return f.read()
+
+    def test_v938_archive_has_post_v9_24_section(self):
+        """archive/CHANGELOG-FULL.md must carry a clearly-named
+        section marking the boundary between v9.24-byte-frozen
+        and post-v9.24-appended."""
+        src = self._read('archive/CHANGELOG-FULL.md')
+        self.assertIn('## Post-v9.24 ships', src,
+            "archive must have a 'Post-v9.24 ships' section header")
+        self.assertIn('sanctum/2026-05-17-changelog-archive-extension',
+            src,
+            "archive section must cite the amending Sanctum")
+
+    def test_v938_moved_entries_present_in_archive(self):
+        """v9.24, v9.25, v9.26, v9.27 must be in the archive after
+        the move (AoR preservation under the new APPENDS-allowed
+        amendment)."""
+        src = self._read('archive/CHANGELOG-FULL.md')
+        for v in ('v9.24', 'v9.25', 'v9.26', 'v9.27'):
+            self.assertIn(f'## {v}', src,
+                f"{v} must be in archive after v9.38 move")
+
+    def test_v938_moved_entries_not_in_changelog(self):
+        """The moved entries must NOT remain in CHANGELOG.md (would
+        be a duplicate; AoR requires single canonical location)."""
+        src = self._read('CHANGELOG.md')
+        for v in ('v9.24', 'v9.25', 'v9.26', 'v9.27'):
+            self.assertNotIn(f'\n## {v}', src,
+                f"{v} must be removed from CHANGELOG.md after v9.38 move "
+                f"(canonical location is now archive/CHANGELOG-FULL.md)")
+
+    def test_v938_changelog_at_ten_ships_plus_inflight(self):
+        """After the v9.38 move + the v9.38 ship entry, CHANGELOG.md
+        should hold exactly 11 ships (10 stable + this one)."""
+        src = self._read('CHANGELOG.md')
+        ship_count = src.count('\n## v')
+        self.assertEqual(ship_count, 11,
+            f"CHANGELOG.md should hold exactly 11 ships post-v9.38 "
+            f"(10 stable + v9.38 in-flight); got {ship_count}")
+
+    def test_v938_sanctum_decided_and_index_updated(self):
+        """The amending Sanctum file must reach DECIDED+CLOSED and
+        be in meta/sanctum-index.md."""
+        sanctum = self._read('sanctum/2026-05-17-changelog-archive-extension.md')
+        self.assertIn('**Status:** CLOSED', sanctum,
+            "Sanctum must be CLOSED before v9.38 ship")
+        idx = self._read('meta/sanctum-index.md')
+        self.assertIn('changelog-archive-extension', idx,
+            "Sanctum must be in meta/sanctum-index.md")
 
 
 if __name__ == '__main__':

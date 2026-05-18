@@ -1786,20 +1786,15 @@ Scoped to Phase 3:
 
 ## Post-freeze candidates (surfaced 2026-05-17 polish pass)
 
-### ⬜ Archive-extension Sanctum (CHANGELOG aging-out mechanism) — **NOW RIPE**
+### ✅ Archive-extension Sanctum (CHANGELOG aging-out mechanism) — **DONE in v9.38**
 
-v9.24 compressed CHANGELOG to "last 10 ships only" + claimed
-"no entry was edited or deleted" for the archive (byte-frozen pre-
-v9.24). v9.34 surfaced the tension; v9.36 hit the headroom cap (13
-ships against the convention's 12-ship cap); v9.36 raised the cap
-to 14 as a one-time defer. **Next session must open this Sanctum**
-rather than relax the cap again — the Anti-Architect's
-"discomfort surface" requires the friction stay visible.
-
-Real fix: extend `archive/CHANGELOG-FULL.md` with a "post-v9.24
-section" + amend v9.24's claim to allow APPENDS (not edits/deletions).
-Risk: HIGH (touches an AoR claim). Cost: one Sanctum opened +
-the actual append. Estimated 30-60 min.
+Shipped 2026-05-17 in v9.38 via
+`sanctum/2026-05-17-changelog-archive-extension.md`. Amendment:
+archive grows APPENDS-only (no edits/deletions of existing rows).
+v9.24–v9.27 moved byte-identical from CHANGELOG.md to a new
+"Post-v9.24 ships" section in archive/CHANGELOG-FULL.md.
+test_changelog_compressed cap restored from 14 → 11. Future
+agings-out follow the same pattern.
 
 ### ⬜ Apparatus-reduction Sanctum (sanctum-scope cut-deeper signal)
 
