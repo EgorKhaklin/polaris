@@ -70,7 +70,7 @@ Phase 3 closed Arc D the same day. The Sanctum titled _HYDRA constitutional inte
 
 The seventh watcher, **TrajectoryWatcher**, arrived on May 13. The author had asked the Architect for feedback on a "StrategicAdvisor" proposal. The Architect rejected the named shape (eighty percent duplication of existing surfaces; risk of premature constitutional elevation; decline-and-surface violation) and recommended a narrower addition: a seventh watcher addressing the twenty percent gap, trajectory-drift detection. VANTA approved. TrajectoryWatcher shipped. On its first run, it surfaced the exact signal it had been built to detect: a ship-rate burst on May 12 of nine ships in twenty-four hours, exceeding the burst threshold of six. The watcher was working as designed. The signal persists.
 
-By the end of May 13, the cognitive substrate had reached the shape it carries now. Twenty-nine `ai-*` scripts. Seven HYDRA watchers. Seventeen Sanctums. Ten audit-of-record instances. 113 structural-invariant tests guarding the cognitive layer's own claims about itself. An interactive **brain map** at [`meta/brain-map/brain-map.html`](../../meta/brain-map/brain-map.html) rendering all of it as a 222-node, 248-edge force-directed graph across seven layers.
+By the end of May 13, the cognitive substrate had reached the shape it carries now. Twenty-nine `ai-*` scripts. Seven HYDRA watchers. Seventeen Sanctums. Ten audit-of-record instances. 113 structural-invariant tests guarding the cognitive layer's own claims about itself. An interactive **brain map** at `meta/brain-map/brain-map.html` (regenerable via `scripts/ai-brain-map.sh`; auto-gen state since v9.41) rendering all of it as a 222-node, 248-edge force-directed graph across seven layers.
 
 ---
 

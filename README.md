@@ -123,7 +123,7 @@ The current implementation is named, not pinned. As of v8.43, MISSION.md says th
 
 If a future maintainer replaces HYDRA with something better, the constitution does not need to be amended. The principles are stable; the implementations are substitutable.
 
-The [brain map](meta/brain-map/brain-map.html) renders all of this as an interactive D3 force-directed graph: 383 nodes, 388 edges across seven layers (schema · behavior · cognitive · decision · constitution · observation · knowledge). Open the file in any browser; nothing is fetched from the network.
+The brain map renders all of this as an interactive D3 force-directed graph: ~383 nodes, ~388 edges across seven layers (schema · behavior · cognitive · decision · constitution · observation · knowledge). Run [`scripts/ai-brain-map.sh`](scripts/ai-brain-map.sh) (or [`scripts/ai_brain_map.py`](scripts/ai_brain_map.py)) to regenerate it locally at `meta/brain-map/brain-map.html` — the file is auto-gen state (gitignored per v9.41), so it's produced on demand rather than tracked. Open the result in any browser; nothing is fetched from the network.
 
 ---
 
