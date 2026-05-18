@@ -218,16 +218,16 @@ Two remaining honestly-named "accept it never will" items:**
 
 ## Current version
 
-**v9.34** (2026-05-17). 44 ships in v9.x. 33 commander ants. 9 HYDRA
+**v9.35** (2026-05-17). 45 ships in v9.x. 33 commander ants. 9 HYDRA
 watchers + CM. 11 manifest legions + 1 reserved. 9 soldier classes (8
 workers + 1 priest). 6 citizens. Treasury (Denarius) ledger.
 
 **Freeze line at v9.31** (the terminus). Post-v9.31 work is bounded to
 (a) hardening, (b) measurement, (c) thesis cold-read evidence per
-MISSION.md §"From v9.32 forward". v9.32 wired hookify (ship-gate
-harness-enforced); v9.33 added Playwright Atlas-globe E2E scaffold;
-v9.34 closed the swarm cron-cadence gap + a latent priest-tier
-datetime crash.
+MISSION.md §"From v9.32 forward". v9.32 wired hookify; v9.33 added
+Playwright E2E scaffold; v9.34 closed swarm cron-cadence + priest-tier
+datetime crash; v9.35 fixed HYDRA watchers' hardcoded-port-2223 bug
+that had made live-app probes permanently inconclusive.
 
 For the per-ship history of v9.x: see [`CHANGELOG.md`](CHANGELOG.md)
 (curated last 10) or [`archive/CHANGELOG-FULL.md`](archive/CHANGELOG-FULL.md)

@@ -63,10 +63,14 @@ ATLAS_ENDPOINTS = [
     ("/api/atlas/events",   "?bbox=-180,-90,180,90&limit=50"),
 ]
 
-# Health endpoint + HTTP timeout for any single GET.
-HEALTH_URL = "http://localhost:2223/api/health"
+# Health endpoint + HTTP timeout for any single GET. v9.35: was
+# hardcoded to 2223 (a port nothing has ever listened on); the
+# launcher canonical is POLARIS_PORT defaulting to 2222. Read env so
+# the watcher can actually reach the live app.
+_POLARIS_PORT = os.environ.get("POLARIS_PORT", "2222")
+HEALTH_URL = f"http://localhost:{_POLARIS_PORT}/api/health"
 HTTP_TIMEOUT_SECS = 2.0
-BASE_URL = "http://localhost:2223"
+BASE_URL = f"http://localhost:{_POLARIS_PORT}"
 
 # The canonical atlas query to EXPLAIN ANALYZE. This is approximately
 # what /api/atlas/points runs at the SQL layer — we don't import the
@@ -115,10 +119,11 @@ class PerformanceWatcher(Watcher):
             findings.append(Finding(
                 severity="info",
                 title="app not reachable for live performance check",
-                detail=("The Polaris Flask app is not running on port 2223. "
-                        "Live latency timing and health probe are skipped. "
-                        "Static performance posture is not at risk — this "
-                        "is a CI/offline condition, not a regression."),
+                detail=(f"The Polaris Flask app is not running on port "
+                        f"{_POLARIS_PORT}. Live latency timing and health "
+                        f"probe are skipped. Static performance posture is "
+                        f"not at risk — this is a CI/offline condition, "
+                        f"not a regression."),
                 # v9.10 / S1: shared-surface node_id `runtime:health`.
                 # security_watcher emits the same when its rate-limiter
                 # probe finds the app offline; CorrelationEngine fires.

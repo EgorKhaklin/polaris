@@ -9,7 +9,7 @@ is reference.
 ## What Polaris is
 
 National identity-token reference implementation in production-grade
-prose. v9.34 (freeze at v9.31; v9.32-v9.34 are post-freeze hardening
+prose. v9.35 (freeze at v9.31; v9.32-v9.35 are post-freeze hardening
 + measurement). 27 schema tables, ~4K-line Flask app, 1077 Python tests
 + 909 structural invariants + 19 Hypothesis property tests. 9 HYDRA
 mortal heads + CM immortal. Mycelium swarm: 33 commanders + 6

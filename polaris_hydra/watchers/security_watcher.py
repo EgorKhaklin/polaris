@@ -89,8 +89,11 @@ R6_RENDERED_SCAN_TEMPLATE = "verifications_form.html"
 
 # Default health endpoint. Watcher tries this; if it fails, surfaces
 # as info (not alert) since the app being offline is not a security
-# regression.
-HEALTH_URL = "http://localhost:2223/api/health"
+# regression. v9.35: was hardcoded to 2223 (a port nothing has ever
+# listened on); the launcher canonical is POLARIS_PORT defaulting to
+# 2222. Read env so the watcher can actually reach the live app.
+_POLARIS_PORT = os.environ.get("POLARIS_PORT", "2222")
+HEALTH_URL = f"http://localhost:{_POLARIS_PORT}/api/health"
 HEALTH_TIMEOUT_SECS = 1.5
 
 

@@ -15497,5 +15497,87 @@ class TestWave34V934(unittest.TestCase):
             "tz promotion must be conditional on naive input")
 
 
+class TestWave35V935(unittest.TestCase):
+    """v9.35 — HYDRA watcher port env-driven (post-freeze hardening).
+
+    Real defect closed: polaris_hydra/watchers/security_watcher.py and
+    polaris_hydra/watchers/performance_watcher.py hardcoded the health-
+    check URL to http://localhost:2223/api/health, but the launcher
+    canonical port is POLARIS_PORT defaulting to 2222. Port 2223 has
+    never been a Polaris listening port. The watchers' live-app probe
+    was permanently INCONCLUSIVE since the watchers were introduced —
+    every HYDRA brief carried "app not reachable on port 2223" as
+    decorative info. Surfaced during the 2026-05-17 full-system
+    shakedown.
+
+    Fix: read POLARIS_PORT env (defaulting to 2222) at module load.
+    Same pattern app.py uses (line 4358), launcher uses
+    (polaris_mac_launch.sh:145), and ai-bootstrap.sh exports.
+
+    Per MISSION.md §"From v9.32 forward, (a) Hardening": pure bug fix
+    against existing surface, no new scope.
+    """
+
+    ROOT = ROOT
+
+    def _read(self, rel):
+        with open(os.path.join(self.ROOT, rel)) as f:
+            return f.read()
+
+    def test_v935_security_watcher_uses_polaris_port_env(self):
+        """security_watcher must read POLARIS_PORT env, not hardcode
+        the port literal. Anyone running the watcher under a non-default
+        POLARIS_PORT must still get a working health probe."""
+        src = self._read('polaris_hydra/watchers/security_watcher.py')
+        self.assertIn('os.environ.get("POLARIS_PORT"', src,
+            "security_watcher must read POLARIS_PORT env")
+        # The HEALTH_URL must be derived from the env var, not a literal
+        import re
+        self.assertIsNone(
+            re.search(r'HEALTH_URL\s*=\s*"http://localhost:\d', src),
+            "security_watcher HEALTH_URL must not contain a hardcoded "
+            "port literal (use f-string with _POLARIS_PORT)"
+        )
+
+    def test_v935_performance_watcher_uses_polaris_port_env(self):
+        """performance_watcher must read POLARIS_PORT env across all
+        URL constants (HEALTH_URL + BASE_URL) AND the error message
+        the operator reads in HYDRA briefs."""
+        src = self._read('polaris_hydra/watchers/performance_watcher.py')
+        self.assertIn('os.environ.get("POLARIS_PORT"', src,
+            "performance_watcher must read POLARIS_PORT env")
+        import re
+        # Neither HEALTH_URL nor BASE_URL may contain a hardcoded port
+        # literal (use f-string with _POLARIS_PORT)
+        self.assertIsNone(
+            re.search(r'(HEALTH_URL|BASE_URL)\s*=\s*"http://localhost:\d',
+                      src),
+            "performance_watcher URLs must not contain hardcoded ports"
+        )
+        # The operator-facing error message must reference _POLARIS_PORT
+        # (not a hardcoded port literal) so the operator sees their
+        # actual port, not a misleading 2223
+        self.assertIn('{_POLARIS_PORT}', src,
+            "performance_watcher's 'app not reachable' detail must "
+            "interpolate the actual port in use")
+
+    def test_v935_no_hardcoded_port_2223_in_hydra_code(self):
+        """No live hydra code may reference port 2223 (the v9.35
+        bug surface). Documentation comments are exempt as long as
+        they explicitly note the historical context."""
+        for watcher in ('security_watcher.py', 'performance_watcher.py'):
+            src = self._read(f'polaris_hydra/watchers/{watcher}')
+            # Strip comment lines starting with # (Python full-line
+            # comments documenting the historical 2223 bug)
+            non_comment_lines = [
+                ln for ln in src.split('\n')
+                if not ln.lstrip().startswith('#')
+            ]
+            non_comment = '\n'.join(non_comment_lines)
+            self.assertNotIn('2223', non_comment,
+                f"{watcher} executable code must not reference port 2223 "
+                f"(historical comments OK)")
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
