@@ -31,16 +31,27 @@ find_python() {
         echo "$POLARIS_SWARM_PYTHON"
         return 0
     fi
+    # v9.37: polaris_web/venv FIRST (canonical operator venv with
+    # psycopg2 installed). Pre-v9.37 order picked /private/tmp/polaris-
+    # codex-venv312 first — Python 3.12 but NO psycopg2 — so bloom
+    # always reported "psycopg2 not installed; use --dry" against any
+    # non-dry invocation. ai-hydra.sh has had the right order +
+    # psycopg2 import-verify since v9.04; aligning bloom with that
+    # pattern.
     local candidates=(
-        "/private/tmp/polaris-codex-venv312/bin/python3"
         "$ROOT/polaris_web/venv/bin/python3"
+        "/private/tmp/polaris-codex-venv312/bin/python3"
         "/opt/homebrew/bin/python3"
         "python3"
     )
     for py in "${candidates[@]}"; do
         if command -v "$py" >/dev/null 2>&1; then
-            # Verify Python is recent enough.
-            if "$py" -c "import sys; sys.exit(0 if sys.version_info >= (3, 9) else 1)" 2>/dev/null; then
+            # Verify Python is recent enough AND psycopg2 importable
+            # (bloom needs DB; picking a Python without psycopg2
+            # silently degrades to dry-mode regardless of operator
+            # intent).
+            if "$py" -c "import sys; sys.exit(0 if sys.version_info >= (3, 9) else 1)" 2>/dev/null \
+                && "$py" -c "import psycopg2" 2>/dev/null; then
                 echo "$py"
                 return 0
             fi

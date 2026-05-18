@@ -228,7 +228,14 @@ fi
 
 # ----- §IV: Citizen activity ------------------------------------
 printf "${PURPLE}§IV. Citizen activity (6 citizens, last 24h)${NC}\n"
-CITIZEN_QUERY="SELECT deposited_by, COUNT(*) FROM Pheromone WHERE deposited_at >= NOW() - INTERVAL '24 hours' AND tier = 'citizen' GROUP BY deposited_by ORDER BY deposited_by;"
+# v9.37: was `AND tier = 'citizen'` but Pheromone has no `tier`
+# column; the query silently errored to empty, printing "No citizen
+# deposits" regardless of reality. Citizens deposit with their NAME
+# as `deposited_by` and carry `civitas_class` in evidence JSONB (per
+# `_deposit_citizen_results` docstring in polaris_swarm/colony.py).
+# Use the JSONB ? operator to auto-discover any future citizens
+# without hardcoding ALL_CITIZENS names here.
+CITIZEN_QUERY="SELECT deposited_by, COUNT(*) FROM Pheromone WHERE deposited_at >= NOW() - INTERVAL '24 hours' AND evidence ? 'civitas_class' GROUP BY deposited_by ORDER BY deposited_by;"
 CITIZEN_ROWS=$(query "$CITIZEN_QUERY")
 if [ -z "$CITIZEN_ROWS" ]; then
     printf "  ${DIM}No citizen deposits in last 24h.${NC}\n"

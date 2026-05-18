@@ -15648,5 +15648,85 @@ class TestWave36V936(unittest.TestCase):
             "the security_watcher parser is bound to this name")
 
 
+class TestWave37V937(unittest.TestCase):
+    """v9.37 — Swarm script hidden-failure fixes (deep-scan cascade).
+
+    Two more hidden bugs surfaced by the 2026-05-17 deep swarm/hydra
+    scan after v9.35 + v9.36 cleared the obvious ones. Both fit the
+    "silent failure" pattern the discipline keeps catching: the script
+    appears to work (no error to operator) but the result is wrong.
+
+    Fix #1 — `ai-swarm-health.sh §IV citizen activity` query used
+    `WHERE tier = 'citizen'` but Pheromone has no `tier` column; the
+    query silently errored to empty, printing "No citizen deposits"
+    regardless of reality. Citizens DO deposit (verified live: 5/6
+    citizens visible after fix; censor_roll_keeper silent by design —
+    only fires on new-ant events). The canonical marker per
+    `_deposit_citizen_results` docstring in `polaris_swarm/colony.py`
+    is `civitas_class` in evidence JSONB. Fix: use JSONB ? operator
+    to auto-discover any future citizens.
+
+    Fix #2 — `ai-swarm-bloom.sh find_python` candidate list put
+    `/private/tmp/polaris-codex-venv312/bin/python3` BEFORE
+    `polaris_web/venv/bin/python3`. The codex venv exists (Python
+    3.12 ≥ 3.9) so was picked first, but has NO psycopg2 installed,
+    so bloom always degraded to "psycopg2 not installed; use --dry."
+    Fix: invert order + verify psycopg2 importable (mirrors
+    `ai-hydra.sh` correct pattern since v9.04).
+    """
+
+    ROOT = ROOT
+
+    def _read(self, rel):
+        with open(os.path.join(self.ROOT, rel)) as f:
+            return f.read()
+
+    def test_v937_swarm_health_citizen_query_uses_jsonb_marker(self):
+        """ai-swarm-health.sh §IV must filter citizens by the
+        canonical evidence JSONB marker, not the nonexistent `tier`
+        column."""
+        src = self._read('scripts/ai-swarm-health.sh')
+        self.assertIn("evidence ? 'civitas_class'", src,
+            "citizen query must use JSONB civitas_class marker "
+            "(per _deposit_citizen_results docstring)")
+        # The broken pattern must not appear anywhere live (comments
+        # documenting the bug are OK; check non-comment lines)
+        non_comment = '\n'.join(
+            ln for ln in src.split('\n')
+            if not ln.lstrip().startswith('#')
+        )
+        self.assertNotIn("tier = 'citizen'", non_comment,
+            "the tier='citizen' broken query must not appear live "
+            "(Pheromone has no `tier` column)")
+
+    def test_v937_swarm_bloom_venv_order_canonical_first(self):
+        """ai-swarm-bloom.sh must check polaris_web/venv FIRST so it
+        picks the canonical operator venv with psycopg2 installed
+        rather than the codex venv that lacks DB libs."""
+        src = self._read('scripts/ai-swarm-bloom.sh')
+        # Find the candidates= array; polaris_web/venv must be the
+        # first non-env-override entry
+        import re
+        m = re.search(r'candidates=\(\s*\n(.*?)\n\s*\)', src, re.DOTALL)
+        self.assertIsNotNone(m, "candidates=() array must be present")
+        candidate_block = m.group(1)
+        first_line = next(
+            (ln.strip() for ln in candidate_block.split('\n') if ln.strip()),
+            ""
+        )
+        self.assertIn("polaris_web/venv", first_line,
+            f"first candidate must be polaris_web/venv (got: "
+            f"{first_line[:80]!r})")
+
+    def test_v937_swarm_bloom_verifies_psycopg2(self):
+        """ai-swarm-bloom.sh find_python must verify psycopg2 is
+        importable in the selected python — otherwise it picks a
+        Python that can pass the version check but can't reach the
+        DB, silently degrading to dry-mode."""
+        src = self._read('scripts/ai-swarm-bloom.sh')
+        self.assertIn('import psycopg2', src,
+            "find_python must verify psycopg2 importable")
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
