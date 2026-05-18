@@ -58,9 +58,6 @@
       "node_id": "soldier_log_tail surfaced 1 signal(s)",
       "raised_at_utc": "2026-05-15T03:21:31+00:00Z",
       "raised_at_version": "2026-05-14-2321",
-      "resolved_at_utc": null,
-      "resolved_at_version": null,
-      "resolved_commit_sha": null,
       "imported_from": "journal/hydra/2026-05-14-2321.md"
     },
     {
@@ -91,9 +88,6 @@
       "node_id": "Treasury skewed strongly negative",
       "raised_at_utc": "2026-05-15T03:21:31+00:00Z",
       "raised_at_version": "2026-05-14-2321",
-      "resolved_at_utc": null,
-      "resolved_at_version": null,
-      "resolved_commit_sha": null,
       "imported_from": "journal/hydra/2026-05-14-2321.md"
     },
     {
@@ -102,9 +96,6 @@
       "node_id": "soldier_log_tail surfaced 1 signal(s)",
       "raised_at_utc": "2026-05-15T04:07:58+00:00Z",
       "raised_at_version": "2026-05-15-0007",
-      "resolved_at_utc": null,
-      "resolved_at_version": null,
-      "resolved_commit_sha": null,
       "imported_from": "journal/hydra/2026-05-15-0007.md"
     },
     {
@@ -135,9 +126,6 @@
       "node_id": "Treasury skewed strongly negative",
       "raised_at_utc": "2026-05-15T04:07:58+00:00Z",
       "raised_at_version": "2026-05-15-0007",
-      "resolved_at_utc": null,
-      "resolved_at_version": null,
-      "resolved_commit_sha": null,
       "imported_from": "journal/hydra/2026-05-15-0007.md"
     },
     {
@@ -146,9 +134,6 @@
       "node_id": "soldier_log_tail surfaced 1 signal(s)",
       "raised_at_utc": "2026-05-15T04:46:13+00:00Z",
       "raised_at_version": "2026-05-15-0046",
-      "resolved_at_utc": null,
-      "resolved_at_version": null,
-      "resolved_commit_sha": null,
       "imported_from": "journal/hydra/2026-05-15-0046.md"
     },
     {
@@ -192,9 +177,6 @@
       "node_id": "Treasury skewed strongly negative",
       "raised_at_utc": "2026-05-15T04:46:13+00:00Z",
       "raised_at_version": "2026-05-15-0046",
-      "resolved_at_utc": null,
-      "resolved_at_version": null,
-      "resolved_commit_sha": null,
       "imported_from": "journal/hydra/2026-05-15-0046.md"
     },
     {
@@ -214,9 +196,6 @@
       "node_id": "soldier_log_tail surfaced 1 signal(s)",
       "raised_at_utc": "2026-05-15T05:37:49+00:00Z",
       "raised_at_version": "2026-05-15-0137",
-      "resolved_at_utc": null,
-      "resolved_at_version": null,
-      "resolved_commit_sha": null,
       "imported_from": "journal/hydra/2026-05-15-0137.md"
     },
     {
@@ -258,9 +237,6 @@
       "node_id": "Treasury skewed strongly negative",
       "raised_at_utc": "2026-05-15T05:37:49+00:00Z",
       "raised_at_version": "2026-05-15-0137",
-      "resolved_at_utc": null,
-      "resolved_at_version": null,
-      "resolved_commit_sha": null,
       "imported_from": "journal/hydra/2026-05-15-0137.md"
     },
     {
@@ -269,9 +245,6 @@
       "node_id": "soldier_log_tail surfaced 1 signal(s)",
       "raised_at_utc": "2026-05-15T05:56:44+00:00Z",
       "raised_at_version": "2026-05-15-0156",
-      "resolved_at_utc": null,
-      "resolved_at_version": null,
-      "resolved_commit_sha": null,
       "imported_from": "journal/hydra/2026-05-15-0156.md"
     },
     {
@@ -313,9 +286,6 @@
       "node_id": "Treasury skewed strongly negative",
       "raised_at_utc": "2026-05-15T05:56:44+00:00Z",
       "raised_at_version": "2026-05-15-0156",
-      "resolved_at_utc": null,
-      "resolved_at_version": null,
-      "resolved_commit_sha": null,
       "imported_from": "journal/hydra/2026-05-15-0156.md"
     },
     {
@@ -324,9 +294,6 @@
       "node_id": "soldier_log_tail surfaced 1 signal(s)",
       "raised_at_utc": "2026-05-15T06:21:16+00:00Z",
       "raised_at_version": "2026-05-15-0221",
-      "resolved_at_utc": null,
-      "resolved_at_version": null,
-      "resolved_commit_sha": null,
       "imported_from": "journal/hydra/2026-05-15-0221.md"
     },
     {
@@ -357,9 +324,6 @@
       "node_id": "Treasury skewed strongly negative",
       "raised_at_utc": "2026-05-15T06:21:16+00:00Z",
       "raised_at_version": "2026-05-15-0221",
-      "resolved_at_utc": null,
-      "resolved_at_version": null,
-      "resolved_commit_sha": null,
       "imported_from": "journal/hydra/2026-05-15-0221.md"
     },
     {
@@ -368,9 +332,6 @@
       "node_id": "soldier_log_tail surfaced 1 signal(s)",
       "raised_at_utc": "2026-05-15T06:33:25+00:00Z",
       "raised_at_version": "2026-05-15-0233",
-      "resolved_at_utc": null,
-      "resolved_at_version": null,
-      "resolved_commit_sha": null,
       "imported_from": "journal/hydra/2026-05-15-0233.md"
     },
     {
@@ -401,9 +362,6 @@
       "node_id": "Treasury skewed strongly negative",
       "raised_at_utc": "2026-05-15T06:33:25+00:00Z",
       "raised_at_version": "2026-05-15-0233",
-      "resolved_at_utc": null,
-      "resolved_at_version": null,
-      "resolved_commit_sha": null,
       "imported_from": "journal/hydra/2026-05-15-0233.md"
     }
   ]

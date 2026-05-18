@@ -114,19 +114,32 @@ def _load_treasury_roll() -> dict | None:
 
 
 def _summarize_balances(roll: dict) -> dict[str, Any]:
-    """Group balances by property class + extract summary metrics."""
+    """Group balances by property class + extract summary metrics.
+
+    v9.42: dual summary. The aggregate-since-inception min/max is
+    forever-polluted by pre-v8.91 frozen -2 penalties (G15 keeps them
+    in the ledger). The post-rebalance subset (events matching the
+    current policy in operation: +10 reward / -1 penalty) is the
+    honest signal for whether the F5 reward function is engaging.
+    Mirrors `scripts/ai-treasury-report.sh` which split the same way.
+    """
     balances: dict[str, int] = {}
+    post_balances: dict[str, int] = {}    # v9.42: post-rebalance subset
     for ev in roll.get("events", []):
         if not isinstance(ev, dict):
             continue
         ant = ev.get("ant", "(unknown)")
-        balances[ant] = balances.get(ant, 0) + int(ev.get("amount", 0))
+        amount = int(ev.get("amount", 0))
+        balances[ant] = balances.get(ant, 0) + amount
+        if amount in (10, -1):
+            post_balances[ant] = post_balances.get(ant, 0) + amount
     pleb = sum(1 for b in balances.values() if b <= DENARII_PLEB_MAX)
     eques = sum(1 for b in balances.values()
                 if DENARII_PLEB_MAX < b <= DENARII_EQUES_MAX)
     patrician = sum(1 for b in balances.values() if b > DENARII_EQUES_MAX)
     values = list(balances.values())
     median_b = statistics.median(values) if values else 0
+    post_values = list(post_balances.values())
     return {
         "ants_with_balance": len(balances),
         "pleb": pleb,
@@ -135,6 +148,11 @@ def _summarize_balances(roll: dict) -> dict[str, Any]:
         "median_balance": median_b,
         "max_positive": max(values) if values else 0,
         "min_negative": min(values) if values else 0,
+        # v9.42: post-rebalance (current policy) subset — what the F5
+        # finding should actually grade on.
+        "post_rebalance_max_positive": max(post_values) if post_values else 0,
+        "post_rebalance_min_negative": min(post_values) if post_values else 0,
+        "post_rebalance_ants_with_balance": len(post_balances),
     }
 
 
@@ -322,20 +340,28 @@ class AntColonyWatcher(Watcher):
             bal_summary = _summarize_balances(roll)
             summary["treasury"] = bal_summary
             # Drift signals on extreme distribution.
-            # Note: v8.91 corrected the persistent-silence penalty
-            # (DENARII_PENALTY_PERSISTENT 2→1). The skew threshold
-            # below stays at the same shape; an empirical re-tune
-            # would be a separate ship.
-            if bal_summary["min_negative"] < -500 and bal_summary["max_positive"] < 100:
+            # v8.91 corrected the persistent-silence penalty
+            # (DENARII_PENALTY_PERSISTENT 2→1). v9.42: grade on the
+            # post-rebalance subset (current policy +10/-1), not the
+            # aggregate. The aggregate is forever-skewed by pre-v8.91
+            # frozen -2 events (G15); reading it for an F5 signal
+            # produces a false-positive drift finding indefinitely.
+            post_min = bal_summary["post_rebalance_min_negative"]
+            post_max = bal_summary["post_rebalance_max_positive"]
+            if post_min < -500 and post_max < 100:
                 findings.append(Finding(
                     severity="drift",
-                    title="Treasury skewed strongly negative",
+                    title="Treasury skewed strongly negative (post-rebalance)",
                     detail=(
-                        f"min balance {bal_summary['min_negative']}; "
-                        f"max positive only {bal_summary['max_positive']}. "
-                        f"Most ants are accruing persistent-silence "
-                        f"penalties without offsetting drift-resolution "
-                        f"rewards. F5 reward-function signal."
+                        f"post-rebalance min balance {post_min}; "
+                        f"post-rebalance max positive only {post_max}. "
+                        f"Under the current +10/-1 policy ants are "
+                        f"accruing persistent-silence penalties "
+                        f"without offsetting drift-resolution rewards. "
+                        f"F5 reward-function signal. (Aggregate "
+                        f"min/max ignored per v9.42 — pre-v8.91 "
+                        f"events are frozen per G15 and pollute the "
+                        f"aggregate forever.)"
                     ),
                     evidence={**bal_summary,
                               "node_id": "civitas:treasury"},

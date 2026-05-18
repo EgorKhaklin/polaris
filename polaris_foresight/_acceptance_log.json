@@ -86,7 +86,7 @@
       "vocation_alignment": "anti-coercion (defensive scan)"
     },
     "FS-FBAEC2B8": {
-      "promoted_at": "2026-05-17",
+      "promoted_at": "2026-05-18",
       "status": "open",
       "title": "Test idempotent candidate xyz123",
       "vocation_alignment": "anti-coercion (test)"

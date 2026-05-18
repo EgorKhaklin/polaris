@@ -17959,6 +17959,50 @@ AoR amendment, decided + shipped v9.38) to permit APPENDS to this
 file (still no edits or deletions of existing rows). Section
 boundary below; entries newest-first under this section.
 
+## v9.31 — 2026-05-17 (Mechanical freeze-line verification · 7 freeze conditions encoded as invariants · the terminus)
+
+Per MISSION.md §"Freeze line — definition of done (v9.27, amended once
+v9.29)", the core is **done at v9.31** when ALL seven conditions are
+mechanically verifiable from outside the cognitive layer. v9.31 makes
+each condition a Python test in `TestWave31V931` — if every test
+passes, the freeze is satisfied.
+
+Surfaced by Option A sequencing the user approved after the petitioner
+discovered v9.31 was NOT a 5-minute mechanical bump as initially
+represented — 5 of 7 conditions were failing. Sanctum
+`sanctum/2026-05-17-v9-31-prep.md` scoped the 5 gaps; VANTA approved
+"Full prep"; gaps closed in dependency order before the version literal
+moved.
+
+- **Gap 1 (commit hygiene)** — 44 files / 3973 insertions committed in
+  prior commit `2b60179` ("hygiene: commit accumulated 2026-05-16/17
+  session work"). Kill test no longer refuses on dirty tree.
+- **Gap 2 (observability, cond 6)** — `/api/metrics` route + counter
+  call sites in `_metrics_after_request` (request+5xx), `security.py`
+  (auth-failure password), `webauthn_assert_finish` (auth-failure
+  webauthn ×2), `_check_and_record_duress` (the anti-coercion alarm
+  per T8#11). 4 headline counters now actually fire.
+- **Gap 3 (MTTR back-fill + parser fix, cond 4)** — 3 honest
+  resolutions with provenance (treasury 04:09, Mycelium 03:31, CSP
+  regex 03:24). `_parse_iso` helper handles 12-day silent +00:00Z
+  double-suffix bug rejecting every early-ledger entry. Trend slope
+  **-1.72h/ship (loop earning)**. v9.30 binding clause passes.
+- **Gap 4 (mttr.sh regex)** — Anchored `^__version__` to skip a
+  docstring example.
+- **Gap 5a/5b (chaos test, cond 3)** — `brew link --force libpq`
+  exposed hidden fail-open in `polaris-recover-admin.sh`: `run_psql`
+  swallowed errors via `2>/dev/null` + `set -e` exited silently before
+  any refusal reached operator. Wrapped to emit loud `EXIT_DB`
+  refusal. **Real security defect caught by chaos test the moment
+  psql became available.** 3/3 fail-safe.
+- **Cond 1, 5, 7** — ai-coherence STRUCTURE INTACT; v9.30 binding
+  passes; `__version__` 9.30 → 9.31.
+
+**This is the freeze.** Post-v9.31 work is bounded to (a) hardening,
+(b) measurement, (c) thesis cold-read evidence per MISSION.md §"From
+v9.32 forward". Integration ships (v9.32 hookify, v9.33 playwright)
+are post-freeze hardening — separate ships, separate version bumps.
+
 ## v9.30 — 2026-05-16 (Original 13-item arc completes · 7 items + 174M deleted · no item #14 · Pattern #20 24th instance)
 
 VANTA: "proceed lets do it." 7 remaining items shipped under the

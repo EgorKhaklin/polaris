@@ -15952,5 +15952,158 @@ class TestWave40V940(unittest.TestCase):
             "rate-limiter activation")
 
 
+class TestWave42V942(unittest.TestCase):
+    """v9.42 — HYDRA watcher false-positive cleanup.
+
+    Two findings from the 2026-05-17 HYDRA pass were not real drift in
+    the system being observed; they were drift in the watchers:
+
+    1. `soldier_log_tail` reads `/tmp/polaris_app.log`. Under Docker
+       runtime that file is forever-frozen at the moment the native
+       gunicorn was last stopped, so the soldier emits phantom
+       ERROR/WARNING signals indefinitely. v9.42 adds a staleness
+       guard: if mtime > STALE_THRESHOLD_SECONDS, return one INFO
+       observation flagging the source as dormant.
+
+    2. `ant_colony` watcher's treasury channel graded F5 (reward
+       function) on aggregate-since-inception per-ant balances. The
+       aggregate is forever-polluted by pre-v8.91 frozen -2 penalties
+       (G15 keeps them in the ledger). v9.42 grades on the
+       post-rebalance subset (current policy: +10 reward / -1
+       penalty) — mirroring `scripts/ai-treasury-report.sh`.
+
+    Architect: drift→test promotion loop (arch-2026-05-18-003).
+    """
+
+    ROOT = ROOT
+
+    def _read(self, rel):
+        with open(os.path.join(self.ROOT, rel)) as f:
+            return f.read()
+
+    def test_v942_log_tail_has_stale_guard(self):
+        src = self._read('polaris_swarm/soldiers/log_tail.py')
+        self.assertIn('STALE_THRESHOLD_SECONDS', src,
+            "log_tail must define a staleness threshold constant")
+        self.assertIn('stale', src.lower(),
+            "log_tail must reference staleness in its observe path")
+
+    def test_v942_log_tail_returns_info_on_stale_file(self):
+        """Behavioral check: a stale file with ERROR content emits
+        KIND_INFO (not KIND_ALERT). The drift→test promotion loop."""
+        import importlib
+        import pathlib as _pathlib
+        import sys
+        import os as _os
+        import time
+        import tempfile
+        sys.path.insert(0, self.ROOT)
+        try:
+            import polaris_swarm.soldiers.log_tail as lt
+            importlib.reload(lt)
+            with tempfile.NamedTemporaryFile(
+                mode='w', suffix='.log', delete=False
+            ) as f:
+                f.write("[2026-05-15 04:46:24] ERROR in app: boom\n")
+                fake_log = f.name
+            old_mtime = time.time() - (lt.STALE_THRESHOLD_SECONDS + 60)
+            _os.utime(fake_log, (old_mtime, old_mtime))
+            original = lt.LOG_FILE
+            try:
+                lt.LOG_FILE = _pathlib.Path(fake_log)
+                obs = lt.LogTailSoldier(root=_pathlib.Path(self.ROOT)).observe()
+                self.assertEqual(len(obs), 1,
+                    "stale-file path returns exactly one observation")
+                self.assertEqual(obs[0].kind, lt.KIND_INFO,
+                    "stale file must NOT raise ALERT/DRIFT — would "
+                    "emit phantom signals forever after runtime switch")
+                self.assertTrue(obs[0].value.get('stale'),
+                    "stale observation must carry the stale flag")
+            finally:
+                lt.LOG_FILE = original
+                _os.unlink(fake_log)
+        finally:
+            if self.ROOT in sys.path:
+                sys.path.remove(self.ROOT)
+
+    def test_v942_log_tail_still_alerts_on_fresh_errors(self):
+        """Negative test: a FRESH log with ERROR still raises ALERT.
+        The guard must not be over-broad."""
+        import importlib
+        import pathlib as _pathlib
+        import sys
+        import os as _os
+        import tempfile
+        sys.path.insert(0, self.ROOT)
+        try:
+            import polaris_swarm.soldiers.log_tail as lt
+            importlib.reload(lt)
+            with tempfile.NamedTemporaryFile(
+                mode='w', suffix='.log', delete=False
+            ) as f:
+                f.write("ERROR in app: fresh boom\n")
+                fake_log = f.name
+            original = lt.LOG_FILE
+            try:
+                lt.LOG_FILE = _pathlib.Path(fake_log)
+                obs = lt.LogTailSoldier(root=_pathlib.Path(self.ROOT)).observe()
+                self.assertEqual(len(obs), 1)
+                self.assertEqual(obs[0].kind, lt.KIND_ALERT,
+                    "fresh ERROR must still raise ALERT")
+            finally:
+                lt.LOG_FILE = original
+                _os.unlink(fake_log)
+        finally:
+            if self.ROOT in sys.path:
+                sys.path.remove(self.ROOT)
+
+    def test_v942_ant_colony_uses_post_rebalance(self):
+        """Watcher source references the post-rebalance subset."""
+        src = self._read('polaris_hydra/watchers/ant_colony_watcher.py')
+        self.assertIn('post_rebalance_min_negative', src,
+            "ant_colony_watcher must expose post-rebalance min/max")
+        self.assertIn('post_rebalance_max_positive', src,
+            "ant_colony_watcher must expose post-rebalance min/max")
+        self.assertIn('post_min', src,
+            "drift threshold must read post_min, not aggregate min")
+
+    def test_v942_ant_colony_summarize_filters_pre_rebalance(self):
+        """Behavioral: pre-v8.91 -2 events excluded from post-rebalance
+        subset; only +10/-1 amounts contribute. The drift→test loop."""
+        import importlib
+        import sys
+        sys.path.insert(0, self.ROOT)
+        try:
+            import polaris_hydra.watchers.ant_colony_watcher as acw
+            importlib.reload(acw)
+            roll = {
+                "events": [
+                    {"ant": "ant_old", "amount": -2,
+                     "reason": "persistent_silence"},
+                    {"ant": "ant_old", "amount": -2,
+                     "reason": "persistent_silence"},
+                    {"ant": "ant_silent_now", "amount": -1,
+                     "reason": "persistent_silence"},
+                    {"ant": "ant_resolving", "amount": 10,
+                     "reason": "drift_resolution"},
+                ],
+            }
+            summary = acw._summarize_balances(roll)
+            self.assertEqual(summary["min_negative"], -4,
+                "aggregate min still includes pre-rebalance -2 events")
+            self.assertEqual(summary["max_positive"], 10,
+                "aggregate max sees the +10 reward")
+            self.assertEqual(summary["post_rebalance_min_negative"], -1,
+                "post-rebalance subset must exclude amount==-2; "
+                "ant_silent_now contributes -1")
+            self.assertEqual(summary["post_rebalance_max_positive"], 10,
+                "post-rebalance subset includes the +10 reward")
+            self.assertEqual(summary["post_rebalance_ants_with_balance"], 2,
+                "ant_old (only -2 events) excluded from post-rebalance set")
+        finally:
+            if self.ROOT in sys.path:
+                sys.path.remove(self.ROOT)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

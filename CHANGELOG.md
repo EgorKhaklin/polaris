@@ -14,6 +14,63 @@ record, read [`meta/sanctum-index.md`](meta/sanctum-index.md).
 
 ---
 
+## v9.42 — 2026-05-18 (Post-freeze hardening · HYDRA watcher false-positive cleanup · two drift-in-the-watcher fixes)
+
+scope: cognitive-layer · ship_marker: hydra-watcher-cleanup · vocation: anti-surveillance (watcher honesty) · pattern20_instance: drift→test promotion loop (arch-2026-05-18-003)
+
+The 2026-05-17 HYDRA pass surfaced 4 drift signals. Two of them were
+not drift in the system being observed; they were drift in the
+watchers themselves. v9.42 closes both, both with behavioral tests
+under the Architect's drift→test promotion principle.
+
+**Finding 1 — `soldier_log_tail` phantom alerts after Docker switch.**
+The soldier reads `/tmp/polaris_app.log` with no staleness check. Under
+the Docker runtime that file is frozen at the moment the last native
+gunicorn shutdown wrote to it (2026-05-15 04:54 in this case); the
+soldier kept emitting 5 alert pheromones every 6h reading the same
+frozen ERROR + 4 WARNING lines (all about the in-memory rate limiter,
+which v9.39 actually fixed at the root). **Fix:** add
+`STALE_THRESHOLD_SECONDS = 600`. If mtime > threshold, return one
+KIND_INFO observation flagging the source as dormant. Phantom-signal
+storm stops within one cycle.
+
+**Finding 2 — `ant_colony` watcher graded F5 on the wrong window.**
+The watcher's `_summarize_balances` reduced ALL events from
+`treasury-roll.json` into per-ant balances and graded the
+"Treasury skewed strongly negative" finding on the aggregate
+min/max. The aggregate is forever-polluted by pre-v8.91 frozen -2
+penalties (G15 keeps them in the ledger). `scripts/ai-treasury-report.sh`
+already splits "post-rebalance (since v8.91, +10/-1 in operation)"
+distinctly from aggregate; the report's verdict reads ✓ in-band, but
+the HYDRA watcher read ✗ skewed. **Fix:** mirror the report's split.
+The watcher now exposes `post_rebalance_min_negative` /
+`post_rebalance_max_positive` (filtered to amounts in {+10, -1}, the
+current policy) and grades the F5 drift finding on the post-rebalance
+subset. The aggregate is still exposed in evidence_summary for
+operator visibility, but no longer drives the finding.
+
+**Tests** (TestWave42V942, 5 cases):
+- `test_v942_log_tail_has_stale_guard` — source-level invariant
+- `test_v942_log_tail_returns_info_on_stale_file` — behavioral; stale
+  file with ERROR content emits KIND_INFO, not KIND_ALERT
+- `test_v942_log_tail_still_alerts_on_fresh_errors` — negative test;
+  guard is not over-broad
+- `test_v942_ant_colony_uses_post_rebalance` — source-level invariant
+- `test_v942_ant_colony_summarize_filters_pre_rebalance` — behavioral;
+  fake roll with -2 (pre-rebalance) + -1 (post) + +10 confirms only
+  {+10, -1} amounts enter the post-rebalance subset
+
+**Personas weighed in.** Architect: invoked arch-2026-05-18-003
+(drift→test promotion loop) — every drift catch should become an
+executable test. Done. Anti-Architect: silent on the scope (no
+structured proposal dissent); flagged v9.39 already closed a
+soldier_log_tail finding at the **root cause** (Redis env wired),
+but didn't close the **failure mode** (stale-file phantom signal) —
+v9.42 closes the latter, mirroring the v8.12 drift→test pattern.
+
+Risk class: LOW (drift maintenance under heavy-production steady-state;
+both edits are watcher-bug fixes, no constitutional surface touched).
+
 ## v9.41 — 2026-05-17 (AoR reclassification · canonical set 12 → 10 · two derived caches dropped · v9.x release)
 
 The published-release ship for v9.x. Closes the constitutional gap
@@ -353,50 +410,6 @@ enforces the freeze.
 settings.json wires the hook; passes through non-ship bash; passes
 through non-ship commits; bypass documented with audit-trail; version
 bumped; CHANGELOG justifies as hardening.
-
-## v9.31 — 2026-05-17 (Mechanical freeze-line verification · 7 freeze conditions encoded as invariants · the terminus)
-
-Per MISSION.md §"Freeze line — definition of done (v9.27, amended once
-v9.29)", the core is **done at v9.31** when ALL seven conditions are
-mechanically verifiable from outside the cognitive layer. v9.31 makes
-each condition a Python test in `TestWave31V931` — if every test
-passes, the freeze is satisfied.
-
-Surfaced by Option A sequencing the user approved after the petitioner
-discovered v9.31 was NOT a 5-minute mechanical bump as initially
-represented — 5 of 7 conditions were failing. Sanctum
-`sanctum/2026-05-17-v9-31-prep.md` scoped the 5 gaps; VANTA approved
-"Full prep"; gaps closed in dependency order before the version literal
-moved.
-
-- **Gap 1 (commit hygiene)** — 44 files / 3973 insertions committed in
-  prior commit `2b60179` ("hygiene: commit accumulated 2026-05-16/17
-  session work"). Kill test no longer refuses on dirty tree.
-- **Gap 2 (observability, cond 6)** — `/api/metrics` route + counter
-  call sites in `_metrics_after_request` (request+5xx), `security.py`
-  (auth-failure password), `webauthn_assert_finish` (auth-failure
-  webauthn ×2), `_check_and_record_duress` (the anti-coercion alarm
-  per T8#11). 4 headline counters now actually fire.
-- **Gap 3 (MTTR back-fill + parser fix, cond 4)** — 3 honest
-  resolutions with provenance (treasury 04:09, Mycelium 03:31, CSP
-  regex 03:24). `_parse_iso` helper handles 12-day silent +00:00Z
-  double-suffix bug rejecting every early-ledger entry. Trend slope
-  **-1.72h/ship (loop earning)**. v9.30 binding clause passes.
-- **Gap 4 (mttr.sh regex)** — Anchored `^__version__` to skip a
-  docstring example.
-- **Gap 5a/5b (chaos test, cond 3)** — `brew link --force libpq`
-  exposed hidden fail-open in `polaris-recover-admin.sh`: `run_psql`
-  swallowed errors via `2>/dev/null` + `set -e` exited silently before
-  any refusal reached operator. Wrapped to emit loud `EXIT_DB`
-  refusal. **Real security defect caught by chaos test the moment
-  psql became available.** 3/3 fail-safe.
-- **Cond 1, 5, 7** — ai-coherence STRUCTURE INTACT; v9.30 binding
-  passes; `__version__` 9.30 → 9.31.
-
-**This is the freeze.** Post-v9.31 work is bounded to (a) hardening,
-(b) measurement, (c) thesis cold-read evidence per MISSION.md §"From
-v9.32 forward". Integration ships (v9.32 hookify, v9.33 playwright)
-are post-freeze hardening — separate ships, separate version bumps.
 
 ---
 
