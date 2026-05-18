@@ -50,6 +50,13 @@ hypothesis>=6.0,<7.0
 # ---- Optional but recommended: Prometheus client (v8.93 /metrics) ----
 prometheus_client>=0.20,<1.0
 
+# ---- Optional: Redis client for cross-worker rate limiting (v9.40) ----
+# Auto-selected by security.py when POLARIS_REDIS_URL is set + the URL
+# is reachable. Without this package, security.py falls back to the
+# in-memory backend (each gunicorn worker holds its own bucket).
+# Required for accurate per-IP rate limits under POLARIS_WORKERS>1.
+redis>=5.0,<6.0
+
 # ---- Optional test-only: Playwright (v9.33 Atlas-globe E2E) ----
 # After installing this package, run `playwright install chromium` once
 # to download the browser binary (~250MB). polaris_web/test_e2e_atlas.py

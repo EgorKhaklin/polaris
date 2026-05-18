@@ -28,8 +28,12 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt
 #   zk.py           R10-1 ZK wrapper
 #   webauthn_auth.py v8.97 WebAuthn/MFA module (app.py imports it at startup)
 #   __version__.py  v9.06 canonical POLARIS_VERSION source (app.py imports it)
+#   observability.py v9.31 operator-readable metrics (app.py + security.py
+#                    import it at startup; v9.40 fix — was missed because
+#                    the regression-guard regex didn't tolerate trailing
+#                    comments on the `import observability  # ...` line)
 COPY app.py security.py test_app.py gunicorn.conf.py ./
-COPY anchoring.py zk.py webauthn_auth.py __version__.py ./
+COPY anchoring.py zk.py webauthn_auth.py __version__.py observability.py ./
 COPY templates/ ./templates/
 COPY static/   ./static/
 

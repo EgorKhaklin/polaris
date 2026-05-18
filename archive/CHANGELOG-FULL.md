@@ -17959,6 +17959,36 @@ AoR amendment, decided + shipped v9.38) to permit APPENDS to this
 file (still no edits or deletions of existing rows). Section
 boundary below; entries newest-first under this section.
 
+## v9.29 — 2026-05-16 (Constitution + Sanctum + CM hardening · ONE freeze amendment v9.30 → v9.31 logged with cost · external referent caught locally-valid-globally-a-ratchet · Pattern #20 23rd instance)
+
+External referent (routed by operator) caught the agent proposing a
+"rebased ceiling" of 19 from the v9.28-committed 13 under the banner
+of "honest accounting" — locally-valid steps, globally a ratchet.
+Verdict: ship 7 as v9.29; cut item 9 (CLI canonical) on its merits
+as elaboration, not counterweight; amend freeze v9.30 → v9.31 ONCE
+with cost. Ledger does NOT balance to 19; the slip IS the cost.
+
+**Amendment log entry (per [`meta/freeze-amendment-protocol.md`](meta/freeze-amendment-protocol.md)):**
+
+| Date | Ceiling | Old → New | Cost |
+|------|---------|-----------|------|
+| 2026-05-16 | freeze-line version | v9.30 → v9.31 | one ship slip |
+
+**7 items shipped (subtraction-or-enforcement):**
+- **C1:** every C-number must have ≥1 invariant in test_structural_invariants.py
+- **C2:** hard cap = exactly 10 C-numbers in MISSION.md table
+- **C3:** substitutability proven via AST — no C-invariant imports polaris_hydra
+- **S1+S2+S3:** [`scripts/polaris-sanctum-status.sh`](scripts/polaris-sanctum-status.sh) classifies 59 Sanctums ACTIVE/SUPERSEDED/DEAD + core/apparatus + reference-check. **First-run data: 54 ACTIVE / 5 SUPERSEDED / 0 DEAD. ACTIVE scope = 13 core / 41 apparatus = ratio 0.32 = APPARATUS-DOMINANT.** Operator data for post-freeze cuts.
+- **CM1:** [`scripts/_cm_check.py`](scripts/_cm_check.py) gains AST-count anchor (test count from python's ast module; CM does not author it; floor 850 ratchets up only by amendment).
+
+**Deletion:** item 9 (CLI as canonical) from v9.28's 13-item arc, on its merits (adds interface surface; fails subtraction-or-enforcement). NOT used as ceiling counterweight.
+
+**Structural primitive:** [`meta/freeze-amendment-protocol.md`](meta/freeze-amendment-protocol.md). Rule: ceilings move only by recorded amendment with stated cost, never by re-derivation. Two honest moves only — displace inside, or amend once. Append-only amendment log; v9.29 is first row.
+
+**The deeper lesson, recorded so it inherits:** the agent reasoned correctly at every local step; the aggregate was the freeze expanding 46% under the banner of discipline. The gap between locally-valid and globally-correct is the structural reason the amendment power over the agent's own ceiling lives outside the agent's write access — and the reason the operator's reflex to route through an outside check is the only thing that catches it. Recorded verbatim in `meta/freeze-amendment-protocol.md` §"The deeper lesson."
+
+**4 of 8 anti-patterns surfaced** (AP1, AP3, AP5, AP8) on the agent's own reasoning about its own ceiling. TestWave29V929 (19 invariants; this CHANGELOG entry pinned by `test_changelog_has_v9_29_entry`). `POLARIS_VERSION` 9.28 → 9.29. **v9.31 is the new freeze. The slip is the cost.**
+
 ## v9.28 — 2026-05-16 (HYDRA revamp · Tier 1 of v9.28/v9.29/v9.30 freeze-completion arc · Pattern #20 22nd instance · structural move one layer up)
 
 VANTA: *"the Hydra should be improved, and the improvement is the same

@@ -14,6 +14,40 @@ record, read [`meta/sanctum-index.md`](meta/sanctum-index.md).
 
 ---
 
+## v9.40 — 2026-05-17 (Post-freeze hardening · operational completeness · v9.31+v9.39 cascade)
+
+Three coupled defects surfaced when the v9.39 container rebuild
+exposed them:
+
+1. **`observability.py` (v9.31) missing from both Dockerfiles.**
+   Container failed to boot: `ModuleNotFoundError: No module named
+   'observability'`. The v9.17 regression-guard test was supposed
+   to catch exactly this (it caught v8.97 webauthn_auth.py
+   omission). But its regex `^\\s*import\\s+(\\w+)\\s*$` required
+   nothing after the module name; my v9.31 edit had
+   `import observability  # v9.31 ...` — trailing comment invisible
+   to the regex. **Both the Dockerfiles AND the regex fixed.**
+2. **Regression-guard only scanned `app.py`**, not `security.py`.
+   v9.31 added `import observability` to security.py too. The new
+   regex pattern (with trailing-comment tolerance) now applies to
+   both files.
+3. **`redis` Python lib missing from `requirements.txt`** →
+   v9.39's `POLARIS_REDIS_URL` env-pass-through silently degraded
+   to in-memory backend even when the URL was correctly set
+   (`security.py` auto-selector requires the lib to be importable).
+
+Live verified post-rebuild: `/api/version` reports v9.40,
+`/api/metrics` returns real counters (was 404 in v9.30 container),
+observability.py imports cleanly.
+
+Per-ship archive-move: v9.29 byte-identical to Post-v9.24 section
+in archive. CHANGELOG = 10 stable (v9.39..v9.30) + v9.40 in-flight.
+
+`TestWave40V940` × 4 invariants: observability in both Dockerfiles;
+regex tolerates trailing comments; regression-guard scans
+security.py; `redis>=` in requirements.txt. Plus the underlying
+regression-guard now catches future occurrences of this class.
+
 ## v9.39 — 2026-05-17 (Post-freeze hardening · POLARIS_REDIS_URL wired into docker-compose · soldier-log-tail finding closed)
 
 Closes shakedown finding C: `soldier_log_tail` correctly flagged the
@@ -342,35 +376,6 @@ added.** Freeze line unchanged (v9.31 per v9.29 amendment).
 surfaced. TestWave30V930. `POLARIS_VERSION` 9.29 → 9.30.
 **v9.31 = mechanical freeze-line verification only. One ship to the freeze.**
 
-## v9.29 — 2026-05-16 (Constitution + Sanctum + CM hardening · ONE freeze amendment v9.30 → v9.31 logged with cost · external referent caught locally-valid-globally-a-ratchet · Pattern #20 23rd instance)
-
-External referent (routed by operator) caught the agent proposing a
-"rebased ceiling" of 19 from the v9.28-committed 13 under the banner
-of "honest accounting" — locally-valid steps, globally a ratchet.
-Verdict: ship 7 as v9.29; cut item 9 (CLI canonical) on its merits
-as elaboration, not counterweight; amend freeze v9.30 → v9.31 ONCE
-with cost. Ledger does NOT balance to 19; the slip IS the cost.
-
-**Amendment log entry (per [`meta/freeze-amendment-protocol.md`](meta/freeze-amendment-protocol.md)):**
-
-| Date | Ceiling | Old → New | Cost |
-|------|---------|-----------|------|
-| 2026-05-16 | freeze-line version | v9.30 → v9.31 | one ship slip |
-
-**7 items shipped (subtraction-or-enforcement):**
-- **C1:** every C-number must have ≥1 invariant in test_structural_invariants.py
-- **C2:** hard cap = exactly 10 C-numbers in MISSION.md table
-- **C3:** substitutability proven via AST — no C-invariant imports polaris_hydra
-- **S1+S2+S3:** [`scripts/polaris-sanctum-status.sh`](scripts/polaris-sanctum-status.sh) classifies 59 Sanctums ACTIVE/SUPERSEDED/DEAD + core/apparatus + reference-check. **First-run data: 54 ACTIVE / 5 SUPERSEDED / 0 DEAD. ACTIVE scope = 13 core / 41 apparatus = ratio 0.32 = APPARATUS-DOMINANT.** Operator data for post-freeze cuts.
-- **CM1:** [`scripts/_cm_check.py`](scripts/_cm_check.py) gains AST-count anchor (test count from python's ast module; CM does not author it; floor 850 ratchets up only by amendment).
-
-**Deletion:** item 9 (CLI as canonical) from v9.28's 13-item arc, on its merits (adds interface surface; fails subtraction-or-enforcement). NOT used as ceiling counterweight.
-
-**Structural primitive:** [`meta/freeze-amendment-protocol.md`](meta/freeze-amendment-protocol.md). Rule: ceilings move only by recorded amendment with stated cost, never by re-derivation. Two honest moves only — displace inside, or amend once. Append-only amendment log; v9.29 is first row.
-
-**The deeper lesson, recorded so it inherits:** the agent reasoned correctly at every local step; the aggregate was the freeze expanding 46% under the banner of discipline. The gap between locally-valid and globally-correct is the structural reason the amendment power over the agent's own ceiling lives outside the agent's write access — and the reason the operator's reflex to route through an outside check is the only thing that catches it. Recorded verbatim in `meta/freeze-amendment-protocol.md` §"The deeper lesson."
-
-**4 of 8 anti-patterns surfaced** (AP1, AP3, AP5, AP8) on the agent's own reasoning about its own ceiling. TestWave29V929 (19 invariants; this CHANGELOG entry pinned by `test_changelog_has_v9_29_entry`). `POLARIS_VERSION` 9.28 → 9.29. **v9.31 is the new freeze. The slip is the cost.**
 
 
 

@@ -11720,21 +11720,30 @@ class TestWave17V917(unittest.TestCase):
         caused v8.97→v9.16 to silently boot-fail under Docker).
         """
         import re as _re
-        app_src = self._read('polaris_web/app.py')
-        # Find top-level imports of local modules (e.g., `import security`,
-        # `import anchoring`, `import webauthn_auth`, `import zk`)
+        # v9.40: also scan security.py — it imports observability and
+        # any future polaris_web/*.py modules. Pre-v9.40 only app.py
+        # was scanned, so import-with-trailing-comment lines in
+        # security.py went undetected (the v9.31 `import observability
+        # # ...` in security.py was invisible even when v9.31 added
+        # the same import to app.py with a comment that was ALSO
+        # invisible — the regex `^\s*import\s+(\w+)\s*$` required
+        # bare end-of-line). v9.40 tolerates trailing comments AND
+        # scans both files for local-module imports.
+        sources = (self._read('polaris_web/app.py'),
+                   self._read('polaris_web/security.py'))
         local_imports = set()
-        for line in app_src.splitlines():
-            m = _re.match(r"^\s*import\s+(\w+)\s*$", line)
-            if m and (self.ROOT and os.path.isfile(
-                os.path.join(self.ROOT, 'polaris_web', m.group(1) + '.py')
-            )):
-                # Exclude stdlib/third-party
-                if not m.group(1).startswith(('test_', '_')):
-                    local_imports.add(m.group(1) + '.py')
-        # Also detect `from polaris_web.__version__ import POLARIS_VERSION`
-        if 'from polaris_web.__version__' in app_src or 'from __version__' in app_src:
-            local_imports.add('__version__.py')
+        for src in sources:
+            for line in src.splitlines():
+                # Allow trailing whitespace + optional inline comment
+                m = _re.match(r"^\s*import\s+(\w+)\s*(?:#.*)?$", line)
+                if m and (self.ROOT and os.path.isfile(
+                    os.path.join(self.ROOT, 'polaris_web', m.group(1) + '.py')
+                )):
+                    if not m.group(1).startswith(('test_', '_')):
+                        local_imports.add(m.group(1) + '.py')
+            # Also detect `from polaris_web.__version__ import POLARIS_VERSION`
+            if 'from polaris_web.__version__' in src or 'from __version__' in src:
+                local_imports.add('__version__.py')
 
         for dockerfile in ('polaris_web/Dockerfile', 'polaris_web/Dockerfile.prod'):
             src = self._read(dockerfile)
@@ -14560,9 +14569,15 @@ class TestWave29V929(unittest.TestCase):
     # ---- CHANGELOG v9.29 entry --------------------------------------
 
     def test_changelog_has_v9_29_entry(self):
-        src = self._read('CHANGELOG.md')
+        """v9.40 moved v9.29 to archive per per-ship pattern (v9.38)."""
+        try:
+            src = self._read('CHANGELOG.md')
+            if '## v9.29' not in src:
+                src = self._read('archive/CHANGELOG-FULL.md')
+        except FileNotFoundError:
+            src = self._read('archive/CHANGELOG-FULL.md')
         self.assertIn('## v9.29', src,
-            "CHANGELOG.md must have v9.29 entry")
+            "v9.29 ship-record must be preserved (CHANGELOG or archive)")
         v929 = src[src.index('## v9.29'):]
         next_ver = v929.find('\n## v', 1)
         if next_ver > 0:
@@ -14572,7 +14587,7 @@ class TestWave29V929(unittest.TestCase):
                        'amendment', 'v9.31', 'ratchet',
                        'external referent', 'item 9', 'one ship slip'):
             self.assertIn(marker, v929_flat,
-                f"v9.29 CHANGELOG must reference '{marker}'")
+                f"v9.29 ship-record must reference '{marker}'")
 
 
 class TestWave30V930(unittest.TestCase):
@@ -15863,3 +15878,57 @@ class TestWave39V939(unittest.TestCase):
         self.assertIn('${POLARIS_REDIS_URL:-}', src,
             "POLARIS_REDIS_URL must use ${VAR:-} pattern with empty "
             "default so in-memory remains the no-config fallback")
+
+
+class TestWave40V940(unittest.TestCase):
+    """v9.40 — operational completeness fixes (v9.31+v9.39 cascade).
+
+    Three coupled defects surfaced when rebuilding the container with
+    POLARIS_REDIS_URL set:
+
+    1. observability.py (added v9.31) not COPY'd into either
+       Dockerfile. Container failed to boot: ModuleNotFoundError.
+       The v9.17 regression-guard regex `^\s*import\s+(\w+)\s*$`
+       required nothing after the module name. My v9.31 edit had
+       `import observability  # ...` (trailing comment) → invisible
+       to the regex. v9.40 fixes both Dockerfile + regex.
+
+    2. Same regression-guard only scanned app.py. v9.40 widens to
+       scan security.py too (security.py imports observability).
+
+    3. POLARIS_REDIS_URL passed into container but `redis` Python
+       lib missing from requirements.txt → security.py auto-selector
+       silently degraded to memory. Add to requirements.
+    """
+
+    ROOT = ROOT
+
+    def _read(self, rel):
+        with open(os.path.join(self.ROOT, rel)) as f:
+            return f.read()
+
+    def test_v940_observability_in_both_dockerfiles(self):
+        for df in ('polaris_web/Dockerfile', 'polaris_web/Dockerfile.prod'):
+            src = self._read(df)
+            self.assertIn('observability.py', src,
+                f"{df} must COPY observability.py (v9.31 module)")
+
+    def test_v940_regression_guard_tolerates_trailing_comments(self):
+        src = self._read('polaris_web/test_structural_invariants.py')
+        self.assertIn(r'(?:#.*)?$', src,
+            "regression-guard regex must tolerate trailing comments")
+
+    def test_v940_regression_guard_scans_security_py(self):
+        src = self._read('polaris_web/test_structural_invariants.py')
+        self.assertIn("self._read('polaris_web/security.py')", src,
+            "regression-guard must read security.py too")
+
+    def test_v940_redis_in_requirements(self):
+        src = self._read('polaris_web/requirements.txt')
+        self.assertIn('redis>=', src,
+            "requirements.txt must list redis for cross-worker "
+            "rate-limiter activation")
+
+
+if __name__ == '__main__':
+    unittest.main(verbosity=2)

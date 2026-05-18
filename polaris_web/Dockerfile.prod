@@ -96,9 +96,12 @@ RUN chmod 0755 /opt/polaris/zk
 #   webauthn_auth.py v8.97 WebAuthn/MFA module (app.py imports it at startup;
 #                   missing this caused the v8.97-onward image to ImportError)
 #   __version__.py  v9.06 canonical POLARIS_VERSION source (app.py imports it)
+#   observability.py v9.31 metrics module (app.py + security.py import; v9.40
+#                    fix — was missed because the regression-guard regex
+#                    didn't tolerate trailing comments on the import line)
 WORKDIR /app
 COPY --chown=polaris:polaris app.py security.py gunicorn.conf.py ./
-COPY --chown=polaris:polaris anchoring.py zk.py webauthn_auth.py __version__.py ./
+COPY --chown=polaris:polaris anchoring.py zk.py webauthn_auth.py __version__.py observability.py ./
 COPY --chown=polaris:polaris templates/ ./templates/
 COPY --chown=polaris:polaris static/   ./static/
 
