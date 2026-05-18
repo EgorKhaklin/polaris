@@ -14272,9 +14272,16 @@ class TestWave28V928(unittest.TestCase):
     # ---- CHANGELOG v9.28 entry ---------------------------------------
 
     def test_changelog_has_v9_28_entry(self):
-        src = self._read('CHANGELOG.md')
+        """v9.39 moved v9.28 to archive per the per-ship pattern
+        established v9.38 (oldest stable → archive on each ship)."""
+        try:
+            src = self._read('CHANGELOG.md')
+            if '## v9.28' not in src:
+                src = self._read('archive/CHANGELOG-FULL.md')
+        except FileNotFoundError:
+            src = self._read('archive/CHANGELOG-FULL.md')
         self.assertIn('## v9.28', src,
-            "CHANGELOG.md must have v9.28 entry")
+            "v9.28 ship-record must be preserved (CHANGELOG or archive)")
         v928 = src[src.index('## v9.28'):]
         next_ver = v928.find('\n## v', 1)
         if next_ver > 0:
@@ -14284,7 +14291,7 @@ class TestWave28V928(unittest.TestCase):
                        'delta', 'runtime', 'cm enforces', 'sanctum scorecard',
                        'external-record', '13-item', 'one layer up'):
             self.assertIn(marker, v928_flat,
-                f"v9.28 CHANGELOG must reference '{marker}'")
+                f"v9.28 ship-record must reference '{marker}'")
 
 
 class TestWave29V929(unittest.TestCase):
@@ -15823,5 +15830,36 @@ class TestWave38V938(unittest.TestCase):
             "Sanctum must be in meta/sanctum-index.md")
 
 
-if __name__ == '__main__':
-    unittest.main(verbosity=2)
+class TestWave39V939(unittest.TestCase):
+    """v9.39 — POLARIS_REDIS_URL wired into docker-compose.yml
+    (post-freeze hardening).
+
+    Closes the operator finding C from the 2026-05-17 shakedown:
+    `soldier_log_tail` correctly flagged the runtime warning
+    "POLARIS_WORKERS=4 with in-memory rate limiter — actual per-IP
+    limits will be ~4× configured because each worker holds its own
+    buckets." Real defect surface (multi-worker dev convenience).
+
+    Fix: add `POLARIS_REDIS_URL: ${POLARIS_REDIS_URL:-}` to the
+    docker-compose.yml app service environment. Empty default
+    preserves backward compat (security.py auto-selects in-memory
+    if URL empty). Operator sets the env var in shell to activate:
+    `POLARIS_REDIS_URL=redis://host.docker.internal:6379/0 ./polaris_mac_launch.sh rebuild`.
+    """
+
+    ROOT = ROOT
+
+    def _read(self, rel):
+        with open(os.path.join(self.ROOT, rel)) as f:
+            return f.read()
+
+    def test_v939_docker_compose_passes_polaris_redis_url(self):
+        """docker-compose.yml must declare POLARIS_REDIS_URL in the
+        app service environment so docker passes it through. Empty
+        default means in-memory backend; non-empty activates Redis."""
+        src = self._read('polaris_web/docker-compose.yml')
+        self.assertIn('POLARIS_REDIS_URL', src,
+            "docker-compose.yml must declare POLARIS_REDIS_URL env")
+        self.assertIn('${POLARIS_REDIS_URL:-}', src,
+            "POLARIS_REDIS_URL must use ${VAR:-} pattern with empty "
+            "default so in-memory remains the no-config fallback")

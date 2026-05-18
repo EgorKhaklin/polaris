@@ -17959,6 +17959,91 @@ AoR amendment, decided + shipped v9.38) to permit APPENDS to this
 file (still no edits or deletions of existing rows). Section
 boundary below; entries newest-first under this section.
 
+## v9.28 — 2026-05-16 (HYDRA revamp · Tier 1 of v9.28/v9.29/v9.30 freeze-completion arc · Pattern #20 22nd instance · structural move one layer up)
+
+VANTA: *"the Hydra should be improved, and the improvement is the same
+structural move applied one layer up."* First of three ships in the
+v9.28-v9.30 freeze-completion arc. 5 Hydra items + Sanctum scorecard
+addition + scope-rebase pre-allocation.
+
+**Hydra #1 — predicate-or-delete for watchers** (mirrors v9.24 T1#2
+ant-predicate pattern one layer up). [`meta/watcher-predicates.md`](meta/watcher-predicates.md)
+enumerates each of 9 watchers + CM with single falsifiable claim AND
+VANTA's external-record refinement (the outside-the-cognitive-layer
+artifact that confirms the predicate). **5 KEEP** (schema, security,
+performance, adversary, ant_colony, CM) — all grounded in DB rows or
+HTTP responses. **4 DEPRECATION_CANDIDATE** (cognitive, mission,
+trajectory, civitas) — only claims are about narrative or internal
+HYDRA state (AP1 by construction). v9.30 grace cycle: ground the
+predicate against external record OR cut.
+
+**Hydra #2 — correlator triage.** [`polaris_hydra/correlation.py`](polaris_hydra/correlation.py)
+gains `CorrelationEngine.triage()` that splits findings into
+`escalations` (≥2-watcher correlations; the brief's headline),
+`lone_alerts` (single-watcher alerts; uncorroborated; still emitted
+because alert is non-suppressible), and `suppressed_below_threshold`
+(single-watcher findings below alert; count only; default-suppressed
+per Hydra #2's "lone-watcher finding is low-confidence by default
+and suppressed below a threshold"). Brief becomes a ranked
+corroboration list.
+
+**Hydra #3 — cross-run delta as primary output.** [`polaris_hydra/brief_archive.py`](polaris_hydra/brief_archive.py)
+gains `persist_correlated()` + `delta_correlated()` that maintain
+`journal/hydra/_last_correlated.json` (single file; overwritten each
+run; separate from the date-stamped audit-of-record briefs). Delta
+returns `new` / `resolved` / `escalated` / `unchanged_count` —
+matches the "emit only new, resolved, or escalated" Hydra #3 spec.
+
+**Hydra #4 — runtime-grounding for schema + security.** [`schema_watcher.py`](polaris_hydra/watchers/schema_watcher.py)
+gains `query_live_schema()` (psycopg2 diff vs declared schema; falls
+back to INCONCLUSIVE on connection failure per chaos-test pattern).
+[`security_watcher.py`](polaris_hydra/watchers/security_watcher.py)
+gains `probe_running_app()` (urllib HTTP probe at `/dashboard`;
+asserts 200-anonymous = alert; 302/401/403 = held; unreachable =
+INCONCLUSIVE).
+
+**Hydra #5 — CM enforces, not observes.** [`scripts/_cm_check.py`](scripts/_cm_check.py)
+implements the constitutional-meta-constraint check: __version__.py
+matches latest CHANGELOG entry; MISSION.md §Freeze line + v9.30
+present; watcher-predicates.md enumerates exactly the watchers in
+the source tree. Wired into [`scripts/ai-done.sh`](scripts/ai-done.sh)
+as step 15: CM-mismatch → non-zero exit. Override
+`POLARIS_ALLOW_CM_MISMATCH=1` with audit-trail line (mirrors
+POLARIS_ALLOW_ALERT_SHIPS from v9.24). **CM caught two real defects
+on first run** (stale version regex + missing ant_colony_watcher in
+predicates doc) — proving the gate bites.
+
+**Addition A — Sanctum scorecard** (VANTA's structural move applied
+to the Sanctum protocol itself). [`meta/sanctum-scorecard.json`](meta/sanctum-scorecard.json)
++ [`scripts/polaris-sanctum-scorecard.sh`](scripts/polaris-sanctum-scorecard.sh).
+Load-bearing metric: `joint_resolution_survival_rate_trailing_10sanctums`.
+Auto-classified retroactively at next-3-ships boundary; refuses
+manual classification per AP3; matches v9.25 swarm-scorecard
+discipline one layer up. **The same predicate test the Sanctum
+applied to watchers is now applied to the Sanctum itself.**
+
+**Addition B — scope-rebase pre-allocation.** The 3-ship arc (v9.28
++ v9.29 + v9.30) will add narrative. Pre-allocated rebase budget
+documented in v9.28 Sanctum §II.B. Anti-architect-locked: "v9.28-
+v9.30 freeze-completion allocation; not extensible past v9.30."
+
+**Anti-architect anti-pattern hits — 4 of 8** (AP1, AP3, AP7, AP8).
+The predicate-or-delete pattern fires the same anti-pattern axes one
+layer up. 5 of 9 watchers KEEP; 4 DEPRECATION_CANDIDATE. The
+external-record refinement on Hydra #1 is the operator-grounding
+that distinguishes class-shaped from instance-shaped rules.
+
+**The 13-item ceiling.** v9.27 committed v9.30 as the freeze. The
+13 items VANTA cataloged for v9.28-v9.30 ARE the def-of-done content.
+Per the v9.28 Sanctum §IV: no item #14 may be added without VANTA
+explicitly authorizing scope re-opening.
+
+7 new artifacts (sanctum + watcher-predicates + sanctum-scorecard
+JSON + sanctum-scorecard script + CM-check Python + edits to
+correlation.py, brief_archive.py, schema_watcher.py, security_watcher.py,
+ai-done.sh). TestWave28V928 (~15 invariants). `POLARIS_VERSION`
+9.27 → 9.28. **Two ships left until the freeze.**
+
 ## v9.27 — 2026-05-16 (Tier 7+8 · thesis HYPOTHESIS-NOT-VERIFIED · freeze line at v9.30 · the terminus · Pattern #20 21st instance)
 
 VANTA: *"Item 12 is the real terminus. Everything in both lists is in
