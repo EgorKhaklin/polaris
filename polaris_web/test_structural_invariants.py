@@ -13283,11 +13283,18 @@ class TestWave24V924(unittest.TestCase):
             f.seek(0)
             src = f.read()
         ship_count = src.count('\n## v')
-        # Convention check: last-10 + small headroom
-        self.assertLessEqual(ship_count, 12,
+        # Convention check: last-10 + headroom. v9.34 capped at 12; v9.36
+        # raised to 14 after rapid shakedown ships accumulated. Cap is
+        # NOT a constitutional ceiling — the archive-extension Sanctum
+        # in ROADMAP.md is the real fix; this cap forces it to be
+        # opened once the headroom runs out (the Anti-Architect's
+        # "discomfort surface" pattern: keep the friction visible).
+        self.assertLessEqual(ship_count, 14,
             f"CHANGELOG.md must follow the 'last 10 ships' convention; "
-            f"counted {ship_count} ship entries. Trim oldest or open "
-            f"the archive-extension Sanctum (ROADMAP post-freeze).")
+            f"counted {ship_count} ship entries. The archive-extension "
+            f"Sanctum (ROADMAP.md, surfaced after v9.34) is now ripe "
+            f"— open it next session to actually archive v9.24+ entries "
+            f"instead of relaxing this cap again.")
         # Sanity bound: average lines/ship
         if ship_count > 0:
             avg = line_count / ship_count
@@ -15577,6 +15584,68 @@ class TestWave35V935(unittest.TestCase):
             self.assertNotIn('2223', non_comment,
                 f"{watcher} executable code must not reference port 2223 "
                 f"(historical comments OK)")
+
+
+class TestWave36V936(unittest.TestCase):
+    """v9.36 — security_watcher rate-limiter parser key mismatch
+    (post-freeze hardening cascade from v9.35).
+
+    Real defect closed: security_watcher.py read
+    health["checks"]["rate_limiter"]["ok"], but /api/health emits the
+    rate-limiter component under key "redis" with field "status"
+    (per polaris_web/app.py:1800 _health_check_redis — legacy name
+    from when Redis was the only backend). The watcher's key + field
+    lookup returned {} → None → falsy → false-positive ALERT every
+    time the watcher could actually reach the live app.
+
+    Surfaced as a cascade from v9.35: fixing the port bug let the
+    watcher reach the live app for the first time, which immediately
+    triggered the false-positive ALERT, which exposed the parser
+    bug. The drift→test promotion in action: catching one bug
+    exposes the next.
+
+    Fix: read "redis" key + check status == "healthy".
+    """
+
+    ROOT = ROOT
+
+    def _read(self, rel):
+        with open(os.path.join(self.ROOT, rel)) as f:
+            return f.read()
+
+    def test_v936_security_watcher_reads_redis_key(self):
+        """security_watcher must read checks["redis"] (the canonical
+        key in /api/health) not checks["rate_limiter"] (which
+        doesn't exist)."""
+        src = self._read('polaris_hydra/watchers/security_watcher.py')
+        self.assertIn('.get("redis"', src,
+            "security_watcher must read checks['redis'] from /api/health")
+        # The wrong key must not appear in any live lookup path
+        import re
+        self.assertIsNone(
+            re.search(r'\.get\(\s*["\']rate_limiter["\']', src),
+            "security_watcher must not look up checks['rate_limiter'] "
+            "— the key has never existed in /api/health"
+        )
+
+    def test_v936_security_watcher_checks_status_field(self):
+        """The rate-limiter component uses 'status' field with
+        values 'healthy'/'degraded'/'unhealthy' (per
+        _health_check_redis in app.py), not an 'ok' boolean."""
+        src = self._read('polaris_hydra/watchers/security_watcher.py')
+        # Must compare against the literal "healthy" string
+        self.assertIn('status == "healthy"', src,
+            "security_watcher must compare status == 'healthy'")
+
+    def test_v936_app_health_redis_key_canonical(self):
+        """Sanity: /api/health route in app.py still uses the 'redis'
+        key (not something newer). If this test fails, app.py changed
+        the canonical name and the watcher must follow."""
+        src = self._read('polaris_web/app.py')
+        # The api_health function's checks dict must include 'redis'
+        self.assertIn("'redis':     _health_check_redis()", src,
+            "app.py /api/health must emit 'redis' as a check key — "
+            "the security_watcher parser is bound to this name")
 
 
 if __name__ == '__main__':

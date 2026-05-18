@@ -433,19 +433,30 @@ class SecurityWatcher(Watcher):
             ))
             return findings, evidence
 
-        rl = health.get("checks", {}).get("rate_limiter", {})
+        # v9.36: was reading checks["rate_limiter"]["ok"] but app.py's
+        # /api/health emits the rate-limiter component under the key
+        # "redis" (legacy name from when Redis was the only backend; see
+        # _health_check_redis at polaris_web/app.py:1800) with field
+        # "status" carrying "healthy"/"degraded"/"unhealthy". The old
+        # key + field returned {} → None → falsy → false-positive ALERT
+        # every time the watcher could actually reach the live app.
+        # Surfaced when v9.35 fixed the port bug that had been hiding
+        # this parser bug behind app_offline.
+        rl = health.get("checks", {}).get("redis", {})
+        status = rl.get("status", "unknown")
         evidence["rate_limiter_status"] = (
-            "ok" if rl.get("ok") else "not_ok"
+            "ok" if status == "healthy" else "not_ok"
         )
         evidence["rate_limiter_backend"] = rl.get("backend", "unknown")
-        if not rl.get("ok"):
+        if status not in ("healthy",):
             findings.append(Finding(
                 severity="alert",
                 title="rate-limiter reports unhealthy",
-                detail=("The live rate-limiter is reporting ok=false on "
-                        "/api/health. Either Redis is unreachable (if the "
-                        "Redis backend is in use) or the limiter "
-                        "configuration is broken."),
+                detail=(f"The live rate-limiter is reporting "
+                        f"status={status!r} on /api/health. Either the "
+                        f"backend is unreachable (if Redis is in use) or "
+                        f"the limiter configuration is broken. Backend: "
+                        f"{rl.get('backend', 'unknown')}."),
                 evidence={"backend": rl.get("backend"),
                           "raw": rl},
             ))
