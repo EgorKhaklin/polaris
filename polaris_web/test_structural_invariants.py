@@ -14831,9 +14831,17 @@ class TestWave30V930(unittest.TestCase):
                 f"test_cli.py must define {cls}")
 
     def test_changelog_has_v9_30_entry(self):
-        src = self._read('CHANGELOG.md')
+        """v9.41 moved v9.30 to archive per the archive-extension
+        pattern (the same per-ship pattern v9.38..v9.40 used).
+        Dual-source: check CHANGELOG.md first, fall back to archive."""
+        try:
+            src = self._read('CHANGELOG.md')
+            if '## v9.30' not in src:
+                src = self._read('archive/CHANGELOG-FULL.md')
+        except FileNotFoundError:
+            src = self._read('archive/CHANGELOG-FULL.md')
         self.assertIn('## v9.30', src,
-            "CHANGELOG.md must have v9.30 entry")
+            "CHANGELOG.md or archive must have v9.30 entry")
         v930 = src[src.index('## v9.30'):]
         next_ver = v930.find('\n## v', 1)
         if next_ver > 0:

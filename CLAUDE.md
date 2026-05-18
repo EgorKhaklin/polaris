@@ -218,7 +218,7 @@ Two remaining honestly-named "accept it never will" items:**
 
 ## Current version
 
-**v9.40** (2026-05-17). 50 ships in v9.x. 33 commander ants. 9 HYDRA
+**v9.41** (2026-05-17). 51 ships in v9.x. 33 commander ants. 9 HYDRA
 watchers + CM. 11 manifest legions + 1 reserved. 9 soldier classes (8
 workers + 1 priest). 6 citizens. Treasury (Denarius) ledger.
 
@@ -227,7 +227,13 @@ workers + 1 priest). 6 citizens. Treasury (Denarius) ledger.
 MISSION.md §"From v9.32 forward". v9.32 wired hookify; v9.33 added
 Playwright E2E scaffold; v9.34 closed swarm cron-cadence + priest-tier
 datetime crash; v9.35 fixed HYDRA watchers' hardcoded-port bug;
-v9.36 cleared cascade-revealed false-positive rate-limiter ALERT.
+v9.36 cleared cascade-revealed false-positive rate-limiter ALERT;
+v9.37 closed 2 swarm-script hidden failures; v9.38 archive-extension
+Sanctum (CHANGELOG = 10 stable + 1 in-flight); v9.39 wired
+POLARIS_REDIS_URL into docker-compose; v9.40 fixed observability.py
+Dockerfile-missing + regression-guard widening; v9.41 reclassified
+AoR count 12 → 10 (dropped 2 derived caches: census-roll.json +
+treasury-roll.json).
 
 For the per-ship history of v9.x: see [`CHANGELOG.md`](CHANGELOG.md)
 (curated last 10) or [`archive/CHANGELOG-FULL.md`](archive/CHANGELOG-FULL.md)

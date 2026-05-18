@@ -17959,6 +17959,42 @@ AoR amendment, decided + shipped v9.38) to permit APPENDS to this
 file (still no edits or deletions of existing rows). Section
 boundary below; entries newest-first under this section.
 
+## v9.30 — 2026-05-16 (Original 13-item arc completes · 7 items + 174M deleted · no item #14 · Pattern #20 24th instance)
+
+VANTA: "proceed lets do it." 7 remaining items shipped under the
+subtraction-or-enforcement rule. **Ceiling held at 13. No item #14
+added.** Freeze line unchanged (v9.31 per v9.29 amendment).
+
+- **#7** — `polaris_zk/target/` deleted (174M → 64K). `.gitignore`
+  already excluded it. *Cheapest real win.*
+- **#12** — [`scripts/polaris-idempotency-test.sh`](../scripts/polaris-idempotency-test.sh)
+  + CI step. Loads `00_load_all.sql` twice, asserts identical state.
+  Retires the saga of reload-safety comments.
+- **#6** — ZK CI prove-verify already in v9.24 (ci.yml line 149).
+  v9.30 pins via invariant.
+- **#11** — Brain-map AUTO-GENERATED marker added to
+  `ai_brain_map.py` HTML template + `brain-map.html`. Regen is the
+  only update path.
+- **#10** — Atlas HUD invariant `test_atlas_stats_endpoint_reads_from_db_function_only`
+  pins that all HUD fields come from `row['...']` cast — no Python-
+  side aggregation. HUD cannot lie by construction.
+- **#8** — [`meta/foresight-predicate-audit.md`](../meta/foresight-predicate-audit.md):
+  foresight ALREADY has the v9.12 empirical-graduation predicate
+  (50% acceptance over 6 distinct months or SUNSET). KEEP through
+  ~Nov for the window to fire.
+- **#13** — [`meta/observer-map.md`](../meta/observer-map.md): same 4
+  watchers v9.28 flagged DEPRECATION_CANDIDATE are independently
+  re-confirmed by observer-to-artifact mapping. **Physical cuts
+  deferred** to operator-routed amendment per [`meta/freeze-amendment-protocol.md`](../meta/freeze-amendment-protocol.md) — the
+  9-mortal-heads pin from v9.04 §III.2 needs its own amendment.
+
+**13-item arc tally:** 1-5 (v9.28), 9 deleted on merits (v9.29),
+6+7+8+10+11+12+13 (v9.30). 12 shipped + 1 deleted. AP3+AP7+AP8
+surfaced. TestWave30V930. `POLARIS_VERSION` 9.29 → 9.30.
+**v9.31 = mechanical freeze-line verification only. One ship to the freeze.**
+
+---
+
 ## v9.29 — 2026-05-16 (Constitution + Sanctum + CM hardening · ONE freeze amendment v9.30 → v9.31 logged with cost · external referent caught locally-valid-globally-a-ratchet · Pattern #20 23rd instance)
 
 External referent (routed by operator) caught the agent proposing a
