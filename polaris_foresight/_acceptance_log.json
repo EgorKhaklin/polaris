@@ -76,6 +76,10 @@
     {
       "date": "2026-05-17",
       "timestamp_utc": "2026-05-17T18:10:11.840058+00:00"
+    },
+    {
+      "date": "2026-05-18",
+      "timestamp_utc": "2026-05-18T04:34:04.332394+00:00"
     }
   ],
   "candidates": {
@@ -86,7 +90,7 @@
       "vocation_alignment": "anti-coercion (defensive scan)"
     },
     "FS-FBAEC2B8": {
-      "promoted_at": "2026-05-18",
+      "promoted_at": "2026-05-19",
       "status": "open",
       "title": "Test idempotent candidate xyz123",
       "vocation_alignment": "anti-coercion (test)"
