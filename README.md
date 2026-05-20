@@ -52,7 +52,7 @@ Consolidating the cards is the easy half. The interesting half is what happens w
 
 | The threat | What it looks like in practice | How Polaris answers it | Where |
 |---|---|---|---|
-| **Cryptographic compulsion** | "Sign this transaction or I break your fingers." The holder cannot refuse without injury. | A second secret produces an indistinguishable verification that silently records a DuressEvent. The operator's screen reveals nothing. | [duress-codes](DEVNOTES/ships/duress-codes.md) ‎   UC-12 |
+| **Cryptographic compulsion** | "Sign this transaction or I break your fingers." The holder cannot refuse without injury. | A second secret produces an indistinguishable verification that silently records a DuressEvent. The operator's screen reveals nothing. | [duress-codes](DEVNOTES/ships/duress-codes.md) ‎  ‎ ‎  UC-12 |
 | **Catastrophic loss** | Token lost, holder unidentified, no way to prove who they are without the artifact. | Two-phase recovery ceremony (initiate then complete) gated by four CHECK constraints and an admin-only second key. | [recovery-ceremony](DEVNOTES/ships/recovery-ceremony.md)   UC-9 |
 | **Quantum migration** | Today's signing algorithms become broken overnight when a quantum computer arrives. | Multi-signature transitional state: a token can be signed under classical AND post-quantum algorithms simultaneously, with a hard rule that exactly one is active. | [multi-sig-migration](DEVNOTES/ships/multi-sig-migration.md)   UC-6 |
 | **Issuer concentration** | One agency can issue tokens that masquerade as any other agency's. | Explicit-only federation: no transitive trust. Every cross-agency verification gates on an active AgencyTrustAttestation row. | [federation](DEVNOTES/ships/federation.md)  UC-10 |
