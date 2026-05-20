@@ -102,7 +102,7 @@ The `CREATE TABLE` is in [`polaris_sql/01_schema.sql`](polaris_sql/01_schema.sql
 Four layers. The cognitive layer reads but never writes the operational layer. The ZK prover is a subprocess, not a service. WebAuthn FIDO2 is the only authentication path for human operators; passwords alone cannot reach the admin or auditor roles.
 
 ```
-        ┌────────────────────────────────────────────────────────────┐
+        ┌─────────────────────────────────────────────────────────────┐
         │                      COGNITIVE LAYER                        │
         │   HYDRA: 9 watchers + CM (schema · cognitive · security ·   │
         │          mission · adversary · performance · trajectory ·   │
@@ -111,15 +111,15 @@ Four layers. The cognitive layer reads but never writes the operational layer. T
         │             classes (stigmergic pheromone substrate)        │
         │   Sanctum: append-only strategic-decision log (64 entries)  │
         │   Architect + Anti-Architect: persona-protocol adjudication │
-        └─────────────────────────┬──────────────────────────────────┘
+        └─────────────────────────┬───────────────────────────────────┘
                                   │   reads (no writes)
-        ┌─────────────────────────▼──────────────────────────────────┐
+        ┌─────────────────────────▼───────────────────────────────────┐
         │                       APPLICATION                           │
         │     Flask (67 routes)  ·  Atlas globe  ·  WebAuthn MFA      │
         │     Dashboard  ·  /sql console  ·  Sanctum tooling          │
         └──────────┬──────────────────────────┬───────────────────────┘
                    │                          │
-        ┌──────────▼─────────┐    ┌───────────▼─────────────────────┐
+        ┌──────────▼─────────┐    ┌───────────▼──────────────────────┐
         │  SCHEMA (Pg 16)    │    │   ZK PROVER (Rust nightly)       │
         │  27 tables         │    │   Plonky2 SNARK · Merkle-incl.   │
         │  14 stored procs   │    │   /api/zk/epoch/close            │
@@ -128,11 +128,11 @@ Four layers. The cognitive layer reads but never writes the operational layer. T
                    │
                    │  signs with
                    ▼
-        ┌──────────────────────────────────────────────────────────┐
+        ┌───────────────────────────────────────────────────────────┐
         │                 POST-QUANTUM SIGNATURES                   │
-        │   ML-DSA-65 (FIPS 204, default)  ·  SLH-DSA (FIPS 205)   │
+        │   ML-DSA-65 (FIPS 204, default)  ·  SLH-DSA (FIPS 205)    │
         │   ML-DSA-87 (high-assurance)  ·  ECDSA-P256 (legacy/audit)│
-        └──────────────────────────────────────────────────────────┘
+        └───────────────────────────────────────────────────────────┘
 ```
 
 Each layer is independently buildable. The schema loads from `00_load_all.sql` against an empty Postgres. The application boots from `app.py` against the loaded schema. The ZK prover compiles under `cargo +nightly build --release` against the same machine. The cognitive layer is a read-only directory of Python modules and shell scripts; it survives any operational restart unchanged.
