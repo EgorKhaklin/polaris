@@ -19,9 +19,7 @@ response is `docs/operator/OPERATIONS.md`.
 
 **Do not** file a public GitHub issue for security vulnerabilities.
 
-**Email:** PolarisID@protonmail.com (configure via
-`POLARIS_SECURITY_CONTACT` environment variable for deployed instances;
-the `/security.txt` route serves this contact per RFC 9116 since v9.13).
+**Email:** PolarisID@protonmail.com 
 
 **Include in the report:**
 
