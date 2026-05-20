@@ -106,7 +106,6 @@ under a new `TestWaveNN_VNNN` class.
 
 VANTA's standing instructions: read `DEVNOTES/style.md`. Summary:
 
-- No em-dashes in human-readable prose.
 - Declarative style, no filler.
 - "Holy shit, that's done" — no workarounds, no tabling.
 - When something feels like cosmic-significance framing instead of
