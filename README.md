@@ -26,7 +26,9 @@ _Cryptographically signed. Audit-of-record by construction. Compulsion-resistant
 
 [**System map**](docs/reference/SYSTEM-MAP.md) · [**Conventions**](docs/CONVENTIONS.md) · [**Constitution (MISSION.md)**](MISSION.md) · [**Backlog (ROADMAP.md)**](ROADMAP.md) · [**Audit-of-record (CHANGELOG.md)**](CHANGELOG.md) · [**Agent runbook (CLAUDE.md)**](CLAUDE.md)
 
-[Quickstart](#quickstart)  ·  [The hard parts](#the-hard-parts)  ·  [What you get](#what-you-get)  ·  [The trick](#the-trick)  ·  [Tour](#tour)  ·  [Tests](#tests)  ·  [License](#license)
+**The system** &nbsp; [The hard parts](#the-hard-parts) · [Token model](#the-token-model) · [Architecture](#architecture) · [Cryptography](#cryptography) · [How it differs](#how-it-differs-from-existing-identity-systems)
+
+**Proof of life** &nbsp; [Quickstart](#quickstart) · [What you get](#what-you-get) · [The trick](#the-trick) · [Tour](#tour) · [Tests](#tests) · [License](#license)
 
 </div>
 
@@ -60,6 +62,139 @@ Consolidating the cards is the easy half. The interesting half is what happens w
 | **Issuer overreach** | An agency revokes tokens at industrial scale outside policy. | Per-agency revocation-rate ceiling enforced by trigger. Sanctioned by the IssuerDiscretionPolicy row, audited by `pg_advisory_xact_lock`. | [issuer-discretion](DEVNOTES/ships/issuer-discretion.md)   UC-8 |
 
 Every row has a defender's claim, an attacker's optimal play, an equilibrium analysis, a documented second-best attack, and an enforcement trace. The walks are canonical (`scripts/ai-adversary.sh C1..C10`).
+
+---
+
+## The token model
+
+An IdentityToken is a row in Postgres. The physical card carries the cryptographic serial; the row carries everything else.
+
+```
+IdentityToken
+├── token_value             VARCHAR(128)   UNIQUE      canonical cryptographic serial
+├── physical_serial         VARCHAR(64)    UNIQUE      hardware serial of the card
+├── hardware_model          VARCHAR(50)                manufacturer / model
+├── biometric_binding_type  enum                       NONE · FINGERPRINT · FACE · IRIS
+├── liveness_check_type     enum                       PASSIVE · ACTIVE_CHALLENGE · MULTI_MODAL
+├── individual_id           → Individual               the person
+├── issuing_agency_id       → Agency                   who issued it
+├── algorithm_id            → CryptographicAlgorithm   ML-DSA-65 by default
+├── predecessor_token_id    → IdentityToken (self)     the succession chain
+├── activation_sequence     INTEGER ≥ 1                which token in the lineage
+├── status                  enum                       ACTIVE · RESERVE · DORMANT · REVOKED · LOST · EXPIRED
+├── issued_date · activated_date · expiration_date
+└── duress_code_hash        VARCHAR(255) NULL          the second secret (optional)
+```
+
+The shape carries the policy. Four invariants worth naming:
+
+- **One ACTIVE row per individual.** Enforced by a partial unique index on `(individual_id) WHERE status = 'ACTIVE'`, not by application logic. Replacing a token means walking the lineage forward, not opening a second row. That is constraint **C3** in the constitution, and it survives every restore from backup because it lives in the index, not in code.
+- **Algorithm by reference, not literal.** The signing algorithm is a foreign key to `CryptographicAlgorithm`, a first-class entity carrying `quantum_resistant`, `nist_standard`, and `deprecation_date`. There is no hardcoded crypto anywhere in the codebase. Adding ML-DSA-87 tomorrow is `INSERT INTO`, not `git push`. That is constraint **C7**.
+- **Succession is a chain, not an event.** `predecessor_token_id` is self-referential; the full lineage from a person's first issuance to their current token is one recursive CTE. Recovery, replacement, and post-quantum migration all add a new row pointing at the predecessor; nothing is overwritten.
+- **Duress is observable only to the audit trail.** If a holder types the duress code under coercion, the verification looks identical to a normal one on every operator-visible surface. A `DuressEvent` row appears in the audit-of-record; the operator's screen reveals nothing. That is constraint **C6 + the anti-coercion vocation** working together.
+
+The `CREATE TABLE` is in [`polaris_sql/01_schema.sql`](polaris_sql/01_schema.sql). Every column is documented; every CHECK constraint has a paired test.
+
+---
+
+## Architecture
+
+Four layers. The cognitive layer reads but never writes the operational layer. The ZK prover is a subprocess, not a service. WebAuthn FIDO2 is the only authentication path for human operators; passwords alone cannot reach the admin or auditor roles.
+
+```
+        ┌────────────────────────────────────────────────────────────┐
+        │                      COGNITIVE LAYER                        │
+        │   HYDRA: 9 watchers + CM (schema · cognitive · security ·   │
+        │          mission · adversary · performance · trajectory ·   │
+        │          civitas · ant-colony)                              │
+        │   Mycelium: 33 commander ants · 6 citizens · 9 soldier      │
+        │             classes (stigmergic pheromone substrate)        │
+        │   Sanctum: append-only strategic-decision log (64 entries)  │
+        │   Architect + Anti-Architect: persona-protocol adjudication │
+        └─────────────────────────┬──────────────────────────────────┘
+                                  │   reads (no writes)
+        ┌─────────────────────────▼──────────────────────────────────┐
+        │                       APPLICATION                           │
+        │     Flask (67 routes)  ·  Atlas globe  ·  WebAuthn MFA      │
+        │     Dashboard  ·  /sql console  ·  Sanctum tooling          │
+        └──────────┬──────────────────────────┬───────────────────────┘
+                   │                          │
+        ┌──────────▼─────────┐    ┌───────────▼─────────────────────┐
+        │  SCHEMA (Pg 16)    │    │   ZK PROVER (Rust nightly)       │
+        │  27 tables         │    │   Plonky2 SNARK · Merkle-incl.   │
+        │  14 stored procs   │    │   /api/zk/epoch/close            │
+        │  9 AoR by trigger  │    │   /api/zk/verify                 │
+        └──────────┬─────────┘    └──────────────────────────────────┘
+                   │
+                   │  signs with
+                   ▼
+        ┌──────────────────────────────────────────────────────────┐
+        │                 POST-QUANTUM SIGNATURES                   │
+        │   ML-DSA-65 (FIPS 204, default)  ·  SLH-DSA (FIPS 205)   │
+        │   ML-DSA-87 (high-assurance)  ·  ECDSA-P256 (legacy/audit)│
+        └──────────────────────────────────────────────────────────┘
+```
+
+Each layer is independently buildable. The schema loads from `00_load_all.sql` against an empty Postgres. The application boots from `app.py` against the loaded schema. The ZK prover compiles under `cargo +nightly build --release` against the same machine. The cognitive layer is a read-only directory of Python modules and shell scripts; it survives any operational restart unchanged.
+
+The constraint that holds this together is **C1: audit-of-record**. Ten instances (nine schema, one filesystem) record every meaningful operation at the moment it happens. Nothing in the system reconstructs history after the fact; if it isn't written when it occurs, it doesn't exist.
+
+---
+
+## Cryptography
+
+The signing-algorithm registry seeds with five rows. The operational default is **ML-DSA-65**: the NIST-standardized Module-Lattice Digital Signature Algorithm, FIPS 204, Level 3 security, finalized in 2024.
+
+```
+algorithm        family     PQ    NIST           sec   public-key   signature
+─────────────────────────────────────────────────────────────────────────────
+ML-DSA-65        ML-DSA      ✓    FIPS 204       192     1,952 B       3,309 B   ◀ default
+ML-DSA-87        ML-DSA      ✓    FIPS 204       256     2,592 B       4,627 B   high-assurance
+SLH-DSA-128s     SLH-DSA     ✓    FIPS 205       128        32 B       7,856 B   hash-based hedge
+SLH-DSA-256s     SLH-DSA     ✓    FIPS 205       256        64 B      29,792 B   hash-based, max
+ECDSA-P256       ECDSA            FIPS 186-4     128        64 B          72 B   LEGACY · sunsets 2027-12-31
+```
+
+Three things are worth noting about this list:
+
+- **The operational default is already post-quantum.** ML-DSA-65 is what new tokens sign with on day one. There is no "we will migrate when quantum arrives" deferral; the migration target is the current default. ECDSA-P256 is retained only because pre-PQ audit queries need to resolve the algorithm by foreign key.
+- **SLH-DSA is a diversity hedge.** Both ML-DSA and SLH-DSA are NIST-standardized post-quantum signature schemes, but they rest on entirely different cryptographic assumptions: ML-DSA on lattice problems, SLH-DSA on hash function security alone. If one family is broken, the other is independent. The cost of the hedge is signature size (29.8 KB for SLH-DSA-256s vs 3.3 KB for ML-DSA-65).
+- **The cost of post-quantum is the signature size.** A 3,309-byte ML-DSA-65 signature is roughly 46× larger than a 72-byte ECDSA signature. Polaris treats that cost as a property of the artifact, not as a problem to optimize away.
+
+**Migration (UC-6 · `/uc6/migrate-algorithm`)** is a multi-signature transitional state. A token can carry **both** a classical and a post-quantum signature simultaneously during cutover, with a constraint that exactly one is operationally active. Tokens migrate one-at-a-time on a per-individual schedule; the cutover writes a `KeyMigration` row that the audit trail can replay. The constraint that prevents a half-migrated state from serving traffic is enforced at the database, not in code.
+
+The PQC integration uses [liboqs](https://github.com/open-quantum-safe/liboqs) via the `oqs` Python binding, gated by `POLARIS_USE_REAL_PQC=1`. With the flag off, the system uses a deterministic placeholder so property tests remain reproducible across machines without liboqs installed. Activation is operator-side; see [`scripts/polaris-pqc-status.sh`](scripts/polaris-pqc-status.sh).
+
+The zero-knowledge surface is independent of the signing algorithm. **Plonky2** in [`polaris_zk/src/lib.rs`](polaris_zk/src/lib.rs) proves Merkle-tree inclusion against epoch commitments published at [`/epochs`](polaris_web/templates/epochs_list.html). The proof reveals nothing about the leaf; it answers only "was this token in the ledger at epoch N." The Rust binary is a subprocess called by [`polaris_web/zk.py`](polaris_web/zk.py); the Flask app degrades gracefully without it (every page serves, every UC-1..UC-12 flow works, only `/api/zk/epoch/close` and `/api/zk/verify` go quiet).
+
+---
+
+## How it differs from existing identity systems
+
+There is no shortage of identity infrastructure in the world. The question is what Polaris does that the existing deployed systems do not.
+
+| System | National-scope issuance | Post-quantum operational default | Zero-knowledge default | Compulsion-resistant primitive | Append-only AoR at schema |
+|---|:---:|:---:|:---:|:---:|:---:|
+| **Real ID** (US, 2005 act, fully enforced 2025) | ✓ | ✗ | ✗ | ✗ | ✗ |
+| **mDL / ISO 18013-5** (mobile driver's license) | ✓ | ✗ | partial | ✗ | ✗ |
+| **Aadhaar** (India, 1.3B+ enrolled) | ✓ | ✗ | ✗ | ✗ | partial |
+| **e-Estonia** (e-ID + e-Residency) | ✓ | ✗ | ✗ | ✗ | partial |
+| **W3C DIDs / VCs** (spec, decentralized) | ✗ | method-dependent | ✓ | ✗ | n/a |
+| **Polaris** (this repo) | ✓ | ✓ ML-DSA-65 | ✓ Plonky2 + R6 redaction | ✓ DuressEvent | ✓ 9 schema instances |
+
+A few of the contrasts are worth narrating instead of tabling.
+
+**Real ID** standardizes the document and the source-of-truth check. It does not standardize a verification protocol; the card is signed by the printer, not by a key. There is no cryptographic identity at all, no shared revocation path, and no audit trail beyond what each individual DMV chooses to retain.
+
+**mDL (ISO/IEC 18013-5)** is the closest deployed system in spirit. It already does selective disclosure ("prove the holder is over 21 without revealing their address") and is signed cryptographically. What mDL does not do today is post-quantum signatures, a formal compulsion-defense primitive, or a constitutional layer governing how the issuer itself behaves over time.
+
+**Aadhaar** has biometric binding at national scale; its strength is also its weakness. The biometric templates live in a centralized authority and can be queried by it. Polaris treats biometric binding as a per-token attribute with an explicit enrollment witness agency, not as a population-scale biometric database. The system can answer "is this token bound to a fingerprint" without ever holding the fingerprint outside the holder's possession.
+
+**W3C DIDs and Verifiable Credentials** are spec, not system. They support the verification model Polaris uses (cryptographic identifiers, selective disclosure, federation-by-attestation), but they do not address national-scope issuance, biometric binding, or the operational substrate that an issuing authority would need to actually run one. Polaris fills the substrate; it could in principle emit VCs as a representation format.
+
+**e-Estonia** is the existing deployed system most-similar in ambition. Its cryptography is classical (ECDSA on the e-ID card, RSA in older infrastructure); a platform-level migration path to post-quantum is not yet specified. The system has no compulsion-defense primitive at the protocol level.
+
+Polaris's contribution is not novelty in any single primitive. It is the **assembly**: a national-scope issuance model, a post-quantum operational default, zero-knowledge defaults on verification, a duress-code primitive built into the verification flow, and an append-only audit-of-record enforced at the database trigger level — with a cognitive substrate that maintains every claim above without drifting from it.
 
 ---
 
@@ -103,7 +238,7 @@ A full subcommand reference lives in [`docs/operator/INSTALL.md`](docs/operator/
                  │  27 schema tables                                │
                  │  14 stored procedures (UC-1 .. UC-12 + foresight)│
                  │  67 HTTP routes (incl. /auth/webauthn/*)         │
-                 │  1,077 Python tests · 909 structural invariants  │
+                 │  1,077 Python tests · 944 structural invariants  │
                  │  64 Sanctum strategic-consultation records       │
                  │  9 HYDRA watchers + CM                           │
                  │  33 commander ants + 6 citiz + 9 soldier classes │
