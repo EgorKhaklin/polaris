@@ -20,7 +20,7 @@ _Cryptographically signed. Audit-of-record by construction. Compulsion-resistant
 [![Rust](https://img.shields.io/badge/rust-nightly-DEA584?logo=rust&logoColor=white&style=flat-square)](polaris_zk/)
 [![Plonky2](https://img.shields.io/badge/zk--snark-plonky2-8957e5?style=flat-square)](polaris_zk/src/lib.rs)
 [![WebAuthn MFA](https://img.shields.io/badge/auth-WebAuthn%20MFA-1f883d?logo=webauthn&logoColor=white&style=flat-square)](polaris_web/webauthn_auth.py)
-[![Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-d63aff?style=flat-square)](LICENSE)
+
 
 **Now shipping [v9.43](https://github.com/EgorKhaklin/polaris-id/releases/latest)** &nbsp;·&nbsp; 944 structural invariants &nbsp;·&nbsp; 633 cross-references resolved &nbsp;·&nbsp; one double-click to launch
 
