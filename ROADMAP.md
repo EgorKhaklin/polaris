@@ -9,7 +9,7 @@
 <!-- history (audit-of-record).                                    -->
 <!-- ============================================================ -->
 
-## 🔭 OPEN NOW — living backlog (updated 2026-06-03, v9.45)
+## 🔭 OPEN NOW — living backlog (updated 2026-06-03, v9.48)
 
 Tagging: `effort(XS/S/M/L) · value · risk · freeze-category`. The
 v9.31 freeze permits hardening / measurement / cold-read-evidence;
@@ -30,17 +30,18 @@ a new-arc item needs a Sanctum naming an external trigger.
 
 **Next ships (agent-actionable under heavy-production authorization):**
 
-1. **[NEXT] Wire the v9.44 ZK two-witness + behavioral suites into CI.**
-   CI runs only 4 suites; `test_zk_second_witness.py` (the flagship v9.44
-   differential), `test_app.py`, `test_cli.py`, and the hydra suites never
-   gate the build — even though CI already builds the polaris-zk binary the
-   ZK differential needs. Add `pytest` to `requirements.txt` (the header
-   already promises it; it is absent) and add the CI steps. `XS-S · high · LOW · hardening+measurement`
-2. **PQC signature path is a lone verifier** — the two-witness principle
-   (v9.44) names it a finding. Add an independent second witness for the
-   ML-DSA-65 verdict, or record an explicit ABSTAIN instance per rule 4.
-   Also: `pqc_signing.sign()` is never wired into the issuance route — clarify
-   the terminal state in its docstring. `L · high · MEDIUM · hardening`
+1. **[PARTIAL ✅ v9.46] Wire suites into CI.** Done: the v9.44 ZK two-witness
+   differential + witness2 self-tests + pure HYDRA suites now gate CI, and
+   `pytest` is in `requirements.txt`. **Still open:** wire `test_app.py` +
+   `test_cli.py` (DB-backed) once confirmed green against the CI sample DB —
+   deferred because they are not verifiable from the local env (no psycopg2).
+   `S · high · LOW · measurement`
+2. **[PARTIAL ✅ v9.47] PQC lone verifier** — recorded as an explicit two-witness
+   ABSTAIN; the docstring overclaim (flag-on enables real-signature issuance)
+   was corrected (it is an integration island: `app.py` never imports it,
+   `uc1_issue` never calls `sign()`). **Still open (deferred):** a full
+   independent ML-DSA-65 second witness — premature while the verdict is OFF by
+   default and unwired; revisit when the path goes live. `L · medium · MEDIUM · hardening`
 3. **Foresight experiment is in limbo — cut the knot.** The v9.12 deal
    (≥50% candidate acceptance over 6 monthly briefs, else sunset) can neither
    graduate nor sunset: 20 briefs but all in one month, cadence stalled.
@@ -59,8 +60,13 @@ a new-arc item needs a Sanctum naming an external trigger.
    open) — additive brain-map bloom overlay + deliberation threshold; unblocks
    the R13-5 HYDRA-vs-Mycelium decision. `M · medium · LOW · new-arc`
 
-**Recently shipped (this session):** v9.44 ZK two-witness (Glass
-bounded-integration); v9.45 secret-leak gitignore fix + foresight integrity.
+**Recently shipped (this session, 2026-06-03):** v9.44 ZK two-witness (Glass
+bounded-integration); v9.45 secret-leak gitignore fix + foresight integrity;
+v9.46 CI wiring (ZK two-witness + HYDRA suites gate CI); v9.47 PQC two-witness
+ABSTAIN + docstring honesty; v9.48 ai-swarm-validate honest header. Six commits;
+gate READY throughout. **Next tier needs VANTA's call** — see the "Flagged for
+VANTA" item above (THESIS terminus) plus the foresight keep/kill (#3) and
+apparatus-reduction (#5) decisions.
 
 ---
 
