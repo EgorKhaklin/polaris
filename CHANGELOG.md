@@ -14,6 +14,27 @@ record, read [`meta/sanctum-index.md`](meta/sanctum-index.md).
 
 ---
 
+## v9.49 — 2026-06-03 (Swarm coverage · every ant's scan() contract is tested, not just the E10 cohort)
+
+scope: test-coverage · ship_marker: all-ants-scan-contract · vocation: trustworthiness — an unobserved watcher is an untrusted watcher · pattern20_instance: close-the-coverage-gap (smoke loop over ALL_ANTS, not a subset)
+
+The gap audit found 14 of the 33 ants had no individual behavioral coverage: the
+only blanket smoke test looped over the 10-ant ACCELERATION+CONSCIOUSNESS cohort
+(`ALL_E10_ANTS`), not `ALL_ANTS`. v9.49 extends the `scan()` contract to every
+registered ant.
+
+- `TestWave49V949` instantiates every ant in `ALL_ANTS` with the repo root and
+  asserts `scan()` returns a `list[AntFinding]` and does not raise.
+- Verified DB-free: all 33 ants' `scan()` pass with no Postgres, so the test is
+  CI-safe (no new service dependency). This supersedes the E10-only smoke loop.
+- Plus a registry-hygiene guard: no duplicate ant `NAME`s in `ALL_ANTS`.
+
+**Tests** (TestWave49V949, 2 cases): all-33-ant scan() contract; unique ant names.
+
+**Personas.** Architect: close the coverage gap with a structural invariant, not a
+one-off. Anti-Architect: kept it DB-free and verified (33/33 pass locally) rather
+than blind-adding a fragile suite. Risk LOW (test-only). Heavy-production authorized.
+
 ## v9.48 — 2026-06-03 (Honest-accounting · ai-swarm-validate.sh header matches its body)
 
 scope: honest-accounting · ship_marker: swarm-validate-dangling-deadline · vocation: trustworthiness — a script must not claim a computation it does not perform · pattern20_instance: drift→test promotion (dangling-deadline overclaim becomes a standing guard)
@@ -414,30 +435,4 @@ archive/CHANGELOG-FULL.md. CHANGELOG holds 10 stable (v9.38..v9.29)
 `TestWave39V939` × 1 invariant pins the env-pass-through declaration
 in docker-compose.yml with the empty-default backward-compat
 pattern.
-
-## v9.38 — 2026-05-17 (Post-freeze hardening · archive-extension Sanctum · CHANGELOG = last 10 honestly)
-
-Decided in `sanctum/2026-05-17-changelog-archive-extension.md`
-(HIGH — amends v9.24's "no entry was edited or deleted" archive
-claim). Pre-authorized by VANTA: "have the changelog at 10 latest
-ships, the other ones move to the archive changelog."
-
-The v9.24 compression committed "last 10 ships" in CHANGELOG.md
-with byte-frozen pre-v9.24 history in
-`archive/CHANGELOG-FULL.md`. As v9.25+ accumulated, the convention
-needed entries to age OUT of CHANGELOG.md, but the archive's
-byte-frozen claim forbade growth. v9.34 + v9.36 deferred via cap
-relaxation (12→14). v9.38 closes it properly.
-
-- **Amendment:** archive grows APPENDS-only (no edits or deletions
-  of existing rows). New section `## Post-v9.24 ships` marks the
-  boundary. v9.24–v9.27 moved byte-identical from CHANGELOG.md →
-  archive's new section.
-- **CHANGELOG.md state:** 10 ships + this in-flight v9.38 entry = 11.
-  Cap restored 14 → 11.
-- **ROADMAP.md** entry transitioned "NOW RIPE" → "DONE in v9.38."
-
-`TestWave38V938` × 5 invariants: archive has post-v9.24 section;
-v9.24–v9.27 in archive; v9.24–v9.27 NOT in CHANGELOG.md; CHANGELOG
-has exactly 11 ships; Sanctum closed + indexed.
 

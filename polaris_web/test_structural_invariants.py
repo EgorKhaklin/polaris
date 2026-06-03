@@ -16483,5 +16483,52 @@ class TestWave48V948(unittest.TestCase):
         self.assertIn('does NOT yet run the', src)
 
 
+class TestWave49V949(unittest.TestCase):
+    """v9.49 — swarm coverage: every ant's scan() contract is tested, not just E10.
+
+    The audit found 14 of the 33 ants had no individual behavioral coverage: the
+    only blanket smoke test (test_every_e10_ant_scan_returns_finding_list) looped
+    over the 10-ant ACCELERATION+CONSCIOUSNESS cohort, not ALL_ANTS. This wave
+    extends the scan() contract to every registered ant: instantiated with the
+    repo root, each `scan()` must return a `list[AntFinding]` and must not raise.
+    Verified DB-free (all 33 pass with no Postgres), so it is CI-safe.
+    """
+
+    ROOT = ROOT
+
+    def test_v949_every_ant_scan_returns_finding_list(self):
+        sys.path.insert(0, self.ROOT)
+        try:
+            from polaris_swarm.ants import ALL_ANTS
+            from polaris_swarm.base import AntFinding
+            import pathlib
+            root = pathlib.Path(self.ROOT)
+            self.assertGreaterEqual(len(ALL_ANTS), 33,
+                f"expected >= 33 registered ants; got {len(ALL_ANTS)}")
+            for AntCls in ALL_ANTS:
+                name = getattr(AntCls, 'NAME', AntCls.__name__)
+                try:
+                    findings = AntCls(root).scan()
+                except Exception as e:  # noqa: BLE001 — contract is "must not raise"
+                    self.fail(f"{name}.scan() raised {type(e).__name__}: {e}")
+                self.assertIsInstance(findings, list,
+                    f"{name}.scan() must return a list; got {type(findings).__name__}")
+                for f in findings:
+                    self.assertIsInstance(f, AntFinding,
+                        f"{name}.scan() returned a {type(f).__name__}; expected AntFinding")
+        finally:
+            sys.path.pop(0)
+
+    def test_v949_all_ant_names_unique(self):
+        sys.path.insert(0, self.ROOT)
+        try:
+            from polaris_swarm.ants import ALL_ANTS
+        finally:
+            sys.path.pop(0)
+        names = [a.NAME for a in ALL_ANTS]
+        dupes = sorted({n for n in names if names.count(n) > 1})
+        self.assertEqual([], dupes, f"duplicate ant NAMEs in ALL_ANTS: {dupes}")
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

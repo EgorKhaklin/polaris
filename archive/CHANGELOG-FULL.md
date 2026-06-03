@@ -17959,6 +17959,32 @@ AoR amendment, decided + shipped v9.38) to permit APPENDS to this
 file (still no edits or deletions of existing rows). Section
 boundary below; entries newest-first under this section.
 
+## v9.38 — 2026-05-17 (Post-freeze hardening · archive-extension Sanctum · CHANGELOG = last 10 honestly)
+
+Decided in `sanctum/2026-05-17-changelog-archive-extension.md`
+(HIGH — amends v9.24's "no entry was edited or deleted" archive
+claim). Pre-authorized by VANTA: "have the changelog at 10 latest
+ships, the other ones move to the archive changelog."
+
+The v9.24 compression committed "last 10 ships" in CHANGELOG.md
+with byte-frozen pre-v9.24 history in
+`archive/CHANGELOG-FULL.md`. As v9.25+ accumulated, the convention
+needed entries to age OUT of CHANGELOG.md, but the archive's
+byte-frozen claim forbade growth. v9.34 + v9.36 deferred via cap
+relaxation (12→14). v9.38 closes it properly.
+
+- **Amendment:** archive grows APPENDS-only (no edits or deletions
+  of existing rows). New section `## Post-v9.24 ships` marks the
+  boundary. v9.24–v9.27 moved byte-identical from CHANGELOG.md →
+  archive's new section.
+- **CHANGELOG.md state:** 10 ships + this in-flight v9.38 entry = 11.
+  Cap restored 14 → 11.
+- **ROADMAP.md** entry transitioned "NOW RIPE" → "DONE in v9.38."
+
+`TestWave38V938` × 5 invariants: archive has post-v9.24 section;
+v9.24–v9.27 in archive; v9.24–v9.27 NOT in CHANGELOG.md; CHANGELOG
+has exactly 11 ships; Sanctum closed + indexed.
+
 ## v9.37 — 2026-05-17 (Post-freeze hardening · deep-scan cascade · 2 swarm-script hidden failures)
 
 Round-three of the discipline catching itself. The 2026-05-17 deep
