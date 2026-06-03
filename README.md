@@ -12,7 +12,6 @@ _Cryptographically signed. Audit-of-record by construction. Compulsion-resistant
 
 [![CI](https://img.shields.io/github/actions/workflow/status/EgorKhaklin/polaris-id/ci.yml?branch=main&label=CI&logo=githubactions&logoColor=white&style=flat-square)](https://github.com/EgorKhaklin/polaris-id/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/EgorKhaklin/polaris-id?label=release&color=2b5797&style=flat-square)](https://github.com/EgorKhaklin/polaris-id/releases/latest)
-[![License](https://img.shields.io/github/license/EgorKhaklin/polaris-id?color=blue&style=flat-square)](LICENSE)
 [![Last commit](https://img.shields.io/github/last-commit/EgorKhaklin/polaris-id?color=success&style=flat-square)](https://github.com/EgorKhaklin/polaris-id/commits/main)
 
 [![Python 3.12](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white&style=flat-square)](polaris_web/)
