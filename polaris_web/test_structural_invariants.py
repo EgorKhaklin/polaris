@@ -16450,5 +16450,38 @@ class TestWave47V947(unittest.TestCase):
             "ABSTAIN row (a live verdict must be two-witnessed, not abstained).")
 
 
+class TestWave48V948(unittest.TestCase):
+    """v9.48 — honest-accounting: ai-swarm-validate.sh header matches its body.
+
+    The header claimed the script "reports precision + recall per ant" and
+    "auto-flags PREDICATE_PENDING", but the body computes only the
+    expected-firing matrix and deferred the observed pass to a "v9.25" that
+    never landed (we are well past it). v9.48 rewrites the header to the honest
+    scope and removes the dangling version promise.
+    """
+
+    ROOT = ROOT
+
+    def _read(self, rel):
+        with open(os.path.join(self.ROOT, rel)) as f:
+            return f.read()
+
+    def test_v948_no_dangling_version_promise(self):
+        src = self._read('scripts/ai-swarm-validate.sh')
+        for stale in ('comes in v9.25', 'lands in v9.25', 'in v9.25 when'):
+            self.assertNotIn(
+                stale, src,
+                "ai-swarm-validate.sh must not promise work in a version that "
+                "has already passed (dangling-deadline overclaim).")
+
+    def test_v948_header_states_honest_scope(self):
+        src = self._read('scripts/ai-swarm-validate.sh')
+        self.assertIn('HONEST SCOPE', src,
+                      "the header must state the honest scope (no observed precision/recall)")
+        # The header must not claim a precision/recall computation as a feature
+        # while the body computes only the expected-firing matrix.
+        self.assertIn('does NOT yet run the', src)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

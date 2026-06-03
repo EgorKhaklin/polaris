@@ -14,6 +14,29 @@ record, read [`meta/sanctum-index.md`](meta/sanctum-index.md).
 
 ---
 
+## v9.48 — 2026-06-03 (Honest-accounting · ai-swarm-validate.sh header matches its body)
+
+scope: honest-accounting · ship_marker: swarm-validate-dangling-deadline · vocation: trustworthiness — a script must not claim a computation it does not perform · pattern20_instance: drift→test promotion (dangling-deadline overclaim becomes a standing guard)
+
+`scripts/ai-swarm-validate.sh`'s header claimed it "reports precision + recall per
+ant" and "auto-flags PREDICATE_PENDING for sub-threshold ants". The body does
+neither: it emits only the EXPECTED-firing matrix and deferred the observed pass
+(run_colony() + Pheromone reads -> precision/recall) to "v9.25" — a follow-through
+that never landed (we are at v9.48). `observed_*` counts are 0 by construction.
+
+v9.48 rewrites the header to the honest scope (fixture inventory + expected-firing
+matrix; observed precision/recall NOT computed) and removes the dangling "v9.25"
+version promise from the header, the JSON `note`, and the status print.
+
+**Tests** (TestWave48V948, 2 cases): no dangling "v9.25" version promise survives;
+the header states the honest scope. The first is a class-shaped guard against
+re-introducing a deadline that has already passed.
+
+**Personas.** Architect: drift→test promotion — same honest-accounting discipline
+as v9.47 (PQC ABSTAIN), applied to a swarm script. Anti-Architect: the right fix
+was (b) honest header, not (a) implement-the-deferred-feature, under the v9.31
+freeze. Risk LOW (docstring + test). Heavy-production authorized.
+
 ## v9.47 — 2026-06-03 (Honest-accounting · the PQC verdict is a recorded two-witness ABSTAIN)
 
 scope: crypto-honesty · ship_marker: pqc-lone-verifier-abstain · vocation: trustworthiness — name the gap, do not let a lone verifier ship silently · pattern20_instance: drift→test promotion (the island-claim is now a standing invariant)
@@ -417,35 +440,4 @@ relaxation (12→14). v9.38 closes it properly.
 `TestWave38V938` × 5 invariants: archive has post-v9.24 section;
 v9.24–v9.27 in archive; v9.24–v9.27 NOT in CHANGELOG.md; CHANGELOG
 has exactly 11 ships; Sanctum closed + indexed.
-
-## v9.37 — 2026-05-17 (Post-freeze hardening · deep-scan cascade · 2 swarm-script hidden failures)
-
-Round-three of the discipline catching itself. The 2026-05-17 deep
-swarm/hydra scan (after v9.35+v9.36 cleared obvious bugs) surfaced
-two more silent-failure patterns:
-
-- **`ai-swarm-health.sh §IV` citizen activity** queried
-  `WHERE tier = 'citizen'` but `Pheromone` has no `tier` column;
-  query silently errored to empty, printing "No citizen deposits"
-  regardless of reality. Citizens DO deposit (verified live: 5/6
-  visible after fix — `censor_roll_keeper` silent by design, only
-  fires on new-ant events). Fix: filter by JSONB `evidence ?
-  'civitas_class'` per `_deposit_citizen_results` docstring in
-  `polaris_swarm/colony.py`. Auto-discovers any future citizens.
-- **`ai-swarm-bloom.sh find_python`** had candidate order putting
-  `/private/tmp/polaris-codex-venv312/bin/python3` before
-  `polaris_web/venv/bin/python3`. Codex venv exists + meets the
-  3.9+ version check, but has NO psycopg2 → bloom always reported
-  "psycopg2 not installed; use --dry." Fix: invert order + verify
-  psycopg2 importable (mirrors `ai-hydra.sh` correct pattern since
-  v9.04 — same comment said "same discovery pattern" while doing
-  the opposite).
-
-Live verified: §IV shows 5 citizens with deposit counts; bloom
-processes 486 deposits across 72h and renders the hottest
-brain-map nodes.
-
-`TestWave37V937` × 3 invariants: citizen query uses JSONB marker;
-bloom candidates have polaris_web/venv first; psycopg2 import-verify
-present.
 

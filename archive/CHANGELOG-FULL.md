@@ -17959,6 +17959,37 @@ AoR amendment, decided + shipped v9.38) to permit APPENDS to this
 file (still no edits or deletions of existing rows). Section
 boundary below; entries newest-first under this section.
 
+## v9.37 — 2026-05-17 (Post-freeze hardening · deep-scan cascade · 2 swarm-script hidden failures)
+
+Round-three of the discipline catching itself. The 2026-05-17 deep
+swarm/hydra scan (after v9.35+v9.36 cleared obvious bugs) surfaced
+two more silent-failure patterns:
+
+- **`ai-swarm-health.sh §IV` citizen activity** queried
+  `WHERE tier = 'citizen'` but `Pheromone` has no `tier` column;
+  query silently errored to empty, printing "No citizen deposits"
+  regardless of reality. Citizens DO deposit (verified live: 5/6
+  visible after fix — `censor_roll_keeper` silent by design, only
+  fires on new-ant events). Fix: filter by JSONB `evidence ?
+  'civitas_class'` per `_deposit_citizen_results` docstring in
+  `polaris_swarm/colony.py`. Auto-discovers any future citizens.
+- **`ai-swarm-bloom.sh find_python`** had candidate order putting
+  `/private/tmp/polaris-codex-venv312/bin/python3` before
+  `polaris_web/venv/bin/python3`. Codex venv exists + meets the
+  3.9+ version check, but has NO psycopg2 → bloom always reported
+  "psycopg2 not installed; use --dry." Fix: invert order + verify
+  psycopg2 importable (mirrors `ai-hydra.sh` correct pattern since
+  v9.04 — same comment said "same discovery pattern" while doing
+  the opposite).
+
+Live verified: §IV shows 5 citizens with deposit counts; bloom
+processes 486 deposits across 72h and renders the hottest
+brain-map nodes.
+
+`TestWave37V937` × 3 invariants: citizen query uses JSONB marker;
+bloom candidates have polaris_web/venv first; psycopg2 import-verify
+present.
+
 ## v9.36 — 2026-05-17 (Post-freeze hardening · cascade fix from v9.35 · false-positive ALERT cleared)
 
 Real defect closed: `security_watcher.py` read
