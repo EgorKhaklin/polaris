@@ -17959,6 +17959,40 @@ AoR amendment, decided + shipped v9.38) to permit APPENDS to this
 file (still no edits or deletions of existing rows). Section
 boundary below; entries newest-first under this section.
 
+## v9.40 — 2026-05-17 (Post-freeze hardening · operational completeness · v9.31+v9.39 cascade)
+
+Three coupled defects surfaced when the v9.39 container rebuild
+exposed them:
+
+1. **`observability.py` (v9.31) missing from both Dockerfiles.**
+   Container failed to boot: `ModuleNotFoundError: No module named
+   'observability'`. The v9.17 regression-guard test was supposed
+   to catch exactly this (it caught v8.97 webauthn_auth.py
+   omission). But its regex `^\\s*import\\s+(\\w+)\\s*$` required
+   nothing after the module name; my v9.31 edit had
+   `import observability  # v9.31 ...` — trailing comment invisible
+   to the regex. **Both the Dockerfiles AND the regex fixed.**
+2. **Regression-guard only scanned `app.py`**, not `security.py`.
+   v9.31 added `import observability` to security.py too. The new
+   regex pattern (with trailing-comment tolerance) now applies to
+   both files.
+3. **`redis` Python lib missing from `requirements.txt`** →
+   v9.39's `POLARIS_REDIS_URL` env-pass-through silently degraded
+   to in-memory backend even when the URL was correctly set
+   (`security.py` auto-selector requires the lib to be importable).
+
+Live verified post-rebuild: `/api/version` reports v9.40,
+`/api/metrics` returns real counters (was 404 in v9.30 container),
+observability.py imports cleanly.
+
+Per-ship archive-move: v9.29 byte-identical to Post-v9.24 section
+in archive. CHANGELOG = 10 stable (v9.39..v9.30) + v9.40 in-flight.
+
+`TestWave40V940` × 4 invariants: observability in both Dockerfiles;
+regex tolerates trailing comments; regression-guard scans
+security.py; `redis>=` in requirements.txt. Plus the underlying
+regression-guard now catches future occurrences of this class.
+
 ## v9.39 — 2026-05-17 (Post-freeze hardening · POLARIS_REDIS_URL wired into docker-compose · soldier-log-tail finding closed)
 
 Closes shakedown finding C: `soldier_log_tail` correctly flagged the

@@ -21,8 +21,10 @@ from polaris_swarm.base import Ant, AntFinding, KIND_DRIFT
 
 
 BURST_THRESHOLD = 6
+# v9.51: was `v8\.` (bit-rotted — matched nothing once CHANGELOG went all-v9.x);
+# now version-agnostic so burst days are counted under the current scheme.
 HEADER_RE = re.compile(
-    r"^## v8\.\d+ — (\d{4}-\d{2}-\d{2})\b",
+    r"^## v\d+\.\d+ — (\d{4}-\d{2}-\d{2})\b",
     re.MULTILINE,
 )
 

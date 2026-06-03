@@ -45,9 +45,11 @@ from datetime import datetime, timezone
 from polaris_swarm.base import Ant, AntFinding, KIND_DRIFT, KIND_INFO
 
 
-# Parse `## v8.X — YYYY-MM-DD (subtitle)` headers
+# Parse `## vMAJOR.MINOR — YYYY-MM-DD (subtitle)` headers.
+# v9.51: was `v8\.` (bit-rotted — matched nothing once CHANGELOG went all-v9.x);
+# now captures the major too so cadence/stagnation track the current scheme.
 HEADER_RE = re.compile(
-    r"^## v8\.(\d+)\s+—\s+(\d{4})-(\d{2})-(\d{2})\b",
+    r"^## v(\d+)\.(\d+)\s+—\s+(\d{4})-(\d{2})-(\d{2})\b",
     re.MULTILINE,
 )
 
@@ -69,13 +71,13 @@ class AntReleaseVelocity(Ant):
         if not changelog:
             return findings
         # Parse all v8.X ships with dates
-        ships: list[tuple[int, datetime]] = []
+        ships: list[tuple[str, datetime]] = []
         for m in HEADER_RE.finditer(changelog):
             try:
-                v = int(m.group(1))
-                y, mo, d = int(m.group(2)), int(m.group(3)), int(m.group(4))
+                ver = f"v{m.group(1)}.{m.group(2)}"
+                y, mo, d = int(m.group(3)), int(m.group(4)), int(m.group(5))
                 ts = datetime(y, mo, d, tzinfo=timezone.utc)
-                ships.append((v, ts))
+                ships.append((ver, ts))
             except (TypeError, ValueError):
                 continue
         if not ships:
@@ -95,7 +97,7 @@ class AntReleaseVelocity(Ant):
                         f"project may be stagnating"
                     ),
                     "days_since_latest_ship": round(days_since_latest, 3),
-                    "latest_version": f"v8.{ships[-1][0]}",
+                    "latest_version": ships[-1][0],
                     "latest_date": latest.date().isoformat(),
                     "fix_hint": (
                         "if work is happening, document via "
@@ -161,7 +163,7 @@ class AntReleaseVelocity(Ant):
         # Sustained-burst characterization: count consecutive days
         # with ships in the recent window
         by_date: dict[str, int] = defaultdict(int)
-        for v, ts in recent:
+        for _ver, ts in recent:
             by_date[ts.date().isoformat()] += 1
         sorted_dates = sorted(by_date.keys())
         max_streak = 0

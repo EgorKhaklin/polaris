@@ -257,6 +257,16 @@
       "escaped_defects": 0,
       "escape_rate_trailing_10ships": 0.0,
       "note": "auto-classified from CHANGELOG + journal/hydra/"
+    },
+    {
+      "version": "9.51",
+      "shipped_at_utc": "2026-06-03T22:17:35+00:00Z",
+      "findings_raised": 6,
+      "true_positives": 0,
+      "false_positives": 6,
+      "escaped_defects": 0,
+      "escape_rate_trailing_10ships": 0.0,
+      "note": "auto-classified from CHANGELOG + journal/hydra/"
     }
   ]
 }

@@ -16479,5 +16479,54 @@ class TestWave50V950(unittest.TestCase):
                 f"the reward ledger + roll must survive; treasury.{kept} is missing")
 
 
+class TestWave51V951(unittest.TestCase):
+    """v9.51 — apparatus-reduction Phase 1b: repair the bit-rotted version regexes.
+
+    Three CHANGELOG-header ants (changelog_gap, release_velocity, ship_burst)
+    hardcoded `## v8\\.` and silently matched NOTHING once CHANGELOG went all-v9.x
+    — dead no-ops wearing live-check costume (the "illusion that 33 ants are all
+    live" the audit named). v9.51 repoints them to a version-agnostic pattern,
+    restoring real function: on the current repo release_velocity + ship_burst
+    immediately (and correctly) flag the heavy-production cadence as a
+    mission-creep signal. Repaired rather than deleted — 2 of the audit's "5 dead
+    ants" (unbumped_version, sanctum_outcome) were verified still functional, and
+    repair avoids the load-bearing 33-ant count cascade. Per the
+    apparatus-reduction Sanctum (2026-06-03).
+    """
+
+    REPAIRED = ('ant_changelog_gap', 'ant_release_velocity', 'ant_ship_burst')
+    ROOT = ROOT
+
+    def test_v951_changelog_ants_parse_current_scheme(self):
+        sys.path.insert(0, self.ROOT)
+        try:
+            import importlib
+            sample = "## v9.50 — 2026-06-03 (apparatus-reduction)\n"
+            for name in self.REPAIRED:
+                mod = importlib.import_module(f'polaris_swarm.ants.{name}')
+                self.assertIsNotNone(
+                    mod.HEADER_RE.search(sample),
+                    f"{name}.HEADER_RE must match the current vMAJOR.MINOR CHANGELOG "
+                    f"header (it was bit-rotted to v8-only and matched nothing)")
+        finally:
+            sys.path.pop(0)
+
+    def test_v951_repaired_ants_not_v8_anchored(self):
+        """Regression guard: the repaired ants must not re-anchor a CHANGELOG
+        header regex to a single major (`## v8\\.`), which silently dies on a
+        major bump. Use `v\\d+\\.`."""
+        offenders = []
+        for name in self.REPAIRED:
+            src = self._read(f'polaris_swarm/ants/{name}.py')
+            if r'## v8\.' in src:
+                offenders.append(name)
+        self.assertEqual([], offenders,
+            f"repaired ants must stay version-agnostic; re-anchored to v8: {offenders}")
+
+    def _read(self, rel):
+        with open(os.path.join(self.ROOT, rel)) as f:
+            return f.read()
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

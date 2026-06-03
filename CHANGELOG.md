@@ -14,6 +14,36 @@ record, read [`meta/sanctum-index.md`](meta/sanctum-index.md).
 
 ---
 
+## v9.51 — 2026-06-03 (Apparatus-reduction Phase 1b · repair the bit-rotted version regexes — repair, not delete)
+
+scope: apparatus-reduction · ship_marker: changelog-ant-regex-repair · vocation: trustworthiness — a dead check wearing live-check costume is its own larping; make it real or remove it · pattern20_instance: verify-before-cut (the audit said delete 5; live verification found 2 functional + 3 fixable)
+
+Phase 1b of the apparatus-reduction arc. The audit flagged "5 bit-rotted ants" for
+deletion. Live verification corrected it: `ant_unbumped_version` (hunts stale v8.X
+refs — its job) and `ant_sanctum_outcome` (accepts CHANGELOG/journal links) are
+**correctly silent and still functional** — deleting them would have cut working
+checks. The genuinely bit-rotted three hardcoded `## v8\.` to parse CHANGELOG
+headers and silently matched NOTHING once CHANGELOG went all-v9.x:
+`ant_changelog_gap`, `ant_release_velocity`, `ant_ship_burst`.
+
+**Repaired, not deleted** — repointed each to a version-agnostic `## v\d+\.` pattern.
+This restores real function AND avoids the load-bearing 33-ant count cascade (the
+count is pinned across MISSION/ROADMAP/CHANGELOG/sanctum-index). The repair is
+self-validating: on the current repo `release_velocity` and `ship_burst` immediately
+and correctly fire a **mission-creep signal** — "7 ships landed on 2026-06-03
+(threshold 6)" and "median inter-ship gap 0.00d; sustained mission-creep territory."
+The swarm now honestly observes its own heavy-production cadence; before, it was dead.
+
+**Tests** (TestWave51V951, 2 cases): the three ants' HEADER_RE matches the current
+vMAJOR.MINOR scheme; a regression guard forbids re-anchoring a CHANGELOG-header regex
+to a single major.
+
+**Personas.** Anti-Architect (reviewer of record): "repair-not-delete" is the
+loyal-opposition refinement — the audit's "delete 5" over-reached; verify each before
+cutting. Architect: the bit-rot was itself a form of the larping the arc targets (the
+illusion that all 33 ants are live). Risk LOW (regex repair + behavioral test; no
+count change). Heavy-production authorized.
+
 ## v9.50 — 2026-06-03 (Apparatus-reduction Phase 1a · retire the inert Denarius "Cursus Honorum" economy)
 
 scope: apparatus-reduction · ship_marker: cursus-economy-retired · vocation: trustworthiness — elaborate machinery whose load-bearing output is permanently zero is theater; name it and cut it · pattern20_instance: cut-deeper (the project's own apparatus-DOMINANT signal, acted on)
@@ -411,38 +441,4 @@ resolved; `/api/version` reports v9.41.
 
 Per-ship archive-move: v9.30 byte-identical to "Post-v9.24" section
 in archive. CHANGELOG = 10 stable (v9.40..v9.31) + v9.41 in-flight.
-
-## v9.40 — 2026-05-17 (Post-freeze hardening · operational completeness · v9.31+v9.39 cascade)
-
-Three coupled defects surfaced when the v9.39 container rebuild
-exposed them:
-
-1. **`observability.py` (v9.31) missing from both Dockerfiles.**
-   Container failed to boot: `ModuleNotFoundError: No module named
-   'observability'`. The v9.17 regression-guard test was supposed
-   to catch exactly this (it caught v8.97 webauthn_auth.py
-   omission). But its regex `^\\s*import\\s+(\\w+)\\s*$` required
-   nothing after the module name; my v9.31 edit had
-   `import observability  # v9.31 ...` — trailing comment invisible
-   to the regex. **Both the Dockerfiles AND the regex fixed.**
-2. **Regression-guard only scanned `app.py`**, not `security.py`.
-   v9.31 added `import observability` to security.py too. The new
-   regex pattern (with trailing-comment tolerance) now applies to
-   both files.
-3. **`redis` Python lib missing from `requirements.txt`** →
-   v9.39's `POLARIS_REDIS_URL` env-pass-through silently degraded
-   to in-memory backend even when the URL was correctly set
-   (`security.py` auto-selector requires the lib to be importable).
-
-Live verified post-rebuild: `/api/version` reports v9.40,
-`/api/metrics` returns real counters (was 404 in v9.30 container),
-observability.py imports cleanly.
-
-Per-ship archive-move: v9.29 byte-identical to Post-v9.24 section
-in archive. CHANGELOG = 10 stable (v9.39..v9.30) + v9.40 in-flight.
-
-`TestWave40V940` × 4 invariants: observability in both Dockerfiles;
-regex tolerates trailing comments; regression-guard scans
-security.py; `redis>=` in requirements.txt. Plus the underlying
-regression-guard now catches future occurrences of this class.
 

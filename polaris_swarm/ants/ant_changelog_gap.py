@@ -38,9 +38,11 @@ SCAN_DIRS = (
 )
 SCAN_EXTS = {".py", ".sh", ".sql", ".js", ".css", ".html"}
 
-# CHANGELOG top header: `## v8.X — YYYY-MM-DD ...`
+# CHANGELOG top header: `## vMAJOR.MINOR — YYYY-MM-DD ...`
+# v9.51: was `v8\.` (bit-rotted — matched nothing once CHANGELOG went all-v9.x);
+# now version-agnostic so the gap detector tracks the current scheme.
 HEADER_RE = re.compile(
-    r"^## v8\.(\d+)\s+—\s+(\d{4})-(\d{2})-(\d{2})\b",
+    r"^## v\d+\.(\d+)\s+—\s+(\d{4})-(\d{2})-(\d{2})\b",
     re.MULTILINE,
 )
 
