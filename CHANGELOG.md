@@ -14,6 +14,40 @@ record, read [`meta/sanctum-index.md`](meta/sanctum-index.md).
 
 ---
 
+## v9.45 — 2026-06-03 (Repo hygiene · secret-leak gitignore fix · foresight log integrity)
+
+scope: hygiene-security · ship_marker: gitignore-secret-leak · vocation: trustworthiness — operator secrets must not be one `git add` from disclosure · pattern20_instance: drift→test promotion (security regression guard)
+
+Heavy-production session cleanup (Sanctum `2026-06-03-heavy-production-authorization`).
+A repo audit surfaced a latent **secret-leak**: `.gitignore` used trailing inline
+comments on `polaris.env` (operator secrets) and `.claude/`:
+
+    polaris.env   # v9.34: sourced by polaris-mycelium-wake.sh
+
+git does NOT honor trailing inline comments — the `# ...` becomes part of the
+pattern, so `polaris.env` matched nothing and was NOT ignored by the repo. The
+file holds operator secrets; a `git add -A` with it present would have committed
+them. Only the file's non-existence saved the tree. v9.45 moves the comments to
+their own lines above bare patterns. Verified with `git check-ignore`.
+
+**Other hygiene:**
+- `.playwright-mcp/` (158 stale browser-console logs) gitignored + removed.
+- Foresight acceptance-log path parameterized: `promote_foresight_candidates`
+  now takes `acceptance_log_path`, so the idempotency test stops leaking the
+  fixture `"Test idempotent candidate xyz123"` into the real empirical-graduation
+  tracker (`promotion.py` previously hardcoded `_REPO_ROOT`). Scrubbed the leaked
+  FS-FBAEC2B8 entry.
+
+**Tests** (TestWave45V945, 6 cases): security regression guards (polaris.env +
+.claude gitignored via `git check-ignore`; no trailing-comment patterns in
+.gitignore), .playwright-mcp ignored, acceptance-log path parameterized, no
+fixture in the real log.
+
+**Personas.** Architect: drift→test promotion — the secret-leak becomes a
+standing invariant, not a one-time fix. Anti-Architect: no scope dissent; pure
+hygiene + integrity. Risk class LOW (hygiene + test; security-positive).
+Authorized under the 2026-06-03 heavy-production directive.
+
 ## v9.44 — 2026-06-03 (Glass bounded-integration · the ZK verdict is two-witnessed · decline the complete rework)
 
 scope: zk-substrate · ship_marker: glass-bounded-integration · vocation: trustworthiness — a cryptographic verdict only one program can produce is a promise, not a proof · pattern20_instance: import-the-method-not-the-chassis (additive cross-check beside the audited substrate)
@@ -414,53 +448,4 @@ written.
 no hardcoded port literals in either watcher's URL constants or
 operator-facing detail strings; no live code references port 2223
 (historical comments documenting the bug are OK).
-
-## v9.34 — 2026-05-17 (Post-freeze hardening · swarm cron cadence · 2 long-latent defects closed)
-
-Real defect closed: `polaris-cron-install.sh` wired `ai-hydra` (read-
-side audit) but NOT the deposit-side colony runners. HYDRA's
-`ant_colony` "zero pheromones in window" ALERT had been firing as
-baseline since v9.03 — exactly the failure mode the cron-schedule
-docs already promised was solved. Two new cron entries (matching
-`docs/operator/OPERATIONS.md` documented cadence): soldier-tier
-wake every 30 min for 60s, commander deployment every 6h.
-
-- **`scripts/polaris-mycelium-wake.sh`** — new wrapper. Cron calls
-  it instead of inline python. Sources `${POLARIS_ROOT}/polaris.env`
-  (gitignored, operator-managed) so credentials stay out of
-  `crontab -l`. Dev defaults for POLARIS_DB_HOST/PORT/NAME/USER;
-  PASSWORD intentionally never defaulted (must come from
-  polaris.env, `.pgpass`, or peer auth).
-- **`scripts/polaris-cron-install.sh`** — adds 2 entries between
-  the existing markers, lists wrapper in `required_scripts` gate so
-  install refuses if wrapper missing.
-- **`.gitignore`** — `polaris.env` now ignored so operator following
-  the documented env pattern can't accidentally commit credentials.
-
-Also closes a latent crash in `polaris_swarm/soldiers/swarm_witness.py`
-(introduced v9.11): naive-vs-aware datetime subtraction silently
-crashed every soldier-tier wake under the colony's graceful-failure
-swallower. The priest tier was decorative-by-accident for ~30 ships.
-Fix: promote `last` to tz-aware before subtracting (`last.tzinfo is
-None` guard so future psycopg2 upgrades don't double-localize).
-
-AP3 caught in flight: first draft of cron entries hardcoded
-`POLARIS_DB_PASSWORD=polaris_dev_password` inline in the operator's
-crontab. The Anti-Architect catch on `--dry-run` output forced the
-wrapper redesign — credentials never leak to `crontab -l`.
-
-`TestWave34V934` × 9 invariants pin: wrapper exists + executable +
-no hardcoded password + sources polaris.env; `.gitignore` covers
-polaris.env; cron entries present with correct cadence + call the
-wrapper + no inline DB_PASSWORD; wrapper in `required_scripts` gate;
-swarm_witness datetime fix in place with naive-input guard.
-
-Verified end-to-end this session: HYDRA `ant_colony` ALERT
-("zero pheromones") → DRIFT ("ok") after 1 soldier wake + 1
-commander wake. 135 deposits in last 6h (68 commander + 67 soldier).
-Remaining HYDRA drifts (treasury skew, real ERROR log signals) are
-the system working as designed — surfacing real signal, not
-masking silence.
-
-Activation: `./scripts/polaris-cron-install.sh` (operator action).
 

@@ -83,7 +83,9 @@ yarn-error.log*
 .project
 .classpath
 .settings/
-.claude/      # Claude Code IDE state (per-user; v8.59)
+# Claude Code IDE state (per-user; v8.59). Comment on its own line:
+# git does NOT honor trailing inline comments, so a bare pattern is required.
+.claude/
 
 # ============================================================================
 # OS / shell artifacts
@@ -107,7 +109,10 @@ state/
 .env
 .env.local
 .env.*.local
-polaris.env   # v9.34: sourced by polaris-mycelium-wake.sh (operator-managed)
+# v9.34: sourced by polaris-mycelium-wake.sh (operator-managed secrets).
+# Comment on its own line: a trailing inline comment broke this pattern
+# (git does not strip them), leaving operator secrets un-ignored until v9.45.
+polaris.env
 secrets.json
 credentials.json
 
@@ -147,3 +152,6 @@ polaris_web/.docker-volume/
 meta/brain-map/brain-map.html
 polaris_swarm/civitas/census-roll.json
 polaris_swarm/civitas/treasury-roll.json
+
+# Playwright MCP tool artifacts (browser console logs) - operator-local
+.playwright-mcp/

@@ -184,10 +184,17 @@ def promote_foresight_candidates(
     candidates: list[ForesightCandidate],
     roadmap_path: Optional[pathlib.Path] = None,
     top_n: int = 3,
+    acceptance_log_path: Optional[pathlib.Path] = None,
 ) -> PromotionResult:
-    """Promote top-N foresight candidates into ROADMAP.md."""
+    """Promote top-N foresight candidates into ROADMAP.md.
+
+    acceptance_log_path is parameterized (v9.45) so tests can redirect it to a
+    tempdir; otherwise a test fixture leaks into the real empirical-graduation
+    tracker (the v9.45 hygiene fix). Defaults to the real repo log."""
     if roadmap_path is None:
         roadmap_path = _REPO_ROOT / "ROADMAP.md"
+    if acceptance_log_path is None:
+        acceptance_log_path = _REPO_ROOT / "polaris_foresight" / "_acceptance_log.json"
 
     result = PromotionResult(
         candidates_considered=len(candidates),
@@ -260,12 +267,11 @@ def promote_foresight_candidates(
     result.promoted_new = len(to_promote)
     result.promoted_ids = [fs_id for _, fs_id in to_promote]
 
-    # Update acceptance log
-    log_path = _REPO_ROOT / "polaris_foresight" / "_acceptance_log.json"
+    # Update acceptance log (parameterized so tests do not pollute the real one)
     _update_acceptance_log(
         result.promoted_ids,
         [c for c, _ in to_promote],
-        log_path,
+        acceptance_log_path,
     )
 
     return result

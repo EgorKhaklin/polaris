@@ -218,7 +218,7 @@ Two remaining honestly-named "accept it never will" items:**
 
 ## Current version
 
-**v9.44** (2026-06-03). 54 ships in v9.x. 33 commander ants. 9 HYDRA
+**v9.45** (2026-06-03). 55 ships in v9.x. 33 commander ants. 9 HYDRA
 watchers + CM. 11 manifest legions + 1 reserved. 9 soldier classes (8
 workers + 1 priest). 6 citizens. Treasury (Denarius) ledger.
 
@@ -237,7 +237,10 @@ treasury-roll.json); v9.42 cleared HYDRA watcher false-positives;
 v9.43 fixed the `grep -c ... || echo 0` double-output bug class;
 v9.44 shipped the ZK second witness (Glass bounded-integration: an
 independent Python Goldilocks+Poseidon+Merkle verifier that
-two-witnesses the Rust ZK verdict; Glass folder untouched).
+two-witnesses the Rust ZK verdict; Glass folder untouched); v9.45
+fixed a latent secret-leak (.gitignore trailing-comment defect left
+`polaris.env` un-ignored) + foresight acceptance-log integrity, under
+a 2026-06-03 heavy-production authorization.
 
 For the per-ship history of v9.x: see [`CHANGELOG.md`](CHANGELOG.md)
 (curated last 10) or [`archive/CHANGELOG-FULL.md`](archive/CHANGELOG-FULL.md)

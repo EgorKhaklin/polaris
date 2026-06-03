@@ -10845,15 +10845,18 @@ class TestWave12V912(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             roadmap = pathlib.Path(tmpdir) / "ROADMAP.md"
             roadmap.write_text("# ROADMAP.md\n\n---\n\n## Existing\n", encoding="utf-8")
+            # Redirect the acceptance log to the tempdir too (v9.45): otherwise
+            # this fixture leaks into the real polaris_foresight/_acceptance_log.json.
+            acc = pathlib.Path(tmpdir) / "_acceptance_log.json"
             c = ForesightCandidate(
                 title="Test idempotent candidate xyz123", rationale="x",
                 risk_class="LOW", effort_estimate="one-shot",
                 vocation_alignment="anti-coercion (test)",
                 source_section="V",
             )
-            r1 = promote_foresight_candidates([c], roadmap_path=roadmap)
+            r1 = promote_foresight_candidates([c], roadmap_path=roadmap, acceptance_log_path=acc)
             self.assertEqual(r1.promoted_new, 1)
-            r2 = promote_foresight_candidates([c], roadmap_path=roadmap)
+            r2 = promote_foresight_candidates([c], roadmap_path=roadmap, acceptance_log_path=acc)
             self.assertEqual(r2.promoted_new, 0,
                 "Second run should promote 0 (idempotent)")
             self.assertEqual(r2.skipped_existing, 1)
@@ -16287,6 +16290,85 @@ class TestWave44V944(unittest.TestCase):
                 src = f.read()
             self.assertNotIn('Desktop/Glass', src)
             self.assertNotRegex(src, r'(?m)^\s*(import|from)\s+\w*glass\b')
+
+
+class TestWave45V945(unittest.TestCase):
+    """v9.45 - repo hygiene + secret-leak gitignore fix + foresight integrity.
+
+    The .gitignore used trailing inline comments on `polaris.env` (operator
+    secrets) and `.claude/`. git does NOT honor trailing inline comments, so
+    those patterns matched nothing and polaris.env was not ignored by the
+    repo - a latent secret-leak (a `git add -A` with the file present would
+    commit operator secrets). v9.45 moves the comments to their own lines.
+    Also: gitignored + removed the .playwright-mcp/ tool-debris dir;
+    parameterized the foresight acceptance-log path so a test fixture stops
+    leaking into the real empirical-graduation tracker; scrubbed the leak.
+
+    The first three tests are class-shaped regression guards: they fail if
+    the trailing-comment defect (or an un-ignored secrets file) ever returns.
+    """
+
+    ROOT = ROOT
+
+    def _read(self, rel):
+        with open(os.path.join(self.ROOT, rel)) as f:
+            return f.read()
+
+    def _git_check_ignore(self, relpath):
+        import subprocess
+        r = subprocess.run(
+            ['git', 'check-ignore', relpath],
+            cwd=self.ROOT, capture_output=True, text=True,
+        )
+        return r.returncode == 0
+
+    def test_v945_secrets_file_is_gitignored(self):
+        """SECURITY regression guard: polaris.env (operator secrets) must be
+        ignored by the repo's OWN .gitignore, not merely a global one."""
+        self.assertTrue(
+            self._git_check_ignore('polaris.env'),
+            "polaris.env must be gitignored (operator secrets). A trailing "
+            "inline comment silently broke this pattern before v9.45.")
+
+    def test_v945_claude_dir_is_gitignored(self):
+        self.assertTrue(
+            self._git_check_ignore('.claude/settings.local.json'),
+            ".claude/ must be ignored by the repo .gitignore (portable to "
+            "fresh clones, not reliant on a per-user global ignore).")
+
+    def test_v945_gitignore_has_no_trailing_comment_patterns(self):
+        """git does not strip `pattern   # comment`; the comment becomes part
+        of the pattern and silently disables the rule. Forbid the form."""
+        import re
+        offenders = []
+        for i, line in enumerate(self._read('.gitignore').splitlines(), 1):
+            s = line.rstrip()
+            if not s.strip() or s.lstrip().startswith('#'):
+                continue
+            if re.search(r'\S +#', s):
+                offenders.append(f"{i}: {s}")
+        self.assertEqual(
+            [], offenders,
+            f"trailing inline comments silently disable .gitignore patterns; "
+            f"put comments on their own line. Offenders: {offenders}")
+
+    def test_v945_playwright_debris_ignored(self):
+        self.assertIn('.playwright-mcp/', self._read('.gitignore'),
+                      ".playwright-mcp/ tool debris must be gitignored")
+
+    def test_v945_foresight_acceptance_log_path_parameterized(self):
+        src = self._read('polaris_foresight/promotion.py')
+        self.assertIn(
+            'acceptance_log_path', src,
+            "promote_foresight_candidates must accept acceptance_log_path so "
+            "tests cannot pollute the real empirical-graduation tracker.")
+
+    def test_v945_no_test_fixtures_in_acceptance_log(self):
+        log = self._read('polaris_foresight/_acceptance_log.json')
+        for marker in ('xyz123', 'Test idempotent candidate'):
+            self.assertNotIn(
+                marker, log,
+                f"test fixture '{marker}' leaked into the real acceptance log")
 
 
 if __name__ == '__main__':
