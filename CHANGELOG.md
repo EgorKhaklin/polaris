@@ -14,6 +14,31 @@ record, read [`meta/sanctum-index.md`](meta/sanctum-index.md).
 
 ---
 
+## v9.53 — 2026-06-03 (Apparatus-reduction · remove the orphaned economy tier-counting from HYDRA)
+
+scope: apparatus-reduction · ship_marker: hydra-tier-counting-removed · vocation: trustworthiness — finish the cut; orphaned theater left behind is still theater · pattern20_instance: complete-the-removal (the economy cut in v9.50, finished in its HYDRA consumer)
+
+Completes v9.50's economy removal. HYDRA's `ant_colony_watcher` kept its OWN copy of
+the tier thresholds (DENARII_PLEB_MAX/EQUES_MAX), counted ants into
+pleb/eques/patrician, and emitted a dead "patrician-class ant(s)" finding that
+referenced the F4 Cursus Honorum multiplier retired in v9.50 and never fired (no ant
+ever approached the threshold — max balance 50 vs 10,001). v9.53 removes that orphaned
+theater.
+
+KEPT (the load-bearing parts the audit flagged): the treasury-roll **integrity probe**
+(missing/malformed -> `alert`), which is HYDRA's liveness wire into the ship gate; and
+the "skewed strongly negative (post-rebalance)" drift signal, which reads balance
+values (not tiers) and reflects the reward ledger v9.50 preserved. HYDRA keeps its name
+per VANTA — only the dead economy references inside it are gone.
+
+**Tests** (TestWave53V953, 2 cases): the tier thresholds + pleb/eques/patrician keys
+stay removed from the watcher; the roll-integrity alert path survives.
+
+**Personas.** Anti-Architect (reviewer of record): a partial cut that leaves orphaned
+references is half-honest; finish it. Architect: complete-the-removal. Risk LOW
+(removed a dead finding + orphaned constants; watcher + hydra suites + structural suite
+all verified green). Heavy-production authorized.
+
 ## v9.52 — 2026-06-03 (Apparatus-reduction Phase 2 · the HYDRA findings-gate now actually gates)
 
 scope: apparatus-reduction · ship_marker: findings-gate-freshness · vocation: trustworthiness — a gate that does not gate is worse than no gate · pattern20_instance: harden-the-real-thing (the part of the apparatus that IS load-bearing, made honest)
@@ -358,61 +383,4 @@ class-shaped invariant if the class is more than one. Anti-Architect:
 no dissent on scope. Risk class LOW (maintenance fix to scripts;
 zero constitutional surface; zero behavioral change for callers
 because `grep -c` already prints the count).
-
-## v9.42 — 2026-05-18 (Post-freeze hardening · HYDRA watcher false-positive cleanup · two drift-in-the-watcher fixes)
-
-scope: cognitive-layer · ship_marker: hydra-watcher-cleanup · vocation: anti-surveillance (watcher honesty) · pattern20_instance: drift→test promotion loop (arch-2026-05-18-003)
-
-The 2026-05-17 HYDRA pass surfaced 4 drift signals. Two of them were
-not drift in the system being observed; they were drift in the
-watchers themselves. v9.42 closes both, both with behavioral tests
-under the Architect's drift→test promotion principle.
-
-**Finding 1 — `soldier_log_tail` phantom alerts after Docker switch.**
-The soldier reads `/tmp/polaris_app.log` with no staleness check. Under
-the Docker runtime that file is frozen at the moment the last native
-gunicorn shutdown wrote to it (2026-05-15 04:54 in this case); the
-soldier kept emitting 5 alert pheromones every 6h reading the same
-frozen ERROR + 4 WARNING lines (all about the in-memory rate limiter,
-which v9.39 actually fixed at the root). **Fix:** add
-`STALE_THRESHOLD_SECONDS = 600`. If mtime > threshold, return one
-KIND_INFO observation flagging the source as dormant. Phantom-signal
-storm stops within one cycle.
-
-**Finding 2 — `ant_colony` watcher graded F5 on the wrong window.**
-The watcher's `_summarize_balances` reduced ALL events from
-`treasury-roll.json` into per-ant balances and graded the
-"Treasury skewed strongly negative" finding on the aggregate
-min/max. The aggregate is forever-polluted by pre-v8.91 frozen -2
-penalties (G15 keeps them in the ledger). `scripts/ai-treasury-report.sh`
-already splits "post-rebalance (since v8.91, +10/-1 in operation)"
-distinctly from aggregate; the report's verdict reads ✓ in-band, but
-the HYDRA watcher read ✗ skewed. **Fix:** mirror the report's split.
-The watcher now exposes `post_rebalance_min_negative` /
-`post_rebalance_max_positive` (filtered to amounts in {+10, -1}, the
-current policy) and grades the F5 drift finding on the post-rebalance
-subset. The aggregate is still exposed in evidence_summary for
-operator visibility, but no longer drives the finding.
-
-**Tests** (TestWave42V942, 5 cases):
-- `test_v942_log_tail_has_stale_guard` — source-level invariant
-- `test_v942_log_tail_returns_info_on_stale_file` — behavioral; stale
-  file with ERROR content emits KIND_INFO, not KIND_ALERT
-- `test_v942_log_tail_still_alerts_on_fresh_errors` — negative test;
-  guard is not over-broad
-- `test_v942_ant_colony_uses_post_rebalance` — source-level invariant
-- `test_v942_ant_colony_summarize_filters_pre_rebalance` — behavioral;
-  fake roll with -2 (pre-rebalance) + -1 (post) + +10 confirms only
-  {+10, -1} amounts enter the post-rebalance subset
-
-**Personas weighed in.** Architect: invoked arch-2026-05-18-003
-(drift→test promotion loop) — every drift catch should become an
-executable test. Done. Anti-Architect: silent on the scope (no
-structured proposal dissent); flagged v9.39 already closed a
-soldier_log_tail finding at the **root cause** (Redis env wired),
-but didn't close the **failure mode** (stale-file phantom signal) —
-v9.42 closes the latter, mirroring the v8.12 drift→test pattern.
-
-Risk class: LOW (drift maintenance under heavy-production steady-state;
-both edits are watcher-bug fixes, no constitutional surface touched).
 

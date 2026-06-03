@@ -38,11 +38,12 @@ Five channels:
      used to silently disappear from observability; now it surfaces
      within 2h.
 
-  3. **Treasury distribution.** Reads `treasury-roll.json`,
-     classifies ant balances into pleb/eques/patrician. Flags:
-       - Patrician count change since last pass → `info`
-       - Median balance falling sharply → `drift`
-       - Treasury malformed or missing → `alert`
+  3. **Treasury activity.** Reads `treasury-roll.json` as a swarm
+     activity/liveness signal (v9.53: the inert pleb/eques/patrician
+     tier classification was removed with the Cursus Honorum economy).
+     Flags:
+       - Balances skewed strongly negative post-rebalance → `drift`
+       - Treasury malformed or missing → `alert` (integrity probe)
 
   4. **Recent alerts surface.** If the snapshot includes any
      pheromones with kind='alert' in the window, surface their count
@@ -90,10 +91,6 @@ PHEROMONE_WINDOW_HOURS = WINDOW_FAST   # v9.04: aligned to commander cron cadenc
 PHEROMONE_MIN_DEPOSITS_HEALTHY = 10
 PHEROMONE_MIN_DEPOSITS_DRIFT_THRESHOLD = 0  # 0 = alert; >0 = drift
 
-# Treasury thresholds (mirrors polaris_swarm/civitas/treasury.py)
-DENARII_PLEB_MAX = 1_000
-DENARII_EQUES_MAX = 10_000
-
 # Project root inference
 _HERE = pathlib.Path(__file__).resolve().parent
 _PROJECT_ROOT = _HERE.parent.parent
@@ -133,18 +130,14 @@ def _summarize_balances(roll: dict) -> dict[str, Any]:
         balances[ant] = balances.get(ant, 0) + amount
         if amount in (10, -1):
             post_balances[ant] = post_balances.get(ant, 0) + amount
-    pleb = sum(1 for b in balances.values() if b <= DENARII_PLEB_MAX)
-    eques = sum(1 for b in balances.values()
-                if DENARII_PLEB_MAX < b <= DENARII_EQUES_MAX)
-    patrician = sum(1 for b in balances.values() if b > DENARII_EQUES_MAX)
+    # v9.53: the pleb/eques/patrician tier classification was removed with the
+    # rest of the inert Cursus Honorum economy (v9.50). The roll is kept as a
+    # liveness/activity signal; the never-engaged tiers are not.
     values = list(balances.values())
     median_b = statistics.median(values) if values else 0
     post_values = list(post_balances.values())
     return {
         "ants_with_balance": len(balances),
-        "pleb": pleb,
-        "eques": eques,
-        "patrician": patrician,
         "median_balance": median_b,
         "max_positive": max(values) if values else 0,
         "min_negative": min(values) if values else 0,
@@ -366,20 +359,11 @@ class AntColonyWatcher(Watcher):
                     evidence={**bal_summary,
                               "node_id": "civitas:treasury"},
                 ))
-            if bal_summary["patrician"] > 0:
-                findings.append(Finding(
-                    severity="info",
-                    title=f"{bal_summary['patrician']} patrician-class ant(s)",
-                    detail=(
-                        f"{bal_summary['patrician']} ant(s) have "
-                        f"reached patrician threshold "
-                        f"(>{DENARII_EQUES_MAX} denarii). The "
-                        f"F4 Cursus Honorum multiplier (2.0×) is "
-                        f"behaviorally active for them."
-                    ),
-                    evidence={**bal_summary,
-                              "node_id": "civitas:treasury"},
-                ))
+            # (v9.53: the dead "patrician-class ant(s)" finding was removed —
+            # it referenced the F4 Cursus Honorum multiplier retired in v9.50
+            # and never fired anyway, since no ant ever approached the tier
+            # threshold. The treasury roll is kept as a liveness/activity
+            # signal; the inert tier classification is not.)
 
         # ---- Channel 5: cohort size + legion count sanity ----
         try:

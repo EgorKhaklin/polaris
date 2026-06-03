@@ -16562,5 +16562,43 @@ class TestWave52V952(unittest.TestCase):
                          "a fresh, clean brief must still report ok")
 
 
+class TestWave53V953(unittest.TestCase):
+    """v9.53 — apparatus-reduction: remove the orphaned economy tier-counting from HYDRA.
+
+    v9.50 removed the inert Cursus Honorum economy from the swarm, but HYDRA's
+    ant_colony_watcher still carried its own copy of the tier thresholds, counted
+    ants into pleb/eques/patrician, and emitted a dead "patrician-class ant(s)"
+    finding that referenced the retired F4 multiplier and never fired. v9.53
+    removes that orphaned theater while KEEPING the treasury-roll integrity probe
+    (missing/malformed -> alert) — HYDRA's load-bearing liveness wire — and the
+    "skewed strongly negative" drift signal (which reads balances, not tiers).
+    HYDRA keeps its name per VANTA. Per the apparatus-reduction Sanctum.
+    """
+
+    ROOT = ROOT
+
+    def _read(self, rel):
+        with open(os.path.join(self.ROOT, rel)) as f:
+            return f.read()
+
+    def test_v953_watcher_tier_counting_removed(self):
+        src = self._read('polaris_hydra/watchers/ant_colony_watcher.py')
+        # Code tokens (not prose in removal-comments): the tier thresholds and
+        # the pleb/eques/patrician dict keys must be gone from the watcher.
+        for gone in ('DENARII_PLEB_MAX', 'DENARII_EQUES_MAX',
+                     '"pleb":', '"eques":', '"patrician":'):
+            self.assertNotIn(gone, src,
+                f"orphaned economy tier-counting must stay removed from HYDRA: {gone!r}")
+
+    def test_v953_watcher_keeps_roll_integrity_probe(self):
+        """The load-bearing liveness wire must survive: a missing/malformed
+        treasury roll still produces an alert."""
+        src = self._read('polaris_hydra/watchers/ant_colony_watcher.py')
+        self.assertIn('_load_treasury_roll', src,
+                      "the roll-read (HYDRA's liveness probe) must survive")
+        self.assertRegex(src, r'severity\s*=\s*["\']alert["\']',
+                         "the roll-integrity alert path must survive")
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
