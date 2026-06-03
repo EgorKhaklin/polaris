@@ -26,6 +26,8 @@ If you don't know which file you want, this README is the answer.
 | [`rate-limiter.md`](rate-limiter.md) | R8-2 backend selection (in-memory vs Redis), atomicity notes, contract-mixin pattern. |
 | [`atlas-scaling.md`](atlas-scaling.md) | v6 scaling architecture for the operational atlas — server-side bin aggregation, viewport-aware fetches, hard caps. |
 | [`prior-art-analysis.md`](prior-art-analysis.md) | Six-lens reverse-engineering of BettaFish + MiroFish using HYDRA's watcher domains as the analytical framework. Authored 2026-05-12 post-v8.43. Adopt/reject/invert verdicts for each prior-art pattern with Polaris-flavored shapes. |
+| [`zk-soundness.md`](zk-soundness.md) | The honest ledger for the ZK layer: what the Merkle-inclusion proof actually guarantees (strong differential/two-witness consistency) vs. what is demo-scale (`TREE_DEPTH=4`, placeholder PQC, statement-level witness). Modeled on Glass's `docs/soundness.md`. v9.44. |
+| [`two-witness-principle.md`](two-witness-principle.md) | Standing obligation: every cryptographic verdict Polaris ships must be checkable by a second, independent implementation (different language/representation, no shared code), or it ABSTAINS explicitly. Adopted v9.44 from Glass's Pentecost discipline. |
 
 ## Per-ship — `ships/` subdirectory
 

@@ -22,7 +22,7 @@ _Cryptographically signed. Audit-of-record by construction. Compulsion-resistant
 [![WebAuthn MFA](https://img.shields.io/badge/auth-WebAuthn%20MFA-1f883d?logo=webauthn&logoColor=white&style=flat-square)](polaris_web/webauthn_auth.py)
 [![Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-d63aff?style=flat-square)](LICENSE)
 
-**Now shipping [v9.43](https://github.com/EgorKhaklin/polaris-id/releases/latest)** &nbsp;·&nbsp; 944 structural invariants &nbsp;·&nbsp; 633 cross-references resolved &nbsp;·&nbsp; one double-click to launch
+**Now shipping [v9.44](https://github.com/EgorKhaklin/polaris-id/releases/latest)** &nbsp;·&nbsp; 953 structural invariants &nbsp;·&nbsp; 650 cross-references resolved &nbsp;·&nbsp; one double-click to launch
 
 [**System map**](docs/reference/SYSTEM-MAP.md) · [**Conventions**](docs/CONVENTIONS.md) · [**Constitution (MISSION.md)**](MISSION.md) · [**Backlog (ROADMAP.md)**](ROADMAP.md) · [**Audit-of-record (CHANGELOG.md)**](CHANGELOG.md) · [**Agent runbook (CLAUDE.md)**](CLAUDE.md)
 
@@ -233,7 +233,7 @@ A full subcommand reference lives in [`docs/operator/INSTALL.md`](docs/operator/
 ```
                  ┌──────────────────────────────────────────────────┐
                  │              Polaris in numbers                  │
-                 │              (current as of v9.43)               │
+                 │              (current as of v9.44)               │
                  ├──────────────────────────────────────────────────┤
                  │  27 schema tables                                │
                  │  14 stored procedures (UC-1 .. UC-12 + foresight)│

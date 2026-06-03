@@ -14,6 +14,61 @@ record, read [`meta/sanctum-index.md`](meta/sanctum-index.md).
 
 ---
 
+## v9.44 — 2026-06-03 (Glass bounded-integration · the ZK verdict is two-witnessed · decline the complete rework)
+
+scope: zk-substrate · ship_marker: glass-bounded-integration · vocation: trustworthiness — a cryptographic verdict only one program can produce is a promise, not a proof · pattern20_instance: import-the-method-not-the-chassis (additive cross-check beside the audited substrate)
+
+VANTA proposed reworking Polaris with the Glass language. An adversarial
+fit analysis (Sanctum `2026-06-03-glass-bounded-integration`) found the
+philosophical rhyme real but the rework wrong: Glass's own ledger says
+*"do not use Glass to protect real value"* and it is *"not
+production-hardened"*; Polaris's security boundary is the Postgres engine
+(C1-C10 as triggers / partial-unique-indexes / CHECK), which Glass's
+pure-functional, compile-to-C effect surface cannot host. The
+decline-and-surface posture held; VANTA authorized the bounded plan:
+*"go ahead with the bounded integration plan."*
+
+**What shipped.** The one genuinely transferable asset. Glass and
+`polaris_zk` both live on the Goldilocks field (2^64) with the Poseidon
+hash family, which makes a second, independent verifier known-shaped
+rather than research. `polaris_zk/witness2/` is a from-scratch Python
+Goldilocks + Poseidon + Merkle witness that re-derives the
+Merkle-inclusion verdict and must agree with the Rust `verify()`:
+
+- Shares no code with the Rust crate or with Glass; plain `int mod p`,
+  not the crate's limbs (the Pentecost discipline, borrowed from Glass).
+- Anchored independently on Plonky2's own published Poseidon test vectors
+  (all-zeros, 0..11, all -1) in `poseidon_constants.py`.
+- Agrees bit-for-bit with the live Rust binary on root computation across
+  every cohort size 1..16, and on ACCEPT/REJECT across the honest +
+  adversary corpus (nonce / epoch / context / root tamper, multi-field
+  replay).
+- ABSTAINS, by construction, on proof-byte integrity (that axis stays
+  with the Rust decoder) and says so rather than bluffing.
+
+**Docs.** `DEVNOTES/zk-soundness.md` is the honest ledger (demo-scale
+`TREE_DEPTH = 4`, placeholder PQC by default, statement-level witness
+scope), modeled on Glass's own `docs/soundness.md`.
+`DEVNOTES/two-witness-principle.md` makes "every cryptographic verdict
+must be two-witnessed" a standing Polaris obligation.
+
+**Tests** (TestWave44V944, 9 cases, no Rust binary needed at CI time):
+package presence; 360 Poseidon constants + MDS matrices; Plonky2 vector
+self-test; golden root bit-for-bit vs Rust; verdict ACCEPT/REJECT; ledger
++ principle docs honest; Sanctum recorded + indexed; no Glass coupling.
+The full Rust-vs-Python differential is
+`polaris_web/test_zk_second_witness.py` (18 cases; runs when the binary is
+built).
+
+**Personas.** Architect: import the method, not the chassis — the
+additive cross-check strengthens C2/C7 without touching the substrate.
+Anti-Architect: held the line against chassis replacement (the v9.08
+showroom precedent) and against routing identity crypto through an
+educational substrate (the Vocation). Risk class: HIGH Sanctum
+(adjudicated a complete-rework request); the shipped work is hardening
+within the v9.31 freeze envelope. Glass folder untouched; no production
+substrate changed.
+
 ## v9.43 — 2026-05-18 (Post-freeze hardening · class-shaped bash bug · `grep -c ... || echo 0` double-emits 0)
 
 scope: cognitive-layer · ship_marker: grep-c-double-output · vocation: cognitive-layer self-coherence (CM #6) · pattern20_instance: drift→test promotion loop + class-shaped vs instance-shaped fix
@@ -409,49 +464,3 @@ masking silence.
 
 Activation: `./scripts/polaris-cron-install.sh` (operator action).
 
-## v9.33 — 2026-05-17 (Post-freeze measurement · Playwright Atlas-globe E2E scaffold · gotcha #6 pinned)
-
-First post-freeze measurement ship per MISSION.md §"From v9.32 forward,
-(b) Measurement". Closes second follow-up from
-`sanctum/2026-05-17-plugin-installation-tier2.md` (Option A).
-
-- **`polaris_web/test_e2e_atlas.py`** — 3 smoke tests against `/atlas`
-  via headless Chromium: globe-element-present; HUD-renders-4-figures;
-  no-CSP-violations-on-console. Smoke, not exhaustive (measurement,
-  not carpet-bomb).
-- **Graceful skip** when Playwright/chromium missing OR app unreachable.
-  Activation: `pip install playwright && playwright install chromium &&
-  ./polaris_mac_launch.sh up --detach`. Suite stays green on machines
-  without the 250MB browser dependency.
-- **Gotcha #6 pinned** — `wait_until="domcontentloaded"` (NOT
-  `"networkidle"`; the 10s heartbeat POST means networkidle never
-  resolves). `TestWave33V933` invariant prevents rediscovery.
-- **`playwright>=1.40,<2.0`** added to `polaris_web/requirements.txt`.
-
-`TestWave33V933` × 7 invariants pin scaffold + gotcha-#6 + skip
-discipline + activation documentation + version bump.
-
----
-
-## How to read the older entries
-
-```bash
-# Full per-ship history (v1.0 → v9.23):
-less archive/CHANGELOG-FULL.md
-
-# Find a specific ship:
-grep -n '^## v8.97' archive/CHANGELOG-FULL.md
-
-# Current active decisions (Sanctum index):
-less meta/sanctum-index.md
-
-# Today's session log:
-ls journal/ | tail -1
-```
-
-The full record is preserved byte-identical at the archive path. No
-entry was edited or deleted in the v9.24 compression — the
-v8.20 audit-of-record discipline holds.
-
-*Per BIG MISSION Sanctum 2026-05-16, Tier 4 #12. CHANGELOG.md compressed
-17,946 → ~180 lines; full content at [archive/CHANGELOG-FULL.md](archive/CHANGELOG-FULL.md).*

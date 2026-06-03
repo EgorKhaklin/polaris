@@ -17959,6 +17959,53 @@ AoR amendment, decided + shipped v9.38) to permit APPENDS to this
 file (still no edits or deletions of existing rows). Section
 boundary below; entries newest-first under this section.
 
+## v9.33 — 2026-05-17 (Post-freeze measurement · Playwright Atlas-globe E2E scaffold · gotcha #6 pinned)
+
+First post-freeze measurement ship per MISSION.md §"From v9.32 forward,
+(b) Measurement". Closes second follow-up from
+`sanctum/2026-05-17-plugin-installation-tier2.md` (Option A).
+
+- **`polaris_web/test_e2e_atlas.py`** — 3 smoke tests against `/atlas`
+  via headless Chromium: globe-element-present; HUD-renders-4-figures;
+  no-CSP-violations-on-console. Smoke, not exhaustive (measurement,
+  not carpet-bomb).
+- **Graceful skip** when Playwright/chromium missing OR app unreachable.
+  Activation: `pip install playwright && playwright install chromium &&
+  ./polaris_mac_launch.sh up --detach`. Suite stays green on machines
+  without the 250MB browser dependency.
+- **Gotcha #6 pinned** — `wait_until="domcontentloaded"` (NOT
+  `"networkidle"`; the 10s heartbeat POST means networkidle never
+  resolves). `TestWave33V933` invariant prevents rediscovery.
+- **`playwright>=1.40,<2.0`** added to `polaris_web/requirements.txt`.
+
+`TestWave33V933` × 7 invariants pin scaffold + gotcha-#6 + skip
+discipline + activation documentation + version bump.
+
+---
+
+## How to read the older entries
+
+```bash
+# Full per-ship history (v1.0 → v9.23):
+less archive/CHANGELOG-FULL.md
+
+# Find a specific ship:
+grep -n '^## v8.97' archive/CHANGELOG-FULL.md
+
+# Current active decisions (Sanctum index):
+less meta/sanctum-index.md
+
+# Today's session log:
+ls journal/ | tail -1
+```
+
+The full record is preserved byte-identical at the archive path. No
+entry was edited or deleted in the v9.24 compression — the
+v8.20 audit-of-record discipline holds.
+
+*Per BIG MISSION Sanctum 2026-05-16, Tier 4 #12. CHANGELOG.md compressed
+17,946 → ~180 lines; full content at [archive/CHANGELOG-FULL.md](archive/CHANGELOG-FULL.md).*
+
 ## v9.32 — 2026-05-17 (Post-freeze hardening · hookify · ship-gate enforced by harness not memory)
 
 First post-freeze hardening ship per MISSION.md §"From v9.32 forward,

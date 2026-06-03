@@ -218,7 +218,7 @@ Two remaining honestly-named "accept it never will" items:**
 
 ## Current version
 
-**v9.41** (2026-05-17). 51 ships in v9.x. 33 commander ants. 9 HYDRA
+**v9.44** (2026-06-03). 54 ships in v9.x. 33 commander ants. 9 HYDRA
 watchers + CM. 11 manifest legions + 1 reserved. 9 soldier classes (8
 workers + 1 priest). 6 citizens. Treasury (Denarius) ledger.
 
@@ -233,7 +233,11 @@ Sanctum (CHANGELOG = 10 stable + 1 in-flight); v9.39 wired
 POLARIS_REDIS_URL into docker-compose; v9.40 fixed observability.py
 Dockerfile-missing + regression-guard widening; v9.41 reclassified
 AoR count 12 → 10 (dropped 2 derived caches: census-roll.json +
-treasury-roll.json).
+treasury-roll.json); v9.42 cleared HYDRA watcher false-positives;
+v9.43 fixed the `grep -c ... || echo 0` double-output bug class;
+v9.44 shipped the ZK second witness (Glass bounded-integration: an
+independent Python Goldilocks+Poseidon+Merkle verifier that
+two-witnesses the Rust ZK verdict; Glass folder untouched).
 
 For the per-ship history of v9.x: see [`CHANGELOG.md`](CHANGELOG.md)
 (curated last 10) or [`archive/CHANGELOG-FULL.md`](archive/CHANGELOG-FULL.md)

@@ -16177,5 +16177,117 @@ class TestWave43V943(unittest.TestCase):
             f"error. Full output:\n{combined[:2000]}")
 
 
+class TestWave44V944(unittest.TestCase):
+    """v9.44 — Glass bounded-integration: the ZK verdict is two-witnessed.
+
+    The 2026-06-03 Glass fit analysis declined a complete rework (Glass is a
+    research language whose own ledger says "do not use Glass to protect real
+    value"; Polaris's security boundary is the Postgres engine, which Glass
+    cannot host) and shipped the one genuinely transferable asset: an
+    independent second witness for polaris_zk's Merkle-inclusion verdict, plus
+    an honest soundness ledger and the two-witness principle.
+
+    These invariants pin the package's presence and, behaviorally, that the
+    independent Python witness reproduces Plonky2's published Poseidon vectors
+    and agrees bit-for-bit with the Rust crate's root on a golden input. That
+    asserts the cross-implementation agreement without needing the Rust binary
+    at CI time. See sanctum/2026-06-03-glass-bounded-integration.md.
+    """
+
+    ROOT = ROOT
+
+    # Golden captured from the Rust binary (polaris-zk compute-root): the
+    # leaves below hash to this root. The independent Python witness must
+    # reproduce it bit-for-bit, or the two implementations have diverged.
+    GOLDEN_LEAVES = ['11' + '00' * 31, '22' + '00' * 31, '33' + '00' * 31]
+    GOLDEN_ROOT = '223c46bd7bc72ef2eb2e71b92723b0bf747b8bc31076bd092a136222e6665870'
+
+    def _read(self, rel):
+        with open(os.path.join(self.ROOT, rel)) as f:
+            return f.read()
+
+    def _import_witness2(self):
+        import importlib
+        import sys
+        zk = os.path.join(self.ROOT, 'polaris_zk')
+        if zk not in sys.path:
+            sys.path.insert(0, zk)
+        return (
+            importlib.import_module('witness2.poseidon'),
+            importlib.import_module('witness2.merkle'),
+            importlib.import_module('witness2.verifier'),
+        )
+
+    def test_v944_witness2_package_present(self):
+        for rel in [
+            'polaris_zk/witness2/__init__.py',
+            'polaris_zk/witness2/poseidon.py',
+            'polaris_zk/witness2/poseidon_constants.py',
+            'polaris_zk/witness2/merkle.py',
+            'polaris_zk/witness2/verifier.py',
+            'polaris_zk/witness2/test_witness2.py',
+            'polaris_web/test_zk_second_witness.py',
+        ]:
+            self.assertTrue(os.path.isfile(os.path.join(self.ROOT, rel)),
+                            f"missing second-witness file: {rel}")
+
+    def test_v944_poseidon_constants_shape(self):
+        self._import_witness2()
+        from witness2.poseidon_constants import (
+            ALL_ROUND_CONSTANTS, MDS_MATRIX_CIRC, MDS_MATRIX_DIAG,
+        )
+        self.assertEqual(len(ALL_ROUND_CONSTANTS), 360,
+                         "Poseidon needs 12 * (8 full + 22 partial) = 360 constants")
+        self.assertEqual(MDS_MATRIX_CIRC, [17, 15, 41, 16, 2, 28, 13, 13, 39, 18, 34, 20])
+        self.assertEqual(MDS_MATRIX_DIAG, [8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+
+    def test_v944_poseidon_matches_plonky2_vectors(self):
+        poseidon, _, _ = self._import_witness2()
+        poseidon.self_test()  # raises AssertionError on any vector mismatch
+
+    def test_v944_witness_root_matches_rust_golden(self):
+        _, merkle, _ = self._import_witness2()
+        self.assertEqual(
+            merkle.build_root(self.GOLDEN_LEAVES), self.GOLDEN_ROOT,
+            "independent Python witness must reproduce the Rust crate's root bit-for-bit")
+
+    def test_v944_witness_verdict_logic(self):
+        _, merkle, verifier = self._import_witness2()
+        leaf = '11' * 32
+        path = ['00' * 32] * merkle.TREE_DEPTH
+        root = merkle.root_from_path(leaf, 0, path)
+        w = {'leaf_hash': leaf, 'leaf_index': 0, 'proof_path': path}
+        committed = {'epoch_root_hex': root, 'epoch_id': 5, 'context_id': 1, 'nonce': 9}
+        self.assertEqual(verifier.check_claim(w, committed, dict(committed))['verdict'], 'ACCEPT')
+        self.assertEqual(
+            verifier.check_claim(w, committed, dict(committed, nonce=10))['verdict'], 'REJECT')
+
+    def test_v944_soundness_ledger_present_and_honest(self):
+        led = self._read('DEVNOTES/zk-soundness.md')
+        self.assertIn('TREE_DEPTH = 4', led)
+        self.assertIn('two-witness', led.lower())
+        self.assertIn('Do not protect real', led)
+
+    def test_v944_two_witness_principle_documented(self):
+        doc = self._read('DEVNOTES/two-witness-principle.md')
+        self.assertIn('second witness', doc.lower())
+        self.assertIn('ABSTAIN', doc)
+
+    def test_v944_sanctum_recorded_and_indexed(self):
+        self.assertTrue(os.path.isfile(
+            os.path.join(self.ROOT, 'sanctum', '2026-06-03-glass-bounded-integration.md')))
+        self.assertIn('glass-bounded-integration', self._read('meta/sanctum-index.md'))
+
+    def test_v944_witness_does_not_couple_to_glass(self):
+        """The bounded integration must not import from or depend on the Glass
+        folder. No witness2 source references a Glass path or imports glass."""
+        import glob
+        for path in glob.glob(os.path.join(self.ROOT, 'polaris_zk', 'witness2', '*.py')):
+            with open(path) as f:
+                src = f.read()
+            self.assertNotIn('Desktop/Glass', src)
+            self.assertNotRegex(src, r'(?m)^\s*(import|from)\s+\w*glass\b')
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)
