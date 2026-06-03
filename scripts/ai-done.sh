@@ -253,6 +253,18 @@ else
     ALERT_COUNT=$(grep -c '^\s*\[ALERT\]' "$LATEST_BRIEF" 2>/dev/null || true)
     DRIFT_COUNT=$(grep -c '^\s*\[DRIFT\]' "$LATEST_BRIEF" 2>/dev/null || true)
     BRIEF_NAME=$(basename "$LATEST_BRIEF")
+    # v9.52 (apparatus-reduction Phase 2): freshness guard. The gate used to
+    # grep the newest brief by mtime with NO freshness check, so a long-stale
+    # brief reported "0 ALERT" as if it described the current state — a vacuous
+    # pass (the audit found the latest brief was 18 days old). A brief older
+    # than 24h can no longer confirm a clean gate: it warns and asks for a
+    # fresh `ai-hydra.sh --full --save` instead. (`find -mtime` is portable;
+    # `stat -f`/`-c` differ across macOS/Linux per gotcha #4.)
+    if [ -n "$(find "$LATEST_BRIEF" -mtime -1 2>/dev/null)" ]; then
+        BRIEF_FRESH=1
+    else
+        BRIEF_FRESH=0
+    fi
     if [ "${ALERT_COUNT:-0}" -gt 0 ]; then
         if [ "${POLARIS_ALLOW_ALERT_SHIPS:-0}" = "1" ]; then
             note "hydra-findings-gate: $ALERT_COUNT ALERT(s) in $BRIEF_NAME (OVERRIDDEN via POLARIS_ALLOW_ALERT_SHIPS=1)"
@@ -263,11 +275,13 @@ else
             printf "      Resolve the alerts, OR set POLARIS_ALLOW_ALERT_SHIPS=1\n"
             printf "      to ship past them (audit-trail line will be printed).\n"
         fi
+    elif [ "$BRIEF_FRESH" = "0" ]; then
+        note "hydra-findings-gate: latest brief $BRIEF_NAME is STALE (>24h); 0 ALERT is NOT confirmed against current state — run ai-hydra.sh --full --save"
     else
         if [ "${DRIFT_COUNT:-0}" -gt 0 ]; then
-            ok "hydra-findings-gate: 0 ALERT, $DRIFT_COUNT DRIFT in $BRIEF_NAME"
+            ok "hydra-findings-gate: 0 ALERT, $DRIFT_COUNT DRIFT in $BRIEF_NAME (fresh)"
         else
-            ok "hydra-findings-gate: 0 ALERT in $BRIEF_NAME"
+            ok "hydra-findings-gate: 0 ALERT in $BRIEF_NAME (fresh)"
         fi
     fi
 fi

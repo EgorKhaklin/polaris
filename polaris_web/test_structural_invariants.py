@@ -16528,5 +16528,39 @@ class TestWave51V951(unittest.TestCase):
             return f.read()
 
 
+class TestWave52V952(unittest.TestCase):
+    """v9.52 — apparatus-reduction Phase 2: the HYDRA findings-gate is freshness-guarded.
+
+    The gate in ai-done.sh grepped the newest journal/hydra brief by mtime with NO
+    freshness check, so a long-stale brief (the audit found an 18-day-old one)
+    reported "0 ALERT" as if it described the current state — a vacuous pass: a
+    gate that does not gate. v9.52 adds a freshness guard: a brief older than 24h
+    warns ("not confirmed; run ai-hydra.sh --full --save") instead of reporting a
+    confirmed clean gate. Per the apparatus-reduction Sanctum (2026-06-03).
+    """
+
+    ROOT = ROOT
+
+    def _read(self, rel):
+        with open(os.path.join(self.ROOT, rel)) as f:
+            return f.read()
+
+    def test_v952_findings_gate_has_freshness_check(self):
+        src = self._read('scripts/ai-done.sh')
+        self.assertIn('BRIEF_FRESH', src,
+                      "the hydra-findings-gate must compute brief freshness")
+        # Portable mtime check (not stat -f/-c, which differ macOS/Linux per gotcha #4).
+        self.assertIn('find "$LATEST_BRIEF" -mtime', src,
+                      "freshness must use portable find -mtime")
+        self.assertRegex(src, r'STALE.*NOT confirmed',
+                         "a stale brief must NOT report a confirmed clean gate")
+
+    def test_v952_fresh_brief_still_reports_ok(self):
+        """The positive path is preserved: a fresh brief with 0 ALERT still passes."""
+        src = self._read('scripts/ai-done.sh')
+        self.assertRegex(src, r'0 ALERT in \$BRIEF_NAME \(fresh\)',
+                         "a fresh, clean brief must still report ok")
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

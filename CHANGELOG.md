@@ -14,6 +14,36 @@ record, read [`meta/sanctum-index.md`](meta/sanctum-index.md).
 
 ---
 
+## v9.52 — 2026-06-03 (Apparatus-reduction Phase 2 · the HYDRA findings-gate now actually gates)
+
+scope: apparatus-reduction · ship_marker: findings-gate-freshness · vocation: trustworthiness — a gate that does not gate is worse than no gate · pattern20_instance: harden-the-real-thing (the part of the apparatus that IS load-bearing, made honest)
+
+Phase 2 of the apparatus-reduction arc: the genuinely product-improving part. The
+audit found `ai-done.sh`'s step-14 HYDRA findings-gate grepped the newest
+`journal/hydra/*.md` brief by mtime with **no freshness check** — so a long-stale
+brief (the audit found an 18-day-old one) reported "0 ALERT" as if it described the
+current state. A gate passing vacuously off stale data.
+
+v9.52 adds a freshness guard (portable `find -mtime`, not `stat -f/-c` per gotcha #4):
+a brief older than 24h can no longer confirm a clean gate — it warns ("0 ALERT is
+NOT confirmed against current state; run ai-hydra.sh --full --save") instead of
+falsely passing. The positive path is preserved: a fresh brief with 0 ALERT still
+reports ok.
+
+The fix is self-demonstrating: with the genuinely-stale brief on disk, the gate now
+honestly WARNS. And a fresh `ai-hydra.sh` run confirms why the honesty matters — the
+current state actually carries findings the vacuous gate was hiding (incl. a
+`trajectory: ship-rate burst (mission-creep signal)` — the watcher independently
+corroborating the v9.51-repaired release-velocity ant).
+
+**Tests** (TestWave52V952, 2 cases): the gate has a freshness check (find -mtime;
+stale → NOT confirmed); the fresh-brief positive path still reports ok.
+
+**Personas.** Anti-Architect (reviewer of record): harden the part of the apparatus
+that earns its place rather than only cutting. Architect: a measurement that lies is
+worse than none. Risk LOW (gate is honest-er; warns don't block; the ship machinery
+is verified by running ai-done.sh). Heavy-production authorized.
+
 ## v9.51 — 2026-06-03 (Apparatus-reduction Phase 1b · repair the bit-rotted version regexes — repair, not delete)
 
 scope: apparatus-reduction · ship_marker: changelog-ant-regex-repair · vocation: trustworthiness — a dead check wearing live-check costume is its own larping; make it real or remove it · pattern20_instance: verify-before-cut (the audit said delete 5; live verification found 2 functional + 3 fixable)
@@ -385,60 +415,4 @@ v9.42 closes the latter, mirroring the v8.12 drift→test pattern.
 
 Risk class: LOW (drift maintenance under heavy-production steady-state;
 both edits are watcher-bug fixes, no constitutional surface touched).
-
-## v9.41 — 2026-05-17 (AoR reclassification · canonical set 12 → 10 · two derived caches dropped · v9.x release)
-
-The published-release ship for v9.x. Closes the constitutional gap
-opened by v9.40's `.gitignore` polish commit (e56b310): three files
-were untracked as auto-gen state (`meta/brain-map/brain-map.html`,
-`polaris_swarm/civitas/census-roll.json`,
-`polaris_swarm/civitas/treasury-roll.json`), but the constitution still
-claimed all three as filesystem audit-of-record instances #10/#11/#12.
-CI caught the divergence: structural invariants expected those files
-present on origin.
-
-**Architect + Anti-Architect adjudication:** the v8.66 + v8.68 ships
-that classified census-roll/treasury-roll as filesystem-AoR failed the
-AoR criterion ("fully reconstructs operation history without joining
-elsewhere"). Census-roll is a cached projection over the actual
-presence of `polaris_swarm/ants/ant_*.py` modules + civitas modules.
-Treasury-roll is a cached sum over Pheromone-table deposits (already
-schema-AoR #2) plus the reward function. Both are derived; neither is
-source-of-truth. **Reclassification:** 12 total → **10 total (9 schema
-+ 1 filesystem)**. The brain-map.html was the third reclassified file
-(generator-marker invariant survives at the generator level).
-
-**Documents updated** (canonical-count cascade):
-DEVNOTES/audit-of-record.md (header + table rows #11/#12 + new
-"v9.41 reclassification" subsection); MISSION.md §Principle 2;
-CLAUDE.md C1 invariant; README.md "Twelve instances" prose;
-DEVNOTES/README.md; docs/README.md; meta/sanctum-protocol.md;
-docs/ARCHITECTURE-OVERVIEW.md; docs/operator/DR-SINGLE-REGION.md;
-docs/reference/GLOSSARY.md; polaris_swarm/__init__.py docstring.
-
-**Tests:** 2 renamed (`test_sanctum_protocol_aor_count_is_ten`,
-`test_glossary_acknowledges_aor_count_is_ten` — regex now matches
-`r"10 instances\s*\(9 schema\s*\+\s*1 filesystem\)"` + asserts the two
-reclassified files are named in the protocol doc); 6 retired with
-`@unittest.skip` decorators naming the replacing invariant
-(test_brain_map_html_present, test_census_roll_json_exists_with_append_only_marker,
-test_treasury_roll_is_filesystem_aor, test_a1_treasury_roll_has_v905_audit_marker,
-test_brain_map_output_grows_with_mycelium, test_brain_map_has_auto_generated_marker);
-1 adapted (`test_denarii_never_reference_polaris_identity` — dataclass
-shape check always runs; file-scan portion wrapped in
-`if os.path.isfile(roll_path):`). The class-shape claims are preserved
-at the generator level; only instance-level file-presence checks
-retired.
-
-**Followup commit:** repointed 2 broken markdown links to the
-generator script (`README.md:126` and `docs/story/STORY.md:73`) that
-ai-link-check caught after the c1f0ea6 push went green on tests but
-red on link discipline. Historical narrative numbers (222 nodes / 248
-edges in STORY.md May-13 snapshot) preserved.
-
-Final live counts: 937 tests, OK (skipped=6); 633 link references
-resolved; `/api/version` reports v9.41.
-
-Per-ship archive-move: v9.30 byte-identical to "Post-v9.24" section
-in archive. CHANGELOG = 10 stable (v9.40..v9.31) + v9.41 in-flight.
 
