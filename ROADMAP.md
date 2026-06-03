@@ -1,5 +1,69 @@
 # ROADMAP.md — where Polaris is going
 
+<!-- ============================================================ -->
+<!-- LIVING BACKLOG. Newest priorities first. Continuously updated -->
+<!-- each session (per the 2026-06-03 heavy-production directive:  -->
+<!-- "create a future roadmap ... constantly updated with ideas"). -->
+<!-- Add new ideas here as they arise; move to the prioritized     -->
+<!-- backlog below when adopted as an R-id; never delete shipped   -->
+<!-- history (audit-of-record).                                    -->
+<!-- ============================================================ -->
+
+## 🔭 OPEN NOW — living backlog (updated 2026-06-03, v9.45)
+
+Tagging: `effort(XS/S/M/L) · value · risk · freeze-category`. The
+v9.31 freeze permits hardening / measurement / cold-read-evidence;
+a new-arc item needs a Sanctum naming an external trigger.
+
+**Flagged for VANTA (decision required):**
+
+- **[VANTA] THESIS v9.40 terminus has passed unactioned.** MISSION.md:70
+  says the strong "agent-maintainable production identity system" claim
+  *retires permanently* if no external cold-read occurs by v9.40. We are
+  at v9.45 with only the system's own walkthrough, never an external one,
+  yet `docs/THESIS.md` still uses the softer conditional "RETIRED *until*
+  evidence supports it." Leaving the softer wording past the deadline is
+  itself the dishonesty the project's discipline forbids. Two honest moves,
+  both VANTA's call: (a) reflect the permanent terminus ("has not been
+  independently validated") + pin it with an invariant, or (b) amend the
+  deadline via Sanctum + freeze-amendment-protocol. `S · high · MEDIUM · cold-read-evidence`
+
+**Next ships (agent-actionable under heavy-production authorization):**
+
+1. **[NEXT] Wire the v9.44 ZK two-witness + behavioral suites into CI.**
+   CI runs only 4 suites; `test_zk_second_witness.py` (the flagship v9.44
+   differential), `test_app.py`, `test_cli.py`, and the hydra suites never
+   gate the build — even though CI already builds the polaris-zk binary the
+   ZK differential needs. Add `pytest` to `requirements.txt` (the header
+   already promises it; it is absent) and add the CI steps. `XS-S · high · LOW · hardening+measurement`
+2. **PQC signature path is a lone verifier** — the two-witness principle
+   (v9.44) names it a finding. Add an independent second witness for the
+   ML-DSA-65 verdict, or record an explicit ABSTAIN instance per rule 4.
+   Also: `pqc_signing.sign()` is never wired into the issuance route — clarify
+   the terminal state in its docstring. `L · high · MEDIUM · hardening`
+3. **Foresight experiment is in limbo — cut the knot.** The v9.12 deal
+   (≥50% candidate acceptance over 6 monthly briefs, else sunset) can neither
+   graduate nor sunset: 20 briefs but all in one month, cadence stalled.
+   Either wire `ai-foresight.sh` into a real monthly cron, or open the removal
+   Sanctum and retire the surface. `M · medium · MEDIUM · measurement`
+4. **ZK anonymity set is demo-scale (`TREE_DEPTH=4`, ≤16 leaves).** Re-run
+   the circuit setup at `TREE_DEPTH=14` (16,384 leaves) for a realistic set;
+   the second witness already generalizes. `L · medium · MEDIUM · hardening`
+5. **Apparatus-reduction Sanctum** — cut-deeper signal firing since v9.29
+   (core/apparatus ratio 0.29). Walk ACTIVE sanctums, transition those now
+   embodied as structural invariants to SUPERSEDED (files stay; only
+   classification changes). Own Sanctum, execution-intent present. `M · medium · HIGH · measurement`
+6. **PQC-posture audit** (FS-5B5F30C9) — audit Polaris against NIST PQC
+   migration timelines; surface gaps. `S · low · LOW · cold-read-evidence`
+7. **R13-3 / R13-4 Mycelium bloom + deliberation** (only if Arc E is still
+   open) — additive brain-map bloom overlay + deliberation threshold; unblocks
+   the R13-5 HYDRA-vs-Mycelium decision. `M · medium · LOW · new-arc`
+
+**Recently shipped (this session):** v9.44 ZK two-witness (Glass
+bounded-integration); v9.45 secret-leak gitignore fix + foresight integrity.
+
+---
+
 ## Layer-1 candidates (per S2 Position C, 2026-05-15)
 
 The v9.04 → v9.08 phase invested heavily in Layer-2/3 (cognitive
@@ -106,25 +170,25 @@ which items have advanced.
 
 ---
 
-- **AP-E8FCC9A5** (MEDIUM/one-day, score=7.0, source=finding: ant_colony) — Investigate: Cannot reach Mycelium swarm (DB offline)
+- ~~**AP-E8FCC9A5**~~ (MEDIUM/one-day, score=7.0, source=finding: ant_colony) — Investigate: Cannot reach Mycelium swarm (DB offline) <!-- declined: dev-environment artifact (local DB offline / psycopg2 not in venv per the session-start gotcha), not durable mission work. Triaged v9.46. -->
   - rationale: ant_colony_watcher: PheromoneReader returned db_offline status: no DB connection (psycopg2 missing or DB unreachable). The swarm runtime is not observable from this watcher's vantage. Verify Postgr...
   - constraints touched: (none cited)
   - vocation: anti-coercion (advances identity inviolability)
   - first promoted: 2026-05-15
 
-- **AP-4866529A** (MEDIUM/one-day, score=7.0, source=finding: cognitive) — Investigate: Sanctum index drift
+- ~~**AP-4866529A**~~ (MEDIUM/one-day, score=7.0, source=finding: cognitive) — Investigate: Sanctum index drift <!-- declined: expected gap, not a defect. 67 sanctum files / 65 index entries (v9.46): non-strategic Sanctum files are intentionally not indexed; the index is maintained per the ship runbook. -->
   - rationale: cognitive_watcher: sanctum/ has 49 session file(s) but meta/sanctum-index.md has 48 entry/entries. Run `ai-sanctum.sh close` to re-index, or inspect manually.
   - constraints touched: (none cited)
   - vocation: anti-coercion (operational reliability serves availability of identity)
   - first promoted: 2026-05-15
 
-- **AP-BB688443** (MEDIUM/one-day, score=7.0, source=finding: schema) — Investigate: psycopg2 not importable
+- ~~**AP-BB688443**~~ (MEDIUM/one-day, score=7.0, source=finding: schema) — Investigate: psycopg2 not importable <!-- declined: dev-environment artifact (psycopg2 not in the watcher's venv); an install step, not mission work. Triaged v9.46. -->
   - rationale: schema_watcher: SchemaWatcher requires psycopg2. Install it in the same venv the Flask app uses.
   - constraints touched: (none cited)
   - vocation: unclear (operator triage; AP5 candidate)
   - first promoted: 2026-05-15
 
-- **AP-3ACE3236** (LOW/one-shot, score=2.0, source=correlation: performance, security) — Investigate cross-watcher correlation: runtime:health
+- ~~**AP-3ACE3236**~~ (LOW/one-shot, score=2.0, source=correlation: performance, security) — Investigate cross-watcher correlation: runtime:health <!-- declined: low-severity (info) dev-runtime correlation, same DB-offline root as the trio above. Triaged v9.46. -->
   - rationale: 2 watcher(s) (performance, security) independently surfaced findings on node_id='runtime:health' with combined severity info. Multi-watcher consensus is high-confidence signal.
   - constraints touched: (none cited)
   - vocation: anti-coercion (operational reliability serves availability of identity)
