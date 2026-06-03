@@ -12,7 +12,6 @@ _Cryptographically signed. Audit-of-record by construction. Compulsion-resistant
 
 [![CI](https://img.shields.io/github/actions/workflow/status/EgorKhaklin/polaris-id/ci.yml?branch=main&label=CI&logo=githubactions&logoColor=white&style=flat-square)](https://github.com/EgorKhaklin/polaris-id/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/EgorKhaklin/polaris-id?label=release&color=2b5797&style=flat-square)](https://github.com/EgorKhaklin/polaris-id/releases/latest)
-[![License](https://img.shields.io/github/license/EgorKhaklin/polaris-id?color=blue&style=flat-square)](LICENSE)
 [![Last commit](https://img.shields.io/github/last-commit/EgorKhaklin/polaris-id?color=success&style=flat-square)](https://github.com/EgorKhaklin/polaris-id/commits/main)
 
 [![Python 3.12](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white&style=flat-square)](polaris_web/)
@@ -20,7 +19,7 @@ _Cryptographically signed. Audit-of-record by construction. Compulsion-resistant
 [![Rust](https://img.shields.io/badge/rust-nightly-DEA584?logo=rust&logoColor=white&style=flat-square)](polaris_zk/)
 [![Plonky2](https://img.shields.io/badge/zk--snark-plonky2-8957e5?style=flat-square)](polaris_zk/src/lib.rs)
 [![WebAuthn MFA](https://img.shields.io/badge/auth-WebAuthn%20MFA-1f883d?logo=webauthn&logoColor=white&style=flat-square)](polaris_web/webauthn_auth.py)
-[![Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-d63aff?style=flat-square)](LICENSE)
+
 
 **Now shipping [v9.48](https://github.com/EgorKhaklin/polaris-id/releases/latest)** &nbsp;·&nbsp; 967 structural invariants &nbsp;·&nbsp; 650 cross-references resolved &nbsp;·&nbsp; one double-click to launch
 
@@ -102,7 +101,7 @@ The `CREATE TABLE` is in [`polaris_sql/01_schema.sql`](polaris_sql/01_schema.sql
 Four layers. The cognitive layer reads but never writes the operational layer. The ZK prover is a subprocess, not a service. WebAuthn FIDO2 is the only authentication path for human operators; passwords alone cannot reach the admin or auditor roles.
 
 ```
-        ┌────────────────────────────────────────────────────────────┐
+        ┌─────────────────────────────────────────────────────────────┐
         │                      COGNITIVE LAYER                        │
         │   HYDRA: 9 watchers + CM (schema · cognitive · security ·   │
         │          mission · adversary · performance · trajectory ·   │
@@ -111,15 +110,15 @@ Four layers. The cognitive layer reads but never writes the operational layer. T
         │             classes (stigmergic pheromone substrate)        │
         │   Sanctum: append-only strategic-decision log (64 entries)  │
         │   Architect + Anti-Architect: persona-protocol adjudication │
-        └─────────────────────────┬──────────────────────────────────┘
+        └─────────────────────────┬───────────────────────────────────┘
                                   │   reads (no writes)
-        ┌─────────────────────────▼──────────────────────────────────┐
+        ┌─────────────────────────▼───────────────────────────────────┐
         │                       APPLICATION                           │
         │     Flask (67 routes)  ·  Atlas globe  ·  WebAuthn MFA      │
         │     Dashboard  ·  /sql console  ·  Sanctum tooling          │
         └──────────┬──────────────────────────┬───────────────────────┘
                    │                          │
-        ┌──────────▼─────────┐    ┌───────────▼─────────────────────┐
+        ┌──────────▼─────────┐    ┌───────────▼──────────────────────┐
         │  SCHEMA (Pg 16)    │    │   ZK PROVER (Rust nightly)       │
         │  27 tables         │    │   Plonky2 SNARK · Merkle-incl.   │
         │  14 stored procs   │    │   /api/zk/epoch/close            │
@@ -128,11 +127,11 @@ Four layers. The cognitive layer reads but never writes the operational layer. T
                    │
                    │  signs with
                    ▼
-        ┌──────────────────────────────────────────────────────────┐
+        ┌───────────────────────────────────────────────────────────┐
         │                 POST-QUANTUM SIGNATURES                   │
-        │   ML-DSA-65 (FIPS 204, default)  ·  SLH-DSA (FIPS 205)   │
+        │   ML-DSA-65 (FIPS 204, default)  ·  SLH-DSA (FIPS 205)    │
         │   ML-DSA-87 (high-assurance)  ·  ECDSA-P256 (legacy/audit)│
-        └──────────────────────────────────────────────────────────┘
+        └───────────────────────────────────────────────────────────┘
 ```
 
 Each layer is independently buildable. The schema loads from `00_load_all.sql` against an empty Postgres. The application boots from `app.py` against the loaded schema. The ZK prover compiles under `cargo +nightly build --release` against the same machine. The cognitive layer is a read-only directory of Python modules and shell scripts; it survives any operational restart unchanged.
