@@ -117,6 +117,14 @@ jobs:
           cd polaris_web
           python3 -m unittest test_structural_invariants -v
 
+      # v9.54 — the flat, themeless check layer (polaris_checks) — the clean
+      # replacement for the cognitive apparatus. Gates CI directly (exit non-zero
+      # on any FAIL), plus its detection-correctness tests.
+      - name: polaris-checks (flat invariant layer)
+        run: |
+          python3 -m polaris_checks.run
+          python3 -m pytest polaris_checks/test_checks.py -q
+
       - name: CHECK-constraint regression suite
         run: |
           cd polaris_web

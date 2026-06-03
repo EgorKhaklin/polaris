@@ -16600,5 +16600,47 @@ class TestWave53V953(unittest.TestCase):
                          "the roll-integrity alert path must survive")
 
 
+class TestWave54V954(unittest.TestCase):
+    """v9.54 — polaris_checks: the flat, themeless check layer (apparatus-rebuild anchor).
+
+    The cognitive apparatus (swarm/HYDRA/civitas/legions/soldiers/foresight) is
+    one self-referential web that thrashes under surgical cuts — proven by the
+    reverted de-theme and civitas attempts. The right radical move is to build the
+    clean replacement, then swap the old apparatus onto it and delete it wholesale.
+    v9.54 ships the anchor: `polaris_checks`, a flat module of plain `check_*`
+    functions mapping to C1-C10, with TESTED detection correctness (each check
+    provably FAILs on a broken fixture — the gap the old apparatus never closed).
+    ~350 legible LOC doing the conceptual job of ~18k LOC of mythology.
+    """
+
+    ROOT = ROOT
+
+    def test_v954_polaris_checks_present_and_clean(self):
+        import sys
+        import pathlib
+        if self.ROOT not in sys.path:
+            sys.path.insert(0, self.ROOT)
+        from polaris_checks import run_all
+        findings = run_all(pathlib.Path(self.ROOT))
+        fails = [str(f) for f in findings if f.level == 'FAIL']
+        self.assertEqual([], fails, f"polaris_checks must be clean on the repo: {fails}")
+        self.assertGreaterEqual(len(findings), 10, "expected >= 10 checks")
+
+    def test_v954_check_layer_is_themeless(self):
+        """The whole point: no mythology vocabulary in the replacement layer."""
+        import glob
+        themed = ('legion', 'pheromone', 'denari', 'civitas', 'cursus', 'mycelium', 'legatus')
+        for path in glob.glob(os.path.join(self.ROOT, 'polaris_checks', '*.py')):
+            src = open(path).read().lower()
+            hits = [t for t in themed if t in src]
+            self.assertEqual([], hits, f"{os.path.basename(path)} must stay themeless; found {hits}")
+
+    def test_v954_check_layer_has_detection_tests_and_ci(self):
+        self.assertTrue(os.path.isfile(os.path.join(self.ROOT, 'polaris_checks/test_checks.py')))
+        with open(os.path.join(self.ROOT, '.github/workflows/ci.yml')) as f:
+            self.assertIn('polaris_checks.run', f.read(),
+                          "CI must run the flat check layer")
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

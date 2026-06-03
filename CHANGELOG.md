@@ -14,6 +14,44 @@ record, read [`meta/sanctum-index.md`](meta/sanctum-index.md).
 
 ---
 
+## v9.54 — 2026-06-03 (polaris_checks · the flat, themeless check layer — the apparatus-rebuild anchor)
+
+scope: cognitive-rebuild · ship_marker: polaris-checks-anchor · vocation: trustworthiness — a check is a check; legibility is honesty · pattern20_instance: build-the-replacement-then-swap (cut the whole knot, do not untie it strand by strand)
+
+VANTA authorized breaking the audit-of-record discipline and redoing the cognitive
+layer ("take any radical approach ... like Alexander cutting the knot"). Two surgical
+attempts (the de-theme rename and the civitas deletion) were executed and **reverted**:
+they proved the apparatus is one self-referential web (code ↔ tests ↔ docs ↔ frozen-AoR
+↔ pinned counts) where any single cut cascades endlessly. That entanglement IS the larp.
+
+The Alexander move is not to untie the knot strand by strand — it is to build the clean
+replacement and sever the whole web at once. **v9.54 builds the replacement:**
+
+`polaris_checks/` — a flat, themeless module. Each check is a plain `check_*(repo_root)
+-> list[Finding]` function mapping to the C1-C10 constitution (CSP/C5, one-active-token/
+C3, append-only-AoR/C1, crypto-as-data/C7, FK-discipline, version-canonical, secrets
+hygiene, the ZK two-witness, debug-artifact hygiene). No legions, no pheromones, no
+treasury, no mythology. ~350 legible LOC doing the conceptual job of ~18k LOC of
+apparatus. `python3 -m polaris_checks.run` gates CI directly (exit non-zero on FAIL).
+
+**Detection correctness is TESTED** — each check provably FAILs on a broken fixture
+(`polaris_checks/test_checks.py`), the gap the old apparatus never closed. The build
+loop itself caught two real bugs in the checks (a version-regex and a CSP false-positive
+that would have flagged the acceptable `style-src 'unsafe-inline'`), which the fixtures
+now pin.
+
+**Next (the swap):** wire callers onto polaris_checks, then delete the entire old
+apparatus (swarm/HYDRA/civitas/legions/soldiers/foresight + their ~400 tests + the
+mythology docs) wholesale — the cut with no cascade because it all goes together.
+
+**Tests** (TestWave54V954, 3 cases): polaris_checks present + clean on the repo; the
+layer is themeless (no mythology vocabulary); detection tests + CI wiring present.
+
+**Personas.** Architect: build-replacement-then-swap is the correct refactor for a
+self-referential web. Anti-Architect: ~350 LOC that a second engineer reads in minutes
+vs 18k LOC of in-joke — this is the de-larp. Risk LOW (new module + CI step; nothing
+deleted yet). Authorized under the 2026-06-03 heavy-production + take-over directive.
+
 ## v9.53 — 2026-06-03 (Apparatus-reduction · remove the orphaned economy tier-counting from HYDRA)
 
 scope: apparatus-reduction · ship_marker: hydra-tier-counting-removed · vocation: trustworthiness — finish the cut; orphaned theater left behind is still theater · pattern20_instance: complete-the-removal (the economy cut in v9.50, finished in its HYDRA consumer)
@@ -331,56 +369,4 @@ educational substrate (the Vocation). Risk class: HIGH Sanctum
 (adjudicated a complete-rework request); the shipped work is hardening
 within the v9.31 freeze envelope. Glass folder untouched; no production
 substrate changed.
-
-## v9.43 — 2026-05-18 (Post-freeze hardening · class-shaped bash bug · `grep -c ... || echo 0` double-emits 0)
-
-scope: cognitive-layer · ship_marker: grep-c-double-output · vocation: cognitive-layer self-coherence (CM #6) · pattern20_instance: drift→test promotion loop + class-shaped vs instance-shaped fix
-
-Surfaced 2026-05-18 by `bash scripts/ai-reflect.sh` against a fresh
-journal with no `^## SESSION` lines:
-
-    scripts/ai-reflect.sh: line 114: [: 0\n0: integer expression expected
-
-The idiom `grep -c <pattern> file 2>/dev/null || echo 0` is broken.
-`grep -c` always prints a count to stdout — including `0` on no
-match — and exits 1 only in that case. The fallback fires AFTER the
-count is already printed, double-emitting `0`. The variable receives
-`0\n0`, which breaks any subsequent `[ "$var" -ge N ]` integer
-compare. The cognitive-layer self-reflection script's session-count
-check therefore failed silently on every journal day with no
-SESSION markers (every day this session).
-
-**Class-shaped fix** — same anti-pattern existed in **10 places
-across 6 scripts**:
-
-- `scripts/ai-reflect.sh` × 7 (the surfacer)
-- `scripts/ai-status.sh` × 2 (routes + tests counts)
-- `scripts/ai-coherence.sh` × 2 (schema_checks + routes)
-- `scripts/ai-context-digest.sh` × 1 (test_count)
-- `scripts/polaris-ct-monitor.sh` × 1 (local_count)
-- `scripts/ai-architect.sh` × 1 (decisions per journal)
-
-Replaced all with `|| true`. `grep -c` already prints the count;
-`|| true` only neutralizes the non-zero exit code without re-emitting.
-
-**Tests** (TestWave43V943, 2 cases):
-- `test_v943_no_grep_c_double_output_pattern` — class-shaped
-  regression guard scanning `scripts/*.sh`; refuses any new
-  `grep -c ... || echo 0` form
-- `test_v943_reflect_runs_without_integer_error` — end-to-end:
-  `bash ai-reflect.sh` must emit zero `integer expression expected`
-  lines on stderr+stdout
-
-**CM tie-in.** CM #6: cognitive-layer claims must be auditable. When
-`ai-reflect.sh` produced `0\n0` garble, the self-reflection surface
-was degraded silently. Fixing it (a) restores the surface and (b)
-adds a class-shaped test so the next instance is caught at CI time,
-not at HYDRA-pass time three days later.
-
-**Personas.** Architect: drift→test promotion (arch-2026-05-18-003)
-applied again — every cognitive-layer self-defect should become a
-class-shaped invariant if the class is more than one. Anti-Architect:
-no dissent on scope. Risk class LOW (maintenance fix to scripts;
-zero constitutional surface; zero behavioral change for callers
-because `grep -c` already prints the count).
 
