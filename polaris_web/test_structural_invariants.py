@@ -16409,5 +16409,46 @@ class TestWave46V946(unittest.TestCase):
         self.assertIn('test_hydra_revamp.py', ci)
 
 
+class TestWave47V947(unittest.TestCase):
+    """v9.47 — honest-accounting: the PQC verdict is a recorded two-witness ABSTAIN.
+
+    The two-witness principle (v9.44) says shipping a lone verifier is a finding,
+    not a feature. The ML-DSA-65 signature verdict (`pqc_signing`) has a single
+    impl and no second witness, so v9.47 records it as an explicit ABSTAIN
+    instance (rule 4) rather than leaving the gap silent. It also corrects the
+    pqc_signing docstring, which implied flag-on enables real-signature issuance:
+    `app.py` never imports the module and the issuance route never calls `sign()`,
+    so flag-on does not change issuance behavior.
+    """
+
+    ROOT = ROOT
+
+    def _read(self, rel):
+        with open(os.path.join(self.ROOT, rel)) as f:
+            return f.read()
+
+    def test_v947_pqc_abstain_recorded(self):
+        doc = self._read('DEVNOTES/two-witness-principle.md')
+        self.assertIn('ML-DSA-65', doc, "PQC verdict must appear in the instances table")
+        self.assertIn('ABSTAIN', doc, "the PQC verdict must be recorded as an explicit ABSTAIN")
+
+    def test_v947_pqc_docstring_states_not_wired(self):
+        src = self._read('polaris_web/pqc_signing.py')
+        self.assertIn('Wiring status', src,
+                      "pqc_signing docstring must honestly state the wiring status")
+        self.assertIn('does not call `sign()`', src)
+
+    def test_v947_pqc_signing_is_still_an_island(self):
+        """Pins the honest-accounting claim. If PQC gets wired into app.py, this
+        fails on purpose: update the v9.47 docstring note + the two-witness
+        ABSTAIN row, because the verdict is then live and must be witnessed."""
+        app = self._read('polaris_web/app.py')
+        self.assertNotIn(
+            'pqc_signing', app,
+            "pqc_signing is now imported by app.py: the PQC path is live. Update "
+            "the pqc_signing 'Wiring status' note and the two-witness-principle "
+            "ABSTAIN row (a live verdict must be two-witnessed, not abstained).")
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

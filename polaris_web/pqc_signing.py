@@ -19,8 +19,24 @@ deployment has the native library installed.
     2. pip install oqs (or pip install liboqs-python)
     3. Verify: python3 -c "import polaris_web.pqc_signing as p; print(p.availability_report())"
     4. Set POLARIS_USE_REAL_PQC=1 in production env
-    5. New token issuance writes real signatures; verification rejects
-       tampered tokens; rotation works via CryptographicAlgorithm row updates
+    5. This makes `sign()` / `verify()` produce + check real ML-DSA-65
+       signatures. (See the wiring note below: the issuance ROUTE does
+       not yet call `sign()`, so this step enables the primitive, not
+       end-to-end real-signature issuance.)
+
+**Wiring status (honest accounting, v9.47):** this module is an
+integration *island*. `app.py` does not import it, and the issuance
+route (`uc1_issue`) does not call `sign()` — so even with
+POLARIS_USE_REAL_PQC=1, token issuance still writes the deterministic
+`token_value` string. Flag-on enables the module's `sign()`/`verify()`
+API and `polaris-pqc-status.sh`; it does NOT by itself change issuance
+behavior. Wiring `sign()` into `uc1_issue` is a separate, unshipped step.
+
+Per the two-witness principle (`DEVNOTES/two-witness-principle.md`),
+the ML-DSA-65 verdict is a **lone verifier** (single liboqs impl, no
+independent second witness) and is recorded there as an explicit
+ABSTAIN instance until either a second witness is added or the path is
+wired and verdict-two-witnessed.
 
 **Honest accounting (per the Anti-Architect's joint resolution):**
 

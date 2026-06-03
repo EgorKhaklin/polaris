@@ -55,6 +55,11 @@ the ZK verdict, which until v9.44 rested on a single Rust verifier.
 | Verdict | Primary witness | Second witness | Coverage |
 |---|---|---|---|
 | ZK Merkle-inclusion (membership + binding) | `polaris_zk` Rust crate (`verify`) | `polaris_zk/witness2/` (Python) | Statement-level; abstains on proof-byte integrity (`DEVNOTES/zk-soundness.md`) |
+| PQC signature (ML-DSA-65, `pqc_signing.verify`) | liboqs / `oqs` (single impl) | **ABSTAIN — none yet** | Recorded per rule 4: a lone verifier, acknowledged not hidden. The path is also not wired into issuance (v9.47) and is OFF by default (`POLARIS_USE_REAL_PQC`), so it renders no production verdict today. Add a second witness (or an explicit ABSTAIN ledger) before it goes live. |
+
+This is rule 4 in practice: a lone verifier is not silently shipped. The PQC
+row is an ABSTAIN on record so the gap is visible until closed. See the
+ROADMAP §OPEN NOW item for the second-witness / wiring work.
 
 ## The standing obligation
 

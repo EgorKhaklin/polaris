@@ -17959,6 +17959,31 @@ AoR amendment, decided + shipped v9.38) to permit APPENDS to this
 file (still no edits or deletions of existing rows). Section
 boundary below; entries newest-first under this section.
 
+## v9.36 — 2026-05-17 (Post-freeze hardening · cascade fix from v9.35 · false-positive ALERT cleared)
+
+Real defect closed: `security_watcher.py` read
+`health["checks"]["rate_limiter"]["ok"]` from /api/health, but the
+endpoint emits the rate-limiter component under key `"redis"` with
+field `"status"` carrying "healthy"/"degraded"/"unhealthy" (per
+`_health_check_redis` in `polaris_web/app.py:1800` — legacy name from
+when Redis was the only backend). The watcher's key+field lookup
+returned `{}` → `None` → falsy → false-positive ALERT every time the
+watcher could actually reach the live app.
+
+**Cascade from v9.35:** the port fix in v9.35 let the watcher reach
+the live app for the first time, which immediately fired the
+false-positive ALERT, which exposed the parser bug. Drift→test
+promotion working: catching one bug exposes the next.
+
+Fix: read `"redis"` key + check `status == "healthy"`. Live verified:
+`rate_limiter_status` flipped from `not_ok` to `ok` with backend
+correctly identified as `memory`. ALERT cleared.
+
+`TestWave36V936` × 3 invariants: watcher reads canonical `"redis"`
+key; checks `status == "healthy"`; sanity-pin that `app.py`'s
+`/api/health` still emits the `redis` key (if app.py renames, the
+watcher's parser must follow).
+
 ## v9.35 — 2026-05-17 (Post-freeze hardening · HYDRA watcher port env-driven · shakedown finding closed)
 
 Real defect closed: `polaris_hydra/watchers/security_watcher.py` and

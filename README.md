@@ -22,7 +22,7 @@ _Cryptographically signed. Audit-of-record by construction. Compulsion-resistant
 [![WebAuthn MFA](https://img.shields.io/badge/auth-WebAuthn%20MFA-1f883d?logo=webauthn&logoColor=white&style=flat-square)](polaris_web/webauthn_auth.py)
 [![Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-d63aff?style=flat-square)](LICENSE)
 
-**Now shipping [v9.46](https://github.com/EgorKhaklin/polaris-id/releases/latest)** &nbsp;·&nbsp; 962 structural invariants &nbsp;·&nbsp; 650 cross-references resolved &nbsp;·&nbsp; one double-click to launch
+**Now shipping [v9.47](https://github.com/EgorKhaklin/polaris-id/releases/latest)** &nbsp;·&nbsp; 965 structural invariants &nbsp;·&nbsp; 650 cross-references resolved &nbsp;·&nbsp; one double-click to launch
 
 [**System map**](docs/reference/SYSTEM-MAP.md) · [**Conventions**](docs/CONVENTIONS.md) · [**Constitution (MISSION.md)**](MISSION.md) · [**Backlog (ROADMAP.md)**](ROADMAP.md) · [**Audit-of-record (CHANGELOG.md)**](CHANGELOG.md) · [**Agent runbook (CLAUDE.md)**](CLAUDE.md)
 
@@ -233,12 +233,12 @@ A full subcommand reference lives in [`docs/operator/INSTALL.md`](docs/operator/
 ```
                  ┌──────────────────────────────────────────────────┐
                  │              Polaris in numbers                  │
-                 │              (current as of v9.46)               │
+                 │              (current as of v9.47)               │
                  ├──────────────────────────────────────────────────┤
                  │  27 schema tables                                │
                  │  14 stored procedures (UC-1 .. UC-12 + foresight)│
                  │  67 HTTP routes (incl. /auth/webauthn/*)         │
-                 │  1,077 Python tests · 962 structural invariants  │
+                 │  1,077 Python tests · 965 structural invariants  │
                  │  64 Sanctum strategic-consultation records       │
                  │  9 HYDRA watchers + CM                           │
                  │  33 commander ants + 6 citiz + 9 soldier classes │

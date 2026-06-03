@@ -14,6 +14,33 @@ record, read [`meta/sanctum-index.md`](meta/sanctum-index.md).
 
 ---
 
+## v9.47 — 2026-06-03 (Honest-accounting · the PQC verdict is a recorded two-witness ABSTAIN)
+
+scope: crypto-honesty · ship_marker: pqc-lone-verifier-abstain · vocation: trustworthiness — name the gap, do not let a lone verifier ship silently · pattern20_instance: drift→test promotion (the island-claim is now a standing invariant)
+
+The two-witness principle (v9.44) says shipping a lone cryptographic verifier is
+a finding, not a feature. The ML-DSA-65 signature verdict (`pqc_signing.verify`)
+has a single liboqs impl and no independent second witness. v9.47 records it as
+an explicit **ABSTAIN** instance (rule 4) in `DEVNOTES/two-witness-principle.md`
+rather than leaving the gap silent.
+
+It also corrects a docstring overclaim: `pqc_signing`'s activation procedure
+implied that flag-on (`POLARIS_USE_REAL_PQC=1`) makes issuance write real
+signatures. In fact `app.py` never imports the module and the issuance route
+(`uc1_issue`) never calls `sign()` — the module is an integration *island*, so
+flag-on enables the `sign()`/`verify()` primitive but does not change issuance
+behavior. The docstring now says so plainly.
+
+**Tests** (TestWave47V947, 3 cases): PQC verdict recorded as ABSTAIN; docstring
+states the wiring status; and an island-guard that FAILS ON PURPOSE if
+`pqc_signing` is ever imported by `app.py` — forcing whoever wires it to update
+the honesty note and promote the verdict from ABSTAIN to two-witnessed.
+
+**Personas.** Architect: drift→test promotion — the "island" claim becomes a
+standing invariant. Anti-Architect: this is exactly the AP8 (larping) discipline
+the PQC module itself cites — the honest move is to name the gap, not paper over
+it. Risk LOW (docs + test). Heavy-production authorized.
+
 ## v9.46 — 2026-06-03 (CI hardening · the ZK two-witness differential now gates CI)
 
 scope: ci-hardening · ship_marker: ci-two-witness-wiring · vocation: trustworthiness — a verifier that never runs in CI is not a safety net · pattern20_instance: close-the-loop (ship a check, then make it gate)
@@ -421,29 +448,4 @@ brain-map nodes.
 `TestWave37V937` × 3 invariants: citizen query uses JSONB marker;
 bloom candidates have polaris_web/venv first; psycopg2 import-verify
 present.
-
-## v9.36 — 2026-05-17 (Post-freeze hardening · cascade fix from v9.35 · false-positive ALERT cleared)
-
-Real defect closed: `security_watcher.py` read
-`health["checks"]["rate_limiter"]["ok"]` from /api/health, but the
-endpoint emits the rate-limiter component under key `"redis"` with
-field `"status"` carrying "healthy"/"degraded"/"unhealthy" (per
-`_health_check_redis` in `polaris_web/app.py:1800` — legacy name from
-when Redis was the only backend). The watcher's key+field lookup
-returned `{}` → `None` → falsy → false-positive ALERT every time the
-watcher could actually reach the live app.
-
-**Cascade from v9.35:** the port fix in v9.35 let the watcher reach
-the live app for the first time, which immediately fired the
-false-positive ALERT, which exposed the parser bug. Drift→test
-promotion working: catching one bug exposes the next.
-
-Fix: read `"redis"` key + check `status == "healthy"`. Live verified:
-`rate_limiter_status` flipped from `not_ok` to `ok` with backend
-correctly identified as `memory`. ALERT cleared.
-
-`TestWave36V936` × 3 invariants: watcher reads canonical `"redis"`
-key; checks `status == "healthy"`; sanity-pin that `app.py`'s
-`/api/health` still emits the `redis` key (if app.py renames, the
-watcher's parser must follow).
 
