@@ -14,6 +14,47 @@ record, read [`meta/sanctum-index.md`](meta/sanctum-index.md).
 
 ---
 
+## v9.50 — 2026-06-03 (Apparatus-reduction Phase 1a · retire the inert Denarius "Cursus Honorum" economy)
+
+scope: apparatus-reduction · ship_marker: cursus-economy-retired · vocation: trustworthiness — elaborate machinery whose load-bearing output is permanently zero is theater; name it and cut it · pattern20_instance: cut-deeper (the project's own apparatus-DOMINANT signal, acted on)
+
+First ship of the apparatus-reduction arc (Sanctum `2026-06-03-apparatus-reduction`),
+opened after VANTA questioned whether the ants/citizens/Roman-tactics layer earns its
+place. A function-vs-theme audit confirmed the project's own standing "cut-deeper"
+signal (`polaris-sanctum-status.sh` ratio 0.29, APPARATUS-DOMINANT). Scope chosen by
+VANTA: **dead-weight + harden + de-theme the swarm layer; HYDRA keeps its name.**
+
+**Phase 1a — the clearest larping instance, removed:** the Denarius "Cursus Honorum"
+tier economy was provably inert. Across all operation the maximum ant balance ever
+reached was **50 against a 1001 tier threshold**, so every intensity multiplier was
+permanently 1.0x, no ant ever rose above pleb, and Sanctum-chair eligibility was never
+met. The project's own journal already called it "vestigial" and "empirically broken."
+
+Removed: `multiplier_for` / `property_class` / `is_sanctum_chair_eligible` /
+`patrician_ants` / `CURSUS_MULTIPLIER` / the tier thresholds from `civitas/treasury.py`;
+the cosmetic Cursus multiplier from `ai_swarm_bloom.py`; the `property_class` display
+from `quaestor_treasurer.py`; and **`denarii_scheduler.py`** — the one attempt to make
+the economy load-bearing, which was dead (zero non-test callers) AND broken (read JSON
+keys that don't exist). Kept: the reward **ledger** (the +10/-1 drift signal + the roll)
+as the swarm's activity/liveness record, which HYDRA's ant_colony_watcher reads as an
+integrity probe (the load-bearing wire the audit flagged — cut the economy, keep the
+liveness signal).
+
+**Tests** (TestWave50V950, 3 cases): the inert Cursus apparatus stays removed; the dead
+scheduler stays deleted; the reward ledger + roll (HYDRA's liveness input) survive.
+Removed 4 now-orphaned tests (F4 G19 multipliers, F4 G20 chair-eligibility, 2 scheduler
+existence tests).
+
+**Constitutional clearance:** C1-C10 + the Vocation never move (the apparatus only
+OBSERVES them; grep confirms no core code imports the swarm). Audit-of-record preserved
+(forward-only deletion; the treasury-roll history stays).
+
+**Personas.** Anti-Architect is reviewer of record — it pre-named AP8 "Larping" and AP1
+"loving the cognitive layer's growth more than the product's"; this cut is the
+loyal-opposition position. Architect: cut-deeper, acted on the project's own signal.
+Risk MEDIUM (touches the civitas + a HYDRA-read liveness file; verified import-clean +
+full structural suite green). Heavy-production authorized.
+
 ## v9.49 — 2026-06-03 (Swarm coverage · every ant's scan() contract is tested, not just the E10 cohort)
 
 scope: test-coverage · ship_marker: all-ants-scan-contract · vocation: trustworthiness — an unobserved watcher is an untrusted watcher · pattern20_instance: close-the-coverage-gap (smoke loop over ALL_ANTS, not a subset)
@@ -404,35 +445,4 @@ in archive. CHANGELOG = 10 stable (v9.39..v9.30) + v9.40 in-flight.
 regex tolerates trailing comments; regression-guard scans
 security.py; `redis>=` in requirements.txt. Plus the underlying
 regression-guard now catches future occurrences of this class.
-
-## v9.39 — 2026-05-17 (Post-freeze hardening · POLARIS_REDIS_URL wired into docker-compose · soldier-log-tail finding closed)
-
-Closes shakedown finding C: `soldier_log_tail` correctly flagged the
-runtime warning "POLARIS_WORKERS=4 with in-memory rate limiter —
-actual per-IP limits will be ~4× configured because each worker
-holds its own buckets." Real defect surface (multi-worker dev
-convenience).
-
-Fix: `polaris_web/docker-compose.yml` now declares
-`POLARIS_REDIS_URL: ${POLARIS_REDIS_URL:-}` in the app service
-environment. Empty default preserves backward compat (security.py
-auto-selects in-memory if URL empty). Operator sets the env var in
-shell to activate, e.g.:
-
-    brew services start redis
-    POLARIS_REDIS_URL=redis://host.docker.internal:6379/0 \
-        ./polaris_mac_launch.sh rebuild
-
-After rebuild, `/api/health` will report `redis.backend = "redis"`
-instead of `"memory"`, and the soldier_log_tail signals about
-multi-worker bucket fragmentation should clear.
-
-Per-ship archive-move pattern (established v9.38): v9.28 entry moved
-byte-identical from CHANGELOG.md → "Post-v9.24 ships" section in
-archive/CHANGELOG-FULL.md. CHANGELOG holds 10 stable (v9.38..v9.29)
-+ this v9.39 in-flight = 11.
-
-`TestWave39V939` × 1 invariant pins the env-pass-through declaration
-in docker-compose.yml with the empty-default backward-compat
-pattern.
 

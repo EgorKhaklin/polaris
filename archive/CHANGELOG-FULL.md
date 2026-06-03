@@ -17959,6 +17959,37 @@ AoR amendment, decided + shipped v9.38) to permit APPENDS to this
 file (still no edits or deletions of existing rows). Section
 boundary below; entries newest-first under this section.
 
+## v9.39 — 2026-05-17 (Post-freeze hardening · POLARIS_REDIS_URL wired into docker-compose · soldier-log-tail finding closed)
+
+Closes shakedown finding C: `soldier_log_tail` correctly flagged the
+runtime warning "POLARIS_WORKERS=4 with in-memory rate limiter —
+actual per-IP limits will be ~4× configured because each worker
+holds its own buckets." Real defect surface (multi-worker dev
+convenience).
+
+Fix: `polaris_web/docker-compose.yml` now declares
+`POLARIS_REDIS_URL: ${POLARIS_REDIS_URL:-}` in the app service
+environment. Empty default preserves backward compat (security.py
+auto-selects in-memory if URL empty). Operator sets the env var in
+shell to activate, e.g.:
+
+    brew services start redis
+    POLARIS_REDIS_URL=redis://host.docker.internal:6379/0 \
+        ./polaris_mac_launch.sh rebuild
+
+After rebuild, `/api/health` will report `redis.backend = "redis"`
+instead of `"memory"`, and the soldier_log_tail signals about
+multi-worker bucket fragmentation should clear.
+
+Per-ship archive-move pattern (established v9.38): v9.28 entry moved
+byte-identical from CHANGELOG.md → "Post-v9.24 ships" section in
+archive/CHANGELOG-FULL.md. CHANGELOG holds 10 stable (v9.38..v9.29)
++ this v9.39 in-flight = 11.
+
+`TestWave39V939` × 1 invariant pins the env-pass-through declaration
+in docker-compose.yml with the empty-default backward-compat
+pattern.
+
 ## v9.38 — 2026-05-17 (Post-freeze hardening · archive-extension Sanctum · CHANGELOG = last 10 honestly)
 
 Decided in `sanctum/2026-05-17-changelog-archive-extension.md`

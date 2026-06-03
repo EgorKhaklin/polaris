@@ -35,7 +35,7 @@ from polaris_swarm.civitas.base import (
 from polaris_swarm.civitas.treasury import (
     DENARII_PER_RESOLUTION, DENARII_PENALTY_PERSISTENT,
     PERSISTENT_THRESHOLD_PASSES,
-    compute_rewards, load_roll, save_roll, all_balances, property_class,
+    compute_rewards, load_roll, save_roll, all_balances,
 )
 from datetime import datetime, timezone
 
@@ -143,14 +143,13 @@ class QuaestorTreasurer(Citizen):
                     "message": (
                         f"Quaestor observation: top denarii holders — "
                         + ", ".join(
-                            f"{ant} ({bal} denarii, {property_class(bal)})"
+                            f"{ant} ({bal} denarii)"
                             for ant, bal in top
                         )
                     ),
                     "civitas_class": QUAESTOR_CLASS,
                     "top_balances": [
-                        {"ant": ant, "denarii": bal,
-                         "property_class": property_class(bal)}
+                        {"ant": ant, "denarii": bal}
                         for ant, bal in top
                     ],
                 },

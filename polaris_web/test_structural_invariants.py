@@ -3709,89 +3709,6 @@ class TestArcFAcceleratedPacing(unittest.TestCase):
         finally:
             sys.path.pop(0)
 
-    def test_f4_g19_cursus_multipliers_monotonic(self):
-        """F4.G19 — Cursus Honorum multipliers are monotonic
-        non-decreasing in balance. Pleb ≤ Eques ≤ Patrician.
-
-        Higher denarii NEVER reduces multiplier. This is the
-        structural property that 'more denarii is never worse for
-        an ant's visibility in the bloom.'"""
-        sys.path.insert(0, self.ROOT)
-        try:
-            from polaris_swarm.civitas.treasury import (
-                multiplier_for,
-                DENARII_PLEB_MAX, DENARII_EQUES_MAX,
-            )
-            # Sample points covering each band
-            pleb_mult      = multiplier_for(DENARII_PLEB_MAX // 2)
-            eques_mult     = multiplier_for(DENARII_EQUES_MAX // 2)
-            patrician_mult = multiplier_for(DENARII_EQUES_MAX * 2)
-            self.assertLessEqual(pleb_mult, eques_mult,
-                f"G19 violated: pleb mult {pleb_mult} > eques mult "
-                f"{eques_mult}")
-            self.assertLessEqual(eques_mult, patrician_mult,
-                f"G19 violated: eques mult {eques_mult} > "
-                f"patrician mult {patrician_mult}")
-            # Boundary: 0 denarii is pleb
-            self.assertEqual(multiplier_for(0), pleb_mult,
-                "balance=0 must be pleb-class multiplier")
-            # Negative balance (persistent silence) is still pleb
-            # (not punished beyond pleb baseline; G19 still holds)
-            self.assertLessEqual(multiplier_for(-1000), pleb_mult,
-                "G19 holds at negative balance — multiplier ≤ pleb")
-        finally:
-            sys.path.pop(0)
-
-    def test_f4_g20_sanctum_chair_eligibility_strict_civitas(self):
-        """F4.G20 — Sanctum-chair eligibility derives ONLY from
-        denarii balance. The eligibility predicate must never
-        reference Individual, token, holder, or any Polaris
-        identity-layer attribute. C10 (pomerium) does not move.
-
-        The test: scan the treasury source CODE (docstrings and
-        comments stripped — those legitimately name what C10
-        forbids in prose). The signature of
-        `is_sanctum_chair_eligible(roll, ant_name)` must take only
-        the roll + an ant name; the function CANNOT consult
-        identity state by API. Additionally, the executable code
-        must not import any Polaris identity modules.
-        """
-        sys.path.insert(0, self.ROOT)
-        try:
-            from polaris_swarm.civitas import treasury
-            import inspect
-            sig = inspect.signature(treasury.is_sanctum_chair_eligible)
-            params = list(sig.parameters)
-            self.assertEqual(params, ["roll", "ant_name"],
-                f"G20 violated: is_sanctum_chair_eligible signature "
-                f"should be (roll, ant_name); got {params}")
-            # Source scan with docstring + comment stripping.
-            # Use regex to remove every triple-quoted block (handles
-            # both `"""one line"""` and `"""multi\nline"""` forms)
-            # plus single-line `# ...` comments. Note: this strips
-            # any triple-quoted string, including data strings — for
-            # this guard's purpose that's exactly what we want
-            # (identity-layer mentions in any string context, code
-            # or doc, are inadmissible).
-            src = inspect.getsource(treasury)
-            code = re.sub(r'"""[\s\S]*?"""', '', src)
-            code = re.sub(r"'''[\s\S]*?'''", '', code)
-            code = re.sub(r'#[^\n]*', '', code)
-            forbidden = [
-                "from polaris_web", "import polaris_web",
-                "Individual", "IdentityToken",
-                "holder_id", "token_id", "polaris_identity",
-            ]
-            for needle in forbidden:
-                self.assertNotIn(needle, code,
-                    f"G20 violated: treasury.py CODE references "
-                    f"identity-layer symbol {needle!r}; the "
-                    f"pomerium (C10) must hold (docstring "
-                    f"references describing what the predicate "
-                    f"does NOT do are explicitly OK)")
-        finally:
-            sys.path.pop(0)
-
     def test_f4_cohort_size_after_f3(self):
         """F4 / F3 ratification — ALL_ANTS grew 28 → 29 with
         AntProposalStagnation. The cohort count is load-bearing
@@ -13148,21 +13065,7 @@ class TestWave24V924(unittest.TestCase):
 
     # ---- T1#5: denarii-driven scheduling ----------------------
 
-    def test_denarii_scheduler_module_exists(self):
-        path = os.path.join(self.ROOT, 'polaris_swarm/denarii_scheduler.py')
-        self.assertTrue(os.path.isfile(path),
-            "v9.24 must ship polaris_swarm/denarii_scheduler.py")
 
-    def test_denarii_scheduler_has_24h_floor(self):
-        """Anti-Architect's required invariant: NO ant gets sampled
-        less than once per 24h. Floor prevents deletion-by-proxy."""
-        src = self._read('polaris_swarm/denarii_scheduler.py')
-        self.assertIn('_FLOOR_HOURS = 24', src,
-            "denarii_scheduler must enforce 24h floor")
-        self.assertIn('floor_forced', src,
-            "denarii_scheduler must have floor-force path")
-
-    # ---- T1#6: external oracle node ---------------------------
 
     def test_oracles_module_exists(self):
         path = os.path.join(self.ROOT, 'polaris_hydra/oracles.py')
@@ -16528,6 +16431,52 @@ class TestWave49V949(unittest.TestCase):
         names = [a.NAME for a in ALL_ANTS]
         dupes = sorted({n for n in names if names.count(n) > 1})
         self.assertEqual([], dupes, f"duplicate ant NAMEs in ALL_ANTS: {dupes}")
+
+
+class TestWave50V950(unittest.TestCase):
+    """v9.50 — apparatus-reduction Phase 1a: retire the inert Cursus Honorum economy.
+
+    The Denarius "Cursus Honorum" tier apparatus (property classes, intensity
+    multipliers, Sanctum-chair eligibility) was provably inert: the max balance
+    ever reached was 50 against a 1001 tier threshold, so every multiplier was
+    permanently 1.0x and no ant ever rose above pleb. v9.50 removes it plus the
+    dead+broken denarii_scheduler.py, keeping the reward LEDGER (the +10/-1 drift
+    signal + the roll) as the swarm's activity/liveness record (which HYDRA reads
+    as an integrity probe). Per the apparatus-reduction Sanctum (2026-06-03).
+    """
+
+    ROOT = ROOT
+
+    def _import_treasury(self):
+        sys.path.insert(0, self.ROOT)
+        try:
+            from polaris_swarm.civitas import treasury
+            return treasury
+        finally:
+            sys.path.pop(0)
+
+    def test_v950_inert_cursus_apparatus_removed(self):
+        treasury = self._import_treasury()
+        for gone in ('multiplier_for', 'multiplier_for_ant', 'property_class',
+                     'is_sanctum_chair_eligible', 'patrician_ants',
+                     'CURSUS_MULTIPLIER', 'SANCTUM_CHAIR_MIN_DENARII',
+                     'DENARII_PLEB_MAX', 'DENARII_EQUES_MAX'):
+            self.assertFalse(hasattr(treasury, gone),
+                f"the inert Cursus Honorum apparatus must stay removed; "
+                f"treasury.{gone} is back")
+
+    def test_v950_denarii_scheduler_deleted(self):
+        self.assertFalse(
+            os.path.isfile(os.path.join(self.ROOT, 'polaris_swarm/denarii_scheduler.py')),
+            "the dead+broken denarii_scheduler.py must stay deleted")
+
+    def test_v950_reward_ledger_and_roll_kept(self):
+        """The liveness signal HYDRA depends on must survive the cut."""
+        treasury = self._import_treasury()
+        for kept in ('compute_rewards', 'load_roll', 'save_roll',
+                     'compute_balance', 'all_balances', 'DENARII_PER_RESOLUTION'):
+            self.assertTrue(hasattr(treasury, kept),
+                f"the reward ledger + roll must survive; treasury.{kept} is missing")
 
 
 if __name__ == '__main__':

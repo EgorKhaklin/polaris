@@ -103,34 +103,6 @@ def fetch_pheromones(since_hours: float) -> list[dict]:
         conn.close()
 
 
-# F4 (v8.70) — Cursus Honorum multipliers. We import these lazily
-# inside render_top_nodes() to keep the bloom script importable
-# even when polaris_swarm isn't on sys.path (e.g., remote operator
-# inspection of a JSON dump).
-def _load_cursus_multipliers(root: pathlib.Path) -> dict[str, float]:
-    """Build ant_name → multiplier map by reading the treasury roll.
-    Falls back to all-1.0× when treasury is unavailable or empty.
-
-    Today (v8.70 ship): treasury exists but max positive balance
-    is well below 1001 → every ant maps to 1.0× → multipliers
-    behaviorally inert. As denarii accumulate, the multipliers
-    organically engage."""
-    try:
-        from polaris_swarm.civitas.treasury import (
-            load_roll, all_balances, multiplier_for,
-        )
-    except ImportError:
-        return {}
-    try:
-        roll = load_roll(root)
-    except Exception:
-        return {}
-    return {
-        ant: multiplier_for(int(bal))
-        for ant, bal in all_balances(roll).items()
-    }
-
-
 # Via Appia (Arc G / G1 / v8.71): mirror constant; we don't
 # import from polaris_swarm.base here because the bloom script
 # may run from sys.path positions where the package isn't
@@ -154,26 +126,17 @@ def render_top_nodes(
     """Aggregate effective intensity per node; return top N as
     (node_id, total_effective_intensity, deposit_count).
 
-    F4: pheromones from patrician-class ants get a 2× intensity
-    multiplier; eques get 1.5×; plebs and unknown get 1.0×.
-    Multiplier looks up the depositing ant's current balance via
-    the treasury. Backward-compatible: omit `root` and you get
-    1.0× multipliers everywhere (pre-F4 behavior).
+    Priority surfacing (Arc G / v8.71): pheromones marked
+    `priority=True` get a `VIA_APPIA_MULTIPLIER` (1.5×). Priority is
+    auto-set for ALERT-kind pheromones and intensities ≥7.0 (in
+    `AntFinding.__post_init__`), so constitutional emergencies surface
+    even when the depositing ant didn't explicitly opt in.
 
-    G1 (Arc G / v8.71): pheromones marked `priority=True` (the
-    Via Appia) get an additional `VIA_APPIA_MULTIPLIER` (1.5×).
-    The two multipliers compound — a patrician-class pheromone
-    on the Via Appia gets 2.0 × 1.5 = 3.0× effective intensity.
-    Priority is auto-set for ALERT-kind pheromones and intensities
-    ≥7.0 (in `AntFinding.__post_init__`), so constitutional
-    emergencies surface even when the depositing ant didn't
-    explicitly opt in.
+    (v9.50: the Cursus Honorum denarii-balance multiplier was removed —
+    it was provably inert, every ant mapping to 1.0× because no balance
+    ever approached the tier threshold. The `root` arg is retained for
+    signature compatibility.)
     """
-    if root is None:
-        # No treasury lookup possible — preserve pre-F4 semantics.
-        multipliers: dict[str, float] = {}
-    else:
-        multipliers = _load_cursus_multipliers(root)
     via_appia_mult = _load_via_appia_multiplier()
     bucket: dict[str, list[float]] = defaultdict(list)
     for row in rows:
@@ -187,9 +150,6 @@ def render_top_nodes(
             age_hours,
             float(row["half_life_hours"]),
         )
-        # F4 multiplier — defaults to 1.0× when ant not in roll.
-        mult = multipliers.get(row.get("deposited_by", ""), 1.0)
-        eff *= mult
         # G1 Via Appia multiplier — priority pheromones compound.
         # Priority may live in row directly (DB column) or in
         # evidence (when synthesized via --dry from in-memory

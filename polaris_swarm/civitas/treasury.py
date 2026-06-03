@@ -56,41 +56,14 @@ DENARII_PER_RESOLUTION = 10
 DENARII_PENALTY_PERSISTENT = 1
 PERSISTENT_THRESHOLD_PASSES = 3
 
-# Property-class thresholds. Informational in F1; structurally
-# activated in F4.
-DENARII_PLEB_MAX      = 1_000
-DENARII_EQUES_MAX     = 10_000
-# 10_001+ = patrician
-
-
-# F4 (v8.70) — Cursus Honorum activation. Multipliers applied to
-# pheromone intensity when reading the swarm via the bloom renderer.
-# Eques pheromones become 1.5× as visible; patrician pheromones
-# become 2× as visible AND gain Sanctum-chair eligibility.
-#
-# G19 invariant: multipliers are monotonic non-decreasing in
-# property class (pleb ≤ eques ≤ patrician). More denarii never
-# REDUCES effective intensity.
-#
-# G20 invariant: Sanctum-chair eligibility is strictly inside the
-# Civitas. It derives from the SWARM-CURRENCY balance only; never
-# from any Polaris identity-layer attribute. C10 (pomerium)
-# preserved.
-#
-# Behavior today (v8.70): treasury is empty; every ant balance is 0;
-# every ant is pleb; every multiplier is 1.0×; no ant is
-# Sanctum-chair eligible. As denarii accumulate over the coming
-# days, the multipliers and eligibility predicates engage
-# automatically. No further code ship is needed for F4 to "go
-# live"; operation time is the only remaining variable.
-CURSUS_MULTIPLIER = {
-    "pleb":      1.0,
-    "eques":     1.5,
-    "patrician": 2.0,
-}
-
-# Sanctum-chair eligibility threshold: must be patrician (10k+).
-SANCTUM_CHAIR_MIN_DENARII = DENARII_EQUES_MAX + 1  # = 10_001
+# v9.50 (apparatus-reduction Sanctum 2026-06-03): the F4 "Cursus Honorum"
+# tier apparatus — property classes (pleb/eques/patrician), intensity
+# multipliers, and Sanctum-chair eligibility — was REMOVED. It was provably
+# inert: across all operation the maximum balance ever reached was 50 against
+# a 1001 tier threshold, so every multiplier was permanently 1.0× and no ant
+# was ever above pleb. The reward LEDGER below (the +10/-1 drift signal and
+# the roll) is kept as the swarm's activity/liveness record; the never-engaged
+# civic-mobility economy on top of it is gone.
 
 
 # F5 (v8.73) — Steady-State Ants Reward Exemption.
@@ -269,72 +242,6 @@ def all_balances(roll: dict) -> dict[str, int]:
     for ev in roll.get("events", []):
         totals[ev.get("ant", "(unknown)")] += int(ev.get("amount", 0))
     return dict(totals)
-
-
-def property_class(balance: int) -> str:
-    """Cursus Honorum tier based on denarii balance.
-    Informational in F1 (v8.68); structurally activated in F4 (v8.70).
-    """
-    if balance <= DENARII_PLEB_MAX:
-        return "pleb"
-    if balance <= DENARII_EQUES_MAX:
-        return "eques"
-    return "patrician"
-
-
-def multiplier_for(balance: int) -> float:
-    """F4 — return the Cursus Honorum intensity multiplier for an
-    ant's current denarii balance.
-
-    G19 holds: monotonic non-decreasing in balance. Pleb=1.0 ≤
-    Eques=1.5 ≤ Patrician=2.0. Higher denarii NEVER reduces
-    multiplier below pleb.
-
-    Today (v8.70 ship-day): treasury is empty; every ant is at
-    balance=0; every ant returns 1.0. As denarii accumulate over
-    days of operation, multipliers organically engage.
-    """
-    cls = property_class(balance)
-    return CURSUS_MULTIPLIER.get(cls, 1.0)
-
-
-def multiplier_for_ant(roll: dict, ant_name: str) -> float:
-    """Convenience: compute balance, then multiplier. The bloom
-    renderer's per-ant lookup path."""
-    return multiplier_for(compute_balance(roll, ant_name))
-
-
-def is_sanctum_chair_eligible(roll: dict, ant_name: str) -> bool:
-    """F4 — return True iff the ant has earned patrician-class
-    denarii history.
-
-    G20 holds: eligibility derives ONLY from SWARM-CURRENCY
-    balance. Never references Individual, token, or any
-    identity-layer attribute. The pomerium (C10) does not move.
-
-    Today (v8.70): all balances are 0; no ant qualifies. As real
-    denarii accumulate (≥7 days of distinct treasury operation
-    per the Arc F Sanctum), patrician-class ants emerge
-    automatically and become available for future Sanctum-chair
-    consultation flows. The eligibility predicate is wired into
-    NOTHING in v8.70 — it is structural readiness, not behavior
-    change. Future ships may consult patrician ants on Sanctum
-    decisions; the predicate is ready when that consultation
-    flow is designed.
-    """
-    return compute_balance(roll, ant_name) >= SANCTUM_CHAIR_MIN_DENARII
-
-
-def patrician_ants(roll: dict) -> list[str]:
-    """F4 — return the list of currently-patrician-class ant names.
-
-    For ratification flows / Sanctum-chair eligibility queries.
-    Sorted alphabetically for stable output (deterministic per
-    G16)."""
-    return sorted(
-        ant for ant, bal in all_balances(roll).items()
-        if bal >= SANCTUM_CHAIR_MIN_DENARII
-    )
 
 
 def compute_rewards(

@@ -218,32 +218,23 @@ Two remaining honestly-named "accept it never will" items:**
 
 ## Current version
 
-**v9.49** (2026-06-03). 59 ships in v9.x. 33 commander ants. 9 HYDRA
+**v9.50** (2026-06-03). 60 ships in v9.x. 33 commander ants. 9 HYDRA
 watchers + CM. 11 manifest legions + 1 reserved. 9 soldier classes (8
 workers + 1 priest). 6 citizens. Treasury (Denarius) ledger.
 
 **Freeze line at v9.31** (the terminus). Post-v9.31 work is bounded to
 (a) hardening, (b) measurement, (c) thesis cold-read evidence per
-MISSION.md §"From v9.32 forward". v9.32 wired hookify; v9.33 added
-Playwright E2E scaffold; v9.34 closed swarm cron-cadence + priest-tier
-datetime crash; v9.35 fixed HYDRA watchers' hardcoded-port bug;
-v9.36 cleared cascade-revealed false-positive rate-limiter ALERT;
-v9.37 closed 2 swarm-script hidden failures; v9.38 archive-extension
-Sanctum (CHANGELOG = 10 stable + 1 in-flight); v9.39 wired
-POLARIS_REDIS_URL into docker-compose; v9.40 fixed observability.py
-Dockerfile-missing + regression-guard widening; v9.41 reclassified
-AoR count 12 → 10 (dropped 2 derived caches: census-roll.json +
-treasury-roll.json); v9.42 cleared HYDRA watcher false-positives;
-v9.43 fixed the `grep -c ... || echo 0` double-output bug class;
-v9.44 shipped the ZK second witness (Glass bounded-integration: an
-independent Python Goldilocks+Poseidon+Merkle verifier that
-two-witnesses the Rust ZK verdict; Glass folder untouched); v9.45
-fixed a latent secret-leak (.gitignore trailing-comment defect left
-`polaris.env` un-ignored) + foresight acceptance-log integrity, under
-a 2026-06-03 heavy-production authorization; v9.46 wired the v9.44 ZK
-two-witness differential + HYDRA suites into CI and added pytest to
-requirements. A living backlog now sits at the top of `ROADMAP.md`
-(§"OPEN NOW"), updated each session.
+MISSION.md §"From v9.32 forward". v9.32–v9.43 were post-freeze hardening
++ measurement (hookify, Playwright E2E, swarm/HYDRA bug-class fixes,
+AoR reclassification). v9.44 shipped the ZK second witness (Glass
+bounded-integration: an independent Python verifier that two-witnesses
+the Rust ZK verdict; Glass folder untouched). v9.45–v9.49:
+secret-leak fix, CI wiring of the two-witness suite, PQC/swarm
+honest-accounting, all-33-ant scan() coverage; a living backlog sits at
+the top of `ROADMAP.md` (§"OPEN NOW"). **v9.50+ is the apparatus-reduction
+arc** (Sanctum `2026-06-03-apparatus-reduction`): cut the swarm-layer
+larping (dead-weight + harden + de-theme), HYDRA keeps its name.
+Per-ship detail lives in CHANGELOG.md.
 
 For the per-ship history of v9.x: see [`CHANGELOG.md`](CHANGELOG.md)
 (curated last 10) or [`archive/CHANGELOG-FULL.md`](archive/CHANGELOG-FULL.md)
