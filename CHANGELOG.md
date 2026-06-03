@@ -14,6 +14,38 @@ record, read [`meta/sanctum-index.md`](meta/sanctum-index.md).
 
 ---
 
+## v9.46 — 2026-06-03 (CI hardening · the ZK two-witness differential now gates CI)
+
+scope: ci-hardening · ship_marker: ci-two-witness-wiring · vocation: trustworthiness — a verifier that never runs in CI is not a safety net · pattern20_instance: close-the-loop (ship a check, then make it gate)
+
+The flagship v9.44 deliverable — `test_zk_second_witness.py`, the differential
+that cross-checks the Rust ZK verdict against the independent `witness2`
+implementation — never ran in CI, even though CI already builds the exact
+`polaris-zk` binary it needs. v9.46 wires it in.
+
+- **pytest** added to `requirements.txt`. The header comment already promised
+  it but it was absent, so the pytest-style ZK suites (`witness2/test_witness2.py`,
+  `test_zk_second_witness.py`) ImportError'd on a clean install / in CI.
+- **CI steps added** (`.github/workflows/ci.yml`): the ZK two-witness
+  differential (after the existing prove-verify roundtrip, reusing the built
+  binary via `POLARIS_ZK_BINARY`), and the pure HYDRA watcher suites
+  (`test_hydra_property`, `test_hydra_revamp`; verified locally 44 pass / 9 skip).
+- Refreshed the stale CI header (claimed "273 tests / 7 ZK adversarial tests";
+  now descriptive, not a drifting hardcoded count).
+
+**Follow-up (ROADMAP §OPEN NOW):** wire `test_app.py` + `test_cli.py` into CI
+once confirmed green against the CI sample DB (deferred: not verifiable from the
+local env, which lacks psycopg2).
+
+**Tests** (TestWave46V946, 3 cases): pytest is a declared dependency; CI runs the
+ZK two-witness differential + witness2 self-tests; CI runs the HYDRA suites.
+
+**Personas.** Architect: close-the-loop — a shipped check that never gates is
+half a ship. Anti-Architect: held the wiring to suites verified locally (ZK +
+hydra), refusing to blind-add the DB-backed suites I cannot confirm from here.
+Risk LOW (CI config + test). Authorized under the 2026-06-03 heavy-production
+directive.
+
 ## v9.45 — 2026-06-03 (Repo hygiene · secret-leak gitignore fix · foresight log integrity)
 
 scope: hygiene-security · ship_marker: gitignore-secret-leak · vocation: trustworthiness — operator secrets must not be one `git add` from disclosure · pattern20_instance: drift→test promotion (security regression guard)
@@ -414,38 +446,4 @@ correctly identified as `memory`. ALERT cleared.
 key; checks `status == "healthy"`; sanity-pin that `app.py`'s
 `/api/health` still emits the `redis` key (if app.py renames, the
 watcher's parser must follow).
-
-## v9.35 — 2026-05-17 (Post-freeze hardening · HYDRA watcher port env-driven · shakedown finding closed)
-
-Real defect closed: `polaris_hydra/watchers/security_watcher.py` and
-`polaris_hydra/watchers/performance_watcher.py` hardcoded the live-
-app health probe to `http://localhost:2223/api/health`, but the
-launcher canonical is `POLARIS_PORT` defaulting to **2222**. Port
-2223 has never been a Polaris listening port. The watchers'
-live-probe was permanently INCONCLUSIVE since the watchers were
-introduced — every HYDRA brief carried "app not reachable on port
-2223" as decorative info, never a real reachability check.
-
-Surfaced by the 2026-05-17 full-system shakedown (post-v9.34
-sweep). Fix: read `POLARIS_PORT` env at module load — same pattern
-`polaris_web/app.py:4358`, `polaris_mac_launch.sh:145`, and
-`scripts/ai-bootstrap.sh:267` already use.
-
-- `polaris_hydra/watchers/security_watcher.py` — `HEALTH_URL` derived
-  from `_POLARIS_PORT = os.environ.get("POLARIS_PORT", "2222")`
-- `polaris_hydra/watchers/performance_watcher.py` — `HEALTH_URL` +
-  `BASE_URL` env-derived; the operator-facing "app not reachable"
-  detail string now interpolates the actual port so the diagnostic
-  is honest, not misleading
-
-Verified live: after the fix, performance_watcher's HYDRA evidence
-flipped from `app_reachable=False` to `app_reachable=True` +
-`endpoints_timed=5, endpoints_healthy=5`. The watchers can now
-actually reach the live app for the first time since they were
-written.
-
-`TestWave35V935` × 3 invariants: both watchers read POLARIS_PORT;
-no hardcoded port literals in either watcher's URL constants or
-operator-facing detail strings; no live code references port 2223
-(historical comments documenting the bug are OK).
 

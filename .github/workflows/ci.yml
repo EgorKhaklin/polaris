@@ -2,24 +2,32 @@
 # Polaris CI — full test suite on every push + PR.
 #
 # v8.93 / Phase 2 closing-list item. Closes the gap surfaced by the v8.92
-# deployability checklist: 273+ structural invariants + 62 CHECK
-# regression tests + 7 ZK adversarial tests + Hypothesis property tests
-# all existed, but no automation ran them on push. v8.93 closes that.
+# deployability checklist: the structural invariant suite (self-counting;
+# ~959 at v9.45), CHECK-constraint regression suite, ZK adversarial tests,
+# and Hypothesis property tests all existed, but no automation ran them on
+# push. v8.93 closes that. (Counts here are descriptive, not pinned — the
+# suites self-count; do not hardcode a number that drifts every ship.)
 #
 # Stages (all run on `ubuntu-latest`):
 #
 #   1. checkout + Python 3.12 setup
 #   2. PostgreSQL 16 service container, polaris_test database loaded
 #      from polaris_sql/00_load_all.sql
-#   3. Python deps install (flask, psycopg2-binary, hypothesis)
+#   3. Python deps install (flask, psycopg2-binary, hypothesis, pytest)
 #   4. Rust toolchain + cargo test (polaris_zk crate)
 #   5. Bash syntax check across scripts/
-#   6. Structural invariant suite (273 tests)
-#   7. CHECK-constraint regression suite (62 tests against live DB)
+#   6. Structural invariant suite
+#   7. CHECK-constraint regression suite (against live DB)
 #   8. Hypothesis property tests
-#   9. ai-link-check (catches broken cross-refs)
-#  10. ai-meta (CM constraint self-check)
-#  11. ai-coherence (drift detector)
+#   9. HYDRA watcher suites (pure)                          [v9.46]
+#  10. ZK prove-verify roundtrip + two-witness differential [v9.44/v9.46]
+#  11. ai-link-check (catches broken cross-refs)
+#  12. ai-meta (CM constraint self-check)
+#  13. ai-coherence (drift detector)
+#
+# Known follow-up (ROADMAP OPEN NOW): wire test_app.py + test_cli.py into
+# CI once confirmed green against the CI sample DB (they need the live DB
+# the CI job already provisions; not yet verified, so not yet gating).
 #
 # Failure semantics: any non-zero exit fails the workflow. The job is
 # named so a single failure shows up clearly on the PR check status.
@@ -122,6 +130,11 @@ jobs:
           python3 -m unittest test_invariants_property -v || true
           python3 -m unittest test_redaction_property -v || true
 
+      # v9.46 — HYDRA watcher suites (pure; no DB). Run via pytest (mixed
+      # unittest + function style). Verified locally: 44 passed / 9 skipped.
+      - name: HYDRA watcher suites (pure)
+        run: python3 -m pytest polaris_web/test_hydra_property.py polaris_web/test_hydra_revamp.py -q
+
       # v9.30 / item 12 — schema idempotency proof (retires the saga of
       # inline comments about reload safety).
       - name: schema idempotency proof
@@ -179,6 +192,16 @@ jobs:
           test "$VERIFIED" = "True" || { echo "✗ verify returned $VERIFIED (expected True)"; exit 1; }
 
           echo "✓ ZK prove-verify roundtrip OK"
+
+      # v9.46 — run the v9.44 two-witness differential in CI. The binary was
+      # built by the prove-verify step above; the independent Python witness
+      # (polaris_zk/witness2) must agree with the Rust verdict bit-for-bit, and
+      # test_witness2.py anchors Poseidon to Plonky2's published vectors.
+      - name: ZK two-witness differential (independent verifier cross-check)
+        run: |
+          export POLARIS_ZK_BINARY="$GITHUB_WORKSPACE/polaris_zk/target/release/polaris-zk"
+          test -x "$POLARIS_ZK_BINARY" || { echo "✗ polaris-zk binary missing"; exit 1; }
+          python3 -m pytest polaris_zk/witness2/test_witness2.py polaris_web/test_zk_second_witness.py -v
 
   brand:
     name: Brand + link discipline

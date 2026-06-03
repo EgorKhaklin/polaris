@@ -16371,5 +16371,43 @@ class TestWave45V945(unittest.TestCase):
                 f"test fixture '{marker}' leaked into the real acceptance log")
 
 
+class TestWave46V946(unittest.TestCase):
+    """v9.46 — CI hardening: the v9.44 ZK two-witness differential gates CI.
+
+    The flagship v9.44 deliverable (test_zk_second_witness.py, which
+    cross-checks the Rust ZK verdict against the independent witness2
+    implementation) never ran in CI, even though CI already built the exact
+    polaris-zk binary it needs. v9.46 wires it in, plus the pure HYDRA watcher
+    suites, and adds pytest to requirements.txt (the header promised pytest but
+    it was absent, so the pytest-style ZK suites ImportError'd on a clean
+    install / in CI).
+    """
+
+    ROOT = ROOT
+
+    def _read(self, rel):
+        with open(os.path.join(self.ROOT, rel)) as f:
+            return f.read()
+
+    def test_v946_pytest_declared_dependency(self):
+        req = self._read('polaris_web/requirements.txt')
+        self.assertRegex(
+            req, r'(?m)^pytest\b',
+            "pytest must be a declared dependency: the ZK two-witness suites "
+            "import it and ImportError without it.")
+
+    def test_v946_ci_runs_zk_two_witness(self):
+        ci = self._read('.github/workflows/ci.yml')
+        self.assertIn('test_zk_second_witness.py', ci,
+                      "CI must run the v9.44 ZK two-witness differential")
+        self.assertIn('witness2/test_witness2.py', ci,
+                      "CI must run the witness2 self-tests (Plonky2 vector anchor)")
+
+    def test_v946_ci_runs_hydra_suites(self):
+        ci = self._read('.github/workflows/ci.yml')
+        self.assertIn('test_hydra_property.py', ci)
+        self.assertIn('test_hydra_revamp.py', ci)
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

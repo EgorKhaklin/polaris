@@ -17959,6 +17959,40 @@ AoR amendment, decided + shipped v9.38) to permit APPENDS to this
 file (still no edits or deletions of existing rows). Section
 boundary below; entries newest-first under this section.
 
+## v9.35 — 2026-05-17 (Post-freeze hardening · HYDRA watcher port env-driven · shakedown finding closed)
+
+Real defect closed: `polaris_hydra/watchers/security_watcher.py` and
+`polaris_hydra/watchers/performance_watcher.py` hardcoded the live-
+app health probe to `http://localhost:2223/api/health`, but the
+launcher canonical is `POLARIS_PORT` defaulting to **2222**. Port
+2223 has never been a Polaris listening port. The watchers'
+live-probe was permanently INCONCLUSIVE since the watchers were
+introduced — every HYDRA brief carried "app not reachable on port
+2223" as decorative info, never a real reachability check.
+
+Surfaced by the 2026-05-17 full-system shakedown (post-v9.34
+sweep). Fix: read `POLARIS_PORT` env at module load — same pattern
+`polaris_web/app.py:4358`, `polaris_mac_launch.sh:145`, and
+`scripts/ai-bootstrap.sh:267` already use.
+
+- `polaris_hydra/watchers/security_watcher.py` — `HEALTH_URL` derived
+  from `_POLARIS_PORT = os.environ.get("POLARIS_PORT", "2222")`
+- `polaris_hydra/watchers/performance_watcher.py` — `HEALTH_URL` +
+  `BASE_URL` env-derived; the operator-facing "app not reachable"
+  detail string now interpolates the actual port so the diagnostic
+  is honest, not misleading
+
+Verified live: after the fix, performance_watcher's HYDRA evidence
+flipped from `app_reachable=False` to `app_reachable=True` +
+`endpoints_timed=5, endpoints_healthy=5`. The watchers can now
+actually reach the live app for the first time since they were
+written.
+
+`TestWave35V935` × 3 invariants: both watchers read POLARIS_PORT;
+no hardcoded port literals in either watcher's URL constants or
+operator-facing detail strings; no live code references port 2223
+(historical comments documenting the bug are OK).
+
 ## v9.34 — 2026-05-17 (Post-freeze hardening · swarm cron cadence · 2 long-latent defects closed)
 
 Real defect closed: `polaris-cron-install.sh` wired `ai-hydra` (read-

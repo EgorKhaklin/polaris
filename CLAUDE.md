@@ -218,7 +218,7 @@ Two remaining honestly-named "accept it never will" items:**
 
 ## Current version
 
-**v9.45** (2026-06-03). 55 ships in v9.x. 33 commander ants. 9 HYDRA
+**v9.46** (2026-06-03). 56 ships in v9.x. 33 commander ants. 9 HYDRA
 watchers + CM. 11 manifest legions + 1 reserved. 9 soldier classes (8
 workers + 1 priest). 6 citizens. Treasury (Denarius) ledger.
 
@@ -240,7 +240,10 @@ independent Python Goldilocks+Poseidon+Merkle verifier that
 two-witnesses the Rust ZK verdict; Glass folder untouched); v9.45
 fixed a latent secret-leak (.gitignore trailing-comment defect left
 `polaris.env` un-ignored) + foresight acceptance-log integrity, under
-a 2026-06-03 heavy-production authorization.
+a 2026-06-03 heavy-production authorization; v9.46 wired the v9.44 ZK
+two-witness differential + HYDRA suites into CI and added pytest to
+requirements. A living backlog now sits at the top of `ROADMAP.md`
+(§"OPEN NOW"), updated each session.
 
 For the per-ship history of v9.x: see [`CHANGELOG.md`](CHANGELOG.md)
 (curated last 10) or [`archive/CHANGELOG-FULL.md`](archive/CHANGELOG-FULL.md)
