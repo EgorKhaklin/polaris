@@ -46,3 +46,32 @@ The project itself convicts the apparatus: `polaris-sanctum-status.sh` prints "r
 Anti-Architect persona (`meta/architect.md`), which pre-named this failure mode. The dissent brief is the loyal-opposition case FOR the cut.
 
 Each phase ships under the standard sequence (new TestWave class, version bump, CHANGELOG, journal, scorecard). Phases recorded here as they close.
+
+## VI. Phase 3 (de-theme) — blocking finding (2026-06-03)
+
+VANTA chose "Full rename incl. schema." Verification capability was established
+(a py3.12 venv with the full app stack + the live `polaris_test` DB: 62 DB-backed
++ 968 structural tests green at baseline). A trial run of the most contained stage
+(legions → groups) was executed and **reverted** after it surfaced a blocking
+architectural fact:
+
+**The theme is woven into the frozen audit-of-record, not just decorative.**
+- `test_g24_new_legions_require_sanctum` requires every check-group's code `NAME`
+  to appear **verbatim in a historical Sanctum file**. Renaming `legio_praetorian`
+  → `group_praetorian` breaks it, because the Sanctum that authorized it (frozen
+  AoR) says `legio_praetorian`. The frozen AoR cannot be rewritten (C1).
+- The CHANGELOG / Sanctum corpus references **every** ant/legion/citizen by its
+  themed name; tests cross-check code-against-history.
+
+So a code de-theme **detaches the code from its own authorization history**. The
+only clean paths: (a) FIRST rework the ~handful of code↔AoR-coupling tests
+(g24/g25 + historical-content assertions) to tolerate a rename mapping
+old↔new names — itself a real change that relaxes "every check is Sanctum-
+authorized by exact name"; THEN the mechanical rename. Or (b) accept that the
+theme is load-bearing in the governance/AoR sense and keep it (the audit only
+saw the onboarding cost, not this coupling). A permanent mixed state (frozen AoR
+= themed, new code = plain) is the one option VANTA already excluded as worse.
+
+**Status:** Phase 3 paused pending VANTA's decision on (a) vs (b). Phases 1a/1b/2
++ the HYDRA tier-cleanup shipped (v9.50-v9.53). The verification environment is
+set up and ready if (a) is chosen.
