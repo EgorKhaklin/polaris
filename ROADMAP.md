@@ -59,6 +59,11 @@ a new-arc item needs a Sanctum naming an external trigger.
 7. **R13-3 / R13-4 Mycelium bloom + deliberation** (only if Arc E is still
    open) — additive brain-map bloom overlay + deliberation threshold; unblocks
    the R13-5 HYDRA-vs-Mycelium decision. `M · medium · LOW · new-arc`
+8. **CI: bump deprecated GitHub Actions before the deadline.** Live CI annotation
+   (seen on the v9.49 run): `actions/checkout@v4` + `actions/setup-python@v5` run
+   on Node.js 20, which GitHub force-migrates to Node 24 on **2026-06-16** and
+   removes on **2026-09-16**. Bump to current major versions before then.
+   `XS · low · LOW · hardening`
 
 **Recently shipped (this session, 2026-06-03):** v9.44 ZK two-witness (Glass
 bounded-integration); v9.45 secret-leak gitignore fix + foresight integrity;
