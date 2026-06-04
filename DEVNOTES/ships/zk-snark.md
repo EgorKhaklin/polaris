@@ -33,10 +33,9 @@ Trade-offs accepted (named honestly):
   architecture lets us re-port to Halo2 in a future migration
   without changing the schema.
 - Proof size ~70 KB; verifier ~30 ms.
-- v1 uses TREE_DEPTH=4 (16 leaves max) for demo-scale. Production
-  would re-run the SNARK setup with TREE_DEPTH=14 (16,384 leaves).
-  The SQL cap (10,000) is decoupled from the circuit cap — schema
-  is wider than v1 demo circuit.
+- Uses TREE_DEPTH=14 (16,384 leaves), which covers the schema's SQL
+  cap of 10,000 leaves per epoch. Plonky2 is transparent, so changing
+  the depth is a recompile, not a trusted-setup ceremony.
 
 ## What the circuit proves
 
@@ -143,7 +142,7 @@ Plonky2 version + ship pre-built binaries for common platforms.
 
 ### R6. Performance budget
 
-Measured on a 2026 desktop with TREE_DEPTH=4:
+Measured on a 2026 desktop with TREE_DEPTH=14 (single proof; build dominates):
 - Prover: ~3 s (circuit build + proof generation; dominated by
   build, not the proof itself)
 - Verifier: ~30 ms (including subprocess spawn)

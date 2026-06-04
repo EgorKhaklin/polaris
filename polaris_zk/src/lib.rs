@@ -43,14 +43,15 @@ pub type C = PoseidonGoldilocksConfig;
 pub const D: usize = 2;
 
 /// Tree depth — limits the maximum number of leaves to 2^TREE_DEPTH.
-/// v1 ships TREE_DEPTH=4 (supports up to 16 leaves) for demo-scale.
-/// The schema cap (10,000 leaves per epoch) is wider — production
-/// would re-run the SNARK setup with TREE_DEPTH=14 (supports 16,384).
-/// Trade-off is named in DEVNOTES/zk-snark.md.
+/// TREE_DEPTH=14 supports 16,384 leaves, which covers the schema cap of
+/// 10,000 leaves per epoch (`TokenStateEpoch`), so the anonymity set is a
+/// full epoch rather than a 16-leaf demo. Plonky2 is transparent (no
+/// trusted setup), so changing this is a recompile, not a ceremony.
+/// The trade-off is named in DEVNOTES/zk-snark.md.
 ///
 /// Smaller leaves are padded with zero-hash to 2^TREE_DEPTH so the
 /// circuit is uniform regardless of actual epoch size.
-pub const TREE_DEPTH: usize = 4;
+pub const TREE_DEPTH: usize = 14;
 
 /// Pad leaves with zero-hash entries up to 2^TREE_DEPTH so every tree
 /// has the same shape and `tree.prove(i)` returns exactly TREE_DEPTH

@@ -5,6 +5,31 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.60 — 2026-06-04 (ZK anonymity set: from a 16-leaf demo to a full epoch)
+
+The zero-knowledge Merkle-inclusion circuit shipped at `TREE_DEPTH=4` (a 16-leaf
+tree) while the schema caps an epoch at 10,000 leaves, so the proof's anonymity set
+was at most 16 — far smaller than a real epoch. This raises the circuit to
+`TREE_DEPTH=14` (16,384 leaves), which covers the 10,000-leaf cap, so the anonymity
+set is now a full epoch.
+
+Plonky2 is a transparent SNARK (FRI-based, no trusted setup), so the change is a
+single constant in two files (`polaris_zk/src/lib.rs` and the Python second witness
+`polaris_zk/witness2/merkle.py`) plus a recompile — no ceremony, no key
+regeneration.
+
+Verified at depth 14: the 7 Rust circuit tests pass, and the independent two-witness
+differential (the Python re-checker vs the Rust prover) passes all 27 of its cases
+bit-for-bit, including prove-verify roundtrips and tampered-root rejection. That
+differential is exactly what would fail if the two implementations disagreed on the
+new depth.
+
+Docs updated: the ZK soundness ledger (`DEVNOTES/zk-soundness.md`) no longer lists
+tree size as a demo-scale limitation (the not-audited and placeholder-PQC caveats
+stand), the ship note, and the ROADMAP backlog item is closed.
+
+---
+
 ## v9.59 — 2026-06-04 (professional cleanup: cut the agent-governance scaffolding)
 
 Made the repository a clean, normal software project: removed the apparatus cruft,

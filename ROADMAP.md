@@ -37,12 +37,9 @@ to the prioritized backlog below when adopted as an R-id.
    is one flag away (`POLARIS_USE_REAL_PQC=1`). Still open: a full independent
    ML-DSA-65 second witness for the verify path, premature while real PQC is
    OFF by default; revisit when it goes live. `L · medium · MEDIUM · hardening`
-2. **ZK anonymity set is demo-scale (`TREE_DEPTH=4`, ≤16 leaves).** Re-run
-   the circuit setup at `TREE_DEPTH=14` (16,384 leaves) for a realistic set;
-   the second witness already generalizes. `L · medium · MEDIUM · hardening`
-3. **PQC-posture audit** — audit Polaris against NIST PQC migration
+2. **PQC-posture audit** — audit Polaris against NIST PQC migration
    timelines; surface gaps. `S · low · LOW · cold-read-evidence`
-4. **CI: bump deprecated GitHub Actions before the deadline.** Live CI
+3. **CI: bump deprecated GitHub Actions before the deadline.** Live CI
    annotation: `actions/checkout@v4` plus `actions/setup-python@v5` run on
    Node.js 20, which GitHub force-migrates to Node 24 on **2026-06-16** and
    removes on **2026-09-16**. Bump to current major versions before then.

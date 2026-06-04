@@ -23,9 +23,10 @@ from __future__ import annotations
 from .poseidon import HASH_OUT_ELEMENTS, hash_or_noop, two_to_one
 from .poseidon_constants import P
 
-# Must match polaris_zk/src/lib.rs TREE_DEPTH. v1 ships depth 4 (<= 16 leaves).
-# The differential test fails loudly if the Rust crate's depth ever diverges.
-TREE_DEPTH = 4
+# Must match polaris_zk/src/lib.rs TREE_DEPTH. Depth 14 supports 16,384
+# leaves, covering the schema's 10,000-leaf epoch cap. The differential
+# test fails loudly if the Rust crate's depth ever diverges.
+TREE_DEPTH = 14
 ZERO_LEAF_HEX = "0" * 64
 
 

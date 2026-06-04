@@ -2,18 +2,19 @@
 
 Polaris's `polaris_zk` crate uses the words *proof*, *zero-knowledge*, and
 *post-quantum*. This is the honest ledger: which of those claims are rigorous,
-which are demo-scale, and exactly where the edges are. It is modeled on Glass's
+which are still limited, and exactly where the edges are. It is modeled on Glass's
 `docs/soundness.md` and was added in v9.44 as the documentation half of the
 Glass bounded-integration decision.
 
 The short version, up front:
 
-> **The ZK layer is an educational, demo-scale Merkle-inclusion SNARK built on the
-> audited `plonky2` 0.2 crate. The membership statement and its verdict are now
-> two-witnessed by an independent implementation. The circuit parameters
-> (`TREE_DEPTH = 4`, single root) are demo-scale, the token-signing PQC path is a
-> deterministic placeholder by default, and none of this has had an external
-> cryptographic audit. Do not protect real identities with it as shipped.**
+> **The ZK layer is an educational Merkle-inclusion SNARK built on the audited
+> `plonky2` 0.2 crate. The membership statement and its verdict are
+> two-witnessed by an independent implementation. The tree (`TREE_DEPTH = 14`,
+> 16,384 leaves) covers the schema's 10,000-leaf epoch cap, so the anonymity set
+> is a full epoch. The token-signing PQC path is a deterministic placeholder by
+> default, and none of this has had an external cryptographic audit. Do not
+> protect real identities with it as shipped.**
 
 There are two different kinds of guarantee here. Conflating them is the main way
 to be misled. Keep them separate.
@@ -65,7 +66,7 @@ it. The honest caveats:
 |---|---|---|
 | **Proof system** | The audited, widely-used `plonky2` 0.2 crate (transparent setup, FRI-based, no trusted ceremony, no elliptic-curve assumption). | Polaris ships a thin circuit over it. The *crate* is mature; *Polaris's use of it* has had no external review. |
 | **Statement** | "I know a leaf `L` and a path `P` such that `L` hashes up to the public root `R`, bound to `(epoch_id, context_id, nonce)`." Correct and now two-witnessed. | The binding fields are registered as public inputs but not otherwise constrained (see `lib.rs:231-238`); they defeat replay by commitment, not by an in-circuit predicate. |
-| **Tree size** | `TREE_DEPTH = 4`, up to 16 leaves per epoch, padded with a zero-leaf. | **Demo-scale.** The schema cap is 10,000 leaves; production would need `TREE_DEPTH = 14` and a fresh setup. Until then the anonymity set is at most 16. |
+| **Tree size** | `TREE_DEPTH = 14`, up to 16,384 leaves per epoch, padded with a zero-leaf. | Covers the schema's 10,000-leaf epoch cap, so the anonymity set is a full epoch rather than a 16-leaf demo. Plonky2 is transparent, so the depth change was a recompile, not a ceremony. |
 | **Hash** | Poseidon over Goldilocks, Plonky2-native, vector-matched. | Standard primitive, but the in-circuit security margin is Plonky2's default config, not a parameter set audited for this deployment. |
 | **FRI parameters** | `CircuitConfig::standard_recursion_config()` defaults. | The concrete bit-security of the shipped config is **not independently verified here**; treat any specific number (including the crate README's "256-bit") as aspirational until measured. |
 | **Token-signing PQC** | Integration scaffold for real ML-DSA via liboqs (`pqc_signing.py`, `POLARIS_USE_REAL_PQC`). | **Off by default**: `token_value` is a deterministic placeholder so property tests stay reproducible. Activation is operator-side. This is a separate primitive from the Merkle SNARK above; do not conflate them. |
@@ -100,9 +101,9 @@ misreading of the spec, and never substitutes for an external audit.
 - The ZK layer is good **tooling and teaching**: a transparent-setup,
   post-quantum-comfortable membership proof whose verdict is now independently
   two-witnessed.
-- It is **not** audited cryptography and is **demo-scale** (≤16-leaf anonymity
-  set, placeholder PQC signing by default). The README's framing as a real
-  identity system is, correctly, labeled notional.
+- It is **not** audited cryptography: the FRI config's concrete bit-security is
+  unmeasured here, and PQC signing is a placeholder by default. The README's
+  framing as a real identity system is, correctly, labeled notional.
 
 | Question | Read |
 |---|---|
