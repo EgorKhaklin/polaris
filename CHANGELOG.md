@@ -5,6 +5,30 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.78 — 2026-06-04 (atlas event feed: a full-precision cursor stops dropping sub-second events)
+
+The atlas event feed (`/api/atlas/events`) paginates by the keyset cursor
+`(event_timestamp, event_id)`, but built the cursor's timestamp from
+`to_char(event_timestamp, 'HH24:MI:SS')` — whole seconds, floored. `atlas_recent_events`
+then filters with a strict `(event_timestamp, event_id) < (cursor_ts, cursor_id)`.
+So if the last row of a page had true timestamp `S.f` (f>0), the cursor became
+`S.000000`, and every event in the open band `(S.000000, S.f)` was excluded from
+the next page even though it was never shown on the previous one — silently
+dropped from the feed. The infinite-scroll frontend re-feeds the cursor, and no
+test exercised cross-page pagination.
+
+Fix: the route now emits the cursor from a full-microsecond
+`to_char(event_timestamp, 'HH24:MI:SS.US')` value (the human-readable whole-second
+display column is unchanged), matching the full-precision pattern `/verifications`
+already uses. The internal cursor field is kept out of the JSON body.
+
+- `polaris_web/app.py` — `api_atlas_events` builds the cursor at microsecond
+  precision.
+- `polaris_web/test_app.py` — `AtlasEventCursorTests` inserts five events in one
+  whole second with distinct microseconds: the full-precision cursor skips none,
+  and a whole-second cursor demonstrably drops the sub-second band (proving why
+  the fix is needed).
+
 ## v9.77 — 2026-06-04 (C6: a ZK verification's location is redacted at every read path, not just the warrant audit)
 
 A third review pass (fresh dimensions: templates/XSS, C6 redaction, migrations,

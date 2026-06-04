@@ -6624,6 +6624,69 @@ class ZKLocationRedactionTests(unittest.TestCase):
                 self.assertIsNone(r['requestor_location'])
 
 
+class AtlasEventCursorTests(unittest.TestCase):
+    """The /api/atlas/events keyset cursor must carry full microsecond
+    precision. atlas_recent_events filters with a strict `< (cursor_ts,
+    cursor_id)`, so a whole-second-truncated cursor excludes every event in the
+    (S.0, S.f) sub-second band at a page boundary — dropping them from the feed
+    entirely. Events are inserted uncommitted (append-only table) and rolled
+    back, so nothing is polluted."""
+
+    def setUp(self):
+        self.conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        self.our_ids = []
+        # Five events in the SAME whole second, distinct microseconds, far-future
+        # so they sort to the top of the recent-events feed.
+        with self.conn.cursor() as cur:
+            for i in range(5):
+                cur.execute(
+                    "INSERT INTO VerificationEvent "
+                    "(token_id, requesting_agency_id, context_id, outcome, "
+                    " disclosure_level, event_timestamp) "
+                    "VALUES (NULL, 1, 1, 'SUCCESS', 'SELECTIVE', %s::timestamp) "
+                    "RETURNING event_id",
+                    (f'2099-06-04 12:00:00.{i + 1:06d}',))
+                self.our_ids.append(cur.fetchone()['event_id'])
+
+    def tearDown(self):
+        self.conn.rollback()
+        self.conn.close()
+
+    def _page(self, cursor_ts, cursor_id, limit):
+        with self.conn.cursor() as cur:
+            cur.execute(
+                "SELECT event_id, "
+                "  to_char(event_timestamp,'YYYY-MM-DD HH24:MI:SS.US') AS tsc, "
+                "  to_char(event_timestamp,'YYYY-MM-DD HH24:MI:SS')    AS tss "
+                "FROM atlas_recent_events(%s::timestamp, %s, %s)",
+                (cursor_ts, cursor_id, limit))
+            return cur.fetchall()
+
+    def test_full_precision_cursor_skips_no_subsecond_event(self):
+        limit = 3
+        p1 = self._page(None, None, limit)
+        last = p1[-1]
+        # The fix: cursor carries microseconds.
+        p2 = self._page(last['tsc'], last['event_id'], limit)
+        seen = {r['event_id'] for r in p1} | {r['event_id'] for r in p2}
+        for eid in self.our_ids:
+            self.assertIn(eid, seen,
+                'a full-precision cursor must not skip a same-second event')
+
+    def test_truncated_cursor_demonstrates_the_skip(self):
+        # Proves WHY the fix is needed: a whole-second cursor drops the
+        # sub-second band, so at least one of our same-second events is lost.
+        limit = 3
+        p1 = self._page(None, None, limit)
+        last = p1[-1]
+        p2 = self._page(last['tss'], last['event_id'], limit)
+        seen = {r['event_id'] for r in p1} | {r['event_id'] for r in p2}
+        skipped = [eid for eid in self.our_ids if eid not in seen]
+        self.assertTrue(
+            skipped,
+            'a whole-second cursor should skip sub-second events (the bug the fix removes)')
+
+
 if __name__ == '__main__':
     # Pull in property-based invariant tests (C1, C2, C3) so they run as
     # part of the main suite. The import is at the bottom so test_app.py

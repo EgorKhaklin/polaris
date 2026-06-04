@@ -2111,6 +2111,12 @@ def api_atlas_events():
     rows = query("""
         SELECT kind, event_id,
                to_char(event_timestamp, 'YYYY-MM-DD HH24:MI:SS') AS event_timestamp,
+               -- Full-microsecond timestamp for the keyset cursor. The display
+               -- column above floors to whole seconds; building the cursor from
+               -- it would skip every event in the (S.0, S.f) sub-second band at
+               -- a page boundary, since atlas_recent_events filters with a
+               -- strict `< (cursor_ts, cursor_id)`. Cursor must be full-precision.
+               to_char(event_timestamp, 'YYYY-MM-DD HH24:MI:SS.US') AS event_ts_cursor,
                token_id, holder_name, agency_name, label, detail, tone, lat, lon
         FROM atlas_recent_events(%s::timestamp, %s, %s)
     """, (cursor_ts, cursor_id, limit))
@@ -2118,12 +2124,14 @@ def api_atlas_events():
     next_cursor = None
     if rows and len(rows) == limit:
         last = rows[-1]
-        next_cursor = f"{last['event_timestamp']}|{last['event_id']}"
+        next_cursor = f"{last['event_ts_cursor']}|{last['event_id']}"
 
     return jsonify(
         count=len(rows),
         next_cursor=next_cursor,
-        events=[dict(r) for r in rows],
+        # event_ts_cursor is the internal full-precision keyset value; the JSON
+        # exposes only the human-readable whole-second event_timestamp.
+        events=[{k: v for k, v in r.items() if k != 'event_ts_cursor'} for r in rows],
     )
 
 
