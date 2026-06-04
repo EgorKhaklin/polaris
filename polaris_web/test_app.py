@@ -2902,7 +2902,18 @@ class DuressCodeTests(PolarisTestCase):
     def test_correct_duress_code_records_silent_event(self):
         """When the holder types the correct duress code, a DuressEvent is
         written silently — but the user-visible VerificationEvent still
-        appears with the requested outcome. R2 audit refinement."""
+        appears with the requested outcome. R2 audit refinement.
+
+        POLARIS_DURESS_SYNC=1 forces the recording onto the request thread so
+        this assertion is deterministic; by default it runs on a background
+        thread to keep the response latency independent of the match outcome
+        (anti-timing-side-channel, covered by the async test below)."""
+        import os as _os
+        prev = _os.environ.get('POLARIS_DURESS_SYNC')
+        _os.environ['POLARIS_DURESS_SYNC'] = '1'
+        self.addCleanup(lambda: (_os.environ.__setitem__('POLARIS_DURESS_SYNC', prev)
+                                 if prev is not None
+                                 else _os.environ.pop('POLARIS_DURESS_SYNC', None)))
         with self._db() as conn, conn.cursor() as cur:
             cur.execute("SELECT count(*) AS n FROM DuressEvent")
             duress_before = cur.fetchone()['n']
@@ -2927,6 +2938,31 @@ class DuressCodeTests(PolarisTestCase):
             cur.execute("SELECT count(*) AS n FROM VerificationEvent")
             self.assertEqual(cur.fetchone()['n'], verif_before + 1,
                 'Verification path proceeds normally (coercer-visible)')
+
+    def test_duress_recording_is_async_by_default_and_durable(self):
+        """By default (no POLARIS_DURESS_SYNC) the DuressEvent is written on a
+        background thread so the response time does not reveal a duress match.
+        The write must still land (durability): poll briefly for it."""
+        import os as _os, time as _time
+        _os.environ.pop('POLARIS_DURESS_SYNC', None)  # ensure async default
+        with self._db() as conn, conn.cursor() as cur:
+            cur.execute("SELECT count(*) AS n FROM DuressEvent")
+            before = cur.fetchone()['n']
+        r = self._post('/verifications/new', data={
+            'token_id': '2', 'requesting_agency_id': '5', 'context_id': '1',
+            'outcome': 'SUCCESS', 'disclosure_level': 'SELECTIVE',
+            'duress_code': self.DEMO_DURESS_CODE,
+        }, follow_redirects=True)
+        self.assertEqual(r.status_code, 200)
+        recorded = False
+        for _ in range(40):  # up to ~4s for the daemon thread to commit
+            with self._db() as conn, conn.cursor() as cur:
+                cur.execute("SELECT count(*) AS n FROM DuressEvent")
+                if cur.fetchone()['n'] >= before + 1:
+                    recorded = True
+                    break
+            _time.sleep(0.1)
+        self.assertTrue(recorded, 'async duress recording must still land (durability)')
 
     def test_wrong_duress_code_no_event(self):
         """Typing the wrong code (or any non-duress code) writes NO

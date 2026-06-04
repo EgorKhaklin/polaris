@@ -5,6 +5,35 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.82 — 2026-06-04 (duress: record off the request thread so the response time reveals nothing)
+
+The whole point of the duress mechanism is that a coerced verification is
+indistinguishable from a normal one. But the duress-match branch did strictly
+more synchronous work than a non-match: on a match it opened a SECOND database
+connection and committed (a WAL fsync) before the request returned, a
+deterministic added latency a coercer timing the response could measure to
+distinguish a duress code from a real one. The docstring's claim that the variance
+was "dominated by Flask overhead" understated this.
+
+Fix: the silent DuressEvent is recorded on a background daemon thread by default,
+so the synchronous response time is identical whether or not a duress code
+matched (the request returns after a microsecond-scale thread spawn regardless of
+outcome). Durability is verified by a test that polls for the async write;
+operators who prefer the alarm committed before the response returns can set
+`POLARIS_DURESS_SYNC=1` (tests use it for deterministic assertions).
+
+Also documented honestly that duress is inherently token-bound (the silent alarm
+must identify the token to look up its enrolled hash), so it cannot apply to a
+pure ZERO_KNOWLEDGE verification that deliberately hides the token — the form
+field now notes it applies only with a token reference, rather than implying it
+works everywhere.
+
+- `polaris_web/app.py` — `_record_duress_async` + the default-async dispatch; the
+  R2 timing note corrected; the ZK-duress limitation documented at the call site.
+- `polaris_web/templates/verifications_form.html` — the duress field notes it
+  applies only with the token reference (kept obfuscated, no "duress" wording).
+- `polaris_web/test_app.py` — sync-mode determinism + an async-durability test.
+
 ## v9.81 — 2026-06-04 (the no-cascade invariant now covers migrations, and the one live cascade is resolved)
 
 The fourth review pass found that `check_no_fk_cascade` — which enforces the

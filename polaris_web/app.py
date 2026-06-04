@@ -4080,6 +4080,32 @@ def _federation_trust_holds(verifier_agency_id, token_id, context_id):
     return match is not None
 
 
+def _record_duress_async(token_id, context_id, requesting_agency_id):
+    """Write the silent DuressEvent + bump the operator alert counter. Runs on a
+    background daemon thread by default (see _check_and_record_duress) so the
+    request's response latency does not depend on whether a duress code matched.
+    Self-contained (fresh connection, no Flask context); best-effort and never
+    raises into the caller — the coercer must never see a duress recording fail."""
+    conn = get_db()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "CALL uc12_record_duress(%s, %s, %s, %s)",
+                (token_id, context_id, requesting_agency_id, 'AUDIT_TABLE'),
+            )
+            conn.commit()
+        try:
+            observability.record_duress_event(
+                individual_id=token_id, agency_id=requesting_agency_id)
+        except Exception:
+            pass
+    except psycopg2.Error:
+        conn.rollback()
+        sys.stderr.write(f"DURESS RECORD FAILED for token_id={token_id}\n")
+    finally:
+        conn.close()
+
+
 def _check_and_record_duress(token_id, context_id, requesting_agency_id, duress_input):
     """R11-5 / M2-10: compulsion-resistance check (PDF §9.5).
 
@@ -4093,10 +4119,13 @@ def _check_and_record_duress(token_id, context_id, requesting_agency_id, duress_
     same primitive that validates AppUser passwords.
 
     R2 audit refinement: regardless of match/no-match/no-enrollment,
-    this helper returns nothing. The caller's verification flow
-    proceeds identically. Total time variance is dominated by
-    Python+Flask overhead (~5-10 ms), not by the hash comparison
-    (~1 ms). Microbenchmarks below human-perception threshold.
+    this helper returns nothing and the caller's verification flow
+    proceeds identically. The earlier claim that timing variance was
+    "dominated by Flask overhead" understated the cost — the match branch
+    opened a SECOND connection and committed (a WAL fsync), a
+    deterministic added latency a coercer could measure. The recording
+    now runs off the request thread (see the match branch below), so the
+    synchronous response time no longer depends on the match outcome.
 
     Returns nothing — duress is silent by design.
     """
@@ -4112,37 +4141,23 @@ def _check_and_record_duress(token_id, context_id, requesting_agency_id, duress_
     # for AppUser password validation in security.py (lines 392, 427, 449).
     if not check_password_hash(row['duress_code_hash'], duress_input):
         return
-    # MATCH — record the silent alert.
-    conn = get_db()
-    try:
-        with conn.cursor() as cur:
-            cur.execute(
-                "CALL uc12_record_duress(%s, %s, %s, %s)",
-                (token_id, context_id, requesting_agency_id, 'AUDIT_TABLE'),
-            )
-            conn.commit()
-        # v9.31 freeze condition 6: operator-readable duress counter +
-        # structured log line. The headline anti-coercion metric per
-        # T8#11 — if the operator is not alerting on this, the duress
-        # feature (R11-5 / M2-10) is decorative.
-        try:
-            observability.record_duress_event(
-                individual_id=token_id,
-                agency_id=requesting_agency_id,
-            )
-        except Exception:
-            # The duress flow MUST NOT visibly fail on observability
-            # error (same posture as the DB-record swallow below).
-            pass
-    except psycopg2.Error:
-        # The verification flow must NOT visibly fail if duress recording
-        # fails (e.g., DB constraint violation). The coercer would notice.
-        # We swallow the exception; the stderr log will still surface it
-        # for operator triage.
-        conn.rollback()
-        sys.stderr.write(f"DURESS RECORD FAILED for token_id={token_id}\n")
-    finally:
-        conn.close()
+    # MATCH — record the silent alert OFF the request thread by default, so the
+    # synchronous response latency is identical to a non-match. The recording
+    # opens a second connection and commits (a WAL fsync) — a deterministic,
+    # measurable cost; doing it on the request thread let a coercer who timed the
+    # response distinguish a duress code from a real one. Moving it to a daemon
+    # thread removes that signal (the request returns after a microsecond-scale
+    # thread spawn regardless of outcome). Operators who prefer the alarm to be
+    # committed before the response returns (durability over the timing property)
+    # set POLARIS_DURESS_SYNC=1; tests use it for deterministic assertions.
+    if os.environ.get('POLARIS_DURESS_SYNC') == '1':
+        _record_duress_async(token_id, context_id, requesting_agency_id)
+    else:
+        threading.Thread(
+            target=_record_duress_async,
+            args=(token_id, context_id, requesting_agency_id),
+            daemon=True,
+        ).start()
 
 
 @app.route('/verifications/new', methods=['GET', 'POST'])
@@ -4190,8 +4205,16 @@ def verifications_new():
             # duress_code_hash AND check_password_hash returns true (constant-
             # time comparison), record a silent DuressEvent. The coercer-visible
             # verification flow proceeds normally — the outcome below is recorded
-            # as whatever was requested. R2 audit refinement: identical observable
-            # behavior across all branches.
+            # as whatever was requested.
+            #
+            # Duress is inherently TOKEN-BOUND: the silent alarm has to identify
+            # the token to look up its enrolled duress_code_hash. A pure
+            # ZERO_KNOWLEDGE verification deliberately does NOT reveal the token to
+            # the verifier (token_id_val is None here), so a duress code cannot be
+            # tied to a token without breaking the ZK property — the duress field
+            # therefore has no effect on ZK flows (and the form labels it as
+            # requiring a token reference, so a holder is not given false
+            # assurance). This is a deliberate limitation, not a silent drop.
             duress_input = request.form.get('duress_code') or ''
             if token_id_val is not None and duress_input:
                 _check_and_record_duress(token_id_val, context_id, verifier_id,
