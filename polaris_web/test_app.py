@@ -6361,6 +6361,53 @@ class CrossSiteGuardTests(unittest.TestCase):
         self.assertEqual(r.status_code, 204)
 
 
+class WebAuthnCredentialLookupTests(unittest.TestCase):
+    """Registration stores credential_id padded (base64url with '='); the
+    browser sends PublicKeyCredential.id / rawId unpadded. fetch_credential
+    must resolve the unpadded browser id to the padded stored key, or the
+    second factor (assertion) can never complete for any real authenticator
+    (16/20/32/64/65-byte ids are all padded). Regression for the
+    assertion-always-fails bug that would lock out every enrolled admin."""
+
+    def _conn(self):
+        return psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+
+    def test_canonical_credential_id_normalizes_padding(self):
+        import webauthn_auth
+        raw = bytes(range(32))  # 32 bytes -> padded base64url has a trailing '='
+        padded = webauthn_auth._b64url_encode(raw)
+        unpadded = padded.rstrip('=')
+        self.assertNotEqual(padded, unpadded, 'sanity: a 32-byte id is padded')
+        self.assertEqual(webauthn_auth._canonical_credential_id(unpadded), padded)
+        self.assertEqual(webauthn_auth._canonical_credential_id(padded), padded)
+
+    def test_unpadded_browser_id_resolves_to_padded_stored_key(self):
+        import webauthn_auth
+        raw = bytes(range(32))
+        padded = webauthn_auth._b64url_encode(raw)
+        unpadded = padded.rstrip('=')
+        self.assertTrue(padded.endswith('='), 'sanity: 32-byte id is padded')
+        conn = self._conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT user_id FROM AppUser WHERE username='admin'")
+                uid = cur.fetchone()['user_id']
+                # Registration stores the PADDED id (what _b64url_encode produces).
+                cur.execute(
+                    "INSERT INTO OperatorWebauthnCredential "
+                    "(credential_id, user_id, public_key, sign_count) "
+                    "VALUES (%s, %s, %s, 0)",
+                    (padded, uid, b'\x01\x02\x03'))
+            # The browser sends the UNPADDED id; the lookup must still find it.
+            found = webauthn_auth.fetch_credential(conn, unpadded)
+            self.assertIsNotNone(
+                found, 'unpadded browser id must resolve to the padded stored key')
+            self.assertEqual(found['credential_id'], padded)
+        finally:
+            conn.rollback()  # uncommitted insert is discarded; no DB pollution
+            conn.close()
+
+
 if __name__ == '__main__':
     # Pull in property-based invariant tests (C1, C2, C3) so they run as
     # part of the main suite. The import is at the bottom so test_app.py

@@ -120,6 +120,26 @@ def _b64url_decode(s):
     return base64.urlsafe_b64decode(s + ('=' * pad))
 
 
+def _canonical_credential_id(credential_id):
+    """Map a base64url credential id (padded OR unpadded) to the canonical
+    padded form used as the stored primary key.
+
+    Registration stores `_b64url_encode(raw)`, which KEEPS padding, so the DB
+    key carries trailing '=' for any credential whose byte length is not a
+    multiple of 3 (i.e. essentially every real authenticator: 16/20/32/64/65
+    bytes). But the browser sends `PublicKeyCredential.id` / `rawId` WITHOUT
+    padding (per the WebAuthn spec, and our webauthn-assert.js strips it), so an
+    exact-match lookup on the raw browser value would never find the row and the
+    second factor could never be satisfied. Round-tripping through the
+    padding-tolerant decoder re-pads any incoming form to the stored key. On a
+    value that does not decode, return it unchanged so the lookup simply misses.
+    """
+    try:
+        return _b64url_encode(_b64url_decode(credential_id))
+    except Exception:
+        return credential_id
+
+
 # ----------------------------------------------------------------------------
 # Registration ceremony (called from /auth/webauthn/register/{begin,finish})
 # ----------------------------------------------------------------------------
@@ -422,7 +442,8 @@ def insert_credential(conn, user_id, cred, device_label=None):
 
 def fetch_credential(conn, credential_id):
     """Fetch one credential by its raw id (base64url encoded). Returns
-    dict or None."""
+    dict or None. Normalizes padded/unpadded id to the stored padded key."""
+    credential_id = _canonical_credential_id(credential_id)
     with conn.cursor() as cur:
         cur.execute(
             "SELECT credential_id, user_id, public_key, sign_count "
@@ -435,7 +456,8 @@ def fetch_credential(conn, credential_id):
 
 def update_credential_after_use(conn, credential_id, new_sign_count):
     """Mark credential as last-used now() and bump its sign_count.
-    Caller must commit."""
+    Caller must commit. Normalizes padded/unpadded id to the stored key."""
+    credential_id = _canonical_credential_id(credential_id)
     with conn.cursor() as cur:
         cur.execute(
             "UPDATE OperatorWebauthnCredential "
@@ -448,7 +470,8 @@ def update_credential_after_use(conn, credential_id, new_sign_count):
 def delete_credential(conn, user_id, credential_id):
     """Remove a credential. user_id parameter ensures users can only
     delete their own credentials. Returns True if deleted, False if
-    not found. Caller must commit."""
+    not found. Caller must commit. Normalizes padded/unpadded id."""
+    credential_id = _canonical_credential_id(credential_id)
     with conn.cursor() as cur:
         cur.execute(
             "DELETE FROM OperatorWebauthnCredential "

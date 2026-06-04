@@ -5,6 +5,34 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.72 — 2026-06-04 (WebAuthn second factor can actually complete)
+
+The deeper review's WebAuthn pass found that the assertion (second-factor login)
+ceremony could never complete for a real authenticator. Registration stores the
+credential id as `_b64url_encode(raw)`, which keeps base64url padding, so the
+stored primary key carries a trailing `=` for any credential whose byte length is
+not a multiple of 3 — i.e. essentially every real authenticator (16/20/32/64/65
+bytes). But at assertion the browser sends `PublicKeyCredential.id` / `rawId`
+WITHOUT padding (the WebAuthn spec, and `webauthn-assert.js`, strip it), and
+`fetch_credential` did an exact-equality lookup. The padded stored key never
+matched the unpadded browser id, so the row was not found and the route returned
+401 "invalid credential". Net effect: any admin who enrolled a credential became
+permanently locked out, and a control meant to add a second factor became a hard
+denial-of-service against the privileged role. No WebAuthn integration test
+existed, so it shipped undetected.
+
+Fix: a `_canonical_credential_id` helper round-trips any incoming id (padded or
+unpadded) through the padding-tolerant decoder back to the stored padded form,
+applied in `fetch_credential`, `update_credential_after_use`, and
+`delete_credential`. No migration needed (no credential is seeded; new rows are
+unchanged).
+
+- `polaris_web/webauthn_auth.py` — `_canonical_credential_id`, applied to all
+  three credential lookups.
+- `polaris_web/test_app.py` — `WebAuthnCredentialLookupTests`: the helper maps
+  both forms to the padded key, and a padded-store / unpadded-lookup round trip
+  resolves (the exact-match path misses, proving the regression).
+
 ## v9.71 — 2026-06-04 (recovery ceremony: works for reserve-only holders, and three channels means three actors)
 
 A deeper second review pass (procedure suite + compulsion-resistance dimensions)
