@@ -176,6 +176,18 @@ def test_local_clock_check_fails_on_utcnow(tmp_path):
     assert out[0].level == "FAIL", "must FAIL when app.py compares boundaries against utcnow()"
 
 
+def test_operator_script_argv_check_fails_without_validation(tmp_path):
+    (tmp_path / "scripts").mkdir()
+    # A purge script that interpolates --actor-user-id with no numeric guard.
+    (tmp_path / "scripts" / "polaris-purge.sh").write_text(
+        '#!/usr/bin/env bash\nACTOR_USER_ID="$2"\n'
+        'psql -c "CALL uc_archive_purge(p_actor_user_id := ${ACTOR_USER_ID})"\n')
+    for name in ("polaris-recover-admin.sh", "polaris-migrate.sh", "polaris-archive.sh"):
+        (tmp_path / "scripts" / name).write_text("#!/usr/bin/env bash\n# no validation\n")
+    out = checks.check_operator_scripts_validate_argv(tmp_path)
+    assert out[0].level == "FAIL", "must FAIL when an operator script interpolates argv without regex validation"
+
+
 def test_migration_drift_check_fails_on_column_missing_from_schema(tmp_path):
     (tmp_path / "polaris_sql").mkdir()
     (tmp_path / "polaris_sql" / "migrations").mkdir()

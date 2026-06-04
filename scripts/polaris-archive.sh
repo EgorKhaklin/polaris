@@ -70,6 +70,13 @@ while [[ $# -gt 0 ]]; do
     shift
 done
 
+# --cutoff-days is interpolated into an interval '...' SQL literal; require a
+# non-negative integer so a crafted value cannot break out and inject SQL.
+if ! [[ "${CUTOFF_DAYS}" =~ ^[0-9]+$ ]]; then
+    echo "error: --cutoff-days must be a non-negative integer" >&2
+    exit "${EXIT_USAGE}"
+fi
+
 mkdir -p "${DEST}"
 
 # Pick a psql invocation.

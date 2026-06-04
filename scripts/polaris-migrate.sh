@@ -98,6 +98,13 @@ while [[ $# -gt 0 ]]; do
     shift
 done
 
+# --actor-user-id is interpolated unquoted into the schema_version INSERT;
+# require NULL (the default) or a numeric id so it cannot inject SQL.
+if [[ "${ACTOR_USER_ID}" != "NULL" ]] && ! [[ "${ACTOR_USER_ID}" =~ ^[0-9]+$ ]]; then
+    echo "error: --actor-user-id must be numeric (or omitted for NULL)" >&2
+    exit "${EXIT_USAGE}"
+fi
+
 # Filename pattern (must match schema_version.name CHECK).
 NAME_PATTERN='^[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{3}-[a-z][a-z0-9_-]*$'
 

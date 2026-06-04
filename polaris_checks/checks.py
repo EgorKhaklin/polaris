@@ -391,6 +391,32 @@ def check_no_migration_column_drift(root: pathlib.Path) -> list[Finding]:
                "every migration-added column is declared in 01_schema.sql (no schema drift)")
 
 
+# ---------------------------------------------------------------------------
+# Operator-script argument validation — the operator shell scripts interpolate
+# argv into superuser `psql -c` statements, so every SQL-bound argument must be
+# regex-validated (numeric / username format) before use or it is a SQL
+# injection (multi-statement) as postgres.
+# ---------------------------------------------------------------------------
+def check_operator_scripts_validate_argv(root: pathlib.Path) -> list[Finding]:
+    required = [
+        # (script, marker that proves the SQL-bound arg is regex-validated)
+        ("scripts/polaris-recover-admin.sh", r"TARGET.*=~|=~[^\n]*\[a-z0-9\._-\]\{3,50\}"),
+        ("scripts/polaris-purge.sh",        r"ACTOR_USER_ID[^\n]*=~[^\n]*\^\[0-9\]\+\$"),
+        ("scripts/polaris-migrate.sh",      r"ACTOR_USER_ID[^\n]*=~[^\n]*\^\[0-9\]\+\$"),
+        ("scripts/polaris-archive.sh",      r"CUTOFF_DAYS[^\n]*=~[^\n]*\^\[0-9\]\+\$"),
+    ]
+    missing = []
+    for rel, pat in required:
+        if not re.search(pat, _read(root, rel)):
+            missing.append(rel.split("/")[-1])
+    if missing:
+        return _fail("script_argv",
+                     "operator script(s) missing SQL-arg validation (injection risk): "
+                     + ", ".join(missing))
+    return _ok("script_argv",
+               "operator scripts regex-validate SQL-bound argv (recover/purge/migrate/archive)")
+
+
 CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_csp_forbids_unsafe_inline,
     check_one_active_token_index,
@@ -415,6 +441,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_local_clock_convention,
     check_c6_atlas_redacts_zk_location,
     check_no_migration_column_drift,
+    check_operator_scripts_validate_argv,
 ]
 
 

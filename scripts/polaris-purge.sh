@@ -88,6 +88,12 @@ if [[ -z "${ARCHIVE}" || -z "${ACTOR_USER_ID}" ]]; then
     echo "error: --archive and --actor-user-id are required" >&2
     exit "${EXIT_USAGE}"
 fi
+# --actor-user-id is interpolated bare into the destructive CALL against the
+# superuser connection; require it to be numeric so it cannot inject SQL.
+if ! [[ "${ACTOR_USER_ID}" =~ ^[0-9]+$ ]]; then
+    echo "error: --actor-user-id must be a numeric AppUser.user_id" >&2
+    exit "${EXIT_USAGE}"
+fi
 if [[ ! -f "${ARCHIVE}" ]]; then
     echo "error: archive file not found: ${ARCHIVE}" >&2
     exit "${EXIT_ARCHIVE}"

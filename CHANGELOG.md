@@ -5,6 +5,37 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.80 — 2026-06-04 (operator scripts: validate argv to close four SQL injections)
+
+A fourth review pass (residual surfaces: anchoring, dashboard, duress, schema
+constraints, observability, operator scripts) found the operator shell scripts
+interpolate unvalidated argv straight into superuser `psql -c` statements. Since
+`psql -c` runs multiple semicolon-separated statements, a crafted argument
+executes arbitrary SQL as `postgres`:
+
+- **`polaris-recover-admin.sh --target`** (HIGH) — the emergency password-login
+  recovery flow; `--target` was only checked non-empty, then interpolated into
+  three `psql -c` statements (the recovery-code hash lookup, the admin check, the
+  audit INSERT). A value like `x'; <SQL>; --` injects, and an `' OR '1'='1`-style
+  value could subvert which row's recovery hash is compared.
+- **`polaris-purge.sh --actor-user-id`** (HIGH) — the one script whose job is to
+  DELETE from audit tables; `--actor-user-id` was interpolated bare into the
+  destructive `CALL uc_archive_purge(...)`.
+- **`polaris-migrate.sh --actor-user-id`** (MEDIUM) — interpolated into the
+  append-only `schema_version` INSERT.
+- **`polaris-archive.sh --cutoff-days`** (MEDIUM) — interpolated into an
+  `interval '... days'` literal it could break out of.
+
+Fix: each SQL-bound argument is now regex-validated immediately after parsing —
+usernames against `^[a-z0-9._-]{3,50}$`, ids/days against `^[0-9]+$` (migrate
+also allows the `NULL` default) — and the script exits with a usage error before
+any psql runs. `check_operator_scripts_validate_argv` guards all four (the check
+layer is now 24).
+
+- `scripts/polaris-recover-admin.sh`, `polaris-purge.sh`, `polaris-migrate.sh`,
+  `polaris-archive.sh` — argv validation.
+- `polaris_checks/checks.py` — `check_operator_scripts_validate_argv` + detection.
+
 ## v9.79 — 2026-06-04 (schema completeness: 01_schema.sql declares every column the app writes)
 
 The review noted that `VerificationEvent.requesting_purpose_text` existed only in

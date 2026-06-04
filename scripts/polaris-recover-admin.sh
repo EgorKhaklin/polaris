@@ -129,6 +129,13 @@ if [[ -z "${TARGET}" ]]; then
     echo "error: --target <username> is required" >&2
     exit "${EXIT_USAGE}"
 fi
+# --target is interpolated into psql -c statements against the superuser
+# connection; constrain it to the AppUser username format so a crafted value
+# (e.g. "x'; DROP ...; --") cannot inject multi-statement SQL.
+if ! [[ "${TARGET}" =~ ^[a-z0-9._-]{3,50}$ ]]; then
+    echo "error: --target must match the AppUser username format ^[a-z0-9._-]{3,50}\$" >&2
+    exit "${EXIT_USAGE}"
+fi
 
 # v9.02: --authorizing-user-id OR --recovery-code (mutually exclusive)
 if [[ -n "${AUTHORIZING_USER_ID}" ]] && [[ -n "${RECOVERY_CODE_SOURCE}" ]]; then
