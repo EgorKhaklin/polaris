@@ -1079,7 +1079,13 @@ def atlas():
     # --- Live event stream: verifications + recent lifecycle events --------
     globe_events = query("""
         SELECT ve.event_id, ve.event_timestamp, ve.outcome, ve.disclosure_level,
-               ve.requestor_location, vc.context_type,
+               -- C6: redact location for ZERO_KNOWLEDGE verifications. With this
+               -- NULL, _coords() falls back to a non-identifying (jurisdiction /
+               -- context) position and the subtitle shows the region, so a ZK
+               -- event is never plotted at — or labelled with — its real place.
+               CASE WHEN ve.disclosure_level = 'ZERO_KNOWLEDGE'
+                    THEN NULL ELSE ve.requestor_location END AS requestor_location,
+               vc.context_type,
                t.token_id, t.status, t.activation_sequence,
                i.legal_name, i.jurisdiction,
                alg.name AS algorithm_name, alg.quantum_resistant,
@@ -3903,8 +3909,18 @@ def verifications_list():
         where_sql += ' AND ve.disclosure_level = %s'
         params.append(disclosure)
 
+    # C6: ZERO_KNOWLEDGE verifications must not reveal their location on ANY read
+    # path. uc7_warrant_audit redacts requestor_location for ZK rows; this list
+    # (any authenticated user, no role gate) must do the same, so it projects an
+    # explicit column set with the same CASE rather than `ve.*` (which would leak
+    # requestor_location, latitude, longitude). holder_name is already NULL for ZK
+    # because token_id is NULL (C2), so the IdentityToken/Individual join yields
+    # nothing identifying.
     base_select = """
-        SELECT ve.*, vc.context_type,
+        SELECT ve.event_id, ve.event_timestamp, ve.outcome, ve.disclosure_level,
+               CASE WHEN ve.disclosure_level = 'ZERO_KNOWLEDGE'
+                    THEN NULL ELSE ve.requestor_location END AS requestor_location,
+               vc.context_type,
                ag.name AS verifier_name,
                i.legal_name AS holder_name
         FROM   VerificationEvent ve

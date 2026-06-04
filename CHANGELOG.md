@@ -5,6 +5,42 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.77 — 2026-06-04 (C6: a ZK verification's location is redacted at every read path, not just the warrant audit)
+
+A third review pass (fresh dimensions: templates/XSS, C6 redaction, migrations,
+atlas/C8, ZK circuit soundness, substrate SQL) returned clean on four of six —
+notably the Plonky2 inclusion circuit is properly constrained — but found a
+HIGH C6 disclosure escalation.
+
+`uc7_warrant_audit` (admin/auditor only) deliberately NULLs `requestor_location`
+for `ZERO_KNOWLEDGE` verifications, because a precise location is exactly the
+spatial side-channel that de-anonymizes a ZK holder (co-locate it with a
+SELECTIVE/FULL event). But that redaction lived in *one* place. Every other read
+path — all reachable by any authenticated user with no role gate — exposed the
+exact ZK location:
+
+- `/verifications` (`verifications_list`) selected `ve.*` and printed
+  `requestor_location` for ZK rows.
+- `/api/atlas/points` (`atlas_points_verifications`) returned ZK lat/lon +
+  location; the map plotted each ZK event at its exact coordinates.
+- `/api/atlas/clusters` averaged ZK coordinates into grid cells (a single-ZK cell
+  leaks the exact point).
+- `/api/atlas/events` (`atlas_recent_events`) returned ZK lat/lon + the location
+  subtitle.
+- `/atlas` ran its own globe query selecting `requestor_location` for ZK events.
+
+Fix: ZERO_KNOWLEDGE verifications never appear on the spatial map and never carry
+a location anywhere. The points and cluster layers exclude ZK; the event feed and
+the globe NULL its coordinates and location text; the `/verifications` list
+projects `requestor_location` through the same redaction CASE uc7 uses (it stopped
+using `ve.*`). ZK activity is still counted non-spatially by `atlas_stats`.
+`check_c6_atlas_redacts_zk_location` guards every path against regression.
+
+- `polaris_sql/11_atlas.sql`, `polaris_web/app.py` — redaction at all five paths.
+- `polaris_checks/checks.py` — `check_c6_atlas_redacts_zk_location` (22 checks).
+- `polaris_web/test_app.py` — `ZKLocationRedactionTests` seeds a ZK event with a
+  secret location and asserts it appears nowhere across the atlas + list paths.
+
 ## v9.76 — 2026-06-04 (/api/health stops leaking infrastructure detail to anonymous callers)
 
 The last finding from the deeper review's error-disclosure pass. `/api/health`

@@ -176,5 +176,18 @@ def test_local_clock_check_fails_on_utcnow(tmp_path):
     assert out[0].level == "FAIL", "must FAIL when app.py compares boundaries against utcnow()"
 
 
+def test_c6_atlas_zk_check_fails_when_zk_location_not_redacted(tmp_path):
+    (tmp_path / "polaris_sql").mkdir()
+    (tmp_path / "polaris_web").mkdir()
+    # Atlas function that plots ZK location with no exclusion/redaction.
+    (tmp_path / "polaris_sql" / "11_atlas.sql").write_text(
+        "SELECT ve.latitude, ve.longitude, ve.requestor_location "
+        "FROM VerificationEvent ve WHERE ve.latitude IS NOT NULL;\n")
+    (tmp_path / "polaris_web" / "app.py").write_text(
+        "SELECT ve.*, ve.requestor_location FROM VerificationEvent ve;\n")
+    out = checks.check_c6_atlas_redacts_zk_location(tmp_path)
+    assert out[0].level == "FAIL", "must FAIL when ZK location is not excluded/redacted at the atlas read paths"
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

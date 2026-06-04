@@ -5279,8 +5279,9 @@ class ClusterCorrectnessTests(PolarisTestCase):
         return psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
 
     def test_cluster_total_matches_raw_count(self):
-        """The sum of n_total across all clusters in a bbox should equal
-        the raw count of geo-tagged events in that bbox."""
+        """The sum of n_total across all clusters in a bbox should equal the
+        raw count of geo-tagged events in that bbox — EXCLUDING ZERO_KNOWLEDGE,
+        which C6 keeps off the spatial map entirely (v9.77)."""
         with self._connect() as conn, conn.cursor() as cur:
             # Cluster aggregate
             cur.execute("""
@@ -5288,16 +5289,18 @@ class ClusterCorrectnessTests(PolarisTestCase):
                 FROM atlas_clusters_verifications(20, -130, 50, -65, 5)
             """)
             cluster_sum = cur.fetchone()['s']
-            # Raw count
+            # Raw count of NON-ZK geo-tagged events (ZK is excluded from the
+            # spatial layers for C6, so it must be excluded here to match).
             cur.execute("""
                 SELECT count(*) AS s FROM VerificationEvent
                 WHERE latitude IS NOT NULL AND longitude IS NOT NULL
+                  AND disclosure_level <> 'ZERO_KNOWLEDGE'
                   AND latitude  BETWEEN 20 AND 50
                   AND longitude BETWEEN -130 AND -65
             """)
             raw = cur.fetchone()['s']
             self.assertEqual(cluster_sum, raw,
-                f"Cluster sum {cluster_sum} != raw bbox count {raw}")
+                f"Cluster sum {cluster_sum} != raw non-ZK bbox count {raw}")
 
     def test_cluster_failure_subset_consistent(self):
         """n_failure in each cluster must equal the raw count of FAILURE
@@ -5311,6 +5314,7 @@ class ClusterCorrectnessTests(PolarisTestCase):
             cur.execute("""
                 SELECT count(*) AS s FROM VerificationEvent
                 WHERE outcome = 'FAILURE'
+                  AND disclosure_level <> 'ZERO_KNOWLEDGE'
                   AND latitude  IS NOT NULL AND longitude IS NOT NULL
                   AND latitude  BETWEEN -89 AND 89
                   AND longitude BETWEEN -179 AND 179
@@ -6537,6 +6541,87 @@ class WebAuthnCredentialLookupTests(unittest.TestCase):
         finally:
             conn.rollback()  # uncommitted insert is discarded; no DB pollution
             conn.close()
+
+
+class ZKLocationRedactionTests(unittest.TestCase):
+    """C6: a ZERO_KNOWLEDGE verification must never reveal its location on ANY
+    read path. uc7_warrant_audit redacts requestor_location for ZK rows; the
+    atlas points/clusters/events layers and the /verifications list (all
+    reachable by any authenticated user, no role gate) must do the same — the
+    precise location is the spatial side-channel that de-anonymizes a ZK holder.
+    The seeded ZK event is left UNCOMMITTED (VerificationEvent is append-only, so
+    it cannot be deleted) and rolled back, so it pollutes nothing."""
+
+    SECRET = 'SECRET-ZK-LOCATION-XYZZY'
+    ZK_LAT = 41.2222
+    ZK_LON = -73.3333
+
+    def setUp(self):
+        self.conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        with self.conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO VerificationEvent "
+                "(token_id, requesting_agency_id, context_id, outcome, "
+                " disclosure_level, requestor_location, latitude, longitude, "
+                " proof_commitment) "
+                "VALUES (NULL, 1, 1, 'SUCCESS', 'ZERO_KNOWLEDGE', %s, %s, %s, 'zkp')",
+                (self.SECRET, self.ZK_LAT, self.ZK_LON))
+
+    def tearDown(self):
+        self.conn.rollback()
+        self.conn.close()
+
+    def _rows(self, sql, params=()):
+        with self.conn.cursor() as cur:
+            cur.execute(sql, params)
+            return cur.fetchall()
+
+    def _at_zk_point(self, lat, lon):
+        return (lat is not None and lon is not None
+                and round(float(lat), 3) == round(self.ZK_LAT, 3)
+                and round(float(lon), 3) == round(self.ZK_LON, 3))
+
+    def test_atlas_points_excludes_zk(self):
+        rows = self._rows(
+            "SELECT * FROM atlas_points_verifications(-90,90,-180,180,5000,"
+            "NULL,NULL,NULL,NULL)")
+        for r in rows:
+            self.assertNotEqual(r['requestor_location'], self.SECRET)
+            self.assertFalse(self._at_zk_point(r['lat'], r['lon']))
+
+    def test_atlas_clusters_excludes_zk(self):
+        rows = self._rows(
+            "SELECT * FROM atlas_clusters_verifications(-90,90,-180,180,5,"
+            "NULL,NULL,NULL,NULL)")
+        for r in rows:
+            self.assertFalse(self._at_zk_point(r['lat'], r['lon']))
+
+    def test_atlas_recent_events_redacts_zk(self):
+        rows = self._rows("SELECT * FROM atlas_recent_events(NULL,NULL,500)")
+        for r in rows:
+            self.assertNotEqual(r.get('detail'), self.SECRET)
+            self.assertFalse(self._at_zk_point(r.get('lat'), r.get('lon')))
+
+    def test_verifications_list_projection_redacts_zk(self):
+        # The /verifications base_select projects requestor_location through a
+        # CASE that NULLs it for ZK rows; assert the seeded ZK row is redacted.
+        rows = self._rows(
+            "SELECT ve.disclosure_level, "
+            "  CASE WHEN ve.disclosure_level = 'ZERO_KNOWLEDGE' "
+            "       THEN NULL ELSE ve.requestor_location END AS requestor_location "
+            "FROM VerificationEvent ve WHERE ve.proof_commitment = 'zkp'")
+        zk = [r for r in rows if r['disclosure_level'] == 'ZERO_KNOWLEDGE']
+        self.assertTrue(zk, 'the seeded ZK row should be present')
+        for r in zk:
+            self.assertIsNone(r['requestor_location'],
+                              'ZK requestor_location must be redacted in the list')
+
+    def test_uc7_still_redacts_zk_location(self):
+        # The canonical redaction path stays correct (regression anchor).
+        rows = self._rows("SELECT * FROM uc7_warrant_audit(1)")
+        for r in rows:
+            if r.get('disclosure_level') == 'ZERO_KNOWLEDGE':
+                self.assertIsNone(r['requestor_location'])
 
 
 if __name__ == '__main__':

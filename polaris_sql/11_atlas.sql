@@ -95,6 +95,12 @@ AS $$
     LEFT JOIN VerificationContext    vc ON ve.context_id   = vc.context_id
     WHERE ve.latitude  IS NOT NULL
       AND ve.longitude IS NOT NULL
+      -- C6: ZERO_KNOWLEDGE verifications must not appear on the spatial map at
+      -- all. A grid cell containing a single ZK event would otherwise leak its
+      -- exact location via avg(lat/lon), and the GROUP BY itself pins each ZK
+      -- event to a cell. ZK activity is reported non-spatially by atlas_stats.
+      -- (n_zk is therefore structurally 0 in this aggregate.)
+      AND ve.disclosure_level <> 'ZERO_KNOWLEDGE'
       AND ve.latitude  BETWEEN p_min_lat AND p_max_lat
       AND (
             (p_min_lon <= p_max_lon AND ve.longitude BETWEEN p_min_lon AND p_max_lon)
@@ -235,6 +241,13 @@ AS $$
     LEFT JOIN CryptographicAlgorithm ca ON t.algorithm_id        = ca.algorithm_id
     WHERE ve.latitude  IS NOT NULL
       AND ve.longitude IS NOT NULL
+      -- C6: a ZERO_KNOWLEDGE verification proves validity without revealing the
+      -- holder; its precise location is exactly the spatial side-channel that
+      -- would de-anonymize it (especially co-located with a SELECTIVE/FULL
+      -- event). uc7_warrant_audit redacts requestor_location for ZK rows; the
+      -- precise-points layer must not plot them at all. Aggregate/count layers
+      -- may still include ZK without a precise location.
+      AND ve.disclosure_level <> 'ZERO_KNOWLEDGE'
       AND ve.latitude  BETWEEN p_min_lat AND p_max_lat
       AND (
             (p_min_lon <= p_max_lon AND ve.longitude BETWEEN p_min_lon AND p_max_lon)
@@ -473,15 +486,21 @@ AS $$
             COALESCE(i.legal_name::TEXT, '(zero-knowledge)') AS holder_name,
             ag.name::TEXT                                    AS agency_name,
             (vc.context_type || ' verification')::TEXT       AS label,
-            tv.requestor_location::TEXT                      AS detail,
+            -- C6: redact the location of ZERO_KNOWLEDGE verifications in the
+            -- feed — no subtitle location and no map coordinates — so a ZK
+            -- event appears as activity but never reveals where it happened.
+            CASE WHEN tv.disclosure_level = 'ZERO_KNOWLEDGE'
+                 THEN NULL ELSE tv.requestor_location::TEXT END AS detail,
             CASE
                 WHEN tv.outcome = 'FAILURE'                 THEN 'alert'
                 WHEN tv.disclosure_level = 'FULL'           THEN 'full'
                 WHEN tv.disclosure_level = 'ZERO_KNOWLEDGE' THEN 'zk'
                                                             ELSE 'selective'
             END::TEXT                                        AS tone,
-            tv.latitude                                      AS lat,
-            tv.longitude                                     AS lon
+            CASE WHEN tv.disclosure_level = 'ZERO_KNOWLEDGE'
+                 THEN NULL ELSE tv.latitude END              AS lat,
+            CASE WHEN tv.disclosure_level = 'ZERO_KNOWLEDGE'
+                 THEN NULL ELSE tv.longitude END             AS lon
         FROM      top_v tv
         JOIN      Agency             ag ON tv.requesting_agency_id = ag.agency_id
         JOIN      VerificationContext vc ON tv.context_id          = vc.context_id

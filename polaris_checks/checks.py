@@ -341,6 +341,31 @@ def check_local_clock_convention(root: pathlib.Path) -> list[Finding]:
     return _ok("local_clock", "app.py uses local-wall-clock datetime.now() for boundaries, never utcnow()")
 
 
+# ---------------------------------------------------------------------------
+# C6 (server-side disclosure) — ZERO_KNOWLEDGE verification location must be
+# redacted/excluded at EVERY read path, not just uc7_warrant_audit. The atlas
+# spatial layers and the /verifications list would otherwise expose the precise
+# location that de-anonymizes a ZK holder (spatial side-channel).
+# ---------------------------------------------------------------------------
+def check_c6_atlas_redacts_zk_location(root: pathlib.Path) -> list[Finding]:
+    atlas = _read(root, "polaris_sql/11_atlas.sql")
+    excludes = atlas.count("disclosure_level <> 'ZERO_KNOWLEDGE'")
+    if excludes < 2:
+        return _fail("c6_atlas_zk",
+                     "atlas verification points + clusters must exclude ZERO_KNOWLEDGE "
+                     f"(found {excludes} exclusion clause(s), need >=2) (C6)")
+    if "THEN NULL ELSE tv.latitude" not in atlas:
+        return _fail("c6_atlas_zk",
+                     "atlas_recent_events must NULL lat/lon for ZERO_KNOWLEDGE rows (C6)")
+    app = _read(root, "polaris_web/app.py")
+    if app.count("THEN NULL ELSE ve.requestor_location") < 2:
+        return _fail("c6_atlas_zk",
+                     "app.py /verifications + /atlas must redact requestor_location "
+                     "for ZERO_KNOWLEDGE (C6)")
+    return _ok("c6_atlas_zk",
+               "ZK verification location is excluded/redacted at the atlas + list read paths (C6)")
+
+
 CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_csp_forbids_unsafe_inline,
     check_one_active_token_index,
@@ -363,6 +388,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_cookie_secure_in_production,
     check_table_count_matches_doc,
     check_local_clock_convention,
+    check_c6_atlas_redacts_zk_location,
 ]
 
 
