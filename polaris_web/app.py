@@ -452,6 +452,7 @@ def _ensure_state_dir():
 
 
 @app.route('/api/heartbeat', methods=['POST'])
+@security.reject_cross_site
 def api_heartbeat():
     """Browser is still alive; refresh the heartbeat timestamp."""
     _ensure_state_dir()
@@ -463,6 +464,7 @@ def api_heartbeat():
 
 
 @app.route('/api/quit', methods=['POST'])
+@security.reject_cross_site
 def api_quit():
     """Browser tab is closing; explicit shutdown signal for the launcher."""
     _ensure_state_dir()

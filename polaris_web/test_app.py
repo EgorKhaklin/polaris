@@ -6278,6 +6278,34 @@ class NextUrlSafetyTests(unittest.TestCase):
             self.assertFalse(self.is_safe(url), f'{url!r} should be rejected')
 
 
+class CrossSiteGuardTests(unittest.TestCase):
+    """/api/quit and /api/heartbeat are unauthenticated launcher-control
+    endpoints (no session, no CSRF token). security.reject_cross_site blocks a
+    cross-site drive-by — a page the user merely visits POSTing to the local
+    instance to shut it down — while allowing same-origin browser calls and
+    header-less native/operator callers (the launcher, curl)."""
+
+    def setUp(self):
+        self.client = flask_app.app.test_client()
+
+    def test_cross_site_quit_rejected(self):
+        r = self.client.post('/api/quit', headers={'Sec-Fetch-Site': 'cross-site'})
+        self.assertEqual(r.status_code, 403)
+
+    def test_cross_site_heartbeat_rejected(self):
+        r = self.client.post('/api/heartbeat', headers={'Sec-Fetch-Site': 'cross-site'})
+        self.assertEqual(r.status_code, 403)
+
+    def test_same_origin_quit_allowed(self):
+        r = self.client.post('/api/quit', headers={'Sec-Fetch-Site': 'same-origin'})
+        self.assertEqual(r.status_code, 204)
+
+    def test_header_absent_is_allowed(self):
+        # Native launcher / curl / operator send no Sec-Fetch-Site -> allowed.
+        r = self.client.post('/api/heartbeat')
+        self.assertEqual(r.status_code, 204)
+
+
 if __name__ == '__main__':
     # Pull in property-based invariant tests (C1, C2, C3) so they run as
     # part of the main suite. The import is at the bottom so test_app.py

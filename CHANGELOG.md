@@ -5,6 +5,27 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.70 — 2026-06-04 (close the cross-site drive-by on the launcher control endpoints)
+
+The last finding from the auth-security pass. `/api/quit` and `/api/heartbeat`
+are unauthenticated launcher-control endpoints — no session, no CSRF token (the
+launcher beacon is anonymous by design). `/api/quit` writes the file the desktop
+launcher polls to tear the stack down. So any page the user merely visited could
+`fetch('http://localhost:2222/api/quit', {method:'POST', mode:'no-cors'})` and
+shut down their local instance (a cross-site drive-by; low impact for a
+single-user dev tool, but a real gap).
+
+Added `security.reject_cross_site`, applied to both endpoints. It rejects only
+requests whose `Sec-Fetch-Site` header is `cross-site` (a header browsers set on
+every request). Same-origin browser calls (`same-origin` — the heartbeat beacon
+sends this) and header-less callers (the native launcher, curl, an operator) are
+unaffected, so nothing breaks. `CrossSiteGuardTests` covers all four cases.
+
+- `polaris_web/security.py` — `reject_cross_site` decorator.
+- `polaris_web/app.py` — applied to `/api/quit` and `/api/heartbeat`.
+- `polaris_web/test_app.py` — `CrossSiteGuardTests` (cross-site rejected;
+  same-origin and header-absent allowed).
+
 ## v9.69 — 2026-06-04 (ZK verify route: local-clock epoch boundary, honest replay scope)
 
 Completing the review by re-running the two dimensions that had hit a session

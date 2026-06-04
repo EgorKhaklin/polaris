@@ -774,6 +774,25 @@ def csrf_protect(view_func):
     return wrapped
 
 
+def reject_cross_site(view_func):
+    """Reject cross-site requests to unauthenticated local-control endpoints
+    (the launcher's /api/quit and /api/heartbeat). Browsers set the
+    `Sec-Fetch-Site` header on every request; a request originating from a
+    different site carries `cross-site`. Those endpoints take no CSRF token and
+    no session (the launcher beacon is anonymous), so without this a page the
+    user merely visits could `fetch()` the local instance and, for /api/quit,
+    shut it down (CWE-352-adjacent drive-by). Same-origin browser calls
+    (`same-origin`) and header-less callers (the native launcher, curl, an
+    operator) are allowed, so this does not break the heartbeat or operator use.
+    """
+    @functools.wraps(view_func)
+    def wrapped(*args, **kwargs):
+        if request.headers.get('Sec-Fetch-Site') == 'cross-site':
+            abort(403)
+        return view_func(*args, **kwargs)
+    return wrapped
+
+
 # ----------------------------------------------------------------------------
 # Security headers (applied by app.after_request hook)
 # ----------------------------------------------------------------------------
