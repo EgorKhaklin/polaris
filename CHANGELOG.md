@@ -5,6 +5,36 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.65 — 2026-06-04 (the demo ZK epoch verifies, and CI proves it)
+
+The same review surfaced a second regression, this one hidden from CI. When the
+ZK anonymity set grew from a 16-leaf demo to a full epoch (v9.60, `TREE_DEPTH`
+4 to 14), `zk.py`, `merkle.py`, and `lib.rs` all moved to depth 14, but the
+hardcoded demo epoch in `polaris_sql/10_auth.sql` was left at depth 4: a stale
+Merkle root and three 4-sibling inclusion paths where depth 14 needs 14 siblings.
+The demo ZK verification (`test_demo_epoch_root_verifies_via_python`) actually
+failed at depth 14.
+
+It stayed invisible because CI ran `test_app` *before* building the Rust ZK
+binary, and the whole `ZKSnarkTests` class skips when the binary is absent. So the
+masking hid not just this stale-data bug but every ZK proof round-trip test:
+honest-prover acceptance, cross-epoch / cross-context / wrong-nonce rejection, and
+the demo-epoch verification, 20 tests, none of them running in CI.
+
+- `polaris_sql/10_auth.sql` — regenerated the demo epoch's root and the three
+  per-leaf proof paths at depth 14 via the Rust witness (`zk.compute_epoch_leaves`).
+  The leaf hashes are `derive_leaf_seed` (plain SHA3-256, depth-independent) and
+  were already correct; only the root and the path lengths were stale.
+- `.github/workflows/ci.yml` — set up Rust and build the ZK binary *before* the
+  app suite, with `POLARIS_ZK_BINARY` in the job env so `zk._binary_path()` finds
+  it. `ZKSnarkTests` now runs in CI instead of skipping. The reorder un-masks 20
+  ZK tests; the demo-epoch verification is the standing guard against future depth
+  or seed drift.
+
+Verified: the full `test_app` suite is green with the binary present (all 20
+`ZKSnarkTests` pass, demo epoch verifies), and the two-witness differential still
+agrees at depth 14.
+
 ## v9.64 — 2026-06-04 (uc4 reserve activation works for every reason code)
 
 A multi-agent review of the schema boundary found a HIGH-severity functional

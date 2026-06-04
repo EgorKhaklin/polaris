@@ -44,6 +44,9 @@ jobs:
       POLARIS_SECRET_KEY: ci-only-test-secret-key-32-bytes-long
       POLARIS_STATE_DIR: /tmp/polaris-state
       PGPASSWORD: ci_password
+      # Built before the app suite (see "Build ZK binary"); makes test_app's
+      # ZKSnarkTests run instead of skipping for want of the binary.
+      POLARIS_ZK_BINARY: ${{ github.workspace }}/polaris_zk/target/release/polaris-zk
 
     steps:
       - name: Checkout
@@ -102,7 +105,20 @@ jobs:
           python3 -m unittest test_invariants_property -v
           python3 -m unittest test_redaction_property -v
 
-      - name: Application + CLI suites (DB)
+      # Rust + the ZK binary are built BEFORE the app suite so test_app's
+      # ZKSnarkTests run (Merkle/Plonky2 proof round-trips + the demo-epoch
+      # verification) instead of skipping for want of the binary. The binary
+      # lands at POLARIS_ZK_BINARY (job env), which zk._binary_path() honors.
+      - name: Set up Rust (nightly for Plonky2)
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly
+
+      - name: Build ZK binary
+        working-directory: polaris_zk
+        run: cargo build --release --bin polaris-zk
+
+      - name: Application + CLI suites (DB, with ZK binary)
         run: |
           cd polaris_web && python3 -m unittest test_app -v
           cd ../polaris_cli && python3 -m unittest test_cli -v
@@ -110,22 +126,14 @@ jobs:
       - name: ai-link-check
         run: bash scripts/ai-link-check.sh --ci
 
-      - name: Set up Rust (nightly for Plonky2)
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: nightly
-
       - name: ZK crate tests
         working-directory: polaris_zk
         run: cargo test --release
 
       - name: ZK prove-verify roundtrip + two-witness differential
         run: |
-          cd polaris_zk && cargo build --release --bin polaris-zk
-          BIN=$GITHUB_WORKSPACE/polaris_zk/target/release/polaris-zk
+          BIN="$POLARIS_ZK_BINARY"
           LEAVES='{"leaves_hex":["0000000000000000000000000000000000000000000000000000000000000001","0000000000000000000000000000000000000000000000000000000000000002","0000000000000000000000000000000000000000000000000000000000000003","0000000000000000000000000000000000000000000000000000000000000004"]}'
           ROOT=$(echo "$LEAVES" | $BIN compute-root | python3 -c "import sys,json;print(json.load(sys.stdin)['epoch_root_hex'])")
           test -n "$ROOT" || { echo "compute-root empty"; exit 1; }
-          export POLARIS_ZK_BINARY="$BIN"
-          cd $GITHUB_WORKSPACE
           python3 -m pytest polaris_zk/witness2/test_witness2.py polaris_web/test_zk_second_witness.py -v

@@ -6152,8 +6152,10 @@ class V2SubstrateUITests(PolarisTestCase):
         self.assertEqual(r.status_code, 200)
         body = r.data.decode()
         self.assertIn('ZK Epochs', body)
-        # Seed has 1 closed epoch with merkle_root 58789f92…6bfa5
-        self.assertIn('58789f92', body)
+        # Seed has 1 closed epoch with merkle_root fd02e50f…7474d
+        # (depth-14 root; regenerated in v9.65 when the demo epoch moved
+        # off the stale depth-4 commitment).
+        self.assertIn('fd02e50f', body)
 
     def test_epochs_list_with_leaves_filter(self):
         r = self.client.get('/epochs?epoch_id=1')
