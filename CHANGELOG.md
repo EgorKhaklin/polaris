@@ -5,6 +5,23 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.62 — 2026-06-04 (ROADMAP: a forward roadmap, not a ship archive)
+
+`ROADMAP.md` had grown to 862 lines, but only the OPEN-NOW backlog and three gated
+deferred items were forward-looking. The other ~770 lines were a shipped-items
+archive (R7-* through R16-*, all ✅) that duplicates the CHANGELOG. A roadmap is
+where the project is going, not a log of what shipped.
+
+Cut it to ~75 lines: the flagged decision item, the next ships (PQC second witness,
+the PQC-posture audit, the GitHub Actions deprecation), the production-scale deferred
+items (multi-instance scaling, multi-region, distributed tracing, each gated), and
+the explicitly out-of-scope items (OIDC, banking-on-Polaris, cross-platform
+launchers). Shipped history stays in the CHANGELOG and the git log.
+
+`ai-link-check` resolves all 222 references; `polaris_checks` 17 ok READY.
+
+---
+
 ## v9.61 — 2026-06-04 (polaris_checks: complete the C1-C10 coverage)
 
 The flat invariant layer directly checked C1, C3, C5, and C7; the other
