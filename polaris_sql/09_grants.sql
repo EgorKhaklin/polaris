@@ -41,6 +41,58 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public
     GRANT EXECUTE ON FUNCTIONS TO polaris_app;
 
 -- ----------------------------------------------------------------------------
+-- v9.85 / C1 append-only as a privilege boundary, not only a trigger.
+--
+-- The append-only audit-of-record tables are guarded by the
+-- reject_audit_modification() trigger, which has a GUC carve-out: it permits
+-- UPDATE/DELETE when polaris.purge_in_progress = 'TRUE'. That GUC is a custom
+-- setting any role can SET — including polaris_app — so the trigger alone did
+-- NOT stop the application role from deleting an audit row:
+--
+--     SET LOCAL polaris.purge_in_progress = 'TRUE';
+--     DELETE FROM TokenLifecycleEvent WHERE event_id = ...;   -- succeeded
+--
+-- C1 is the thesis (audit-of-record, enforced at the database level), so the
+-- trigger must not be the only thing standing between the app role and a
+-- forged audit history. The grant model now backs it: polaris_app keeps
+-- SELECT + INSERT (append-only IS insert-allowed) but loses UPDATE/DELETE on
+-- every append-only table. The sole legitimate DELETE path, uc_archive_purge,
+-- is SECURITY DEFINER (owned by a privileged role) and runs the deletes with
+-- the owner's rights, inside the admin-gated, checkpoint-writing transaction.
+-- Now even a role that sets the GUC is refused at the ACL layer before the
+-- trigger ever fires.
+--
+-- to_regclass guards each name so this block is robust to load order:
+-- AuditAccessLog is created by a later migration, which carries its own
+-- matching REVOKE (2026-05-15-003-audit-access-log.up.sql); the loop simply
+-- skips any table not yet present.
+DO $$
+DECLARE
+    v_tbl TEXT;
+    -- Lowercased on purpose: these tables were created with unquoted
+    -- identifiers, so Postgres folded their names to lower case. %I would
+    -- quote a MixedCase literal into a case-sensitive name that matches
+    -- nothing, so to_regclass would return NULL and every REVOKE would be
+    -- silently skipped.
+    v_append_only_tables TEXT[] := ARRAY[
+        'tokenlifecycleevent',
+        'verificationevent',
+        'enrollmentstatusevent',
+        'anchorbatch',
+        'tokenstateepochleaf',
+        'duressevent',
+        'authauditlog',
+        'auditaccesslog'
+    ];
+BEGIN
+    FOREACH v_tbl IN ARRAY v_append_only_tables LOOP
+        IF to_regclass(format('public.%I', v_tbl)) IS NOT NULL THEN
+            EXECUTE format('REVOKE UPDATE, DELETE ON %I FROM polaris_app', v_tbl);
+        END IF;
+    END LOOP;
+END$$;
+
+-- ----------------------------------------------------------------------------
 -- v8.15 / R11-6 / M2-11 — System-default GUCs for the issuer-discretion
 -- bound enforced by uc8_revoke_token.
 --

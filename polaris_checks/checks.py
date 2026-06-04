@@ -90,6 +90,54 @@ def check_aor_append_only_triggers(root: pathlib.Path) -> list[Finding]:
 
 
 # ---------------------------------------------------------------------------
+# C1 — append-only is a PRIVILEGE boundary, not only a trigger.
+#
+# reject_audit_modification() has a carve-out: it permits UPDATE/DELETE when
+# the custom GUC polaris.purge_in_progress is 'TRUE'. Any role can SET a custom
+# GUC, so the trigger alone did not stop the application role (polaris_app) from
+# deleting an audit row — it could set the GUC and delete. The grant model must
+# back the trigger: polaris_app keeps SELECT + INSERT (append-only IS insert-
+# allowed) but loses UPDATE/DELETE on every append-only table, so the carve-out
+# is unreachable from the app role. The one legitimate DELETE path,
+# uc_archive_purge, must be SECURITY DEFINER so it runs the purge with the
+# owner's rights inside its admin-gated, checkpoint-writing transaction.
+# ---------------------------------------------------------------------------
+def check_aor_privilege_boundary(root: pathlib.Path) -> list[Finding]:
+    grants = _read(root, "polaris_sql/09_grants.sql")
+    # The append-only tables whose trigger honors the purge_in_progress GUC.
+    # auditaccesslog is created (and revoked) in its own migration.
+    base_tables = [
+        "tokenlifecycleevent", "verificationevent", "enrollmentstatusevent",
+        "anchorbatch", "tokenstateepochleaf", "duressevent", "authauditlog",
+    ]
+    if not re.search(r"REVOKE\s+UPDATE\s*,\s*DELETE", grants, re.I):
+        return _fail("c1_aor_priv",
+                     "09_grants.sql must REVOKE UPDATE, DELETE on append-only tables from polaris_app (C1)")
+    missing = [t for t in base_tables if t.lower() not in grants.lower()]
+    if missing:
+        return _fail("c1_aor_priv",
+                     "append-only REVOKE omits table(s): " + ", ".join(missing) + " (C1)")
+    # auditaccesslog REVOKE rides along with its migration.
+    mig = _read(root, "polaris_sql/migrations/2026-05-15-003-audit-access-log.up.sql")
+    if not re.search(r"REVOKE\s+UPDATE\s*,\s*DELETE\s+ON\s+AuditAccessLog", mig, re.I):
+        return _fail("c1_aor_priv",
+                     "the AuditAccessLog migration must REVOKE UPDATE, DELETE from polaris_app (C1)")
+    # The sole legitimate DELETE path must run with the owner's rights.
+    proc = _read(root, "polaris_sql/05_procedures.sql")
+    m = re.search(r"CREATE\s+OR\s+REPLACE\s+PROCEDURE\s+uc_archive_purge\b.*?\bAS\s*\$\$",
+                  proc, re.I | re.S)
+    if not m:
+        return _fail("c1_aor_priv", "uc_archive_purge procedure not found in 05_procedures.sql (C1)")
+    if not re.search(r"SECURITY\s+DEFINER", m.group(0), re.I):
+        return _fail("c1_aor_priv",
+                     "uc_archive_purge must be SECURITY DEFINER so the purge runs with the "
+                     "owner's rights after polaris_app loses direct DELETE (C1)")
+    return _ok("c1_aor_priv",
+               "append-only tables revoke UPDATE/DELETE from polaris_app; "
+               "uc_archive_purge is SECURITY DEFINER (C1)")
+
+
+# ---------------------------------------------------------------------------
 # C7 — cryptographic algorithm is data, not hardcoded.
 # ---------------------------------------------------------------------------
 def check_crypto_algorithm_is_data(root: pathlib.Path) -> list[Finding]:
@@ -426,6 +474,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_csp_forbids_unsafe_inline,
     check_one_active_token_index,
     check_aor_append_only_triggers,
+    check_aor_privilege_boundary,
     check_crypto_algorithm_is_data,
     check_no_fk_cascade,
     check_version_is_canonical,

@@ -223,5 +223,51 @@ def test_c6_atlas_zk_check_fails_when_zk_location_not_redacted(tmp_path):
     assert out[0].level == "FAIL", "must FAIL when ZK location is not excluded/redacted at the atlas read paths"
 
 
+def test_aor_privilege_boundary_check_discriminates(tmp_path):
+    sql = tmp_path / "polaris_sql"
+    mig = sql / "migrations"
+    mig.mkdir(parents=True)
+    base_tables = ("tokenlifecycleevent verificationevent enrollmentstatusevent "
+                   "anchorbatch tokenstateepochleaf duressevent authauditlog")
+
+    def write(grants, mig_revoke, proc_definer):
+        (sql / "09_grants.sql").write_text(grants)
+        (mig / "2026-05-15-003-audit-access-log.up.sql").write_text(
+            "REVOKE UPDATE, DELETE ON AuditAccessLog FROM polaris_app;\n"
+            if mig_revoke else "CREATE TABLE AuditAccessLog (id BIGSERIAL);\n")
+        (sql / "05_procedures.sql").write_text(
+            "CREATE OR REPLACE PROCEDURE uc_archive_purge(p_actor INTEGER)\n"
+            "LANGUAGE plpgsql\n"
+            + ("SECURITY DEFINER\n" if proc_definer else "")
+            + "AS $$ BEGIN NULL; END; $$;\n")
+
+    good_grants = (f"REVOKE UPDATE, DELETE ON ... -- tables: {base_tables}\n")
+
+    # 1. No REVOKE at all -> FAIL.
+    write("GRANT SELECT ON ALL TABLES TO polaris_app;\n", True, True)
+    assert checks.check_aor_privilege_boundary(tmp_path)[0].level == "FAIL", \
+        "must FAIL when 09_grants.sql never revokes UPDATE/DELETE"
+
+    # 2. REVOKE present but omits a table -> FAIL.
+    write("REVOKE UPDATE, DELETE ON tokenlifecycleevent FROM polaris_app;\n", True, True)
+    assert checks.check_aor_privilege_boundary(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the REVOKE omits an append-only table"
+
+    # 3. Grants/migration fine, but uc_archive_purge is not SECURITY DEFINER -> FAIL.
+    write(good_grants, True, False)
+    assert checks.check_aor_privilege_boundary(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the sole DELETE path is not SECURITY DEFINER"
+
+    # 4. Migration forgets its own REVOKE for AuditAccessLog -> FAIL.
+    write(good_grants, False, True)
+    assert checks.check_aor_privilege_boundary(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the AuditAccessLog migration does not revoke UPDATE/DELETE"
+
+    # 5. All three present -> OK.
+    write(good_grants, True, True)
+    assert checks.check_aor_privilege_boundary(tmp_path)[0].level == "OK", \
+        "must PASS when revoke + migration revoke + SECURITY DEFINER are all present"
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

@@ -951,5 +951,113 @@ class TestUC1Issuance(_CheckBase):
             self.assertIsNotNone(cur.fetchone()['token_id'])
 
 
+class TestC1PrivilegeBoundary(unittest.TestCase):
+    """C1 append-only is a PRIVILEGE boundary, not only a trigger.
+
+    The reject_audit_modification trigger has a carve-out: it permits
+    UPDATE/DELETE when the custom GUC polaris.purge_in_progress = 'TRUE'. Any
+    role can SET a custom GUC, so the trigger alone did NOT stop the
+    application role from deleting an audit row — it could set the GUC and
+    delete. v9.85 revokes UPDATE/DELETE on every append-only table from
+    polaris_app (keeping SELECT + INSERT), so the carve-out is unreachable from
+    the app role; the one legitimate DELETE path, uc_archive_purge, is
+    SECURITY DEFINER and runs the purge with the owner's rights.
+
+    These tests open an EXPLICIT polaris_app connection so the boundary is
+    exercised even when the suite itself connects as a superuser (locally the
+    suite runs as `vanta`, which bypasses the ACL; in CI it is already
+    polaris_app). They skip cleanly if the polaris_app role is unreachable.
+    """
+
+    APPEND_ONLY_TABLES = (
+        "TokenLifecycleEvent", "VerificationEvent", "EnrollmentStatusEvent",
+        "AnchorBatch", "TokenStateEpochLeaf", "DuressEvent", "AuthAuditLog",
+        "AuditAccessLog",
+    )
+
+    def _app_conn(self):
+        """A connection authenticated as the application role polaris_app.
+
+        Skips the test if that role cannot be reached (e.g. a deployment that
+        renamed it or set a non-default password without exporting it)."""
+        cfg = dict(DB_CONFIG)
+        cfg["user"] = "polaris_app"
+        cfg["password"] = os.environ.get(
+            "POLARIS_APP_TEST_PASSWORD",
+            DB_CONFIG.get("password") or "polaris_dev_password")
+        try:
+            conn = psycopg2.connect(cursor_factory=RealDictCursor, **cfg)
+        except psycopg2.OperationalError as exc:
+            self.skipTest(f"polaris_app role unreachable: {exc}")
+        self.addCleanup(conn.close)
+        return conn
+
+    def test_app_role_cannot_delete_audit_even_with_purge_guc(self):
+        conn = self._app_conn()
+        with conn.cursor() as cur:
+            # Reproduce the original bypass: set the carve-out GUC, then delete.
+            cur.execute("SET LOCAL polaris.purge_in_progress = 'TRUE'")
+            with self.assertRaises(pg_errors.InsufficientPrivilege):
+                cur.execute(
+                    "DELETE FROM TokenLifecycleEvent "
+                    "WHERE event_id = (SELECT min(event_id) FROM TokenLifecycleEvent)")
+        conn.rollback()
+
+    def test_app_role_cannot_update_or_delete_any_append_only_table(self):
+        conn = self._app_conn()
+        for tbl in self.APPEND_ONLY_TABLES:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT has_table_privilege('polaris_app', %s, 'UPDATE') AS upd, "
+                    "       has_table_privilege('polaris_app', %s, 'DELETE') AS del, "
+                    "       has_table_privilege('polaris_app', %s, 'INSERT') AS ins",
+                    (tbl, tbl, tbl))
+                row = cur.fetchone()
+            self.assertFalse(row["upd"], f"polaris_app must not hold UPDATE on {tbl}")
+            self.assertFalse(row["del"], f"polaris_app must not hold DELETE on {tbl}")
+            self.assertTrue(row["ins"], f"append-only is insert-allowed: polaris_app needs INSERT on {tbl}")
+            conn.rollback()
+
+    def test_app_role_can_still_append_audit_rows(self):
+        conn = self._app_conn()
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO TokenLifecycleEvent (token_id, event_type, event_timestamp, reason_code) "
+                "VALUES (1, 'ISSUED', now(), 'BOUNDARY_TEST') RETURNING event_id")
+            self.assertIsNotNone(cur.fetchone()["event_id"],
+                                 "append-only must still permit INSERT by polaris_app")
+        conn.rollback()
+
+    def test_archive_purge_still_deletes_via_security_definer(self):
+        """The legitimate purge path still works for polaris_app: uc_archive_purge
+        is SECURITY DEFINER, so it deletes with the owner's rights despite the
+        REVOKE. The whole exercise rolls back."""
+        conn = self._app_conn()
+        with conn.cursor() as cur:
+            cur.execute("SELECT user_id FROM AppUser WHERE role = 'admin' LIMIT 1")
+            admin = cur.fetchone()
+            if admin is None:
+                self.skipTest("no admin user to authorize the purge")
+            admin_id = admin["user_id"]
+            cur.execute(
+                "INSERT INTO TokenLifecycleEvent (token_id, event_type, event_timestamp, reason_code) "
+                "VALUES (1, 'ISSUED', now() - INTERVAL '400 days', 'PURGE_DEFINER_TEST')")
+            cutoff = "now() - INTERVAL '365 days'"
+            cur.execute(
+                f"SELECT count(*) AS n FROM TokenLifecycleEvent WHERE event_timestamp < {cutoff}")
+            before = cur.fetchone()["n"]
+            self.assertGreaterEqual(before, 1)
+            cur.execute(
+                "CALL uc_archive_purge((now() - INTERVAL '365 days')::timestamptz, "
+                "%s, %s, %s, NULL)",
+                ("s3://polaris-archive/definer-test.tar.zst", "a" * 64, admin_id))
+            cur.execute(
+                f"SELECT count(*) AS n FROM TokenLifecycleEvent WHERE event_timestamp < {cutoff}")
+            after = cur.fetchone()["n"]
+            self.assertEqual(after, 0,
+                             "uc_archive_purge (SECURITY DEFINER) must still purge old audit rows")
+        conn.rollback()
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

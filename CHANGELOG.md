@@ -5,6 +5,56 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.85 — 2026-06-04 (C1 append-only becomes a privilege boundary, not only a trigger)
+
+The thesis finding from the fifth review pass. C1 — audit-of-record, enforced at
+the database level — was enforced only by the `reject_audit_modification()`
+trigger, and that trigger has a carve-out: it permits UPDATE/DELETE when the
+custom GUC `polaris.purge_in_progress` is `'TRUE'`. Any role can `SET` a custom
+GUC. So the application role could bypass the whole append-only invariant:
+
+```sql
+-- as polaris_app, before v9.85:
+SET LOCAL polaris.purge_in_progress = 'TRUE';
+DELETE FROM TokenLifecycleEvent WHERE event_id = ...;   -- DELETE 1  (forged history)
+```
+
+Confirmed empirically against the live role. The trigger was the only thing
+standing between `polaris_app` and a rewritten audit-of-record — exactly the
+property C1 exists to make impossible.
+
+**The grant model now backs the trigger.** `polaris_app` keeps SELECT + INSERT
+(append-only IS insert-allowed) but loses UPDATE/DELETE on every append-only
+table: TokenLifecycleEvent, VerificationEvent, EnrollmentStatusEvent, AnchorBatch,
+TokenStateEpochLeaf, DuressEvent, AuthAuditLog, and AuditAccessLog. Now the
+carve-out is unreachable from the app role — the ACL refuses the statement before
+the trigger ever fires:
+
+```sql
+-- as polaris_app, v9.85:
+SET LOCAL polaris.purge_in_progress = 'TRUE';
+DELETE FROM TokenLifecycleEvent WHERE event_id = ...;   -- ERROR: permission denied
+```
+
+The one legitimate DELETE path, `uc_archive_purge`, is now `SECURITY DEFINER`
+(with a pinned `search_path`) so it runs the purge with the procedure owner's
+rights inside its existing admin-gated, checkpoint-writing transaction. It
+authenticates the actor by the `p_actor_user_id` PARAMETER against `AppUser.role`
+— never `current_user`/`session_user` — so elevating to the owner does not weaken
+the admin gate. Verified: an admin purge still deletes; `polaris_app` calling it
+still works; direct UPDATE/DELETE stays denied; INSERT still succeeds.
+
+- `polaris_sql/09_grants.sql` — REVOKE UPDATE, DELETE on the base append-only
+  tables from `polaris_app` (to_regclass-guarded loop, robust to load order).
+- `polaris_sql/migrations/2026-05-15-003-audit-access-log.up.sql` — carries the
+  matching REVOKE for the table it adds.
+- `polaris_sql/05_procedures.sql` — `uc_archive_purge` is SECURITY DEFINER.
+- `polaris_checks/checks.py` — `check_aor_privilege_boundary` (C1, 25th check):
+  asserts the REVOKEs and the SECURITY DEFINER declaration. `test_checks.py`
+  discriminates across five failure modes.
+- `polaris_web/test_check_constraints.py` — `TestC1PrivilegeBoundary` opens an
+  explicit `polaris_app` connection and proves the boundary end to end.
+
 ## v9.84 — 2026-06-04 (uc1 refuses deprecated algorithms; the ZK prover bounds-checks its index)
 
 Two findings from a fifth review pass (the procedures uc1-uc6 and the Rust crate).

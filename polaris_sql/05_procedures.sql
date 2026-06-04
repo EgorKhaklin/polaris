@@ -1557,6 +1557,16 @@ CREATE OR REPLACE PROCEDURE uc_archive_purge(
     INOUT  checkpoint_id_out  BIGINT DEFAULT NULL
 )
 LANGUAGE plpgsql
+-- SECURITY DEFINER (v9.85): this is the ONLY legitimate DELETE path against the
+-- append-only audit tables, and polaris_app no longer holds UPDATE/DELETE on
+-- them (09_grants.sql). The deletes must therefore run with the procedure
+-- owner's rights, not the caller's. Safe to elevate because the actor is
+-- authenticated by the p_actor_user_id PARAMETER checked against AppUser.role
+-- below — never via current_user/session_user — so running as the owner does
+-- not weaken the admin gate. search_path is pinned so the elevated body cannot
+-- be redirected to attacker-controlled objects.
+SECURITY DEFINER
+SET search_path = public, pg_temp
 AS $$
 DECLARE
     v_actor_role         VARCHAR(64);

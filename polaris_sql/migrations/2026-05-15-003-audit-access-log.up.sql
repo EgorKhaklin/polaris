@@ -71,6 +71,21 @@ CREATE TRIGGER trg_audit_access_append_only
     BEFORE UPDATE OR DELETE ON AuditAccessLog
     FOR EACH ROW EXECUTE FUNCTION reject_audit_modification();
 
+-- v9.85 — append-only as a privilege boundary, not only a trigger. The
+-- reject_audit_modification carve-out (polaris.purge_in_progress) is a custom
+-- GUC any role can SET, so the trigger alone did not stop the application role
+-- from deleting an audit row. 09_grants.sql revokes UPDATE/DELETE on the base
+-- append-only tables; this migration carries the matching REVOKE for the table
+-- it adds, so a migration-applied schema gets the same boundary. polaris_app
+-- keeps SELECT + INSERT (append-only is insert-allowed). AuditAccessLog has no
+-- legitimate UPDATE/DELETE path at all (it is excluded from uc_archive_purge).
+DO $audit_access_revoke$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'polaris_app') THEN
+        REVOKE UPDATE, DELETE ON AuditAccessLog FROM polaris_app;
+    END IF;
+END$audit_access_revoke$;
+
 -- ============================================================================
 -- Smoke (idempotent; runs at migration apply time only)
 -- ============================================================================
