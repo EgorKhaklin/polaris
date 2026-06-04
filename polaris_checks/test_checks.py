@@ -95,5 +95,43 @@ def test_pqc_wired_check_fails_when_issuance_bypasses_signing_module(tmp_path):
     assert out2[0].level == "FAIL", "must FAIL when the procedure does not accept p_signature_bytes"
 
 
+def test_c2_zk_null_check_fails_without_constraint(tmp_path):
+    (tmp_path / "polaris_sql").mkdir()
+    (tmp_path / "polaris_sql" / "01_schema.sql").write_text(
+        "CREATE TABLE VerificationEvent (token_id INTEGER, disclosure_level VARCHAR);\n")
+    out = checks.check_c2_zk_token_null(tmp_path)
+    assert out[0].level == "FAIL", "must FAIL when the ZK->token_id NULL CHECK is absent"
+
+
+def test_c4_atomic_login_check_fails_on_read_then_write(tmp_path):
+    (tmp_path / "polaris_web").mkdir()
+    (tmp_path / "polaris_web" / "security.py").write_text(
+        "n = read_count()\nexecute('UPDATE AppUser SET failed_login_count = %s', n + 1)\n")
+    out = checks.check_c4_atomic_failed_login(tmp_path)
+    assert out[0].level == "FAIL", "must FAIL when the increment is not a single atomic UPDATE"
+
+
+def test_c8_atlas_caps_check_fails_without_constants(tmp_path):
+    (tmp_path / "polaris_web").mkdir()
+    (tmp_path / "polaris_web" / "app.py").write_text("# no atlas caps here\n")
+    out = checks.check_c8_atlas_caps(tmp_path)
+    assert out[0].level == "FAIL", "must FAIL when atlas hard-cap constants are missing"
+
+
+def test_c9_concurrency_check_fails_without_threading_tests(tmp_path):
+    (tmp_path / "polaris_web").mkdir()
+    (tmp_path / "polaris_web" / "test_app.py").write_text("class FooTests:\n    pass\n")
+    out = checks.check_c9_concurrency_threading(tmp_path)
+    assert out[0].level == "FAIL", "must FAIL without a ConcurrencyTests class using threading"
+
+
+def test_c10_no_money_check_fails_on_money_table(tmp_path):
+    (tmp_path / "polaris_sql").mkdir()
+    (tmp_path / "polaris_sql" / "01_schema.sql").write_text(
+        "CREATE TABLE MonetaryClaim (id SERIAL, balance NUMERIC);\n")
+    out = checks.check_c10_no_money_tables(tmp_path)
+    assert out[0].level == "FAIL", "must FAIL when the schema defines a monetary table"
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

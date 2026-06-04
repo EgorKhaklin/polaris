@@ -5,6 +5,31 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.61 — 2026-06-04 (polaris_checks: complete the C1-C10 coverage)
+
+The flat invariant layer directly checked C1, C3, C5, and C7; the other
+constitutional constraints were enforced in the schema and app but not asserted by
+the check layer. Added five checks, so 9 of the 10 constraints are now directly
+machine-checked, each with tested detection correctness:
+
+- **C2** — a CHECK constraint forbids `ZERO_KNOWLEDGE` verifications from carrying a
+  `token_id`.
+- **C4** — the failed-login counter increments atomically in a single UPDATE (no
+  TOCTOU read-then-write).
+- **C8** — the `/api/atlas/*` endpoints carry hard result-set caps.
+- **C9** — concurrency hazards are tested with real threading (`ConcurrencyTests`).
+- **C10** — the schema carries no monetary primitives (identity is not money).
+
+C6 (server-side disclosure enforcement) stays covered behaviorally by the
+redaction-property test, where it is meaningfully exercised rather than
+string-matched.
+
+`polaris_checks` is now 17 checks; each new check provably FAILs on a broken fixture
+(`polaris_checks/test_checks.py`, now 13 detection tests). Verified: 17 ok / READY,
+all detection tests pass.
+
+---
+
 ## v9.60 — 2026-06-04 (ZK anonymity set: from a 16-leaf demo to a full epoch)
 
 The zero-knowledge Merkle-inclusion circuit shipped at `TREE_DEPTH=4` (a 16-leaf

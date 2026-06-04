@@ -219,6 +219,61 @@ def check_pqc_signing_wired(root: pathlib.Path) -> list[Finding]:
                "issuance signature routes through pqc_signing.signature_bytes_for_token")
 
 
+# ---------------------------------------------------------------------------
+# C2 — ZERO_KNOWLEDGE verifications must not carry a token_id. Enforced by a
+# CHECK constraint on VerificationEvent, not by application policy.
+# ---------------------------------------------------------------------------
+def check_c2_zk_token_null(root: pathlib.Path) -> list[Finding]:
+    schema = _read(root, "polaris_sql/01_schema.sql")
+    if ("chk_disclosure_token_consistency" in schema
+            and re.search(r"ZERO_KNOWLEDGE'\s+AND\s+token_id\s+IS\s+NULL", schema, re.I)):
+        return _ok("c2_zk_null", "ZERO_KNOWLEDGE verifications are forbidden from carrying token_id (C2)")
+    return _fail("c2_zk_null", "no CHECK forces token_id NULL on ZERO_KNOWLEDGE verification events (C2)")
+
+
+# ---------------------------------------------------------------------------
+# C4 — the failed-login counter increments atomically (no TOCTOU race): a
+# single UPDATE that references the column, not a read-then-write.
+# ---------------------------------------------------------------------------
+def check_c4_atomic_failed_login(root: pathlib.Path) -> list[Finding]:
+    sec = _read(root, "polaris_web/security.py")
+    if re.search(r"failed_login_count\s*=\s*failed_login_count\s*\+\s*1", sec):
+        return _ok("c4_atomic_login", "failed-login counter increments atomically in one UPDATE (C4)")
+    return _fail("c4_atomic_login", "no atomic 'failed_login_count = failed_login_count + 1' UPDATE in security.py (C4)")
+
+
+# ---------------------------------------------------------------------------
+# C8 — /api/atlas/* result sets are bounded by hard caps.
+# ---------------------------------------------------------------------------
+def check_c8_atlas_caps(root: pathlib.Path) -> list[Finding]:
+    app = _read(root, "polaris_web/app.py")
+    missing = [c for c in ("_ATLAS_MAX_CLUSTERS", "_ATLAS_MAX_POINTS", "_ATLAS_MAX_EVENTS") if c not in app]
+    if missing:
+        return _fail("c8_atlas_caps", "missing atlas hard-cap constant(s): " + ", ".join(missing) + " (C8)")
+    return _ok("c8_atlas_caps", "/api/atlas/* endpoints have hard result-set caps (C8)")
+
+
+# ---------------------------------------------------------------------------
+# C9 — concurrency hazards are tested with real threading, not mocks.
+# ---------------------------------------------------------------------------
+def check_c9_concurrency_threading(root: pathlib.Path) -> list[Finding]:
+    t = _read(root, "polaris_web/test_app.py")
+    if "class ConcurrencyTests" in t and re.search(r"threading\.Thread", t):
+        return _ok("c9_concurrency", "ConcurrencyTests exercises real threading (C9)")
+    return _fail("c9_concurrency", "no ConcurrencyTests with threading.Thread in test_app.py (C9)")
+
+
+# ---------------------------------------------------------------------------
+# C10 — identity is not money: the schema carries no monetary primitives.
+# ---------------------------------------------------------------------------
+def check_c10_no_money_tables(root: pathlib.Path) -> list[Finding]:
+    schema = _read(root, "polaris_sql/01_schema.sql")
+    bad = re.findall(r"CREATE TABLE\s+(\w*(?:Monetary|Balance|Payment|Wallet|Merchant|Spending)\w*)", schema, re.I)
+    if bad:
+        return _fail("c10_no_money", "schema defines monetary table(s): " + ", ".join(bad[:5]) + " (C10)")
+    return _ok("c10_no_money", "schema carries no monetary primitives; identity is not money (C10)")
+
+
 CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_csp_forbids_unsafe_inline,
     check_one_active_token_index,
@@ -232,6 +287,11 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_zk_two_witness_present,
     check_no_debug_artifacts,
     check_pqc_signing_wired,
+    check_c2_zk_token_null,
+    check_c4_atomic_failed_login,
+    check_c8_atlas_caps,
+    check_c9_concurrency_threading,
+    check_c10_no_money_tables,
 ]
 
 
