@@ -105,7 +105,7 @@ Four layers. The check layer reads but never writes the operational layer. The Z
         │                       CHECK LAYER                           │
         │   polaris_checks — flat C1-C10 invariant checks             │
         │   (CSP · one-active-token · append-only AoR · crypto-as-    │
-        │    data · FK discipline · secrets · ZK two-witness · …)      │
+        │    data · FK discipline · secrets · ZK two-witness · …)     │
         │   plain check_*(repo_root) functions; `run` gates CI        │
         └─────────────────────────┬───────────────────────────────────┘
                                   │   reads (no writes)
