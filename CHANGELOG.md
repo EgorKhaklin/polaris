@@ -5,6 +5,40 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.66 — 2026-06-04 (harden the login redirect and the session cookie)
+
+Two security findings from the review's auth-security pass.
+
+**Open redirect (CWE-601).** All three post-login redirect sites (password
+login, the WebAuthn partial-auth redirect, and the assertion completion)
+validated the attacker-controlled `?next=` with `startswith('/') and not
+startswith('//')`. That misses backslash variants like `/\evil.com`: browsers
+normalize a backslash to a forward slash when parsing a URL or `Location`
+header, so it becomes the protocol-relative `//evil.com`, but werkzeug emits the
+backslash verbatim, so the guard passed it and the browser navigated off-site. A
+victim who clicked `…/login?next=/\evil.com` and authenticated was redirected to
+the attacker's domain.
+
+The three sites now route `?next=` through one helper,
+`security.is_safe_next_url`, which rejects backslashes, protocol-relative URLs,
+anything `urlsplit()` reads as carrying a scheme or netloc, and embedded control
+characters (CR/LF header-splitting). `NextUrlSafetyTests` (6 cases) pins the
+attacks the old guard let through.
+
+**Session cookie Secure flag (CWE-614).** `SESSION_COOKIE_SECURE` was set only
+from `POLARIS_COOKIE_SECURE`, independent of `POLARIS_ENV=production`. An operator
+who set production but forgot the cookie flag shipped `polaris_session` without
+`Secure`, so a single downgraded request could leak the session over plaintext.
+It is now forced on in production (`_PRODUCTION or …`), mirroring the secret-key
+guard — production removes the foot-gun rather than trusting the operator.
+
+- `polaris_web/security.py` — new `is_safe_next_url` helper.
+- `polaris_web/app.py` — three redirect sites use it; `SESSION_COOKIE_SECURE`
+  forced on under `_PRODUCTION`.
+- `polaris_checks/checks.py` — `check_open_redirect_guard` (the naive `//`-only
+  guard must not survive) and `check_cookie_secure_in_production`, with detection
+  tests. The check layer is now 19 checks.
+
 ## v9.65 — 2026-06-04 (the demo ZK epoch verifies, and CI proves it)
 
 The same review surfaced a second regression, this one hidden from CI. When the

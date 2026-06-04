@@ -46,6 +46,7 @@ import secrets
 import functools
 from datetime import datetime
 from collections import defaultdict, deque
+from urllib.parse import urlsplit
 
 from flask import (
     request, session, redirect, url_for, render_template, flash, abort, g, current_app
@@ -649,6 +650,35 @@ def current_user():
         'username': session.get('username'),
         'role':     session.get('role'),
     }
+
+
+def is_safe_next_url(next_url):
+    """True only for a same-origin relative path that is safe to redirect to
+    after login (open-redirect / CWE-601 defense). Rejects:
+
+      - empty or non-string values;
+      - anything not starting with a single '/';
+      - protocol-relative '//host';
+      - backslash variants like '/\\host' — browsers normalize a backslash to
+        a forward slash when parsing a URL or Location header, so '/\\evil.com'
+        becomes '//evil.com', but werkzeug emits the backslash verbatim, so the
+        naive `startswith('//')` guard misses it;
+      - anything urlsplit() reads as carrying a scheme or netloc;
+      - embedded control characters (CR/LF header-splitting, etc.).
+
+    The three post-login redirect sites (password login, the WebAuthn partial-
+    auth redirect, and the assertion completion) all route ?next= through here.
+    """
+    if not next_url or not isinstance(next_url, str):
+        return False
+    if not next_url.startswith('/') or next_url.startswith('//'):
+        return False
+    if '\\' in next_url:
+        return False
+    if any(ord(ch) < 0x20 for ch in next_url):
+        return False
+    split = urlsplit(next_url)
+    return not split.scheme and not split.netloc
 
 
 # ----------------------------------------------------------------------------

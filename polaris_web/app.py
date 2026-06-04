@@ -183,10 +183,15 @@ app.secret_key = _read_secret_file(
 # Session lifetime: 8 hours of inactivity then re-login required.
 app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=security.SESSION_LIFETIME_HOURS)
 
-# Cookie hardening (CWE-614, CWE-1004). HTTPS-only is opt-in for dev.
+# Cookie hardening (CWE-614, CWE-1004). HTTPS-only is opt-in for dev but
+# MANDATORY in production: forgetting POLARIS_COOKIE_SECURE there would let a
+# single downgraded request leak polaris_session over plaintext. _PRODUCTION
+# removes that foot-gun rather than trusting the operator to set the flag,
+# mirroring the secret-key guard below.
+_PRODUCTION = os.environ.get('POLARIS_ENV', '').lower() == 'production'
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
-app.config['SESSION_COOKIE_SECURE']   = (
+app.config['SESSION_COOKIE_SECURE']   = _PRODUCTION or (
     os.environ.get('POLARIS_COOKIE_SECURE', '').lower() in ('1', 'true', 'yes')
 )
 app.config['SESSION_COOKIE_NAME']     = 'polaris_session'
@@ -195,8 +200,8 @@ app.config['SESSION_COOKIE_NAME']     = 'polaris_session'
 # separately; this is the outer limit for everything else.
 app.config['MAX_CONTENT_LENGTH'] = security.MAX_REQUEST_BODY_BYTES
 
-# Refuse to start in production with the default secret key.
-_PRODUCTION = os.environ.get('POLARIS_ENV', '').lower() == 'production'
+# Refuse to start in production with the default secret key (_PRODUCTION is
+# computed above, with the cookie hardening).
 if app.secret_key in ('dev-key-change-in-production', 'dev-secret-rotate-in-production'):
     if _PRODUCTION:
         sys.stderr.write(
@@ -536,7 +541,7 @@ def login():
             session['webauthn_pending_user'] = user
             # Preserve ?next= across the assertion redirect
             next_url = request.args.get('next', '')
-            if next_url and next_url.startswith('/') and not next_url.startswith('//'):
+            if security.is_safe_next_url(next_url):
                 session['webauthn_pending_next'] = next_url
             return redirect(url_for('webauthn_assert_page'))
 
@@ -552,7 +557,7 @@ def login():
 
         # Honor ?next= but only if it's a same-origin path (CWE-601 open redirect).
         next_url = request.args.get('next', '')
-        if next_url and next_url.startswith('/') and not next_url.startswith('//'):
+        if security.is_safe_next_url(next_url):
             return redirect(next_url)
         return redirect(url_for('dashboard'))
 
@@ -669,7 +674,7 @@ def webauthn_assert_finish():
     security.login_user(pending)
 
     # Decide where to send the browser. Same ?next= rules as /login.
-    if next_url and next_url.startswith('/') and not next_url.startswith('//'):
+    if security.is_safe_next_url(next_url):
         target = next_url
     else:
         target = url_for('dashboard')

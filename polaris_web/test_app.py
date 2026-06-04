@@ -6236,6 +6236,48 @@ class V2SubstrateUITests(PolarisTestCase):
         self.assertIn('SUBSTRATE', r.data.decode())
 
 
+class NextUrlSafetyTests(unittest.TestCase):
+    """security.is_safe_next_url is the single open-redirect (CWE-601) guard
+    for every post-login ?next= redirect (password login, the WebAuthn
+    partial-auth redirect, and the assertion completion). These cases pin the
+    attacks the old startswith('//')-only guard let through. Pure function,
+    no DB."""
+
+    def setUp(self):
+        from app import security as sec
+        self.is_safe = sec.is_safe_next_url
+
+    def test_same_origin_paths_allowed(self):
+        for url in ('/dashboard', '/atlas', '/settings/webauthn',
+                    '/uc1/issue?x=1', '/page#frag', '/a/b/c'):
+            self.assertTrue(self.is_safe(url), f'{url!r} should be allowed')
+
+    def test_empty_or_non_string_rejected(self):
+        for url in ('', None, 0, [], b'/dashboard'):
+            self.assertFalse(self.is_safe(url), f'{url!r} should be rejected')
+
+    def test_absolute_and_scheme_urls_rejected(self):
+        for url in ('https://evil.com', 'http://evil.com/x',
+                    'javascript:alert(1)', 'data:text/html,x', 'dashboard'):
+            self.assertFalse(self.is_safe(url), f'{url!r} should be rejected')
+
+    def test_protocol_relative_rejected(self):
+        for url in ('//evil.com', '//evil.com/path', '///evil.com'):
+            self.assertFalse(self.is_safe(url), f'{url!r} should be rejected')
+
+    def test_backslash_normalization_attack_rejected(self):
+        # Browsers normalize '\' to '/' when parsing a URL or Location header,
+        # so these become protocol-relative //evil.com. werkzeug emits the
+        # backslash verbatim, so the naive startswith('//') guard missed them.
+        for url in (r'/\evil.com', r'/\/evil.com', r'/\\evil.com',
+                    '\\evil.com', '/\tevil.com'):
+            self.assertFalse(self.is_safe(url), f'{url!r} should be rejected')
+
+    def test_control_chars_rejected(self):
+        for url in ('/foo\r\nSet-Cookie: x=y', '/foo\x00bar', '/bar\n'):
+            self.assertFalse(self.is_safe(url), f'{url!r} should be rejected')
+
+
 if __name__ == '__main__':
     # Pull in property-based invariant tests (C1, C2, C3) so they run as
     # part of the main suite. The import is at the bottom so test_app.py

@@ -274,6 +274,40 @@ def check_c10_no_money_tables(root: pathlib.Path) -> list[Finding]:
     return _ok("c10_no_money", "schema carries no monetary primitives; identity is not money (C10)")
 
 
+# ---------------------------------------------------------------------------
+# Open redirect (CWE-601) — every post-login ?next= redirect routes through
+# one guard that rejects off-site targets, including the backslash trick that
+# browsers normalize to '//host'. The naive '//'-only guard must not survive.
+# ---------------------------------------------------------------------------
+def check_open_redirect_guard(root: pathlib.Path) -> list[Finding]:
+    sec = _read(root, "polaris_web/security.py")
+    if "def is_safe_next_url" not in sec:
+        return _fail("open_redirect", "security.py must define the is_safe_next_url guard (CWE-601)")
+    app = _read(root, "polaris_web/app.py")
+    if "startswith('//')" in app:
+        return _fail("open_redirect",
+                     "app.py still uses the naive startswith('//') next-url guard; "
+                     "route ?next= through security.is_safe_next_url (CWE-601)")
+    if "is_safe_next_url" not in app:
+        return _fail("open_redirect", "app.py must route ?next= through security.is_safe_next_url (CWE-601)")
+    return _ok("open_redirect",
+               "post-login ?next= routed through is_safe_next_url; the naive '//'-only guard is gone (CWE-601)")
+
+
+# ---------------------------------------------------------------------------
+# Session cookie Secure flag (CWE-614) — mandatory in production, not opt-in.
+# ---------------------------------------------------------------------------
+def check_cookie_secure_in_production(root: pathlib.Path) -> list[Finding]:
+    app = _read(root, "polaris_web/app.py")
+    m = re.search(r"SESSION_COOKIE_SECURE'\]\s*=\s*(.+)", app)
+    if not m:
+        return _fail("cookie_secure", "app.py does not set SESSION_COOKIE_SECURE")
+    if "_PRODUCTION" not in m.group(1):
+        return _fail("cookie_secure",
+                     "SESSION_COOKIE_SECURE is opt-in only; force it on in production via _PRODUCTION (CWE-614)")
+    return _ok("cookie_secure", "SESSION_COOKIE_SECURE is forced on in production (CWE-614)")
+
+
 CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_csp_forbids_unsafe_inline,
     check_one_active_token_index,
@@ -292,6 +326,8 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_c8_atlas_caps,
     check_c9_concurrency_threading,
     check_c10_no_money_tables,
+    check_open_redirect_guard,
+    check_cookie_secure_in_production,
 ]
 
 

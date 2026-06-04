@@ -133,5 +133,28 @@ def test_c10_no_money_check_fails_on_money_table(tmp_path):
     assert out[0].level == "FAIL", "must FAIL when the schema defines a monetary table"
 
 
+def test_open_redirect_guard_fails_on_naive_guard(tmp_path):
+    (tmp_path / "polaris_web").mkdir()
+    # The helper exists, but app.py still uses the naive '//'-only guard it was
+    # meant to replace — the one the backslash trick (/\\host) slips past.
+    (tmp_path / "polaris_web" / "security.py").write_text(
+        "def is_safe_next_url(u):\n    return bool(u)\n")
+    (tmp_path / "polaris_web" / "app.py").write_text(
+        "next_url = request.args.get('next', '')\n"
+        "if next_url.startswith('/') and not next_url.startswith('//'):\n"
+        "    return redirect(next_url)\n")
+    out = checks.check_open_redirect_guard(tmp_path)
+    assert out[0].level == "FAIL", "must FAIL while the naive startswith('//') guard survives"
+
+
+def test_cookie_secure_check_fails_when_opt_in_only(tmp_path):
+    (tmp_path / "polaris_web").mkdir()
+    (tmp_path / "polaris_web" / "app.py").write_text(
+        "app.config['SESSION_COOKIE_SECURE'] = "
+        "os.environ.get('POLARIS_COOKIE_SECURE', '').lower() in ('1', 'true')\n")
+    out = checks.check_cookie_secure_in_production(tmp_path)
+    assert out[0].level == "FAIL", "must FAIL when SESSION_COOKIE_SECURE is opt-in only"
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))
