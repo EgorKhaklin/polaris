@@ -28,36 +28,35 @@ operator routing through the external referent.
 
 ---
 
-The core is **done at v9.31** when ALL of the following are true,
-mechanically verifiable from outside the cognitive layer by `grep`
-and one-line `bash` checks:
+The core is **done** when ALL of the following are true, mechanically
+verifiable from outside by `grep` and one-line `bash` checks:
 
 1. All 10 hard constraints (C1–C10) are enforced at the schema level
-   (verifiable: `polaris_sql/01_schema.sql` + `06_triggers.sql` +
-   `polaris_web/test_structural_invariants.py` ≥5 invariants per
-   constraint).
-2. The kill test (`scripts/polaris-swarm-killtest.sh`) catches 5/5
-   defects in 1 pass at v9.31 (verifiable: exit code 0).
-3. The chaos test (`scripts/polaris-chaos-test.sh`) reports 3/3
-   fail-safe at v9.31 (verifiable: exit code 0).
-4. The MTTR ledger (`meta/swarm-mttr.json`) has at least 3 resolved
-   findings recorded between v9.25 and v9.31 (verifiable: count of
-   entries with non-null `resolved_at_utc`).
-5. The v9.30 binding clause has fired its check (`polaris-swarm-mttr.sh
-   check-v9-30`) and either passed OR the cognitive-layer-deletion
-   Sanctum has shipped. (Note: the v9.30 binding clause's NAME is
-   unchanged; only the freeze-version target moved per the amendment
-   above.)
-6. The application observability surface (`polaris_web/observability.py`
+   (verifiable: `polaris_sql/01_schema.sql` + `06_triggers.sql`, with
+   the `test_check_constraints` regression suite exercising each one).
+2. The flat invariant layer (`polaris_checks/`) maps a plain
+   `check_*` function to each constitutional constraint, with its
+   detection correctness itself tested (verifiable: `python3 -m
+   polaris_checks.run` exits 0; `polaris_checks/test_checks.py` passes).
+3. The Hypothesis property tests (`test_invariants_property`,
+   `test_redaction_property`) drive adversarial inputs against C1, C2,
+   C3 and the M2-12 redaction-proof (verifiable: both pass).
+4. The ZK SNARK has an independent second witness: the Rust Plonky2
+   prover and the Python re-checker (`polaris_zk/witness2/`) agree
+   bit-for-bit on the epoch root (verifiable: `test_zk_second_witness`
+   + `test_witness2` pass against the release binary).
+5. The application observability surface (`polaris_web/observability.py`
    + `/api/metrics`) is wired into `app.py` + `security.py`.
-7. `POLARIS_VERSION` is `9.31`.
+6. The full product test suite — `test_app`, `test_cli`,
+   `test_check_constraints`, the property tests — is green, and CI
+   (`.github/workflows/ci.yml`) runs all of the above on every push.
 
 **From v9.32 forward, all work is one of:**
 
 - **(a) Hardening** — security fixes, dependency updates, bug fixes
   against the existing surface.
-- **(b) Measurement** — extensions to the kill test, scorecard, chaos
-  test, MTTR ledger, observability metrics.
+- **(b) Measurement** — extensions to `polaris_checks`, the property
+  tests, the ZK two-witness differential, and the observability metrics.
 - **(c) Thesis cold-read evidence** — an independent external party
   attempts the cold-read test (per `docs/THESIS.md`) and the result
   is documented.
@@ -257,66 +256,32 @@ the dependency walk.
 | MANIFEST | C9 real-threading tests | bottom |
 
 Adding C11 requires extending the topology (or replacing one of
-C1-C10). The previously-reserved meta-slot is now filled by **CM**,
-a meta-constraint at a different abstraction level (see below).
+C1-C10). The lattice is complete; there is no reserved meta-slot.
 
-Walk the lattice from any node with `scripts/ai-lattice.sh <Cn>` —
-surfaces tier neighbors, polarity complement, and dependency
-cascade. The etymology of the structural insight (which older
-frameworks it's drawn from) is in `meta/lineage.md`.
+The per-constraint mapping and the dependency walk live in
+`meta/constraint-lattice.md`. The etymology of the structural insight
+(which older frameworks it's drawn from) is in `meta/lineage.md`.
 
-### CM — the meta-constraint (v8.9)
+### How the constraints are checked (v9.55)
 
-| # | Constraint | Where enforced |
-|---|------------|----------------|
-| CM | The cognitive layer self-monitors via executable checks | `scripts/ai-meta.sh` + `polaris_web/test_structural_invariants.py` |
+C1-C10 are enforced at the schema level — triggers, partial unique
+indexes, CHECK constraints — and exercised by the DB-backed product
+suites (`test_check_constraints`, the Hypothesis property tests). On
+top of the schema, the flat invariant layer **`polaris_checks/`** maps
+one plain `check_*(repo_root) -> list[Finding]` function to each
+constitutional constraint and gates CI (`python3 -m polaris_checks.run`
+exits non-zero on any FAIL). Each check's detection correctness is
+itself tested against a broken fixture (`polaris_checks/test_checks.py`)
+— the layer is provably able to catch the thing it claims to catch.
 
-CM is at a different abstraction level from C1-C10. C1-C10 are
-claims about Polaris's data and security properties. CM is a claim
-about the cognitive layer that monitors C1-C10. Mixing them would
-conflate "the data is consistent" with "the cognitive layer that
-checks consistency is consistent."
-
-CM is enforced by `scripts/ai-meta.sh`, which runs six executable
-checks:
-
-1. Every ai-* script in CLAUDE.md exists on disk and is documented
-2. The 22-pattern catalog has at least one warm pattern (actually used)
-3. Each C1-C10 has been touched in code in the last 30 days (no
-   constraint is dead)
-4. ai-help.sh and ai-done.sh references match disk
-5. The meta-slot is filled (CM is named in both lattice and MISSION)
-6. **Sanctum integrity** (added v8.20): no stale-OPEN sessions
-   (>7 days), no lifecycle violations (CLOSED without §VII Outcome;
-   REJECTED without §VI Decision), no index drift between
-   `sanctum/` and `meta/sanctum-index.md`. This is CM's first scope
-   extension since CM was defined in v8.9; it brings the
-   cognitive-layer audit-of-record (the Sanctum) under the same
-   self-monitoring discipline that already covers C1-C10.
-
-If any check fails, the cognitive layer has drifted from its own
-claims. This is the failure mode CM exists to prevent.
-
-**The immortal 10th head.** The cognitive substrate's swarm
-metaphor (HYDRA + Mycelium) gives CM a mythological reading: the
-nine HYDRA watchers (post-v8.72 mythology relocation; see
-`meta/arc-d-hydra.md` + the v8.72 Sanctum) are the nine cuttable
-mortal heads of the Lernaean Hydra. The **immortal 10th head** —
-the one Heracles could not sever — is **CM**. CM is the head that
-does not regrow because it does not get cut: removing it would
-remove the self-monitoring discipline that lets every other
-constraint be verified. The substitutability clause (v8.30) that
-applies to every other cognitive-layer element does **not** apply
-to CM. The mythology gives a name to the structural truth v8.9
-established when CM was first introduced.
-
-CM is one of four principles named in **"The cognitive substrate
-(the agent contract)"** further below in this document (added v8.30).
-The other three — the Sanctum protocol, audit-of-record, and risk
-classes — together constitute the agent contract that CM monitors.
-Before v8.30, CM was the constitution's only acknowledgement of the
-cognitive layer; the §"cognitive substrate" section now names the
-broader contract whose preservation CM enforces.
+There is no separate "meta-constraint." Earlier versions (v8.9-v9.54)
+ran a self-monitoring cognitive apparatus — a swarm of lint "ants,"
+nine "HYDRA" watchers, a "Mycelium" pheromone substrate, a "Denarius"
+economy — and named its self-check a meta-constraint (CM). v9.55 cut
+that apparatus wholesale and replaced it with `polaris_checks`. The
+job CM did (does the check layer actually fire?) is now done by the
+tested fixtures, in ~350 legible lines instead of ~18k lines of
+mythology. The constitution is C1-C10 and the Vocation; nothing else.
 
 ## The architectural soul (the "why" beneath the "what")
 
@@ -373,8 +338,8 @@ The contract has **principles**, not implementations. The principles
 are load-bearing — removing any cascades through the others. The
 *current* implementation lives in `scripts/`, `meta/`, `DEVNOTES/`,
 `patterns/`, `sanctum/`, and `journal/`. The implementation is
-substitutable. A future agent may use a different cognitive substrate
-so long as it preserves all four principles.
+substitutable. A future agent may use a different working substrate
+so long as it preserves all three principles.
 
 ### Principle 1 — The Sanctum protocol
 
@@ -402,14 +367,9 @@ table. Append-only at the data-content level, with bounded mutation
 `EnrollmentStatusEvent`, `TokenSignature`, `AnchorBatch`,
 `AgencyTrustAttestation`, `TokenStateEpoch`, `DuressEvent` —
 collectively the v2 mission substrate; filesystem — `sanctum/*.md`
-sessions (convention-enforced via `ai-meta.sh` CM check #6).
-The v9.41 reclassification moved `polaris_swarm/civitas/census-roll.json`
-and `polaris_swarm/civitas/treasury-roll.json` out of the AoR set —
-they are derived caches over `Pheromone`-table deposits + source-code
-ant presence, not source-of-truth; see `DEVNOTES/audit-of-record.md`
-§"v9.41 reclassification" for the criterion check. The principle is
-canonicalized in `DEVNOTES/audit-of-record.md`. New schema-touching
-ships extend the catalog; the principle is what gates them.
+sessions. The principle is canonicalized in
+`DEVNOTES/audit-of-record.md`. New schema-touching ships extend the
+catalog; the principle is what gates them.
 
 ### Principle 3 — Risk classes
 
@@ -426,58 +386,34 @@ Specified in `meta/autonomy-architecture.md`. Risk class is the
 default sort order in `ai-propose`; it is what makes
 MEDIUM/HIGH-risk Sanctum-triggering rather than execution-triggering.
 
-### Principle 4 — CM (the meta-constraint)
-
-The cognitive layer self-monitors via executable checks. Where
-C1–C10 are claims about Polaris's data and security properties, CM
-is a claim about the cognitive layer that monitors C1–C10. CM is
-defined in `## The hard constraints` above; it is enforced by
-`scripts/ai-meta.sh` (six checks) and
-`polaris_web/test_structural_invariants.py`.
-
-The four principles are nested: the Sanctum protocol relies on
-audit-of-record, audit-of-record relies on risk-class gating to
-decide when a Sanctum is needed, and CM monitors the whole stack.
-Removing any of the four cascades through the others — the same
-Removable Test applied to C1–C10 in `meta/structural-architecture.md`.
+The three principles are nested: the Sanctum protocol relies on
+audit-of-record, and audit-of-record relies on risk-class gating to
+decide when a Sanctum is needed. Removing any of the three cascades
+through the others — the same Removable Test applied to C1–C10 in
+`meta/structural-architecture.md`. (A fourth principle, CM — a
+self-monitoring "meta-constraint" over the old cognitive apparatus —
+existed from v8.30 to v9.54; v9.55 cut the apparatus and the
+invariant-checking job moved to the flat, tested `polaris_checks`
+layer described under `## The hard constraints` above.)
 
 ### What this section is NOT
 
 This section names principles, not implementations. The following
 are **current implementation**, not constitutional:
 
-- The 39 ai-* scripts in `scripts/` (the executable cognitive layer; v8.37 added ai-hydra, v8.52 added ai-brain-map)
-- The 22-pattern catalog in `scripts/ai-pattern.sh`
-- The Architect persona in `meta/architect.md` + `scripts/ai-architect.sh`
+- The `ai-*` developer scripts in `scripts/` (session priming, the
+  Sanctum/journal/proposal ledgers, link-check, the pre-ship gate)
 - The constraint lattice in `meta/constraint-lattice.md`
+- The flat invariant layer in `polaris_checks/`
 - The doc structure under `DEVNOTES/` / `patterns/` / `meta/`
-- **The HYDRA swarm in `polaris_hydra/`** and its nine watchers
-  — the canonical Hydra heads. Originally 7 (schema, cognitive,
-  security, mission, adversary, performance, trajectory); expanded
-  to 9 in v8.72 with the addition of `ant_colony` (observes the
-  Mycelium swarm runtime) and `civitas` (observes the citizen-
-  layer runtime). HYDRA aggregates watcher reports and is the
-  only LLM caller in the cognitive layer; watchers themselves are
-  read-only and deterministic. Authorized by
-  `sanctum/2026-05-12-new-chapter-swarm-hydra-arc-opening.md`
-  (Arc D opening), named here by
-  `sanctum/2026-05-12-hydra-constitutional-integration.md`,
-  extended to 7 watchers by
-  `sanctum/2026-05-13-trajectory-watcher-7th-channel.md`, and
-  expanded to 9 — the canonical Hydra-9 count — by
-  `sanctum/2026-05-13-hydra-mythology-relocation-to-watchers.md`
-  (relocating the Hydra-9 mythology from Mycelium legions to its
-  etymological home).
 
 Any of these may be substituted, renamed, restructured, or replaced
-without violating the constitution — as long as the four principles
-above remain preserved and the CM check still passes. **A future
-agent may replace the HYDRA swarm with a different synthesis pattern
-without amending this section, provided the four principles still
-hold.** This is structurally analogous to how C10 names the property
-("identity ≠ money") without naming the mechanism (the absence of a
-`MonetaryClaim` table is the *current* mechanism; a different
-mechanism preserving the property would still satisfy C10).
+without violating the constitution — as long as the three principles
+above remain preserved and the C1-C10 checks still pass. This is
+structurally analogous to how C10 names the property ("identity ≠
+money") without naming the mechanism (the absence of a `MonetaryClaim`
+table is the *current* mechanism; a different mechanism preserving the
+property would still satisfy C10).
 
 ### Why this section exists
 
@@ -508,11 +444,10 @@ considered and not chosen for v2 are documented in
 
 ### Post-v2 strategic moment
 
-With both done-lists closed (v1 + v2 + Arcs D/E/F/G), Polaris
-moved through two posture phases. The constitutional core
-(C1-C10, the four cognitive-substrate principles, G-guards) is
-preserved across both; only the agent's default response shape
-to ambiguous requests changes.
+With both done-lists closed (v1 + v2), Polaris moved through two
+posture phases. The constitutional core (C1-C10, the agent-contract
+principles, G-guards) is preserved across both; only the agent's
+default response shape to ambiguous requests changes.
 
 **Phase 1 — Post-v2 steady-state (2026-05-12 → 2026-05-14):**
 **Resolved 2026-05-12: steady-state** by
@@ -549,15 +484,14 @@ does not skip the protocol.
 **What does NOT change under heavy-production:**
 
 - **C1-C10** preserved verbatim
-- **The four cognitive-substrate principles** (Sanctum, AoR,
-  risk classes, CM) preserved verbatim
-- **G-guards G1-G33** all in force (G27/G28/G29 added v8.77 for the
+- **The three agent-contract principles** (Sanctum, AoR,
+  risk classes) preserved verbatim
+- **G-guards G1-G31** all in force (G27/G28/G29 added v8.77 for the
   production-stack surface; G30/G31 added v8.87 for the audit-log
-  archive+purge constitutional carve-out; **G32/G33 added v9.07 for
-  the parallel Pheromone archive+purge framework — G32: Lifecycle
-  PheromoneCheckpoint is strictly append-only with NO GUC carve-out
-  at the checkpoint layer; G33: uc_pheromone_archive_purge is the
-  only sanctioned DELETE path on Pheromone**)
+  archive+purge constitutional carve-out). (G32/G33 governed the
+  v9.07 Pheromone archive+purge framework; that framework was part of
+  the cognitive apparatus cut in v9.55, so the two guards retired with
+  the table they protected.)
 - **Audit-of-record discipline** (v8.20) — every ship still
   produces a CHANGELOG entry; every MEDIUM/HIGH decision still
   gets a Sanctum (the protocol is faster — DECIDED-on-arrival
@@ -767,91 +701,29 @@ model). The agent should treat MEDIUM/HIGH items as propose-and-wait
 unless the user has explicitly authorized autonomous execution for the
 specific item.
 
-### Arc D — Swarm / HYDRA (closed 2026-05-12 at 8/8 ✅, opened 2026-05-12)
+### Arcs D / E / F / G — the cognitive apparatus (RETIRED v9.55)
 
-HYDRA host (`polaris_hydra/host.py`) + 7 watchers (expanded to 9
-in v8.72 — see Arc G + the v8.72 mythology relocation). The swarm's
-centralized-synthesis layer; aggregates N specialist watchers into
-a single Architect-voice brief for VANTA. Built against
-prior-art reference codebases (BettaFish + MiroFish; studied for
-pattern, not vendored).
+Between 2026-05-12 and 2026-05-14, Polaris grew a large self-monitoring
+apparatus: **Arc D** (the "HYDRA" host + a cohort of read-only
+watchers), **Arc E** (the "Mycelium" pheromone swarm plus a Roman
+"legion" / "Civitas" organizational metaphor), **Arc F** (the
+"Denarius" swarm-internal economy), and **Arc G** (a "Roman Empire"
+expansion). It was roughly 18k lines of code plus a comparable mass of
+narrative, and it observed C1-C10 without ever being imported by the
+product.
 
-**Done-list:** H1–H8 all ✅. R12-* sequence in `ROADMAP.md`.
-
-For the per-item record, the watcher cohort detail, the boundary
-discipline, and post-Arc-D extensions (TrajectoryWatcher v8.49;
-AntColonyWatcher + CivitasWatcher v8.72), see
-**`meta/arc-d-hydra.md`**. For the operational guide, see
-`polaris_hydra/README.md`.
-
----
-
-### Arc E — Mycelium / genuine swarm intelligence (active, opened 2026-05-13)
-
-Decentralized swarm substrate underneath HYDRA. Tiny ants deposit
-**pheromones** onto brain-map nodes via the append-only `Pheromone`
-table (an additional audit-of-record beyond the canonical 12; has
-archive+purge framework per v9.07). Synthesis EMERGES from
-pheromone density across the brain-map graph; no host calls in
-Phase 1. Operators read the heatmap via `scripts/ai-swarm-bloom.sh`.
-
-Roman organizational metaphor extended through the arc:
-**Legions** (military) under TESTUDO / TRIPLEX_ACIES / CUNEUS /
-VEXILLATIO / AUXILIA tactical doctrines; **Civitas** (civilian) with
-Plebs / Equites / Augures / Censores citizen classes; **Cursus
-Honorum** (career path) feeding into Arc F's economic dimension.
-
-**Done-list:** E1, E2, E6, E7, E8, E9, E10 ✅ (7/10). E3, E4, E5
-deferred (bloom integration; deliberation threshold; HYDRA-vs-
-Mycelium decision Sanctum). R13-* sequence in `ROADMAP.md`.
-
-For the per-item record (E1–E10 narratives, legion structure +
-Roman tactics, Civitas details, the 100-year-architect-report
-findings, the acceleration + consciousness expansion), see
-**`meta/arc-e-mycelium.md`**. For the Polaris-as-Civitas concept
-mapping, see `meta/civitas.md`. For the operational guide, see
-`polaris_swarm/README.md`.
-
----
-
-### Arc G — Roman Empire opening (active multi-day, opened 2026-05-13)
-
-Empire-pattern expansion of the Mycelium swarm: new military
-**Imperial legions** (Praetorian, Engineer) + new civilian class
-(**Tribuni Plebis**) + **Via Appia** priority property on
-AntFinding. Architect recommended Option A (decline; revisit with
-operational data); VANTA chose Option C (ship Phase 1 in full).
-The override is on record; the Architect's Empire-metaphor caution
-(§IV of the opening Sanctum) stands as the prediction-vs-reality
-reference for future `--reflect` runs.
-
-**Done-list:** G1 ✅ (Phase 1 foundations). G2, G3 deferred.
-R15-* sequence in `ROADMAP.md`.
-
-For the per-item record (Phase 1 ant + citizen + Via Appia detail,
-G21-G25 G-guards, the Empire-metaphor caution), see
-**`meta/arc-g-empire.md`**.
-
-
-### Arc F — the Denarius (active, opened 2026-05-13; closed 4/4 then reopened with F5 amendment)
-
-Economic dimension of the Civitas. The **denarius** distinguishes
-ants whose pheromones lead to drift resolution from ants whose
-pheromones decay unread. **The pomerium holds:** denarius is SWARM
-currency, not Polaris currency; C10 (*identity ≠ money*) preserved
-verbatim. New 5th citizen class (`quaestor_treasurer`) + new
-filesystem-AoR (`treasury-roll.json`, the 3rd FS-AoR) + Cursus
-Honorum multipliers (eques 1.5×, patrician 2.0×).
-
-**Done-list:** F1, F2, F3, F4, F5 ✅ (5/5; arc reopened with F5
-amendment after the post-v8.72 100-year simulation surfaced the
-reward-function flaw). R14-* sequence in `ROADMAP.md`.
-
-For the per-item record (F1–F5 narratives, the F2 chaos test, the
-F3 proposal-loop closure, the F4 Cursus Honorum activation, the
-F5 reward-function exemption fix), see **`meta/arc-f-denarius.md`**.
-For the deeper economic theory (property classes, Cursus Honorum,
-Goodhart's Law mitigation), see `meta/denarius.md`.
+**v9.55 cut all four arcs wholesale** (CHANGELOG v9.50–v9.55). The job
+they nominally did — confirming the constitutional invariants hold — is
+now done by the flat, tested `polaris_checks/` layer in ~350 legible
+lines. The apparatus packages (`polaris_swarm/`, `polaris_hydra/`,
+`polaris_foresight/`), their scripts, their mythology docs, and the
+`Pheromone` schema were all deleted. This was authorized as a
+de-larping pass: the apparatus had become a self-referential web that
+made Polaris read as theater rather than as the serious reference
+implementation it is. Legibility is itself an anti-coercion property —
+a system whose guarantees you can read in an afternoon is one you can
+trust without taking it on faith — so the cut strengthens the Vocation
+rather than weakening it.
 
 ### Arc B — Production deployment (active multi-phase, opened 2026-05-14)
 

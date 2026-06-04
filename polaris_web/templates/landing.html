@@ -24,8 +24,9 @@
 
     <p class="landing-version">
         Version <strong>{{ polaris_version }}</strong> ·
-        27 tables · 14 procedures · 12 audit-of-record instances ·
-        33 G-guards · {{ structural_invariant_count }} structural invariants
+        10 constitutional constraints enforced at the schema level ·
+        append-only audit-of-record · post-quantum signatures ·
+        zero-knowledge verification
     </p>
 </section>
 
@@ -91,9 +92,10 @@
                 The schema has no transactions, balances,
                 spending patterns, or merchant codes. Adding any
                 of those would require a constitutional amendment
-                that the agent refuses on sight. The pomerium
-                holds: swarm currency (denarius) and identity
-                tokens are different ledgers.
+                that the project refuses on sight. If a value
+                system is ever built on top, it lives in a separate
+                database whose foreign keys prove the separation
+                rather than merely claim it.
             </p>
         </article>
     </div>
@@ -149,20 +151,21 @@
 </section>
 
 <section class="landing-cognitive" aria-labelledby="cognitive-title">
-    <h2 id="cognitive-title" class="landing-section-title">A cognitive substrate that watches itself</h2>
+    <h2 id="cognitive-title" class="landing-section-title">Guarantees you can check, not take on faith</h2>
     <p class="landing-section-lede">
-        Polaris's most unusual layer is the one that monitors
-        the rest. Nine HYDRA watchers, thirty-three autonomous
-        Mycelium ants, six Civitas citizens, and a constitutional
-        meta-constraint (CM) that re-evaluates the system against
-        its own claims on every session.
+        Every constitutional constraint is enforced where application
+        code cannot bypass it: database triggers, partial unique
+        indexes, and CHECK constraints. On top of the schema, a flat
+        check layer re-verifies each constraint on every run, and its
+        ability to catch a violation is itself tested against broken
+        fixtures.
     </p>
 
     <ul class="cognitive-list">
-        <li><strong>Sanctum protocol</strong> — every MEDIUM/HIGH-risk decision gets a structured agent-operator consultation on file. 36 sessions and counting.</li>
-        <li><strong>Audit-of-record discipline</strong> — twelve current instances. Nothing happens that the system can't reconstruct.</li>
-        <li><strong>Bounded autonomy</strong> — LOW-risk autonomous, MEDIUM propose-and-wait, HIGH explicit-human-approval. The risk-class lattice is the agent's contract.</li>
-        <li><strong>Constitutional meta-constraint (CM)</strong> — the immortal tenth head. Self-monitoring is the part of the system that survives if every other layer fails.</li>
+        <li><strong>Schema-level enforcement</strong> — C1-C10 live in the database, not in policy. A reviewer can read the triggers and indexes and see each guarantee directly.</li>
+        <li><strong>polaris_checks</strong> — one plain function per constitutional constraint, gating CI in ~350 legible lines. Each check provably fails on a broken fixture.</li>
+        <li><strong>Independent second witness</strong> — the zero-knowledge epoch root is recomputed by a separate Python implementation and checked bit-for-bit against the Rust prover. No single implementation is trusted alone.</li>
+        <li><strong>Append-only audit-of-record</strong> — every state change leaves a row the system can reconstruct; UPDATE and DELETE are rejected by trigger.</li>
     </ul>
 </section>
 

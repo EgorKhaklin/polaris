@@ -14,6 +14,49 @@ record, read [`meta/sanctum-index.md`](meta/sanctum-index.md).
 
 ---
 
+## v9.55 — 2026-06-03 (the swap · sever the whole apparatus web at once)
+
+scope: cognitive-rebuild · ship_marker: apparatus-swap · vocation: trustworthiness — the product is the thesis; the theater was never load-bearing · pattern20_instance: build-the-replacement-then-swap (v9.54 built the replacement; v9.55 severs the web)
+
+v9.54 built the clean replacement (`polaris_checks/`). v9.55 is the Alexander cut:
+with the replacement standing and CI wired onto it, the entire legacy apparatus is
+**deleted wholesale in one stroke** — no surgical extraction, no cascade, because
+nothing in the product imports it and it all leaves together.
+
+**Deleted (~18,150 LOC + the mythology):**
+
+- `polaris_swarm/`, `polaris_hydra/`, `polaris_foresight/` — the ant swarm, the nine
+  HYDRA watchers + CM, the foresight engine.
+- `polaris_web/test_structural_invariants.py`, `test_hydra_property.py`,
+  `test_hydra_revamp.py` — the ~900 self-referential invariants that asserted the
+  apparatus's claims about itself (Sanctum integrity, HYDRA shape, freeze line).
+- 36 `ai-swarm-*` / `ai-hydra` / `ai-meta` / `ai-coherence` / `polaris-swarm-*`
+  scripts.
+- The mythology docs: `meta/civitas.md`, `meta/denarius.md`, `meta/twelfth-legion.md`,
+  `meta/ant-predicates.md`, the arc-D/E/F/G files, `DEVNOTES/threat-model-cognitive.md`,
+  `DEVNOTES/swarm-tier-vocabulary.md`, and the pheromone/observer/cadence notes.
+
+**Rewired onto the product + the flat layer:**
+
+- `.github/workflows/ci.yml` — product-only: schema load, `polaris_checks` + its
+  detection-correctness tests, the CHECK-constraint regression suite, the Hypothesis
+  property tests, `test_app` + `test_cli`, link-check, the ZK crate + the independent
+  second-witness differential. Every apparatus step removed.
+- `scripts/ai-done.sh` — a thin, honest gate: `polaris_checks.run` + link-check, with
+  a reminder to run the DB-backed product suites. The HYDRA findings-gate, the swarm
+  scorecard, and the `ai-meta`/`ai-coherence`/CM steps are gone.
+- `CLAUDE.md`, `README.md`, `MISSION.md` — de-larped to the real product: identity
+  tokens, zero-knowledge verification, post-quantum signing, the schema-level
+  constraint lattice, and `polaris_checks` as the one invariant layer.
+
+**What stood unchanged through the cut:** the product — `polaris_web/` (Flask app, the
+use cases, the atlas API), `polaris_cli/`, `polaris_sql/` (the C1-C10 constraints,
+triggers, partial unique indexes), `polaris_zk/` (the Plonky2 SNARK + the Python
+second witness). All product test suites stayed green across the swap. The thesis was
+always the product; the apparatus was scaffolding, and the scaffolding is down.
+
+---
+
 ## v9.54 — 2026-06-03 (polaris_checks · the flat, themeless check layer — the apparatus-rebuild anchor)
 
 scope: cognitive-rebuild · ship_marker: polaris-checks-anchor · vocation: trustworthiness — a check is a check; legibility is honesty · pattern20_instance: build-the-replacement-then-swap (cut the whole knot, do not untie it strand by strand)

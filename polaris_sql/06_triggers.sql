@@ -619,22 +619,9 @@ CREATE TRIGGER trg_authaudit_append_only
     BEFORE UPDATE OR DELETE ON AuthAuditLog
     FOR EACH ROW EXECUTE FUNCTION reject_audit_modification();
 
--- ----------------------------------------------------------------------------
--- Pheromone append-only trigger (Arc E / E1 / v8.62 — Mycelium substrate).
--- The 11th audit-of-record instance. Every ant deposit is irreversible;
--- pheromones fade by decay function applied at READ time, never by
--- UPDATE/DELETE. This preserves the cognitive-layer's audit-of-record
--- discipline: future-readers can replay the swarm's reasoning by
--- scrolling the Pheromone log backward.
--- ----------------------------------------------------------------------------
-DROP TRIGGER IF EXISTS trg_pheromone_append_only ON Pheromone;
-CREATE TRIGGER trg_pheromone_append_only
-    BEFORE UPDATE OR DELETE ON Pheromone
-    FOR EACH ROW EXECUTE FUNCTION reject_audit_modification();
-
 -- ============================================================================
 -- END OF 06_triggers.sql
--- 15 triggers, 9 trigger functions:
+-- 14 triggers, 9 trigger functions:
 --   1.  enforce_token_state_machine            (BEFORE UPDATE) — rejects illegal transitions
 --   2.  audit_token_state_change               (AFTER UPDATE)  — auto-writes audit row
 --   3.  reject_audit_modification              (BEFORE UPDATE/DELETE on TokenLifecycleEvent)
@@ -649,5 +636,4 @@ CREATE TRIGGER trg_pheromone_append_only
 --   12. enforce_epoch_immutability             (BEFORE on TokenStateEpoch — v8.23 / R10-1)
 --   13. reject_audit_modification              (BEFORE on TokenStateEpochLeaf — v8.23 / R10-1)
 --   14. reject_audit_modification              (BEFORE on DuressEvent — v8.24 / R11-5)
---   15. reject_audit_modification              (BEFORE on Pheromone — v8.62 / Arc E / E1)
 -- ============================================================================

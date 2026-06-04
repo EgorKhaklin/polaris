@@ -34,7 +34,6 @@
 -- another table's FK references.
 --
 -- v9.02: extended to include:
---   - Pheromone (baseline-added v8.62; missed top-of-file)
 --   - LifecycleArchiveCheckpoint (baseline-added v8.87; missed top-of-file)
 --   - OperatorWebauthnCredential (migration-added v8.97 via
 --     2026-05-14-002-operator-webauthn.up.sql; lives outside this
@@ -48,7 +47,6 @@
 -- → v9.01; closed v9.02.
 DROP TABLE IF EXISTS OperatorWebauthnCredential CASCADE;
 DROP TABLE IF EXISTS LifecycleArchiveCheckpoint CASCADE;
-DROP TABLE IF EXISTS Pheromone              CASCADE;
 DROP TABLE IF EXISTS DuressEvent            CASCADE;
 DROP TABLE IF EXISTS TokenStateEpochLeaf    CASCADE;
 DROP TABLE IF EXISTS TokenStateEpoch        CASCADE;
@@ -1089,67 +1087,6 @@ COMMENT ON TABLE DuressEvent IS
   'detected duress signals. NOT joined into the operator-visible '
   '/verifications list (R6 audit refinement — anti-revealing posture). '
   'See DEVNOTES/ships/duress-codes.md.';
-
--- ----------------------------------------------------------------------------
--- Pheromone: stigmergic substrate for Mycelium (Arc E / E1 / v8.62)
--- ----------------------------------------------------------------------------
--- The 11th audit-of-record instance (10 schema instances pre-existed: 9
--- schema tables + 1 filesystem; this is the 10th schema table = 11th total
--- when filesystem is counted). Append-only via the same
--- reject_audit_modification trigger pattern used by DuressEvent +
--- AnchorBatch + AgencyTrustAttestation + TokenStateEpoch.
---
--- Each Pheromone row is a single ant's deposit onto a single brain-map
--- node. Ants run independently and deposit independently. Synthesis is
--- emergent: it appears in the AGGREGATE of recent pheromones over a
--- brain-map node (effective_intensity = intensity * exp(-age_hours /
--- half_life), computed at read time, never stored).
---
--- This table is metadata about the cognitive-layer's own attention. It
--- carries no identity-layer payloads (C10 preserved). Identity-attribute
--- references are by node_id (a brain-map node identifier), never by
--- individual_id or token_id directly. Operators read this table to
--- understand WHY the swarm thinks WHAT it thinks.
---
--- Authorized by sanctum/2026-05-13-arc-e-swarm-intelligence-opening.md.
---
--- v9.02 idempotency fix: DROP IF EXISTS before CREATE TABLE so that
--- 00_load_all.sql can be re-run against a non-empty polaris_test
--- without "relation 'pheromone' already exists" errors. Pre-v9.02
--- the launcher's launch_native() schema-load path failed on second
--- run unless the operator manually dropped the database first
--- (filed against v8.99 → v8.100 → v9.01 as a pre-existing gap).
--- The DROP CASCADE chain is safe: nothing else FKs to Pheromone.
--- ----------------------------------------------------------------------------
-DROP TABLE IF EXISTS Pheromone CASCADE;
--- coverage:exempt — Mycelium substrate; written by colony, READ by ant_colony_watcher as node_id rows not table-level (static-parser miss intentional, not a real gap)
-CREATE TABLE Pheromone (
-    pheromone_id    SERIAL       PRIMARY KEY,
-    deposited_at    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    deposited_by    VARCHAR(80)  NOT NULL,                  -- ant module name
-    node_id         VARCHAR(160) NOT NULL,                  -- brain-map node id
-    intensity       NUMERIC(6,3) NOT NULL
-        CHECK (intensity > 0 AND intensity <= 10),          -- 0..10 scale
-    kind            VARCHAR(40)  NOT NULL
-        CHECK (kind IN ('drift','alert','info','curious')), -- emergent class
-    half_life_hours NUMERIC(6,2) NOT NULL DEFAULT 24.0
-        CHECK (half_life_hours > 0 AND half_life_hours <= 720.0),
-    evidence        JSONB        NOT NULL DEFAULT '{}'::jsonb,
-    seed            BIGINT       NOT NULL                   -- ant seed; replay
-);
-
-CREATE INDEX idx_pheromone_recent ON Pheromone (deposited_at DESC);
-CREATE INDEX idx_pheromone_by_node ON Pheromone (node_id, deposited_at DESC);
-CREATE INDEX idx_pheromone_by_ant ON Pheromone (deposited_by, deposited_at DESC);
-
-COMMENT ON TABLE Pheromone IS
-  'Mycelium stigmergic substrate (Arc E / E1 / v8.62). '
-  'The 11th audit-of-record instance (10 schema tables + 1 filesystem). '
-  'Append-only via reject_audit_modification trigger. Each row is one '
-  'ant deposit on one brain-map node. Synthesis emerges from aggregate '
-  'pheromone density (intensity * exp(-age / half_life)), computed at '
-  'read time. Operator reads this table to understand WHY the swarm '
-  'thinks WHAT it thinks. See sanctum/2026-05-13-arc-e-swarm-intelligence-opening.md.';
 
 -- ============================================================================
 -- END OF 01_schema.sql

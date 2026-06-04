@@ -21,7 +21,7 @@ _Cryptographically signed. Audit-of-record by construction. Compulsion-resistant
 [![WebAuthn MFA](https://img.shields.io/badge/auth-WebAuthn%20MFA-1f883d?logo=webauthn&logoColor=white&style=flat-square)](polaris_web/webauthn_auth.py)
 
 
-**Now shipping [v9.54](https://github.com/EgorKhaklin/polaris-id/releases/latest)** &nbsp;·&nbsp; 977 structural invariants &nbsp;·&nbsp; 650 cross-references resolved &nbsp;·&nbsp; one double-click to launch
+**Now shipping [v9.55](https://github.com/EgorKhaklin/polaris-id/releases/latest)** &nbsp;·&nbsp; post-quantum · zero-knowledge · compulsion-resistant &nbsp;·&nbsp; one double-click to launch
 
 [**System map**](docs/reference/SYSTEM-MAP.md) · [**Conventions**](docs/CONVENTIONS.md) · [**Constitution (MISSION.md)**](MISSION.md) · [**Backlog (ROADMAP.md)**](ROADMAP.md) · [**Audit-of-record (CHANGELOG.md)**](CHANGELOG.md) · [**Agent runbook (CLAUDE.md)**](CLAUDE.md)
 
@@ -43,7 +43,7 @@ This repository is a **working reference implementation**: 27 schema tables, 14 
 
 It is not a slide deck. It runs.
 
-The system lives in [`polaris_sql`](polaris_sql/), [`polaris_web`](polaris_web/), [`polaris_cli`](polaris_cli/), [`polaris_zk`](polaris_zk/). The cognitive apparatus lives in [`polaris_swarm`](polaris_swarm/), [`polaris_hydra`](polaris_hydra/), [`polaris_foresight`](polaris_foresight/), [`meta`](meta/), [`sanctum`](sanctum/). Everything under [`archive`](archive/) is frozen history and is not read to understand the system.
+The system lives in [`polaris_sql`](polaris_sql/), [`polaris_web`](polaris_web/), [`polaris_cli`](polaris_cli/), [`polaris_zk`](polaris_zk/). Its C1-C10 invariants are machine-checked by [`polaris_checks`](polaris_checks/) (a flat layer of plain check functions). Everything under [`archive`](archive/) is frozen history and is not read to understand the system.
 
 ---
 
@@ -60,7 +60,7 @@ Consolidating the cards is the easy half. The interesting half is what happens w
 | **Public auditability without privacy loss** | "Prove this token was in the ledger" without revealing which one. | Plonky2 ZK-SNARK over a Merkle commitment. The proof reveals nothing about the leaf. | [zk-snark](DEVNOTES/ships/zk-snark.md)  ‎     UC-11 |
 | **Issuer overreach** | An agency revokes tokens at industrial scale outside policy. | Per-agency revocation-rate ceiling enforced by trigger. Sanctioned by the IssuerDiscretionPolicy row, audited by `pg_advisory_xact_lock`. | [issuer-discretion](DEVNOTES/ships/issuer-discretion.md)   UC-8 |
 
-Every row has a defender's claim, an attacker's optimal play, an equilibrium analysis, a documented second-best attack, and an enforcement trace. The walks are canonical (`scripts/ai-adversary.sh C1..C10`).
+Every row has a defender's claim, an attacker's optimal play, an equilibrium analysis, a documented second-best attack, and an enforcement trace at the schema level.
 
 ---
 
@@ -102,14 +102,11 @@ Four layers. The cognitive layer reads but never writes the operational layer. T
 
 ```
         ┌─────────────────────────────────────────────────────────────┐
-        │                      COGNITIVE LAYER                        │
-        │   HYDRA: 9 watchers + CM (schema · cognitive · security ·   │
-        │          mission · adversary · performance · trajectory ·   │
-        │          civitas · ant-colony)                              │
-        │   Mycelium: 33 commander ants · 6 citizens · 9 soldier      │
-        │             classes (stigmergic pheromone substrate)        │
-        │   Sanctum: append-only strategic-decision log (64 entries)  │
-        │   Architect + Anti-Architect: persona-protocol adjudication │
+        │                       CHECK LAYER                           │
+        │   polaris_checks — flat C1-C10 invariant checks             │
+        │   (CSP · one-active-token · append-only AoR · crypto-as-    │
+        │    data · FK discipline · secrets · ZK two-witness · …)      │
+        │   plain check_*(repo_root) functions; `run` gates CI        │
         └─────────────────────────┬───────────────────────────────────┘
                                   │   reads (no writes)
         ┌─────────────────────────▼───────────────────────────────────┐
@@ -134,7 +131,7 @@ Four layers. The cognitive layer reads but never writes the operational layer. T
         └───────────────────────────────────────────────────────────┘
 ```
 
-Each layer is independently buildable. The schema loads from `00_load_all.sql` against an empty Postgres. The application boots from `app.py` against the loaded schema. The ZK prover compiles under `cargo +nightly build --release` against the same machine. The cognitive layer is a read-only directory of Python modules and shell scripts; it survives any operational restart unchanged.
+Each layer is independently buildable. The schema loads from `00_load_all.sql` against an empty Postgres. The application boots from `app.py` against the loaded schema. The ZK prover compiles under `cargo +nightly build --release` against the same machine. The check layer (`polaris_checks`) is a read-only set of plain functions that gate CI; it survives any operational restart unchanged.
 
 The constraint that holds this together is **C1: audit-of-record**. Ten instances (nine schema, one filesystem) record every meaningful operation at the moment it happens. Nothing in the system reconstructs history after the fact; if it isn't written when it occurs, it doesn't exist.
 
@@ -193,7 +190,7 @@ A few of the contrasts are worth narrating instead of tabling.
 
 **e-Estonia** is the existing deployed system most-similar in ambition. Its cryptography is classical (ECDSA on the e-ID card, RSA in older infrastructure); a platform-level migration path to post-quantum is not yet specified. The system has no compulsion-defense primitive at the protocol level.
 
-Polaris's contribution is not novelty in any single primitive. It is the **assembly**: a national-scope issuance model, a post-quantum operational default, zero-knowledge defaults on verification, a duress-code primitive built into the verification flow, and an append-only audit-of-record enforced at the database trigger level — with a cognitive substrate that maintains every claim above without drifting from it.
+Polaris's contribution is not novelty in any single primitive. It is the **assembly**: a national-scope issuance model, a post-quantum operational default, zero-knowledge defaults on verification, a duress-code primitive built into the verification flow, and an append-only audit-of-record enforced at the database trigger level — every one of which is machine-checked at the schema level rather than asserted in prose.
 
 ---
 
@@ -232,15 +229,13 @@ A full subcommand reference lives in [`docs/operator/INSTALL.md`](docs/operator/
 ```
                  ┌──────────────────────────────────────────────────┐
                  │              Polaris in numbers                  │
-                 │              (current as of v9.54)               │
+                 │              (current as of v9.55)               │
                  ├──────────────────────────────────────────────────┤
                  │  27 schema tables                                │
-                 │  14 stored procedures (UC-1 .. UC-12 + foresight)│
+                 │  14 stored procedures (UC-1 .. UC-12)            │
                  │  67 HTTP routes (incl. /auth/webauthn/*)         │
-                 │  1,077 Python tests · 977 structural invariants  │
-                 │  64 Sanctum strategic-consultation records       │
-                 │  9 HYDRA watchers + CM                           │
-                 │  33 commander ants + 6 citiz + 9 soldier classes │
+                 │  C1-C10 invariants, machine-checked              │
+                 │  Plonky2 ZK + an independent second witness      │
                  │  4 constitutional principles + 1 vocation        │
                  │  1 double-click to launch                        │
                  └──────────────────────────────────────────────────┘
@@ -256,20 +251,15 @@ Routes for each use case: `/uc1/issue`, `/uc4/activate-reserve`, `/uc5/bind-devi
 
 ## The trick
 
-Most reference implementations of an identity system are a database schema, an application, a test suite, and a README. Polaris is all four of those plus a **cognitive substrate**: the deliberate architecture that lets an AI agent maintain the system without drifting from its own claims.
+Most reference implementations of an identity system put their rules in application code, where the next caller can bypass them. Polaris puts them in the **database**, where Postgres enforces them regardless of which client connects:
 
-The substrate is named in MISSION.md as four principles. The principles, not the implementation:
+- **One ACTIVE token per person** is a partial unique index on `(individual_id) WHERE status = 'ACTIVE'` — not an `if` statement. It survives every restore from backup.
+- **The audit-of-record** is a trigger that raises `insufficient_privilege` on any `UPDATE`/`DELETE` of a lifecycle-event table — not a logging convention.
+- **Zero-knowledge** is a CHECK constraint that refuses to store a token id on a `ZERO_KNOWLEDGE` verification — not an application policy.
 
-1. **The Sanctum protocol.** A formal record of every non-routine decision; 59 entries in `sanctum/` to date, indexed at [`meta/sanctum-index.md`](meta/sanctum-index.md).
-2. **Audit-of-record.** Ten instances across schema and filesystem (9 schema + 1 filesystem); the system writes evidence at the moment of decision rather than reconstructing it later. See [`DEVNOTES/audit-of-record.md`](DEVNOTES/audit-of-record.md).
-3. **Risk classes.** Three tiers (LOW / MEDIUM / HIGH) governing what an agent may do autonomously versus what requires explicit human approval. See [`meta/autonomy-architecture.md`](meta/autonomy-architecture.md).
-4. **CM (the meta-constraint).** Six executable self-checks under `scripts/ai-meta.sh` that catch drift between the cognitive layer's claims and the running system.
+Those rules are then machine-checked by [`polaris_checks`](polaris_checks/) — a flat layer of plain `check_*(repo_root)` functions, one per constitutional constraint, each with *tested detection correctness* (it provably fails on a broken input). `python3 -m polaris_checks.run` gates CI directly. A check is a check: no framework, no mythology, ~350 legible lines a second engineer reads in minutes.
 
-The current implementation is named, not pinned. As of v8.43, MISSION.md says the four principles may be served by *any* synthesis pattern that preserves them. Today that pattern is **HYDRA**, a nine-watcher introspection swarm at [`polaris_hydra/`](polaris_hydra/) that scans schema, cognitive layer, security, mission state, adversary models, performance, trajectory drift, civitas state, and ant-colony health on demand. The Architect persona at [`meta/architect.md`](meta/architect.md) is the synthesis voice. The 22-pattern catalog at [`scripts/ai-pattern.sh`](scripts/ai-pattern.sh) is the procedural memory.
-
-If a future maintainer replaces HYDRA with something better, the constitution does not need to be amended. The principles are stable; the implementations are substitutable.
-
-The brain map renders all of this as an interactive D3 force-directed graph: ~383 nodes, ~388 edges across seven layers (schema · behavior · cognitive · decision · constitution · observation · knowledge). Run [`scripts/ai-brain-map.sh`](scripts/ai-brain-map.sh) (or [`scripts/ai_brain_map.py`](scripts/ai_brain_map.py)) to regenerate it locally at `meta/brain-map/brain-map.html` — the file is auto-gen state (gitignored per v9.41), so it's produced on demand rather than tracked. Open the result in any browser; nothing is fetched from the network.
+> Earlier versions carried an elaborate "cognitive substrate" — an introspection swarm, a simulated Roman economy, a self-governance apparatus — meant to let an AI agent maintain the system. **v9.55 removed it:** ~18k LOC of apparatus replaced by the flat check layer above. The development record of that arc is preserved in the CHANGELOG and `sanctum/` history. The principles it served (the constitution) are unchanged; the implementation is simply honest now.
 
 ---
 
@@ -298,15 +288,14 @@ Four layers of verification, all run by the launcher's `test` subcommand.
 ┌─────────────────────────────┬────────┬──────────────────────────────────────────────┐
 │  Layer                      │  Count │  What it covers                              │
 ├─────────────────────────────┼────────┼──────────────────────────────────────────────┤
-│  Python tests (total)       │ 1,077  │  Every Flask route, every form, the use      │
-│                             │        │  cases, rate limiter, atlas API, R6 anti-    │
-│                             │        │  revealing posture. Includes property tests  │
-│                             │        │  and structural invariants below.            │
-│  Hypothesis property tests  │   19   │  Adversarial inputs against C1, C2, C3 and   │
-│                             │        │  the M2-12 redaction-proof. Needs hypothesis.│
-│  Structural invariants      │  909   │  The cognitive layer's claims about itself:  │
-│                             │        │  constraint lattice, pattern catalog, CM,    │
-│                             │        │  Sanctum integrity, HYDRA shape, freeze line.│
+│  Product tests (DB-backed)  │        │  CHECK constraints, the use cases, every     │
+│  test_app / test_cli /      │        │  Flask route + form, the rate limiter, the   │
+│  test_check_constraints     │        │  atlas API, R6 anti-revealing posture.       │
+│  Property tests (Hypothesis)│   16   │  Adversarial inputs against C1, C2, C3 and   │
+│                             │        │  the M2-12 redaction-proof.                  │
+│  polaris_checks (C1-C10)    │   11   │  One plain check_* per constitutional        │
+│                             │        │  constraint; tested detection correctness;   │
+│                             │        │  `run` gates CI. The flat invariant layer.   │
 └─────────────────────────────┴────────┴──────────────────────────────────────────────┘
 ```
 
@@ -365,7 +354,7 @@ Copyright 2026 Egor Khaklin
 Licensed under the Apache License, Version 2.0.
 ```
 
-The license includes an explicit **patent grant** (§3) and **preservation of attribution** (§4). If you build on Polaris — the code, the schema, or the architectural patterns (audit-of-record discipline, constraint lattice, cognitive substrate) — retain `LICENSE` and `NOTICE` and the author attribution per §4. Component-level attributions for Plonky2, D3, TopoJSON, and Flask live in [NOTICE](NOTICE).
+The license includes an explicit **patent grant** (§3) and **preservation of attribution** (§4). If you build on Polaris — the code, the schema, or the architectural patterns (audit-of-record discipline, the schema-level constraint lattice, the flat invariant-check layer) — retain `LICENSE` and `NOTICE` and the author attribution per §4. Component-level attributions for Plonky2, D3, TopoJSON, and Flask live in [NOTICE](NOTICE).
 
 The academic project report ([docs/paper/polaris_project_report.pdf](docs/paper/polaris_project_report.pdf) and its TeX source) is part of the same release under the same license.
 

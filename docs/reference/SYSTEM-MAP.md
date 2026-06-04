@@ -79,9 +79,6 @@ without modifying it.
 
 | Layer-2 dir | What |
 |---|---|
-| [`polaris_hydra/`](../../polaris_hydra/) | HYDRA — 9 mortal watchers + CM immortal; v9.04 hybrid intelligence (PheromoneReader + CorrelationEngine + ActionQueue + brief-archive); v9.11 adds action_promotion (FS- via [`polaris_foresight/`](../../polaris_foresight/)) |
-| [`polaris_swarm/`](../../polaris_swarm/) | Mycelium — 33 commander ants + 9 soldier classes (8 workers + 1 priest `soldier_swarm_witness` added v9.11) + 6 citizen classes |
-| [`polaris_foresight/`](../../polaris_foresight/) | Foresight surface (v9.12; minimum-viable per [`sanctum/2026-05-15-polaris-odyssey-debate.md`](../../sanctum/2026-05-15-polaris-odyssey-debate.md) Position B). Single `ForesightAgent` + 5-section `Brief` + FS-XXXXXXXX promotion. Empirical-graduation rule: 50% acceptance over 6 distinct-month briefs or sunset clause fires. |
 
 ### Layer 3: Cognitive layer (the agent's tools)
 
@@ -217,7 +214,6 @@ here for self-contained navigation):
 | **Developer contributing** | [`README.md`](../../README.md) → [`docs/CONVENTIONS.md`](../CONVENTIONS.md) → [`DEVNOTES/style.md`](../../DEVNOTES/style.md) → relevant `polaris_*/README.md` |
 | **Compliance auditor** | [`docs/operator/SOC2.md`](../operator/SOC2.md) → [`docs/operator/SECURITY.md`](../operator/SECURITY.md) → [`docs/operator/PENTEST.md`](../operator/PENTEST.md) → [`docs/operator/DR.md`](../operator/DR.md) |
 | **Academic reviewer** | `docs/paper/polaris_project_report.pdf` → [`docs/story/STORY.md`](../story/STORY.md) → [`docs/story/PRINCIPLES.md`](../story/PRINCIPLES.md) |
-| **Future-VANTA orienting after time away** | [`docs/story/STORY.md`](../story/STORY.md) → [`meta/polaris-self-roadmap-2026-05-14.md`](../../meta/polaris-self-roadmap-2026-05-14.md) → `bash scripts/ai-dashboard.sh` |
 
 ---
 

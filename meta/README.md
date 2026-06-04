@@ -36,17 +36,11 @@ agent reasons about it.**
 | File | Arc |
 |---|---|
 | [`arc-b-production.md`](arc-b-production.md) | Arc B: production deployment (Phase 1 ✅; Phase 2/3 ongoing) |
-| [`arc-d-hydra.md`](arc-d-hydra.md) | Arc D: HYDRA swarm (closed v8.43; refreshed v9.04 hybrid) |
-| [`arc-e-mycelium.md`](arc-e-mycelium.md) | Arc E: Mycelium swarm (substrate; v8.62+) |
-| [`arc-f-denarius.md`](arc-f-denarius.md) | Arc F: Denarius (Treasury + Cursus Honorum; F1-F5) |
-| [`arc-g-empire.md`](arc-g-empire.md) | Arc G: Empire-pattern expansion |
 
 ### Domain models
 
 | File | Purpose |
 |---|---|
-| [`civitas.md`](civitas.md) | The Civitas (citizen layer) design |
-| [`denarius.md`](denarius.md) | The Denarius (Treasury) economic model |
 | [`redaction-proof.md`](redaction-proof.md) | M2-12 verification-graph redaction proof + adversary model |
 | [`missions-considered.md`](missions-considered.md) | v2 strategic-arc analysis (A/B/C/D considered; D+A chosen) |
 | [`lineage.md`](lineage.md) | Etymology of structural insights |
@@ -62,7 +56,6 @@ agent reasons about it.**
 | File | When |
 |---|---|
 | [`polaris-self-roadmap-2026-05-14.md`](polaris-self-roadmap-2026-05-14.md) | The 30-item macro-to-micro scan roadmap (Wave 1 → v9.05; Wave 2 → v9.06; Wave 3 → v9.07; Wave 4 → v9.08) |
-| [`treasury-60d-sim-review-2026-05-15.md`](treasury-60d-sim-review-2026-05-15.md) | v9.07 / J4 — review of v8.91 60-day commitment in light of v9.05 cohort shift |
 
 ---
 

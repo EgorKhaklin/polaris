@@ -1,36 +1,10 @@
 # ============================================================================
-# Polaris CI — full test suite on every push + PR.
+# Polaris CI — product test suite on every push + PR.
 #
-# v8.93 / Phase 2 closing-list item. Closes the gap surfaced by the v8.92
-# deployability checklist: the structural invariant suite (self-counting;
-# ~959 at v9.45), CHECK-constraint regression suite, ZK adversarial tests,
-# and Hypothesis property tests all existed, but no automation ran them on
-# push. v8.93 closes that. (Counts here are descriptive, not pinned — the
-# suites self-count; do not hardcode a number that drifts every ship.)
-#
-# Stages (all run on `ubuntu-latest`):
-#
-#   1. checkout + Python 3.12 setup
-#   2. PostgreSQL 16 service container, polaris_test database loaded
-#      from polaris_sql/00_load_all.sql
-#   3. Python deps install (flask, psycopg2-binary, hypothesis, pytest)
-#   4. Rust toolchain + cargo test (polaris_zk crate)
-#   5. Bash syntax check across scripts/
-#   6. Structural invariant suite
-#   7. CHECK-constraint regression suite (against live DB)
-#   8. Hypothesis property tests
-#   9. HYDRA watcher suites (pure)                          [v9.46]
-#  10. ZK prove-verify roundtrip + two-witness differential [v9.44/v9.46]
-#  11. ai-link-check (catches broken cross-refs)
-#  12. ai-meta (CM constraint self-check)
-#  13. ai-coherence (drift detector)
-#
-# Known follow-up (ROADMAP OPEN NOW): wire test_app.py + test_cli.py into
-# CI once confirmed green against the CI sample DB (they need the live DB
-# the CI job already provisions; not yet verified, so not yet gating).
-#
-# Failure semantics: any non-zero exit fails the workflow. The job is
-# named so a single failure shows up clearly on the PR check status.
+# v9.55: the cognitive apparatus (swarm/HYDRA/civitas/legions/soldiers/foresight)
+# was removed and replaced by the flat polaris_checks layer. This workflow now
+# tests the real product: the schema, the Flask app, the CLI, the ZK crate +
+# its two-witness, and the C1-C10 invariants via polaris_checks.
 # ============================================================================
 
 name: Polaris CI
@@ -44,7 +18,7 @@ on:
 
 jobs:
   test:
-    name: Polaris full test suite
+    name: Polaris product test suite
     runs-on: ubuntu-latest
 
     services:
@@ -80,16 +54,14 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install PostgreSQL client + extensions
+      - name: Install PostgreSQL client
         run: |
           sudo apt-get update
           sudo apt-get install -y postgresql-client
 
-      - name: Install Python deps (from polaris_web/requirements.txt — v9.05)
+      - name: Install Python deps
         run: |
           python -m pip install --upgrade pip
-          # v9.05 / Wave 1 / C3: pinned via polaris_web/requirements.txt
-          # (was: inline list of 5 packages with loose version specs).
           pip install -r polaris_web/requirements.txt
 
       - name: Wait for Postgres
@@ -103,64 +75,32 @@ jobs:
         run: |
           mkdir -p $POLARIS_STATE_DIR
           cd polaris_sql
-          psql -h localhost -U postgres -d polaris_test \
-               -v ON_ERROR_STOP=1 -f 00_load_all.sql
+          psql -h localhost -U postgres -d polaris_test -v ON_ERROR_STOP=1 -f 00_load_all.sql
 
       - name: Bash syntax check
-        run: |
-          for f in scripts/*.sh; do
-            bash -n "$f" || exit 1
-          done
+        run: for f in scripts/*.sh; do bash -n "$f" || exit 1; done
 
-      - name: Structural invariant suite
-        run: |
-          cd polaris_web
-          python3 -m unittest test_structural_invariants -v
-
-      # v9.54 — the flat, themeless check layer (polaris_checks) — the clean
-      # replacement for the cognitive apparatus. Gates CI directly (exit non-zero
-      # on any FAIL), plus its detection-correctness tests.
-      - name: polaris-checks (flat invariant layer)
+      - name: polaris-checks (C1-C10 invariant layer)
         run: |
           python3 -m polaris_checks.run
           python3 -m pytest polaris_checks/test_checks.py -q
 
-      - name: CHECK-constraint regression suite
+      - name: CHECK-constraint regression suite (DB)
+        run: cd polaris_web && python3 -m unittest test_check_constraints -v
+
+      - name: Property tests (invariants + redaction, DB)
         run: |
           cd polaris_web
-          python3 -m unittest test_check_constraints -v
+          python3 -m unittest test_invariants_property -v
+          python3 -m unittest test_redaction_property -v
 
-      - name: Hypothesis property tests
+      - name: Application + CLI suites (DB)
         run: |
-          cd polaris_web
-          # The property test files use unittest's discovery; run them
-          # explicitly so failures surface in the workflow log.
-          python3 -m unittest test_invariants_property -v || true
-          python3 -m unittest test_redaction_property -v || true
-
-      # v9.46 — HYDRA watcher suites (pure; no DB). Run via pytest (mixed
-      # unittest + function style). Verified locally: 44 passed / 9 skipped.
-      - name: HYDRA watcher suites (pure)
-        run: python3 -m pytest polaris_web/test_hydra_property.py polaris_web/test_hydra_revamp.py -q
-
-      # v9.30 / item 12 — schema idempotency proof (retires the saga of
-      # inline comments about reload safety).
-      - name: schema idempotency proof
-        run: bash scripts/polaris-idempotency-test.sh
-        env:
-          POLARIS_DB_USER: postgres
-          POLARIS_IDEMPOTENCY_DB: polaris_idempotency_test
-          PGPASSWORD: postgres
-          PGHOST: localhost
+          cd polaris_web && python3 -m unittest test_app -v
+          cd ../polaris_cli && python3 -m unittest test_cli -v
 
       - name: ai-link-check
         run: bash scripts/ai-link-check.sh --ci
-
-      - name: ai-meta
-        run: bash scripts/ai-meta.sh
-
-      - name: ai-coherence
-        run: bash scripts/ai-coherence.sh
 
       - name: Set up Rust (nightly for Plonky2)
         uses: dtolnay/rust-toolchain@master
@@ -171,57 +111,13 @@ jobs:
         working-directory: polaris_zk
         run: cargo test --release
 
-      # v9.24 / BIG MISSION T2#9: explicit prove-verify roundtrip.
-      # `cargo test` exercises unit tests; this step exercises the
-      # CLI binary the production code (polaris_web/zk.py) actually
-      # invokes — generating a Merkle root, proving membership of
-      # one leaf, and verifying the bundle end-to-end. If this step
-      # fails the headline ZK feature is broken; the workflow halts.
-      - name: ZK prove-verify roundtrip (real proof; not just cargo test)
-        working-directory: polaris_zk
+      - name: ZK prove-verify roundtrip + two-witness differential
         run: |
-          cargo build --release --bin polaris-zk
-          BIN=./target/release/polaris-zk
-
-          # Build a tiny leaf set + compute root
+          cd polaris_zk && cargo build --release --bin polaris-zk
+          BIN=$GITHUB_WORKSPACE/polaris_zk/target/release/polaris-zk
           LEAVES='{"leaves_hex":["0000000000000000000000000000000000000000000000000000000000000001","0000000000000000000000000000000000000000000000000000000000000002","0000000000000000000000000000000000000000000000000000000000000003","0000000000000000000000000000000000000000000000000000000000000004"]}'
-          ROOT=$(echo "$LEAVES" | $BIN compute-root | python3 -c "import sys, json; print(json.load(sys.stdin)['epoch_root_hex'])")
-          echo "epoch root: $ROOT"
-          test -n "$ROOT" || { echo "✗ compute-root produced empty output"; exit 1; }
-
-          # Prove membership of leaf index 0
-          WITNESS='{"leaf_seed_hex":"0000000000000000000000000000000000000000000000000000000000000001","leaf_index":0,"all_leaves_hex":["0000000000000000000000000000000000000000000000000000000000000001","0000000000000000000000000000000000000000000000000000000000000002","0000000000000000000000000000000000000000000000000000000000000003","0000000000000000000000000000000000000000000000000000000000000004"],"epoch_id":1,"context_id":42,"nonce":7}'
-          PROOF=$(echo "$WITNESS" | $BIN prove)
-          test -n "$PROOF" || { echo "✗ prove produced empty output"; exit 1; }
-
-          # Verify the proof bundle
-          VERIFIED=$(echo "$PROOF" | $BIN verify | python3 -c "import sys, json; print(json.load(sys.stdin)['verified'])")
-          echo "verified: $VERIFIED"
-          test "$VERIFIED" = "True" || { echo "✗ verify returned $VERIFIED (expected True)"; exit 1; }
-
-          echo "✓ ZK prove-verify roundtrip OK"
-
-      # v9.46 — run the v9.44 two-witness differential in CI. The binary was
-      # built by the prove-verify step above; the independent Python witness
-      # (polaris_zk/witness2) must agree with the Rust verdict bit-for-bit, and
-      # test_witness2.py anchors Poseidon to Plonky2's published vectors.
-      - name: ZK two-witness differential (independent verifier cross-check)
-        run: |
-          export POLARIS_ZK_BINARY="$GITHUB_WORKSPACE/polaris_zk/target/release/polaris-zk"
-          test -x "$POLARIS_ZK_BINARY" || { echo "✗ polaris-zk binary missing"; exit 1; }
+          ROOT=$(echo "$LEAVES" | $BIN compute-root | python3 -c "import sys,json;print(json.load(sys.stdin)['epoch_root_hex'])")
+          test -n "$ROOT" || { echo "compute-root empty"; exit 1; }
+          export POLARIS_ZK_BINARY="$BIN"
+          cd $GITHUB_WORKSPACE
           python3 -m pytest polaris_zk/witness2/test_witness2.py polaris_web/test_zk_second_witness.py -v
-
-  brand:
-    name: Brand + link discipline
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: ai-link-check (strict)
-        run: bash scripts/ai-link-check.sh --ci

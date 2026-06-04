@@ -330,9 +330,9 @@ UPDATE IdentityToken
         and constraints are not. They live in
         <code>polaris_sql/05_procedures.sql</code> + <code>06_triggers.sql</code>;
         the corresponding schema lives in <code>polaris_sql/01_schema.sql</code>;
-        the test suite (924 Python tests + 689 structural invariants
-        + 171 SQL self-tests + 19 Hypothesis property tests) runs them
-        every release. The data model is documented at
+        the test suite (the DB-backed product suites, 78 SQL self-tests,
+        the Hypothesis property tests, and the polaris_checks invariant
+        layer) runs them every release. The data model is documented at
         <a href="https://github.com/anthropics/polaris/blob/main/docs/reference/DATA-MODEL.md"><code>docs/reference/DATA-MODEL.md</code></a>
         in the repository.
     </p>

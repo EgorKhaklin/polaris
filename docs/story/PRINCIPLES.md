@@ -128,7 +128,7 @@ CM (the meta-constraint, named in MISSION.md alongside C1–C10) closes the blin
 
 **Where to read more.**
 - The MISSION.md clause: [`MISSION.md`](../../MISSION.md) §CM
-- The executable: [`scripts/ai-meta.sh`](../../scripts/ai-meta.sh)
+- The executable: `scripts/ai-meta.sh`
 - The lattice: [`meta/constraint-lattice.md`](../../meta/constraint-lattice.md)
 - The structural philosophy: [`meta/structural-architecture.md`](../../meta/structural-architecture.md)
 

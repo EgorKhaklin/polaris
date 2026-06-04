@@ -119,11 +119,6 @@ try:
         'Database round-trip from /api/health probe',
         registry=_METRICS_REGISTRY,
     )
-    _METRICS_PHEROMONES_RECENT = _PromGauge(
-        'polaris_pheromones_recent',
-        'Pheromone count in the last 72h (Mycelium swarm liveness)',
-        registry=_METRICS_REGISTRY,
-    )
     _METRICS_APP_INFO = _PromGauge(
         'polaris_app_info',
         'Polaris app metadata (always 1; labels carry the data)',
@@ -805,21 +800,6 @@ def too_many_requests(e):
 # PUBLIC ROUTES (Arc B Phase 1 / ARCH-003 — UX polish, v8.79)
 # ============================================================================
 
-# The structural-invariant count is read at import time from the test
-# file so the landing page's "194 structural invariants" claim is
-# self-updating. Falls back to a conservative value if the source can't
-# be parsed (e.g. during a test-only build).
-def _count_structural_invariants():
-    try:
-        path = os.path.join(os.path.dirname(__file__), 'test_structural_invariants.py')
-        with open(path) as f:
-            src = f.read()
-        import re as _re
-        return len(_re.findall(r'^\s{4}def test_', src, _re.MULTILINE))
-    except Exception:
-        return 194
-
-
 @app.route('/')
 def home():
     """Public landing page.
@@ -837,7 +817,6 @@ def home():
     return render_template(
         'landing.html',
         polaris_version=POLARIS_VERSION,
-        structural_invariant_count=_count_structural_invariants(),
     )
 
 
@@ -2042,9 +2021,6 @@ def metrics():
     out-of-the-box.
 
     Liveness signals refreshed at scrape time:
-      - polaris_pheromones_recent: count of Pheromone deposits in the
-        last 72h (Mycelium swarm liveness — surfaces a real ALERT if
-        the swarm stops, complementing the HYDRA ant_colony watcher)
       - polaris_app_info: version metadata
 
     No authentication required (consumed by Prometheus scrapers running
@@ -2069,18 +2045,6 @@ def metrics():
     try:
         _METRICS_APP_INFO.labels(version=POLARIS_VERSION).set(1)
     except Exception:
-        pass
-
-    try:
-        row = query(
-            "SELECT count(*) AS n FROM Pheromone "
-            "WHERE deposited_at > now() - interval '72 hours'",
-            fetch='one',
-        )
-        _METRICS_PHEROMONES_RECENT.set(int(row['n']) if row else 0)
-    except Exception:
-        # Pheromone table may not exist; leave gauge unchanged (Prometheus
-        # client returns the last-set value or 0). Non-fatal.
         pass
 
     payload = _prom_generate_latest(_METRICS_REGISTRY)
