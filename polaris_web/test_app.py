@@ -1317,7 +1317,7 @@ class CatastrophicLossRecoveryTests(PolarisTestCase):
 
     def _make_pending_with_channels(self, individual_id, *, cooldown_past=True,
                                      requesting_user='operator', biometric=True,
-                                     sworn=True, witness=True):
+                                     sworn=True, witness=True, witness_user='auditor'):
         """Build a PENDING RecoveryRequest with all channels pre-verified.
         Bypasses uc9_initiate_recovery because the append-only trigger on
         EnrollmentStatusEvent (and RecoveryRequest after decision) means
@@ -1348,7 +1348,7 @@ class CatastrophicLossRecoveryTests(PolarisTestCase):
                 biometric,
                 'a' * 64 if sworn else None,
                 3 if witness else None,
-                self._user_id('admin') if witness else None,
+                self._user_id(witness_user) if witness else None,
             ))
             rid = cur.fetchone()['recovery_id']
             conn.commit()
@@ -1455,7 +1455,7 @@ class CatastrophicLossRecoveryTests(PolarisTestCase):
                 VALUES (%s, 1, %s, TRUE, %s, 3, %s,
                         CURRENT_TIMESTAMP + INTERVAL '49 hours')
                 RETURNING recovery_id
-            """, (iid, self._user_id('operator'), 'a' * 64, self._user_id('admin')))
+            """, (iid, self._user_id('operator'), 'a' * 64, self._user_id('auditor')))
             rid = cur.fetchone()['recovery_id']
             conn.commit()
         with self.assertRaises(psycopg2.Error) as ctx:
@@ -1515,7 +1515,7 @@ class CatastrophicLossRecoveryTests(PolarisTestCase):
                     CURRENT_TIMESTAMP - INTERVAL '2 hours'
                 )
                 RETURNING recovery_id
-            """, (iid, self._user_id('operator'), 'a' * 64, self._user_id('admin')))
+            """, (iid, self._user_id('operator'), 'a' * 64, self._user_id('auditor')))
             rid = cur.fetchone()['recovery_id']
             conn.commit()
 
@@ -1558,6 +1558,57 @@ class CatastrophicLossRecoveryTests(PolarisTestCase):
             row = cur.fetchone()
             self.assertEqual(row['status'], 'APPROVED')
             self.assertEqual(row['resulting_token_id'], new_token_id)
+
+    def test_reserve_only_holder_recovery_succeeds(self):
+        """The catastrophic-loss case UC-9 exists for: the holder's only
+        surviving token is a RESERVE (no ACTIVE). The APPROVED loop must revoke
+        the reserve (RESERVE->REVOKED, the only legal terminal edge from
+        RESERVE) and issue a new ACTIVE token — not abort on an illegal
+        RESERVE->LOST transition, which is what the blanket ->LOST loop did."""
+        iid = self._make_individual('reserve-only recovery')
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO IdentityToken
+                    (token_value, physical_serial, biometric_binding_type,
+                     individual_id, issuing_agency_id, algorithm_id, status)
+                VALUES ('TKN-UC9-RESONLY', 'SN-UC9-RESONLY', 'IRIS',
+                        %s, 1, 1, 'RESERVE')
+                RETURNING token_id
+            """, (iid,))
+            reserve_id = cur.fetchone()['token_id']
+            conn.commit()
+
+        rid = self._make_pending_with_channels(iid)
+        self._complete(rid)  # must NOT raise
+
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT status FROM IdentityToken WHERE token_id=%s", (reserve_id,))
+            self.assertEqual(cur.fetchone()['status'], 'REVOKED',
+                'reserve token must go to REVOKED, not abort on RESERVE->LOST')
+            cur.execute("SELECT count(*) AS c FROM IdentityToken "
+                        "WHERE individual_id=%s AND status='ACTIVE'", (iid,))
+            self.assertEqual(cur.fetchone()['c'], 1, 'recovery must issue a new ACTIVE token')
+            cur.execute("SELECT count(*) AS c FROM RevocationList WHERE token_id=%s", (reserve_id,))
+            self.assertEqual(cur.fetchone()['c'], 1, 'revoked reserve must be on the RevocationList')
+
+    def test_witness_cosigner_must_differ_from_approver(self):
+        """Separation of duties: the witness co-signer cannot also be the
+        approver, or one compromised admin self-witnesses and self-approves and
+        the three "independent" channels collapse to a single actor."""
+        iid = self._make_individual('self-witness approver')
+        rid = self._make_pending_with_channels(iid, witness_user='admin')
+        with self.assertRaises(psycopg2.Error) as ctx:
+            self._complete(rid, deciding_user='admin')
+        self.assertIn('witness', str(ctx.exception).lower())
+
+    def test_witness_cosigner_must_differ_from_requester(self):
+        """The witness co-signer cannot be the requester either — enforced at
+        INSERT time by the witness_differs_from_parties CHECK."""
+        iid = self._make_individual('self-witness requester')
+        with self.assertRaises(psycopg2.Error) as ctx:
+            # requester=operator, witness=operator -> CHECK violation on INSERT.
+            self._make_pending_with_channels(iid, witness_user='operator')
+        self.assertIn('witness_differs_from_parties', str(ctx.exception).lower())
 
     def test_rejected_path_does_not_issue_token(self):
         iid = self._make_individual('rejected path')
@@ -4045,6 +4096,8 @@ class ConcurrencyTests(PolarisTestCase):
             op_uid = cur.fetchone()['user_id']
             cur.execute("SELECT user_id FROM AppUser WHERE username='admin'")
             admin_uid = cur.fetchone()['user_id']
+            cur.execute("SELECT user_id FROM AppUser WHERE username='auditor'")
+            auditor_uid = cur.fetchone()['user_id']
 
             cur.execute("""
                 INSERT INTO RecoveryRequest
@@ -4059,7 +4112,7 @@ class ConcurrencyTests(PolarisTestCase):
                     CURRENT_TIMESTAMP - INTERVAL '2 hours'
                 )
                 RETURNING recovery_id
-            """, (iid, op_uid, 'a' * 64, admin_uid))
+            """, (iid, op_uid, 'a' * 64, auditor_uid))
             rid = cur.fetchone()['recovery_id']
             conn.commit()
 
@@ -4109,6 +4162,8 @@ class ConcurrencyTests(PolarisTestCase):
             op_uid = cur.fetchone()['user_id']
             cur.execute("SELECT user_id FROM AppUser WHERE username='admin'")
             admin_uid = cur.fetchone()['user_id']
+            cur.execute("SELECT user_id FROM AppUser WHERE username='auditor'")
+            auditor_uid = cur.fetchone()['user_id']
 
             def make_pending(label):
                 cur.execute("""
@@ -4130,7 +4185,7 @@ class ConcurrencyTests(PolarisTestCase):
                         CURRENT_TIMESTAMP - INTERVAL '2 hours'
                     )
                     RETURNING recovery_id
-                """, (iid, op_uid, 'a' * 64, admin_uid))
+                """, (iid, op_uid, 'a' * 64, auditor_uid))
                 return cur.fetchone()['recovery_id']
 
             rid_a = make_pending('A')

@@ -793,6 +793,19 @@ CREATE TABLE RecoveryRequest (
     CONSTRAINT approver_differs_from_requester CHECK (
         decided_by_user_id IS NULL OR
         decided_by_user_id <> requesting_user_id
+    ),
+
+    -- Separation of duties for the third (witness) channel: the witness
+    -- co-signer cannot be the requester or the approver, or the "three
+    -- independent channels" collapse to a single actor who self-witnesses and
+    -- self-approves. Mirrors approver_differs_from_requester; also enforced in
+    -- uc9_complete_recovery with a clearer error.
+    CONSTRAINT witness_differs_from_parties CHECK (
+        witness_co_sign_user_id IS NULL OR (
+            witness_co_sign_user_id <> requesting_user_id AND
+            (decided_by_user_id IS NULL OR
+             witness_co_sign_user_id <> decided_by_user_id)
+        )
     )
 );
 

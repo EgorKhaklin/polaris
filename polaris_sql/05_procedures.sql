@@ -778,6 +778,20 @@ BEGIN
                 USING ERRCODE = 'check_violation';
         END IF;
 
+        -- Separation of duties: the witness co-signer is the third independent
+        -- channel, so it cannot be the approver or the requester. Without this,
+        -- one compromised admin can self-witness AND self-approve, collapsing
+        -- the "three independent channels" multiplicative cost to a single
+        -- actor. uc8_revoke_token enforces the same co-signer-must-differ rule
+        -- on the exit (revocation) leg; this is the entry leg. Also backed by
+        -- the witness_differs_from_parties CHECK on RecoveryRequest.
+        IF v_witness_user = p_deciding_user OR v_witness_user = v_requesting_user THEN
+            RAISE EXCEPTION
+                'Witness co-signer (user %) must differ from both the approver (%) and the requester (%)',
+                v_witness_user, p_deciding_user, v_requesting_user
+                USING ERRCODE = 'check_violation';
+        END IF;
+
         -- Validate the new-token parameters.
         IF p_new_token_value IS NULL OR p_new_serial IS NULL
            OR p_algorithm_id IS NULL OR p_biometric_binding IS NULL
@@ -788,27 +802,49 @@ BEGIN
                 'p_biometric_binding, p_liveness_check, p_published_location)';
         END IF;
 
-        -- Step 1: transition all non-terminal tokens to LOST, with the
-        -- recovery-tagged reason. Publish each to RevocationList.
+        -- Step 1: invalidate all of the holder's existing non-terminal tokens
+        -- and publish each to RevocationList. ACTIVE tokens go to LOST (lost by
+        -- recovery); RESERVE tokens go to REVOKED — the ONLY legal terminal edge
+        -- from RESERVE (RESERVE->LOST is not a legal transition, so the prior
+        -- blanket ->LOST aborted the whole recovery for any holder whose only
+        -- surviving token was a reserve, which is exactly the catastrophic-loss
+        -- case UC-9 exists to serve). DORMANT is not produced by any procedure,
+        -- so it is out of scope. The RESERVE->REVOKED edge trips
+        -- enforce_revocation_velocity_bound unless this sanctioned path opts out
+        -- the way uc4/uc8 do.
         PERFORM set_config('polaris.actor_agency_id', v_requesting_agency::TEXT, true);
         PERFORM set_config('polaris.reason_code',
             'LOST_BY_RECOVERY [RECOVERY:' || p_recovery_id::TEXT || ']', true);
 
         FOR v_lost_token IN
-            SELECT token_id FROM IdentityToken
+            SELECT token_id, status FROM IdentityToken
             WHERE individual_id = v_individual_id
-              AND status NOT IN ('LOST','EXPIRED','REVOKED')
+              AND status IN ('ACTIVE','RESERVE')
         LOOP
-            UPDATE IdentityToken
-               SET status = 'LOST'
-             WHERE token_id = v_lost_token.token_id;
+            IF v_lost_token.status = 'RESERVE' THEN
+                PERFORM set_config('polaris.revoke_check_done', '1', true);
+                UPDATE IdentityToken
+                   SET status = 'REVOKED'
+                 WHERE token_id = v_lost_token.token_id;
 
-            INSERT INTO RevocationList
-                (token_id, revoked_by_agency_id, effective_date,
-                 reason_code, published_location)
-            VALUES
-                (v_lost_token.token_id, v_requesting_agency, CURRENT_DATE,
-                 'LOST', p_published_location);
+                INSERT INTO RevocationList
+                    (token_id, revoked_by_agency_id, effective_date,
+                     reason_code, published_location)
+                VALUES
+                    (v_lost_token.token_id, v_requesting_agency, CURRENT_DATE,
+                     'SUPERSEDED', p_published_location);
+            ELSE
+                UPDATE IdentityToken
+                   SET status = 'LOST'
+                 WHERE token_id = v_lost_token.token_id;
+
+                INSERT INTO RevocationList
+                    (token_id, revoked_by_agency_id, effective_date,
+                     reason_code, published_location)
+                VALUES
+                    (v_lost_token.token_id, v_requesting_agency, CURRENT_DATE,
+                     'LOST', p_published_location);
+            END IF;
         END LOOP;
 
         -- Step 2: insert the new IdentityToken. predecessor_token_id is

@@ -5,6 +5,41 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.71 — 2026-06-04 (recovery ceremony: works for reserve-only holders, and three channels means three actors)
+
+A deeper second review pass (procedure suite + compulsion-resistance dimensions)
+found two HIGH issues in the UC-9 catastrophic-loss recovery ceremony.
+
+**Recovery aborted for the exact holder it serves.** `uc9_complete_recovery`'s
+APPROVED loop transitioned *every* non-terminal token to `LOST`, but the state
+machine only permits `ACTIVE→LOST`; `RESERVE→LOST` is illegal and raised, aborting
+the whole recovery. And `uc9_initiate_recovery` requires that no ACTIVE token
+exist — so the realistic catastrophic-loss case is a holder whose only surviving
+token is a RESERVE, which is exactly the case the blanket `→LOST` loop broke. (Same
+class as the v9.64 uc4 bug: a procedure driving a transition the state machine
+forbids.) The loop now transitions by source status: `ACTIVE→LOST`,
+`RESERVE→REVOKED` (the only legal terminal edge from RESERVE, with the
+velocity-bound opt-out uc4/uc8 use). A reserve-only holder now recovers cleanly.
+
+**The "three independent channels" collapsed to one actor.** The ceremony's
+anti-impersonation guarantee rests on three independent out-of-band channels:
+biometric, sworn statement, and a witness co-signer. But nothing required
+`witness_co_sign_user_id` to differ from the approver or the requester — so one
+compromised admin could self-witness *and* self-approve, reducing the
+"multiplicative cost" to a single actor. `uc8_revoke_token` already enforces
+co-signer-must-differ on the revocation leg; recovery (the entry leg) omitted it.
+Added the check in `uc9_complete_recovery` plus a `witness_differs_from_parties`
+CHECK on `RecoveryRequest` (mirroring `approver_differs_from_requester`), and moved
+the demo seed and test helpers to a distinct third actor (auditor) for the witness.
+
+- `polaris_sql/05_procedures.sql` — uc9 loop transitions by status; witness
+  separation-of-duties check.
+- `polaris_sql/01_schema.sql` — `witness_differs_from_parties` CHECK.
+- `polaris_sql/10_auth.sql` — demo recovery witness is now the auditor, distinct
+  from the operator requester and the admin approver.
+- `polaris_web/test_app.py` — reserve-only recovery succeeds; witness≠approver and
+  witness≠requester both rejected. `CatastrophicLossRecoveryTests` is now 18 tests.
+
 ## v9.70 — 2026-06-04 (close the cross-site drive-by on the launcher control endpoints)
 
 The last finding from the auth-security pass. `/api/quit` and `/api/heartbeat`

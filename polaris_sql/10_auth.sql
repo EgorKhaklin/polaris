@@ -82,7 +82,10 @@ VALUES
      TRUE,
      '7f3a8e1b4c9d2e5f6a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f',
      3,                                                  -- CA Identity Office witnesses
-     (SELECT user_id FROM AppUser WHERE username='admin'),
+     -- Witness co-signer is a DISTINCT third party (auditor), not the operator
+     -- who requested nor the admin who will approve — the three channels must
+     -- be three different actors (witness_differs_from_parties).
+     (SELECT user_id FROM AppUser WHERE username='auditor'),
      CURRENT_TIMESTAMP - INTERVAL '2 hours');            -- cool-down past
 
 -- ----------------------------------------------------------------------------
