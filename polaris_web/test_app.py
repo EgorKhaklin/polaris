@@ -6723,6 +6723,34 @@ class AtlasEventCursorTests(unittest.TestCase):
             'a whole-second cursor should skip sub-second events (the bug the fix removes)')
 
 
+class ResourceBoundTests(unittest.TestCase):
+    """Unbounded in-memory growth / metric cardinality must not be triggerable by
+    an unauthenticated or IP-rotating client (memory-exhaustion DoS)."""
+
+    def test_in_memory_rate_limiter_bounds_key_map(self):
+        from app import security as sec
+        rl = sec.InMemoryRateLimiter()
+        rl._MAX_KEYS = 10  # small cap for the test
+        for i in range(200):
+            rl.allow(f'ip-{i}', 5, 60)
+        self.assertLessEqual(
+            len(rl._buckets), 10,
+            'the in-memory rate-limiter key map must be bounded (no unbounded growth)')
+
+    def test_metrics_does_not_label_by_404_path(self):
+        # A 404 request must NOT mint a Prometheus label from the raw URL path —
+        # that is the unbounded-cardinality DoS. The matched-endpoint label is
+        # bounded; an unmatched path is bucketed under a constant.
+        from app import app as polaris_app
+        marker = 'zzz-unmatched-path-must-not-be-a-metric-label'
+        with polaris_app.test_client() as c:
+            self.assertEqual(c.get('/' + marker).status_code, 404)
+            r = c.get('/metrics')
+        if r.status_code == 200:  # prometheus_client present
+            self.assertNotIn(marker, r.data.decode(),
+                             'the raw 404 path must not appear as a metric label')
+
+
 if __name__ == '__main__':
     # Pull in property-based invariant tests (C1, C2, C3) so they run as
     # part of the main suite. The import is at the bottom so test_app.py

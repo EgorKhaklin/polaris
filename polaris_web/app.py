@@ -398,7 +398,12 @@ def _metrics_before_request():
 @app.after_request
 def _metrics_after_request(response):
     if _PROM_AVAILABLE:
-        route = request.endpoint or request.path or 'unknown'
+        # Label only by the matched endpoint (a bounded set, one per registered
+        # route). NEVER fall back to request.path: on a 404 request.endpoint is
+        # None and request.path is the raw, attacker-controlled URL, so every
+        # GET to a fresh path would mint a new Prometheus label series and grow
+        # the in-process registry without bound (memory-exhaustion DoS, CWE-400).
+        route = request.endpoint or 'unmatched'
         method = request.method or 'GET'
         status = str(response.status_code)
         try:
@@ -857,7 +862,13 @@ def dashboard():
     for tbl in tables:
         stats[tbl] = query(f'SELECT COUNT(*) AS n FROM {tbl}', fetch='one')['n']
 
-    active_tokens = query('SELECT * FROM ActiveTokens ORDER BY token_id')
+    # Snapshot, not an enumeration: cap the active-token table so the dashboard
+    # (the default post-login landing page, hit on every login) does not
+    # materialize every active token on every load. At national scale the
+    # unbounded fetch would be a DoS — the exact hazard individuals_list
+    # documents and paginates against. Show the 200 most recent active tokens.
+    active_tokens = query(
+        'SELECT * FROM ActiveTokens ORDER BY token_id DESC LIMIT 200')
     status_breakdown = query("""
         SELECT status, COUNT(*) AS n
         FROM IdentityToken

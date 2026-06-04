@@ -45,7 +45,7 @@ import time
 import secrets
 import functools
 from datetime import datetime
-from collections import defaultdict, deque
+from collections import deque, OrderedDict
 from urllib.parse import urlsplit
 
 from flask import (
@@ -142,18 +142,32 @@ class InMemoryRateLimiter(_BaseRateLimiter):
 
     name = 'memory'
 
+    # Bound the per-key bucket map so idle keys cannot accumulate forever. An
+    # attacker rotating source IPs (or spoofing X-Forwarded-For when
+    # POLARIS_TRUST_PROXY is set) would otherwise leak one dict entry per
+    # distinct key for the process lifetime. The map is LRU-ordered and capped.
+    _MAX_KEYS = 50_000
+
     def __init__(self):
-        self._buckets = defaultdict(deque)
+        self._buckets = OrderedDict()
 
     def allow(self, key, max_events, window_seconds):
         now = time.monotonic()
-        bucket = self._buckets[key]
+        bucket = self._buckets.get(key)
+        if bucket is None:
+            bucket = deque()
+            self._buckets[key] = bucket
+        else:
+            self._buckets.move_to_end(key)   # mark recently used (LRU)
         cutoff = now - window_seconds
         while bucket and bucket[0] < cutoff:
             bucket.popleft()
         if len(bucket) >= max_events:
             return False
         bucket.append(now)
+        # Evict the least-recently-used keys beyond the cap (bounds memory).
+        while len(self._buckets) > self._MAX_KEYS:
+            self._buckets.popitem(last=False)
         return True
 
     def reset(self, key=None):

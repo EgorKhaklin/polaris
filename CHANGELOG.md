@@ -5,6 +5,32 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.83 — 2026-06-04 (bound three unbounded resources an attacker could grow)
+
+The fourth review pass found three places where memory or metric cardinality grew
+without bound, the last two reachable by an unauthenticated / IP-rotating client.
+
+- **Prometheus `/metrics` cardinality (MEDIUM, memory DoS).** The per-request
+  metric label was `request.endpoint or request.path or 'unknown'`. On a 404,
+  `request.endpoint` is None, so the label fell back to the raw, attacker-controlled
+  URL path — every `GET /<random>` minted a new label series (~1 counter + ~15
+  histogram buckets) that the Prometheus client retains for the process lifetime.
+  Now the label is `request.endpoint or 'unmatched'` (a bounded set; no path).
+- **In-memory rate-limiter key map (LOW, slow memory leak).** `_buckets` was a
+  `defaultdict(deque)` that accrued one entry per distinct `login:<ip>` /
+  `write:<ip>` key forever (an attacker rotating IPs, or spoofing `X-Forwarded-For`
+  under `POLARIS_TRUST_PROXY`, leaks one entry each). It is now an LRU-ordered
+  `OrderedDict` capped at 50,000 keys, evicting least-recently-used beyond the cap.
+- **Dashboard `ActiveTokens` query (LOW).** The default post-login landing page ran
+  `SELECT * FROM ActiveTokens` with no bound, materializing every active token on
+  every load — the exact national-scale hazard `individuals_list` paginates against.
+  Capped to the 200 most recent.
+
+- `polaris_web/app.py` — metric label bounded; dashboard query capped.
+- `polaris_web/security.py` — `InMemoryRateLimiter` is an LRU-capped `OrderedDict`.
+- `polaris_web/test_app.py` — `ResourceBoundTests`: the key map stays bounded; a
+  404 path never appears as a metric label.
+
 ## v9.82 — 2026-06-04 (duress: record off the request thread so the response time reveals nothing)
 
 The whole point of the duress mechanism is that a coerced verification is
