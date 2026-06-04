@@ -9,9 +9,9 @@ Each one names an invariant that the database enforces at write time:
 status enums, lat/lon ranges, hex-format validation, multi-column
 consistency rules, etc.
 
-For most of v8 these constraints went untested — `ai-coherence` flagged
-the gap as a long-standing "possible Correspondence gap" (41 CHECKs in
-schema, ~16 in tests). This file closes that gap.
+For most of v8 these constraints went untested — an earlier coherence
+check flagged the gap as a long-standing one (41 CHECKs in schema, ~16
+in tests). This file closes that gap.
 
 Pattern: each test tries an INSERT that should violate the named
 constraint, expects ``psycopg2.errors.CheckViolation``, and rolls back.

@@ -308,6 +308,24 @@ def check_cookie_secure_in_production(root: pathlib.Path) -> list[Finding]:
     return _ok("cookie_secure", "SESSION_COOKIE_SECURE is forced on in production (CWE-614)")
 
 
+# ---------------------------------------------------------------------------
+# Doc/schema drift — the headline architecture doc must state the real number
+# of tables. A reviewer reads this number; it must not contradict the schema.
+# ---------------------------------------------------------------------------
+def check_table_count_matches_doc(root: pathlib.Path) -> list[Finding]:
+    schema = _read(root, "polaris_sql/01_schema.sql")
+    n = len(re.findall(r"^CREATE TABLE ", schema, re.M))
+    doc = _read(root, "docs/ARCHITECTURE-OVERVIEW.md")
+    m = re.search(r"(\d+)\s+tables", doc)
+    if not m:
+        return _fail("table_count", "ARCHITECTURE-OVERVIEW.md states no table count")
+    stated = int(m.group(1))
+    if stated != n:
+        return _fail("table_count",
+                     f"ARCHITECTURE-OVERVIEW.md says {stated} tables but the schema defines {n}")
+    return _ok("table_count", f"ARCHITECTURE-OVERVIEW.md table count matches the schema ({n})")
+
+
 CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_csp_forbids_unsafe_inline,
     check_one_active_token_index,
@@ -328,6 +346,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_c10_no_money_tables,
     check_open_redirect_guard,
     check_cookie_secure_in_production,
+    check_table_count_matches_doc,
 ]
 
 

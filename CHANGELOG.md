@@ -5,6 +5,27 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.68 — 2026-06-04 (consistency: a true table count, a version module that points only at live things)
+
+The review's recent-regressions pass found two honesty gaps the earlier cleanups
+left, both the kind a cold reader trips on.
+
+- **`docs/ARCHITECTURE-OVERVIEW.md` said "27 tables"; the schema defines 26.**
+  Every other doc that states a count says 26, and the SQL self-tests are built
+  around 26. Fixed the doc, and added `check_table_count_matches_doc`: it counts
+  `CREATE TABLE` in the schema and fails if the architecture doc states a
+  different number, so this exact drift cannot recur. The check layer is now 20.
+- **`polaris_web/__version__.py` still cited deleted things.** Its docstring named
+  the deleted `meta/polaris-self-roadmap-2026-05-14.md` as a provenance pointer,
+  the deleted `ai-status.sh`, a deleted `test_polaris_version_is_canonical`, and a
+  bump procedure with steps (journal entry, meta + coherence run) for tooling that
+  no longer exists. Rewrote the docstring to reference only what is live: the
+  `polaris_checks` version/changelog checks and the `ai-done.sh` gate. The v9.63
+  ship claimed "no source comment points at a deleted file"; this makes that true.
+- Reworded two historical mentions (`scripts/ai-done.sh`,
+  `polaris_web/test_check_constraints.py`) so they describe the removed checks
+  without naming deleted scripts.
+
 ## v9.67 — 2026-06-04 (test rigor: fail-loud PQC and an externally-anchored second witness)
 
 Two test-coverage gaps the review's test-rigor pass found, where a test could

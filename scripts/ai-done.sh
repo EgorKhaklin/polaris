@@ -2,8 +2,9 @@
 # ============================================================================
 # ai-done — pre-ship gate.
 #
-# v9.55: the cognitive apparatus (HYDRA findings-gate, the swarm scorecard,
-# ai-meta/ai-coherence, the CM gate) was removed and replaced by polaris_checks.
+# v9.55: the cognitive apparatus (the findings-gate, the swarm scorecard,
+# the meta and coherence checks, the CM gate) was removed and replaced by
+# polaris_checks.
 # The gate is now thin and honest: run the flat C1-C10 check layer + the link
 # checker, and remind to run the DB-backed product suites (which need Postgres).
 #

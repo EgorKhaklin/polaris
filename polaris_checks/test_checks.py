@@ -156,5 +156,17 @@ def test_cookie_secure_check_fails_when_opt_in_only(tmp_path):
     assert out[0].level == "FAIL", "must FAIL when SESSION_COOKIE_SECURE is opt-in only"
 
 
+def test_table_count_check_fails_on_doc_drift(tmp_path):
+    (tmp_path / "polaris_sql").mkdir()
+    (tmp_path / "docs").mkdir()
+    # Schema with 2 tables; doc claims 27 -> drift -> FAIL.
+    (tmp_path / "polaris_sql" / "01_schema.sql").write_text(
+        "CREATE TABLE A (id SERIAL);\nCREATE TABLE B (id SERIAL);\n")
+    (tmp_path / "docs" / "ARCHITECTURE-OVERVIEW.md").write_text(
+        "PostgreSQL 16. 27 tables, stored procedures.\n")
+    out = checks.check_table_count_matches_doc(tmp_path)
+    assert out[0].level == "FAIL", "must FAIL when the doc table count contradicts the schema"
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))
