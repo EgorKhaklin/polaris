@@ -2784,6 +2784,46 @@ class ZKSnarkTests(PolarisTestCase):
         self.assertTrue(data['verified'],
             f'End-to-end ZK verification should succeed: {data}')
 
+    def test_api_zk_verify_replay_is_rejected(self):
+        """R2 anti-replay (threat-model T-T2): a verified bundle consumes its
+        single-use (epoch, context, nonce); resubmitting the IDENTICAL bundle is
+        rejected as a replay, not verified again. The (epoch,context,nonce)
+        binding alone only stops proof substitution — this proves real replay
+        resistance now that the nonce is consumed in ZkVerificationNonce."""
+        import zk
+        with self._db() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT t.token_id, t.token_value FROM IdentityToken t "
+                "JOIN TokenPermission p ON p.token_id=t.token_id "
+                "WHERE t.status='ACTIVE' AND p.context_id=1 ORDER BY t.token_id")
+            tokens = cur.fetchall()
+        leaves = [zk.derive_leaf_seed(t['token_id'], t['token_value'], 1) for t in tokens]
+        bundle = zk.generate_proof(leaves[1], 1, leaves,
+                                   epoch_id=1, context_id=1, nonce=909090)
+
+        csrf = self._csrf_token_from('/verifications/new')
+        body = {'epoch_id': 1, 'context_id': 1, 'nonce': 909090, 'proof_bundle': bundle}
+
+        r1 = self.client.post('/api/zk/verify', json=body, headers={'X-CSRFToken': csrf})
+        self.assertEqual(r1.status_code, 200)
+        self.assertTrue(r1.get_json()['verified'],
+            f'first verify of a fresh nonce should succeed: {r1.get_json()}')
+
+        # Replay the IDENTICAL bundle: must be rejected, not verified again.
+        r2 = self.client.post('/api/zk/verify', json=body, headers={'X-CSRFToken': csrf})
+        self.assertEqual(r2.status_code, 200)
+        data2 = r2.get_json()
+        self.assertFalse(data2['verified'], f'a replayed bundle must NOT verify: {data2}')
+        self.assertIn('replay', (data2.get('reason') or '').lower(),
+                      f'the replay rejection should say so: {data2}')
+
+        # The nonce was consumed exactly once.
+        with self._db() as conn, conn.cursor() as cur:
+            cur.execute("SELECT count(*) AS n FROM ZkVerificationNonce "
+                        "WHERE epoch_id=1 AND context_id=1 AND nonce=909090")
+            self.assertEqual(cur.fetchone()['n'], 1,
+                             'the consumed nonce must be recorded exactly once')
+
     def test_api_zk_verify_wrong_nonce(self):
         """The verifier must reject when the proof's bound nonce doesn't
         match the verifier's expected nonce."""

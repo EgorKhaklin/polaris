@@ -500,6 +500,31 @@ def check_coercion_evidence_retained(root: pathlib.Path) -> list[Finding]:
 
 
 # ---------------------------------------------------------------------------
+# R2 anti-replay — /api/zk/verify must consume a single-use nonce.
+#
+# A proof bundle is bound to (epoch_id, context_id, nonce), which prevents proof
+# SUBSTITUTION. It does NOT prevent REPLAY on its own: the identical bundle,
+# captured off the wire, verifies again. The verify route must consume the nonce
+# (insert into the single-use ZkVerificationNonce store) on a verified result and
+# reject a second submission of the same tuple. Closes threat-model T-T2.
+# ---------------------------------------------------------------------------
+def check_zk_verify_anti_replay(root: pathlib.Path) -> list[Finding]:
+    schema = _read(root, "polaris_sql/01_schema.sql")
+    app = _read(root, "polaris_web/app.py")
+    if "CREATE TABLE ZkVerificationNonce" not in schema:
+        return _fail("zk_anti_replay",
+                     "ZkVerificationNonce single-use nonce store is missing from the schema (R2/T-T2)")
+    if "INSERT INTO ZkVerificationNonce" not in app:
+        return _fail("zk_anti_replay",
+                     "/api/zk/verify does not consume the nonce — a verified bundle replays (R2/T-T2)")
+    if "replay" not in app.lower():
+        return _fail("zk_anti_replay",
+                     "/api/zk/verify consumes the nonce but never rejects the replay case (R2/T-T2)")
+    return _ok("zk_anti_replay",
+               "/api/zk/verify consumes a single-use nonce; replays are rejected (R2/T-T2)")
+
+
+# ---------------------------------------------------------------------------
 # Schema completeness — every column a migration ADDs to an existing table must
 # also be declared in 01_schema.sql, so the canonical schema is complete on its
 # own and a cold reader (or a fresh 01_schema build) never silently lacks a
@@ -576,6 +601,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_local_clock_convention,
     check_c6_atlas_redacts_zk_location,
     check_coercion_evidence_retained,
+    check_zk_verify_anti_replay,
     check_no_migration_column_drift,
     check_operator_scripts_validate_argv,
 ]

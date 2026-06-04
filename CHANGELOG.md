@@ -5,6 +5,39 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.89 — 2026-06-04 (real anti-replay: /api/zk/verify consumes a single-use nonce)
+
+The review arc converged at v9.88, so this picks up the top of the forward
+ROADMAP. `/api/zk/verify` binds a proof to `(epoch_id, context_id, nonce)`. That
+binding prevents proof *substitution*, but on its own it does NOT prevent
+*replay*: a verified bundle, captured off the wire, verifies again every time it
+is resubmitted. The R2 "replay resistance" claim was only true for substitution.
+
+`/api/zk/verify` now consumes the nonce. On a verified result it inserts
+`(epoch_id, context_id, nonce)` into a new single-use store; a second submission
+of the same tuple hits the primary key (`INSERT ... ON CONFLICT DO NOTHING`
+returns no row) and is rejected with `verified: false, reason: "nonce already
+consumed (replay)"`. Consumption happens only *after* a true verify, so a failed
+proof never burns a nonce a legitimate later proof might use, and the insert is
+atomic so two concurrent replays serialize on the PK — exactly one wins. Closes
+threat-model T-T2; makes R2 hold in code.
+
+The store holds **no identity** — only the spent `(epoch, context, nonce)` tuple
+and the consume time, so it cannot say *who* verified, only that this tuple was
+spent (Vocation). It is append-only at the privilege layer: `09_grants.sql`
+revokes UPDATE/DELETE on it from `polaris_app`, because a consumed nonce must
+never be un-consumed (that re-opens the replay window).
+
+- `polaris_sql/01_schema.sql` — new `ZkVerificationNonce` table (27 tables now).
+- `polaris_sql/migrations/2026-06-04-001-zk-verification-nonce.{up,down}.sql` —
+  the table + append-only REVOKE for already-deployed databases.
+- `polaris_sql/04_data.sql` — added to the reload TRUNCATE set (test isolation).
+- `polaris_sql/09_grants.sql` — UPDATE/DELETE revoked from `polaris_app`.
+- `polaris_web/app.py` — `/api/zk/verify` consumes the nonce, rejects replays.
+- `polaris_checks/checks.py` — `check_zk_verify_anti_replay` (28th check).
+- `polaris_web/test_app.py` — `test_api_zk_verify_replay_is_rejected` (e2e:
+  first verify succeeds, the identical bundle is rejected, nonce recorded once).
+
 ## v9.88 — 2026-06-04 (pass 7 converges: a false redaction comment, and a Vocation guard for the evidence trail)
 
 A seventh adversarial review pass over six surfaces no prior pass had swept:

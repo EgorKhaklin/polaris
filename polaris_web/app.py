@@ -2528,7 +2528,26 @@ def api_zk_verify():
     except Exception as e:
         return jsonify(verified=False, reason=f"verifier error: {e}"), 400
 
-    return jsonify(verified=bool(ok))
+    if not ok:
+        return jsonify(verified=False)
+
+    # R2 anti-replay (T-T2): the (epoch, context, nonce) binding stops proof
+    # SUBSTITUTION, but the identical bundle would otherwise verify again. Consume
+    # the nonce as single-use: the INSERT succeeds on first verified use; a replay
+    # hits the PK and ON CONFLICT DO NOTHING returns no row, so we reject it. The
+    # INSERT is atomic, so two concurrent replays of the same bundle serialize on
+    # the PK and exactly one wins. We consume only AFTER a true verify, so a failed
+    # proof never burns a nonce a legitimate later proof might use.
+    consumed = query("""
+        INSERT INTO ZkVerificationNonce (epoch_id, context_id, nonce)
+        VALUES (%s, %s, %s)
+        ON CONFLICT ON CONSTRAINT pk_zk_verification_nonce DO NOTHING
+        RETURNING consumed_at
+    """, (epoch_id, context_id, nonce), fetch='returning')
+    if consumed is None:
+        return jsonify(verified=False, reason="nonce already consumed (replay)")
+
+    return jsonify(verified=True)
 
 
 # ---------------------------------------------------------------------------

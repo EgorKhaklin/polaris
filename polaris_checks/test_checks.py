@@ -353,5 +353,40 @@ def test_coercion_evidence_retained_check_discriminates(tmp_path):
         "must PASS when the evidence trail is retained and not falsely documented"
 
 
+def test_zk_anti_replay_check_discriminates(tmp_path):
+    sql = tmp_path / "polaris_sql"
+    web = tmp_path / "polaris_web"
+    sql.mkdir(); web.mkdir()
+
+    TABLE = "CREATE TABLE ZkVerificationNonce (epoch_id INTEGER, nonce BIGINT);\n"
+    CONSUME = ("INSERT INTO ZkVerificationNonce (epoch_id, context_id, nonce) "
+               "VALUES (%s,%s,%s) ON CONFLICT DO NOTHING RETURNING consumed_at\n"
+               "return jsonify(verified=False, reason='nonce already consumed (replay)')\n")
+
+    def write(schema, app):
+        (sql / "01_schema.sql").write_text(schema)
+        (web / "app.py").write_text(app)
+
+    # 1. No nonce store table -> FAIL.
+    write("CREATE TABLE TokenStateEpoch (epoch_id SERIAL);\n", CONSUME)
+    assert checks.check_zk_verify_anti_replay(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the single-use nonce store is missing"
+
+    # 2. Table exists but the route never consumes the nonce -> FAIL (replay open).
+    write(TABLE, "def api_zk_verify(): return jsonify(verified=True)\n")
+    assert checks.check_zk_verify_anti_replay(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the verify route does not consume the nonce"
+
+    # 3. Consumes but never rejects the replay case -> FAIL.
+    write(TABLE, "INSERT INTO ZkVerificationNonce (epoch_id, context_id, nonce) VALUES (1,1,1)\n")
+    assert checks.check_zk_verify_anti_replay(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the route consumes but does not reject replays"
+
+    # 4. Table + consume + replay rejection -> OK.
+    write(TABLE, CONSUME)
+    assert checks.check_zk_verify_anti_replay(tmp_path)[0].level == "OK", \
+        "must PASS when the nonce is consumed and replays are rejected"
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

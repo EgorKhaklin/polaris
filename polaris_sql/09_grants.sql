@@ -82,7 +82,11 @@ DECLARE
         'tokenstateepochleaf',
         'duressevent',
         'authauditlog',
-        'auditaccesslog'
+        'auditaccesslog',
+        -- v9.89: a consumed ZK anti-replay nonce must never be un-consumed
+        -- (deleting it re-opens the replay window). polaris_app INSERTs to
+        -- consume; it must not UPDATE/DELETE.
+        'zkverificationnonce'
     ];
 BEGIN
     FOREACH v_tbl IN ARRAY v_append_only_tables LOOP

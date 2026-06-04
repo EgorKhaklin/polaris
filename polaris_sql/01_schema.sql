@@ -1085,6 +1085,39 @@ COMMENT ON TABLE TokenStateEpochLeaf IS
   'holder key. See DEVNOTES/ships/zk-snark.md.';
 
 -- ----------------------------------------------------------------------------
+-- ZkVerificationNonce: single-use nonce store for ZK-proof anti-replay (R2).
+--
+-- /api/zk/verify binds a proof to (epoch_id, context_id, nonce). The binding
+-- prevents proof SUBSTITUTION, but on its own it does not prevent REPLAY: the
+-- identical bundle, captured off the wire, verifies again. This table makes the
+-- nonce single-use — a verified result consumes (epoch_id, context_id, nonce)
+-- here, and a second submission of the same tuple hits the PK and is rejected
+-- as a replay. Closes threat-model T-T2.
+--
+-- Vocation: this row holds ONLY the anti-replay tuple plus the consume time. No
+-- holder, no token_id, no location, no identity of any kind — it cannot be used
+-- to track WHO verified, only that THIS (epoch, context, nonce) was spent. It is
+-- append-only at the privilege layer (09_grants revokes UPDATE/DELETE from
+-- polaris_app): a consumed nonce must never be un-consumed, which would re-open
+-- the replay window.
+-- ----------------------------------------------------------------------------
+CREATE TABLE ZkVerificationNonce (
+    epoch_id     INTEGER     NOT NULL REFERENCES TokenStateEpoch(epoch_id),
+    context_id   BIGINT      NOT NULL,
+    nonce        BIGINT      NOT NULL,
+    consumed_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    CONSTRAINT pk_zk_verification_nonce PRIMARY KEY (epoch_id, context_id, nonce)
+);
+
+COMMENT ON TABLE ZkVerificationNonce IS
+  'Single-use nonce store for ZK-proof anti-replay (R2 / threat-model T-T2 / '
+  'v9.89). A verified /api/zk/verify result consumes (epoch_id, context_id, '
+  'nonce); a replay of the same bundle hits the PK and is rejected. Holds no '
+  'identity — only the spent tuple + consume time. Append-only at the privilege '
+  'layer (09_grants revokes UPDATE/DELETE from polaris_app).';
+
+-- ----------------------------------------------------------------------------
 -- DuressEvent: compulsion-resistance audit-of-record (R11-5 / M2-10 / v8.24)
 --
 -- Records a detected duress signal — the holder typed their duress code

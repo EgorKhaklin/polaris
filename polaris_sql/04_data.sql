@@ -26,7 +26,8 @@
 
 -- Wipe before insert. Order matters: junctions first, then records, then the
 -- central artifact, then principals (FK-dependency order in reverse).
-TRUNCATE TABLE TokenStateEpochLeaf, TokenStateEpoch,
+TRUNCATE TABLE ZkVerificationNonce,
+               TokenStateEpochLeaf, TokenStateEpoch,
                AgencyTrustAttestation,
                TokenPermission, AgencyAlgorithmAuth,
                RevocationList, GenomicAnchor,
