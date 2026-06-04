@@ -838,5 +838,78 @@ class TestQuantumObserverBindingChecks(_CheckBase):
         )
 
 
+# ============================================================================
+# uc4_activate_reserve x velocity-bound trigger (procedure regression)
+# ============================================================================
+
+class TestUC4ReserveActivation(_CheckBase):
+    """uc4_activate_reserve must succeed for every reason code it offers.
+
+    COMPROMISED / SUPERSEDED / ADMINISTRATIVE map the lost token to terminal
+    status REVOKED, which trips enforce_revocation_velocity_bound() unless the
+    procedure opts out of the bound (the way uc8_revoke_token does). Until uc4
+    set polaris.revoke_check_done on its REVOKED branch, three of the five
+    reason codes the UI offers aborted the whole procedure with
+    'Direct UPDATE to status=REVOKED is not allowed'. LOST / STOLEN map to
+    terminal LOST and never tripped the trigger, which is why nothing caught it.
+    Each test runs inside the per-test transaction and rolls back.
+    """
+
+    def _run_uc4(self, reason_code):
+        """Stage an ACTIVE holder + a fresh RESERVE for them, run uc4 with
+        ``reason_code``, and return (promoted_token_id, reserve_token_id,
+        lost_token_status). Propagates any procedure exception."""
+        with self.conn.cursor() as cur:
+            cur.execute(
+                "SELECT individual_id, token_id FROM IdentityToken "
+                "WHERE status = 'ACTIVE' LIMIT 1")
+            row = cur.fetchone()
+            self.assertIsNotNone(
+                row, "sample data has no ACTIVE token to test uc4 against")
+            individual_id, active_token = row['individual_id'], row['token_id']
+
+            cur.execute(
+                "INSERT INTO IdentityToken "
+                "(token_value, physical_serial, biometric_binding_type, "
+                " individual_id, issuing_agency_id, algorithm_id, status) "
+                "VALUES (%s, %s, 'FINGERPRINT', %s, 3, 1, 'RESERVE') "
+                "RETURNING token_id",
+                (f'UC4TEST-{reason_code}-{active_token}',
+                 f'UC4SER-{reason_code}-{active_token}', individual_id))
+            reserve_token = cur.fetchone()['token_id']
+
+            cur.execute(
+                "SELECT uc4_activate_reserve(%s, 3, %s, %s, %s) AS promoted",
+                (active_token, reason_code, reserve_token,
+                 f'https://crl.idtoken.gov/test/{reason_code}.crl'))
+            promoted = cur.fetchone()['promoted']
+
+            cur.execute(
+                "SELECT status FROM IdentityToken WHERE token_id = %s",
+                (active_token,))
+            lost_status = cur.fetchone()['status']
+            return promoted, reserve_token, lost_status
+
+    def test_lost_positive_control(self):
+        promoted, reserve, lost_status = self._run_uc4('LOST')
+        self.assertEqual(promoted, reserve)
+        self.assertEqual(lost_status, 'LOST')
+
+    def test_compromised_maps_to_revoked_and_succeeds(self):
+        promoted, reserve, lost_status = self._run_uc4('COMPROMISED')
+        self.assertEqual(promoted, reserve)
+        self.assertEqual(lost_status, 'REVOKED')
+
+    def test_superseded_maps_to_revoked_and_succeeds(self):
+        promoted, reserve, lost_status = self._run_uc4('SUPERSEDED')
+        self.assertEqual(promoted, reserve)
+        self.assertEqual(lost_status, 'REVOKED')
+
+    def test_administrative_maps_to_revoked_and_succeeds(self):
+        promoted, reserve, lost_status = self._run_uc4('ADMINISTRATIVE')
+        self.assertEqual(promoted, reserve)
+        self.assertEqual(lost_status, 'REVOKED')
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

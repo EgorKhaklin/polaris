@@ -260,6 +260,18 @@ BEGIN
     PERFORM set_config('polaris.actor_agency_id', p_actor_agency_id::TEXT, true);
     PERFORM set_config('polaris.reason_code',     'HOLDER_REPORTED_' || p_reason_code, true);
 
+    -- uc4 is a sanctioned 1-for-1 reserve swap, not a mass revocation. The
+    -- COMPROMISED / SUPERSEDED / ADMINISTRATIVE reason codes map the lost token
+    -- to terminal status REVOKED (see the CASE above), which trips
+    -- enforce_revocation_velocity_bound() unless this GUC is set. The bound
+    -- exists to refuse raw out-of-procedure UPDATEs, not the sanctioned swap
+    -- this procedure performs, so opt out the same way uc8_revoke_token does.
+    -- Without this the procedure aborts and three of its five reason codes are
+    -- unusable.
+    IF v_terminal_status = 'REVOKED' THEN
+        PERFORM set_config('polaris.revoke_check_done', '1', true);
+    END IF;
+
     UPDATE IdentityToken
        SET status = v_terminal_status
      WHERE token_id = p_lost_token_id;

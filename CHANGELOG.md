@@ -5,6 +5,34 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.64 — 2026-06-04 (uc4 reserve activation works for every reason code)
+
+A multi-agent review of the schema boundary found a HIGH-severity functional
+regression in `uc4_activate_reserve`. The v8.15 belt-and-suspenders trigger
+`enforce_revocation_velocity_bound` refuses any `UPDATE` that transitions an
+`IdentityToken` into `REVOKED` unless the session GUC `polaris.revoke_check_done`
+is set, so that the rate-limited `uc8_revoke_token` is the only entry point. But
+`uc4_activate_reserve` also transitions the lost token to `REVOKED` whenever the
+reason code is `COMPROMISED`, `SUPERSEDED`, or `ADMINISTRATIVE` (the terminal-status
+`CASE` maps all three to `REVOKED`), and it never set the GUC. The trigger therefore
+aborted the whole procedure with `Direct UPDATE to status=REVOKED is not allowed`,
+so three of the five reason codes the UC-4 page offers were unusable. `LOST` and
+`STOLEN` map to terminal status `LOST` and dodge the trigger, which is why nothing
+caught it.
+
+The fix: `uc4_activate_reserve` now sets `polaris.revoke_check_done` on its REVOKED
+branch, opting the sanctioned 1-for-1 reserve swap out of the velocity bound exactly
+the way `uc8_revoke_token` does. uc4 is inherently bounded (it consumes one
+pre-provisioned reserve and produces one active token per call), so it is not a
+mass-revocation vector and the anti-coercion property the bound protects is intact.
+
+- `polaris_sql/05_procedures.sql` — guarded `set_config('polaris.revoke_check_done',
+  '1', true)` on the REVOKED branch, before the lost-token `UPDATE`.
+- `polaris_web/test_check_constraints.py` — new `TestUC4ReserveActivation` runs uc4
+  end to end for all four reason codes and asserts the lost token reaches its correct
+  terminal status. The three REVOKED-mapping cases fail against the unfixed schema
+  (detection proven) and pass against the fix. Suite is 66 tests, all green.
+
 ## v9.63 — 2026-06-04 (reference-clean: no source comment points at a deleted file)
 
 The de-larp and the cleanups deleted a lot, but ~30 source-code comments still cited
