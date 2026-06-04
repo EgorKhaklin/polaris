@@ -3901,6 +3901,75 @@ class ConcurrencyTests(PolarisTestCase):
         self.assertEqual(results['unique_violation'], 1,
             f"The losing thread should get UniqueViolation: {results}")
 
+    def test_uc4_concurrent_same_tokens_one_winner_no_duplicate_crl(self):
+        """Two concurrent uc4_activate_reserve calls on the SAME lost+reserve
+        tokens must not both succeed. The procedure re-validates the token
+        statuses under its per-holder lock (not on the stale pre-lock read), so
+        the loser sees the post-commit LOST status and fails cleanly, leaving
+        exactly one RevocationList row for the lost token rather than a duplicate
+        CRL publication. This exercises the PROCEDURE concurrently — the older
+        test above races raw UPDATEs and never calls uc4."""
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO Individual (legal_name, date_of_birth, jurisdiction)
+                VALUES ('UC4 Race Holder', '1990-01-01', 'US-PA')
+                RETURNING individual_id
+            """)
+            ind_id = cur.fetchone()['individual_id']
+            cur.execute("""
+                INSERT INTO IdentityToken
+                    (token_value, physical_serial, biometric_binding_type,
+                     individual_id, issuing_agency_id, algorithm_id, status,
+                     activated_date)
+                VALUES ('UC4RACE-ACT', 'SN-UC4RACE-ACT', 'NONE', %s, 1, 1,
+                        'ACTIVE', CURRENT_TIMESTAMP)
+                RETURNING token_id
+            """, (ind_id,))
+            active_id = cur.fetchone()['token_id']
+            cur.execute("""
+                INSERT INTO IdentityToken
+                    (token_value, physical_serial, biometric_binding_type,
+                     individual_id, issuing_agency_id, algorithm_id, status)
+                VALUES ('UC4RACE-RES', 'SN-UC4RACE-RES', 'NONE', %s, 1, 1, 'RESERVE')
+                RETURNING token_id
+            """, (ind_id,))
+            reserve_id = cur.fetchone()['token_id']
+            conn.commit()
+
+        results = {'success': 0, 'rejected_not_active': 0, 'other': 0}
+        results_lock = threading.Lock()
+
+        def race(suffix):
+            try:
+                with self._new_conn() as conn, conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT uc4_activate_reserve(%s, 3, 'LOST', %s, %s)",
+                        (active_id, reserve_id,
+                         f'https://crl.idtoken.gov/uc4race/{suffix}'))
+                    conn.commit()
+                with results_lock: results['success'] += 1
+            except psycopg2.Error as e:
+                with results_lock:
+                    if 'not ACTIVE' in str(e):
+                        results['rejected_not_active'] += 1
+                    else:
+                        results['other'] += 1
+
+        threads = [threading.Thread(target=race, args=(i,)) for i in range(2)]
+        for t in threads: t.start()
+        for t in threads: t.join()
+
+        self.assertEqual(results['success'], 1,
+            f"exactly one concurrent uc4 should win: {results}")
+        self.assertEqual(results['rejected_not_active'], 1,
+            f"the loser must fail cleanly with 'not ACTIVE', not corrupt state: {results}")
+
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT count(*) AS c FROM RevocationList WHERE token_id=%s",
+                        (active_id,))
+            self.assertEqual(cur.fetchone()['c'], 1,
+                'the lost token must be on the RevocationList exactly once (no duplicate)')
+
     # -------------------------------------------------------------------
     # R11-6 / M2-11 — pg_advisory_xact_lock prevents two concurrent
     # boundary-tripping revocations from both succeeding. Each thread

@@ -242,6 +242,28 @@ BEGIN
       WHERE individual_id = v_lost_individual_id
       FOR UPDATE;
 
+    -- Re-validate the token statuses UNDER the lock, with the token rows
+    -- themselves locked. The status reads at the top of this procedure happened
+    -- BEFORE the lock above, so a concurrent UC-4 for the same holder could have
+    -- transitioned these tokens in between; acting on the stale pre-lock snapshot
+    -- let a second caller re-revoke the already-LOST token and write a duplicate
+    -- RevocationList row. Re-reading the now-locked rows makes a stale second
+    -- caller fail cleanly here with a domain error instead.
+    SELECT status INTO v_lost_status FROM IdentityToken
+        WHERE token_id = p_lost_token_id FOR UPDATE;
+    IF v_lost_status <> 'ACTIVE' THEN
+        RAISE EXCEPTION 'Token % is not ACTIVE (current status: %)',
+            p_lost_token_id, v_lost_status
+            USING ERRCODE = 'invalid_parameter_value';
+    END IF;
+    SELECT status INTO v_reserve_status FROM IdentityToken
+        WHERE token_id = p_reserve_token_id FOR UPDATE;
+    IF v_reserve_status <> 'RESERVE' THEN
+        RAISE EXCEPTION 'Token % is not in RESERVE state (current status: %)',
+            p_reserve_token_id, v_reserve_status
+            USING ERRCODE = 'invalid_parameter_value';
+    END IF;
+
     -- Compute the next activation sequence atomically inside the locked
     -- region. The previous code hardcoded `activation_sequence = 2`, which
     -- was wrong for any holder past their second active token AND raced
@@ -1225,8 +1247,11 @@ DECLARE
     v_already_rev   TIMESTAMP;
     v_user_role     TEXT;
 BEGIN
-    SELECT attesting_agency_id, revocation_date
-      INTO v_attesting_id, v_already_rev
+    -- Read the attesting agency for the lock key + existence check. Existence is
+    -- stable (attestations are not deleted); the mutable revocation_date is
+    -- re-read under the lock below, NOT here.
+    SELECT attesting_agency_id
+      INTO v_attesting_id
       FROM AgencyTrustAttestation
      WHERE attestation_id = p_attestation_id;
 
@@ -1236,15 +1261,26 @@ BEGIN
             USING ERRCODE = 'no_data_found';
     END IF;
 
+    -- C9: per-attesting-agency advisory lock FIRST (same key as
+    -- uc10_attest_trust, so attest+revoke on the same agency serialize). The
+    -- already-revoked guard MUST be checked after the lock: if it ran before,
+    -- two concurrent revokes would both pass a pre-lock read and the second
+    -- would silently overwrite the first's reason and timestamp.
+    -- uc8_revoke_token uses the same lock-first ordering.
+    PERFORM pg_advisory_xact_lock(
+        hashtext('polaris.federation.attest.' || v_attesting_id::TEXT));
+
+    -- Re-read the revocation state under the lock (row-locked) and reject a
+    -- double-revoke. A second caller that waited on the lock now sees the
+    -- first's committed revocation_date and fails cleanly.
+    SELECT revocation_date INTO v_already_rev
+      FROM AgencyTrustAttestation
+     WHERE attestation_id = p_attestation_id
+       FOR UPDATE;
     IF v_already_rev IS NOT NULL THEN
         RAISE EXCEPTION
             'Attestation % is already revoked at %', p_attestation_id, v_already_rev;
     END IF;
-
-    -- C9: per-attesting-agency advisory lock. Same key as uc10_attest_trust
-    -- so attest+revoke on the same agency serialize.
-    PERFORM pg_advisory_xact_lock(
-        hashtext('polaris.federation.attest.' || v_attesting_id::TEXT));
 
     -- Validate admin role on signer.
     SELECT role INTO v_user_role FROM AppUser WHERE user_id = p_signed_by;

@@ -5,6 +5,35 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.73 — 2026-06-04 (uc4 / uc10: validate under the lock, not before it)
+
+Two validate-before-lock TOCTOU races from the concurrency review pass. Both
+procedures took a lock for serialization but read the state they guard on
+*before* the lock, so the guard ran against a stale snapshot.
+
+**uc4_activate_reserve** validated the lost/reserve token statuses at the top,
+then acquired its per-holder `Individual` lock and never re-read. Two concurrent
+calls on the same tokens both passed the pre-lock check; the second then re-ran
+`UPDATE ... LOST` (a no-op the state machine waves through on
+`OLD.status = NEW.status`) and inserted a SECOND `RevocationList` row for the
+already-revoked token (the table has no unique constraint on `token_id`). The
+status reads now happen again UNDER the lock with the token rows `FOR UPDATE`, so
+a stale second caller fails cleanly with "Token N is not ACTIVE" and publishes no
+duplicate CRL row.
+
+**uc10_revoke_attestation** checked "already revoked" before taking its
+per-agency advisory lock — unlike `uc8_revoke_token`, which locks first. Two
+concurrent revokes both passed the pre-lock guard and the second silently
+overwrote the first's reason and timestamp. Reordered to lock first, then re-read
+`revocation_date` under the lock (row `FOR UPDATE`) and reject the double-revoke.
+
+- `polaris_sql/05_procedures.sql` — uc4 re-validates under the lock; uc10 is
+  lock-first then guard.
+- `polaris_web/test_app.py` —
+  `test_uc4_concurrent_same_tokens_one_winner_no_duplicate_crl` races the actual
+  procedure (the prior uc4 concurrency test raced raw UPDATEs) and asserts one
+  winner, a clean loser, and exactly one CRL row.
+
 ## v9.72 — 2026-06-04 (WebAuthn second factor can actually complete)
 
 The deeper review's WebAuthn pass found that the assertion (second-factor login)
