@@ -1,16 +1,43 @@
-# Changelog (last 10 ships)
+# Changelog (recent ships)
 
-This file is the **curated index** of Polaris's recent ships. The full
-audit-of-record — every entry from v1.0 through v9.23 byte-identical
-— lives at [`archive/CHANGELOG-FULL.md`](archive/CHANGELOG-FULL.md).
-v9.24 (BIG MISSION Tier 4 #12) compressed this file from 17,946 lines
-to a 10-ship summary; the Anti-Architect's joint resolution in
-`sanctum/2026-05-16-cognitive-substrate-must-bite.md` preserved the
-full record at the archive path so v8.20 audit-of-record discipline
-holds (the file moved; no entry was edited or deleted).
+This file is the curated record of Polaris's recent ships. The complete
+ship-by-ship history is preserved in the git log.
 
-For per-ship deep detail, read the archive. For the active-decision
-record, read [`meta/sanctum-index.md`](meta/sanctum-index.md).
+---
+
+## v9.57 — 2026-06-04 (documentation prune: less is more)
+
+The de-larp removed the apparatus *code*; this removes the documentation bloat it
+left behind. The repository went from 216 markdown files (~66.7k lines) to 72
+(~26k lines) by deleting what is no longer needed to understand, run, or extend
+Polaris.
+
+**Deleted (143 files):**
+
+- The build-history audit-of-record: `sanctum/` (68 decision records), `journal/`
+  (30 daily logs), and `archive/CHANGELOG-FULL.md` (the 18.8k-line full changelog).
+  The complete history remains in the git log.
+- The design-and-methodology record: `proposals/` (14 shipped-feature design docs)
+  and `patterns/` (the 11-file how-to playbook).
+- The apparatus-era meta snapshots: the three `polaris-self-roadmap-*` files,
+  `cognitive-architecture-v2`/`v3`, `cold-read-walkthrough-v9.27`,
+  `missions-considered`, `lineage`, `sanctum-index`, `arc-b-production`, the
+  leftover `brain-map/`, and `cognitive-threat-review-due.txt`.
+- `DEVNOTES/prior-art-analysis.md` + `DEVNOTES/plugin-policy.md`, `docs/BACKLOG.md`
+  (ROADMAP covers it), `docs/story/STORY.md`, and the over-elaborate compliance/ops
+  docs `docs/operator/{SOC2,PENTEST,DR-SINGLE-REGION}.md`.
+
+**Kept:** the constitution (`MISSION.md`), `ROADMAP.md`, `CHANGELOG.md`, `CLAUDE.md`,
+`CONTRIBUTING.md`, `SECURITY.md`; the `docs/reference` set, the operator runbooks,
+the `DEVNOTES` engineering notes and ship records, the `meta/` constitution-support
+docs (constraint-lattice, sanctum-protocol, autonomy-architecture, redaction-proof,
+the TLA+ spec), `docs/story/PRINCIPLES.md`, and `docs/THESIS.md`.
+
+**Re-linked:** every broken reference left by the prune was fixed across README,
+MISSION, CLAUDE, ROADMAP, the CHANGELOG header, the landing page, and the surviving
+`docs/`/`meta/`/`DEVNOTES` index and map files. The landing footer was repointed off
+the deleted story doc and onto the real GitHub repo. `ai-link-check --ci` resolves
+all 225 remaining references.
 
 ---
 

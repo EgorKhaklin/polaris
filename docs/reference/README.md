@@ -35,7 +35,7 @@ performance investigation, then OPERATIONS.md §"Scaling" for the
 operator-facing inflection-point recipes.
 
 **Vocabulary check:** [GLOSSARY.md](GLOSSARY.md) for any term you
-encounter in CHANGELOG / Sanctum / journal that's unfamiliar.
+encounter in the CHANGELOG that's unfamiliar.
 
 ---
 
@@ -57,7 +57,6 @@ naming + structural conventions.
 - Not operator runbooks (that's in [`../operator/`](../operator/))
 - Not narrative (that's in [`../story/`](../story/))
 - Not informal developer notes (that's in [`../../DEVNOTES/`](../../DEVNOTES/))
-- Not strategic decisions (those are in [`../../sanctum/`](../../sanctum/))
 - Not auto-generated (each file is human-authored + maintained)
 
 `docs/reference/` is **the source of truth for technical claims

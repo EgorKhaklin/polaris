@@ -25,7 +25,6 @@ If you don't know which file you want, this README is the answer.
 | [`known-gotchas.md`](known-gotchas.md) | Things that have bitten me before. Re-read at session start to skip the rediscovery cost. |
 | [`rate-limiter.md`](rate-limiter.md) | R8-2 backend selection (in-memory vs Redis), atomicity notes, contract-mixin pattern. |
 | [`atlas-scaling.md`](atlas-scaling.md) | v6 scaling architecture for the operational atlas — server-side bin aggregation, viewport-aware fetches, hard caps. |
-| [`prior-art-analysis.md`](prior-art-analysis.md) | Six-lens reverse-engineering of BettaFish + MiroFish using HYDRA's watcher domains as the analytical framework. Authored 2026-05-12 post-v8.43. Adopt/reject/invert verdicts for each prior-art pattern with Polaris-flavored shapes. |
 | [`zk-soundness.md`](zk-soundness.md) | The honest ledger for the ZK layer: what the Merkle-inclusion proof actually guarantees (strong differential/two-witness consistency) vs. what is demo-scale (`TREE_DEPTH=4`, placeholder PQC, statement-level witness). Modeled on Glass's `docs/soundness.md`. v9.44. |
 | [`two-witness-principle.md`](two-witness-principle.md) | Standing obligation: every cryptographic verdict Polaris ships must be checkable by a second, independent implementation (different language/representation, no shared code), or it ABSTAINS explicitly. Adopted v9.44 from Glass's Pentecost discipline. |
 
@@ -53,7 +52,6 @@ specific ship.
 | "What's the principle behind append-only X?" | `audit-of-record.md` |
 | "What's the right advisory-lock granularity for a new procedure?" | `concurrency.md` |
 | "Does Polaris depend on Y?" | `substrate.md` |
-| "What did we learn from BettaFish / MiroFish?" | `prior-art-analysis.md` |
 | "How does the federation graph work?" | `ships/federation.md` |
 | "How does the duress code mechanism resist timing attacks?" | `ships/duress-codes.md` |
 | "Why did we pick Plonky2 over Groth16?" | `ships/zk-snark.md` |
@@ -65,7 +63,7 @@ specific ship.
 - **A new cross-cutting principle** that touches >2 ships → top-level
   file here. Update this README's table.
 - **A new ship** → `ships/<short-name>.md`. Update this README's per-ship
-  table and the relevant proposal/Sanctum cross-references.
+  table.
 - **A new operational concern** (rate limiter, atlas scaling, etc.) →
   top-level here.
 
@@ -78,11 +76,10 @@ separate cross-cutting principles from per-ship reference docs. The
 9 per-ship files were moved into `ships/`. Cross-cutting files stayed
 at this directory's root.
 
-**Historical references** in `sanctum/*.md`, `proposals/*.md`, older
-`CHANGELOG.md` entries, and older `journal/*.md` entries may still
+**Historical references** in older `CHANGELOG.md` entries may still
 reference `DEVNOTES/foo.md` (the pre-v8.26 paths). This is by design —
-sanctum/proposal docs are audit-of-record artifacts and are not
-rewritten. The 9 moved files are:
+those entries are audit-of-record artifacts and are not rewritten. The
+9 moved files are:
 
 ```
 anchoring.md  → ships/anchoring.md

@@ -6,9 +6,8 @@ For development setup: `README.md`. For threat model and security
 posture: `SECURITY.md` and `DEVNOTES/threat-model.md`. For secrets:
 `docs/operator/SECRETS.md`. For installation: `docs/operator/INSTALL.md`.
 
-This document was rewritten under Arc B (production-deployment arc)
-opened by `sanctum/2026-05-14-arc-b-production-deployment-opening.md`.
-The pre-v8.77 version is preserved verbatim in git history.
+This document was rewritten under Arc B (the production-deployment
+arc). The pre-v8.77 version is preserved verbatim in git history.
 
 ---
 
@@ -181,8 +180,6 @@ Volumes:
 - `caddy_config` (named) — Caddy's config-time state
 - `./secrets/` (bind mount, read-only) — file-mounted secrets
 - `./logs/` (bind mount) — gunicorn access + error logs
-- `../sanctum/` (bind mount, read-only) — Sanctum audit-of-record
-- `../journal/` (bind mount, read-only) — daily journal
 
 ---
 
@@ -267,8 +264,7 @@ password: (printed once during ./scripts/polaris-deploy.sh prod)
 ### Audit review
 
 Polaris's audit-of-record discipline (v8.20) records every
-state-changing event in append-only schema tables plus the
-filesystem audit-of-record (sanctum/, journal/). Review cadence:
+state-changing event in append-only schema tables. Review cadence:
 
 ```bash
 # Weekly: failed-login surface
@@ -319,7 +315,7 @@ container as `/var/log/polaris/`).
 ### Operator authentication (WebAuthn-MFA, v8.97)
 
 Operator login for admin accounts is two-factor: password + WebAuthn
-assertion (Position B of `sanctum/2026-05-14-webauthn-operator-auth.md`).
+assertion.
 
 **Enrollment cadence:**
 - New admin accounts via `polaris-create-operator.sh --role admin` get
@@ -405,8 +401,7 @@ v8.18).
 ### Schema migrations (v8.95)
 
 Polaris ships a custom polaris-native migration framework
-(Position C of `sanctum/2026-05-14-schema-migration-framework.md`,
-DECIDED 2026-05-14). State lives in the `schema_version` table
+(DECIDED 2026-05-14). State lives in the `schema_version` table
 (an append-only audit-of-record table) and migration files are
 hand-written SQL pairs under `polaris_sql/migrations/`.
 
@@ -518,8 +513,7 @@ DIFFERENT issuer is a sign of:
 
 - A misconfigured Caddy that re-issued instead of renewed
 - Compromised DNS allowing rogue ACME validation by a third party
-- A CA mis-issuance attack (rare but real; documented in
-  [PENTEST.md](PENTEST.md) § 6.12)
+- A CA mis-issuance attack (rare but real)
 
 The CT monitor polls the public crt.sh log, compares against an
 operator-maintained allowlist (`$STATE_DIR/ct-monitor/known.txt`),
@@ -589,9 +583,6 @@ operator's DNS.
 containing every durable component:
 
 - `pg_dump` of the Polaris database (custom format, gzipped)
-- `sanctum/` directory (full; filesystem audit-of-record)
-- `journal/` directory (full; episodic memory)
-- `meta/sanctum-index.md` (current computed index)
 - `MANIFEST.json` with timestamps + SHA-256 hashes of each component
 
 ```bash
@@ -621,9 +612,8 @@ Retention policy:
 
 `scripts/polaris-restore.sh` (v8.81) is the scripted counterpart to
 `polaris-backup.sh`. It verifies every component's SHA-256 hash
-against the in-band `MANIFEST.json`, then restores PostgreSQL +
-filesystem audit-of-record (sanctum/, journal/). It refuses to
-clobber a non-empty target database without `--force`.
+against the in-band `MANIFEST.json`, then restores PostgreSQL. It
+refuses to clobber a non-empty target database without `--force`.
 
 ```bash
 # Standard path — restore into a fresh database
@@ -641,20 +631,7 @@ createdb polaris_restored
 ./scripts/polaris-restore.sh \
     /var/backups/polaris-20260514T030000Z.tar.gz \
     --target=docker-stack
-
-# DB-only restore (skip filesystem AoR)
-./scripts/polaris-restore.sh <backup> --skip-fs
-
-# Filesystem-AoR-only restore (skip DB)
-./scripts/polaris-restore.sh <backup> --skip-db
 ```
-
-The script preserves the existing `sanctum/` and `journal/`
-directories under timestamped names
-(`sanctum.pre-restore.<utc-timestamp>` /
-`journal.pre-restore.<utc-timestamp>`) before overwriting — restore
-is non-destructive at the filesystem layer; the operator can
-investigate the prior state if a restore proves wrong.
 
 Exit codes (greppable for incident response):
 
@@ -667,7 +644,6 @@ Exit codes (greppable for incident response):
 | 5 | Manifest hash verification failed |
 | 6 | Target DB not empty; `--force` required |
 | 7 | `pg_restore` failed (state may be partial) |
-| 8 | Filesystem AoR restore failed |
 | 9 | `docker` not available (when `--target=docker-stack`) |
 
 After restore:
@@ -709,9 +685,9 @@ recipe.
 
 ### Audit-log archive + purge (Phase 2b / v8.87)
 
-**Constitutional carve-out** — `sanctum/2026-05-14-audit-log-deletion-from-hot.md`
-selected Position B: archive-then-delete via a dedicated
-procedure. C1's append-only invariant is preserved at the
+**Constitutional carve-out** — the audit-log retention decision
+selected archive-then-delete via a dedicated procedure. C1's
+append-only invariant is preserved at the
 *constitutional* level by the archive + checkpoint chain; the
 table-level invariant is loosened for four high-volume audit
 tables (`TokenLifecycleEvent`, `VerificationEvent`,
@@ -1287,8 +1263,8 @@ sudo systemctl start polaris-app
    widespread compromise (`./scripts/polaris-rotate-secret.sh
    polaris_secret_key` — this invalidates ALL sessions).
 
-5. **Document:** post-mortem in `journal/<date>.md`. If a new
-   attack class was used, also update `DEVNOTES/known-gotchas.md`.
+5. **Document:** record a dated post-mortem. If a new attack
+   class was used, also update `DEVNOTES/known-gotchas.md`.
 
 ### Suspected schema tampering (DBA-level compromise)
 

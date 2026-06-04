@@ -1,19 +1,18 @@
 # docs/ — Polaris reference docs
 
 Reference material organized by audience. The root governance documents
-(`CLAUDE.md`, `MISSION.md`, `ROADMAP.md`, `docs/BACKLOG.md`, `CHANGELOG.md`,
+(`CLAUDE.md`, `MISSION.md`, `ROADMAP.md`, `CHANGELOG.md`,
 `README.md`) live at the project root because scripts in
-`scripts/` greps them; moving them would break the journal pipeline.
+`scripts/` grep them; moving them would break those scripts.
 Everything else that's "documentation
 about Polaris, not its source of truth" lives here.
 
 ## Orientation (start here)
 
-Three documents that together cover the why, the what, and the how. Added v8.59 as the public-presentation entry layer.
+Two documents that together cover the what and the how. Added v8.59 as the public-presentation entry layer.
 
 | File | When to read |
 |---|---|
-| [STORY.md](story/STORY.md) | The non-technical narrative of how Polaris was built (v1 → v8.58). Read this if you want context before paging the audit-of-record. |
 | [SYSTEM-MAP.md](reference/SYSTEM-MAP.md) | A single page naming every meaningful file in the repository with one line on what it is for. Use this when you do not know where to start. |
 | [PRINCIPLES.md](story/PRINCIPLES.md) | The four constitutional principles distilled. Read before changing anything load-bearing. |
 
@@ -45,15 +44,12 @@ Three documents that together cover the why, the what, and the how. Added v8.59 
 
 - **Agent runbook** → `CLAUDE.md` at root.
 - **Mission constitution + done-list** → `MISSION.md` at root.
-- **Active backlog** → `ROADMAP.md` and `docs/BACKLOG.md` at root.
+- **Active backlog** → `ROADMAP.md` at root.
 - **Release log** → `CHANGELOG.md` at root.
 - **Agent semantic memory** (concurrency, atlas-scaling, known-gotchas, rate-limiter, threat-model, substrate) → `DEVNOTES/`.
-- **Procedural recipes** (add-flask-route, scaling-investigation, etc.) → `patterns/`.
-- **Design and governance notes** (constraint lattice, redaction proof, missions-considered) → `meta/`.
-- **Per-day decision log** → `journal/`.
-- **Strategic option proposals** → `proposals/`.
-- **Sanctum strategic-consultation records** (v8.19+) → `sanctum/`, indexed at `meta/sanctum-index.md`. Each major decision (MEDIUM/HIGH risk or cross-cutting structural change) is recorded here. Protocol at `meta/sanctum-protocol.md`; entry script `scripts/ai-sanctum.sh`.
-- **Audit-of-record principle** (v8.20) → `DEVNOTES/audit-of-record.md`. Defines the append-only, cross-cutting pattern shared by TokenLifecycleEvent, VerificationEvent, EnrollmentStatusEvent, RecoveryRequest, TokenSignature, AnchorBatch (v8.21), AgencyTrustAttestation (v8.22), TokenStateEpoch (v8.23), DuressEvent (v8.24), and the Sanctum directory.
+- **Design and governance notes** (constraint lattice, redaction proof) → `meta/`.
+- **Sanctum protocol** (v8.19+) → `meta/sanctum-protocol.md`. The decision-record protocol for each major decision (MEDIUM/HIGH risk or cross-cutting structural change).
+- **Audit-of-record principle** (v8.20) → `DEVNOTES/audit-of-record.md`. Defines the append-only, cross-cutting pattern shared by TokenLifecycleEvent, VerificationEvent, EnrollmentStatusEvent, RecoveryRequest, TokenSignature, AnchorBatch (v8.21), AgencyTrustAttestation (v8.22), TokenStateEpoch (v8.23), and DuressEvent (v8.24).
 
 ## Re-evaluation triggers
 

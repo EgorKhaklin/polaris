@@ -42,8 +42,8 @@ incident**, not for the engineer at design time.
 
 These are the **published** targets. Internal team SLOs may be
 tighter; operator's compliance regime (SOC 2, FedRAMP, PCI) may
-demand specific values — see [SOC2.md](SOC2.md) § Availability for
-the auditor-facing version.
+demand specific values; the auditor-facing version derives from
+these plus the drill cadence in § 5.
 
 **RPO=1 min is achievable only if WAL archiving is healthy.**
 Verify daily:
@@ -113,7 +113,7 @@ docker compose -f polaris_web/docker-compose.prod.yml logs --tail=200 app
 # 2. Common causes + fixes:
 #    - "Connection refused" to postgres → § 4.2/4.3
 #    - "OperationalError" missing column → schema migration drift;
-#      run polaris-migrate.sh --status; apply pending if safe (see SOC2.md)
+#      run polaris-migrate.sh --status; apply pending if safe
 #    - "ImportError: webauthn" → pip dependency missing in image;
 #      rebuild via ./scripts/polaris-deploy.sh prod --rebuild
 #    - "OOMKilled" → raise container memory limit in docker-compose.prod.yml
@@ -295,9 +295,8 @@ deadline has passed.
 
 # Path B — printed mnemonic (solo-admin deployment)
 # The admin pulls their printed recovery code from the safe and
-# uses it. (The in-app verification flow is deferred per Sanctum
-# 2026-05-14-webauthn-operator-auth.md § V; for v9.01, the manual
-# path is: SSH to host, run polaris-recover-admin.sh as the same
+# uses it. (The in-app verification flow is deferred; for v9.01,
+# the manual path is: SSH to host, run polaris-recover-admin.sh as the same
 # user, supplying the printed code as authorization evidence.
 # Operationally this is a self-pair using the printed code as
 # the second factor.)
@@ -331,7 +330,7 @@ sudo dd if=/dev/sda of=/external-drive/forensic-image.img bs=4M status=progress
 #       across the trust boundary)
 aws s3 ls s3://${POLARIS_BACKUP_BUCKET}/ --recursive | tail -10
 
-#    b. Filesystem AoR backups (sanctum/, journal/)
+#    b. Filesystem AoR backups (the development record)
 #       these should be in the same offsite bucket with the same MFA-delete
 
 # 4. Provision a fresh host (different region, different credentials,
@@ -403,8 +402,8 @@ on-call team must rehearse each procedure on a cadence:
 | **Ransomware tabletop** | Annual | Walk § 4.7 procedure on paper; verify each step's tool/credential is reachable from the on-call's emergency runbook | Every step has a named owner + access path |
 
 The drills themselves produce audit-of-record evidence. Log each
-drill outcome in `journal/<date>-dr-drill-<class>.md` per OPERATIONS.md
-journal protocol.
+drill outcome as a dated record in the operator's drill log per
+OPERATIONS.md.
 
 ---
 
@@ -524,10 +523,9 @@ LESSONS
 ## 8. Post-incident review
 
 Every SEV-1 and SEV-2 incident gets a **blameless post-mortem**
-within 7 business days. The post-mortem is filed in
-`journal/<date>-incident-<ID>.md` (Polaris's filesystem AoR)
-and produces preventive-action tickets in the operator's tracking
-system.
+within 7 business days. The post-mortem is filed as a dated
+incident record in the operator's tracking system and produces
+preventive-action tickets there.
 
 **Blameless** means the post-mortem focuses on **systems and
 processes**, not individuals. Even when an operator made a
@@ -550,15 +548,11 @@ look for:
 
 - [OPERATIONS.md](OPERATIONS.md) — day-to-day operations runbook
   (this DR doc is the **incident** runbook)
-- [SOC2.md](SOC2.md) — SOC 2 readiness checklist (Availability TSC
-  cites this DR doc + the drill cadence as evidence)
 - [SECRETS.md](SECRETS.md) § 7 — operator authentication +
   WebAuthn recovery
 - [SECRETS.md](SECRETS.md) § 8 — HSM/KMS integration (relevant for
   § 4.7 ransomware recovery — cloud-KMS-backed secrets cannot be
   exfiltrated by attackers without compromising the cloud account)
-- [PENTEST.md](PENTEST.md) — penetration test schedule (ransomware
-  is a common pen-test scenario; see § 4.7)
 - `scripts/polaris-restore.sh` (v8.81) — full-DB restore
 - `scripts/polaris-backup.sh` (v8.77) — backup creation
 - `scripts/polaris-archive.sh` (v8.84) + `scripts/polaris-purge.sh` (v8.87)
@@ -575,6 +569,6 @@ look for:
 
 **Maintenance:** when a new failure class is encountered in
 production OR an existing procedure is found inadequate during
-a drill, update this document AND link the change to a
-post-mortem entry in the journal. Never let a real-incident
+a drill, update this document AND link the change to its
+post-mortem record. Never let a real-incident
 finding stay only in slack — it has to land here.

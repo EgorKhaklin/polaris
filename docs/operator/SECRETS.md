@@ -256,8 +256,8 @@ Backups created by `polaris-backup.sh` contain:
 
 - Postgres dump (includes hashed passwords for AppUser, but NOT
   the `polaris_app` connection password, which is in `secrets/`)
-- `sanctum/` + `journal/` (audit-of-record; review for any prose
-  that named a secret)
+- The development record (CHANGELOG and decision history; review
+  for any prose that named a secret)
 
 Backups do **NOT** include the `secrets/` directory. Backup
 encryption is the operator's responsibility (use `gpg` or
@@ -355,7 +355,7 @@ secrets specifically, the relevant scenarios:
 | Operator laptop stolen with `secrets/` mounted | Disk encryption (operator responsibility); rotation immediately on incident |
 | Backup tarball intercepted | Encrypt backups (gpg/age) before off-site sync; rotate any secret that might be in older backups |
 | Compromised CI/CD pipeline | Use platform secret store; audit access; rotate on suspicion |
-| Insider with prior secret access | Rotate on departure; track rotation in journal |
+| Insider with prior secret access | Rotate on departure; track rotation in the operator change log |
 | Postgres logs leak password via misconfig | `log_statement = 'mod'` (not `'all'`); review log redaction quarterly |
 | Compromised dev environment promoting bad secrets to prod | Separate dev secrets from prod (use different generation seed; never reuse) |
 | Caddy compromise → TLS private key leaked | Caddy auto-rotates ACME keys; rotate other secrets that may have been in TLS-terminated traffic |
@@ -412,7 +412,7 @@ own the secrets, not root); checks for entropy availability
 ## 7. WebAuthn-MFA enrollment & recovery (v8.97 / Position B)
 
 Operator authentication adds a phishing-resistant second factor for
-admin accounts per Sanctum 2026-05-14-webauthn-operator-auth.md.
+admin accounts, recorded as a decision under the Sanctum protocol.
 
 ### 7.1 First-time enrollment
 
@@ -475,7 +475,7 @@ rm /tmp/recovery-code.txt          # do not leave on disk
 The page shows the cleartext mnemonic AND a SHA-256 digest. Future
 work will extend `polaris-recover-admin.sh` with a `--recovery-code`
 argument that verifies the mnemonic against an `AppUser.recovery_code_hash`
-column (deferred per Sanctum §V — the v8.97 ship lands the mnemonic
+column (deferred by decision — the v8.97 ship lands the mnemonic
 generator + threat-model coverage; the in-app verification flow is
 a follow-up gated on operator demand).
 
@@ -761,20 +761,14 @@ shred -u /run/secrets/polaris_secret_key
 docker compose down && docker compose up -d
 ```
 
-Document the migration in `journal/<date>-secrets-migration.md`
-per the filesystem AoR convention; this becomes evidence for the
-next SOC 2 audit cycle (CC8.1 — change management).
+Document the migration in your operator change log; this becomes
+evidence for the next SOC 2 audit cycle (CC8.1 — change management).
 
 ### 8.6 Cross-references for KMS path
 
 - [DR.md](DR.md) § 4.7 — ransomware recovery (KMS-backed secrets
   are NOT exfiltrable from the host alone; the cloud account
   trust boundary holds even if the host is compromised)
-- [SOC2.md](SOC2.md) § 7 (CC6.1) + § 12 (C1.1) — KMS satisfies
-  the hardware-root-of-trust requirements for Confidentiality TSC
-- [PENTEST.md](PENTEST.md) — pen-test scope includes "secrets
-  not exfiltrable from compromised host" (KMS path passes; file-
-  mounted path fails for hosts without disk encryption)
 - `polaris_web/security.py` — the consumer of POLARIS_SECRET_KEY
   (no code change needed for the KMS migration; the launcher
   wrapper exports the env var, security.py reads it as today)
@@ -788,5 +782,4 @@ next SOC 2 audit cycle (CC8.1 — change management).
 - `polaris_web/security.py` — runtime secret loading
 - `DEVNOTES/threat-model.md` — STRIDE analysis
 - `MISSION.md` C-constraints — C1 (audit append-only), C5 (CSP), C7 (algorithm metadata) all touch secret-handling discipline
-- `sanctum/2026-05-13-launcher-fixes-v8-51-v8-56-v8-58.md` (if exists; or the relevant Sanctums) — historical record of session-secret rotation fixes
 - `docs/operator/OPERATIONS.md` — production deployment runbook

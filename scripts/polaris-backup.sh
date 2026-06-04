@@ -3,12 +3,9 @@
 # polaris-backup.sh — atomic full-system backup
 #
 # Arc B Phase 1 (v8.77). Produces a single timestamped tarball containing
-# every durable component, plus a manifest with SHA-256 hashes:
+# the database dump plus a manifest with SHA-256 hashes:
 #
-#   pg_dump (custom format, gzipped)        the database
-#   sanctum/                                filesystem audit-of-record
-#   journal/                                episodic decision log
-#   meta/sanctum-index.md                   index of the sanctum/ directory
+#   pg_dump (custom format)                 the database
 #   MANIFEST.json                           timestamps + SHA-256 hashes
 #
 # Usage:
@@ -120,7 +117,7 @@ echo "  → Polaris backup ${TS}"
 echo "  → staging at ${STAGE}"
 
 # 1. pg_dump
-echo "  [1/5] pg_dump…"
+echo "  [1/2] pg_dump…"
 if docker compose -f "${COMPOSE_FILE}" ps --services 2>/dev/null | grep -q '^postgres$'; then
     # Production stack is up — dump via compose exec
     docker compose -f "${COMPOSE_FILE}" exec -T postgres \
@@ -137,32 +134,8 @@ else
     : > "${STAGE}/polaris.dump"   # zero-byte sentinel
 fi
 
-# 2. sanctum/
-echo "  [2/5] sanctum/…"
-if [[ -d "${POLARIS_ROOT}/sanctum" ]]; then
-    tar -czf "${STAGE}/sanctum.tar.gz" -C "${POLARIS_ROOT}" sanctum
-else
-    : > "${STAGE}/sanctum.tar.gz"
-fi
-
-# 3. journal/
-echo "  [3/5] journal/…"
-if [[ -d "${POLARIS_ROOT}/journal" ]]; then
-    tar -czf "${STAGE}/journal.tar.gz" -C "${POLARIS_ROOT}" journal
-else
-    : > "${STAGE}/journal.tar.gz"
-fi
-
-# 4. meta/sanctum-index.md
-echo "  [4/5] meta/sanctum-index.md…"
-if [[ -f "${POLARIS_ROOT}/meta/sanctum-index.md" ]]; then
-    cp "${POLARIS_ROOT}/meta/sanctum-index.md" "${STAGE}/sanctum-index.md"
-else
-    : > "${STAGE}/sanctum-index.md"
-fi
-
-# 5. Manifest with hashes
-echo "  [5/5] manifest…"
+# 2. Manifest with hashes
+echo "  [2/2] manifest…"
 python3 - "${STAGE}" "${TS}" <<'PY' > "${STAGE}/MANIFEST.json"
 import json, hashlib, os, sys, time
 stage = sys.argv[1]

@@ -32,13 +32,10 @@ LOW-risk work (autonomous bug fixes, documentation drift, dependency bumps withi
 | VI. Operator decision | VANTA's verbatim reply. |
 | VII. Outcome | What was actually built, with refinement counts and cross-references. |
 
-**How it's enforced.** The `sanctum/` directory and [`meta/sanctum-index.md`](../../meta/sanctum-index.md) are kept in agreement; the seven-section shape is the documented protocol.
+**How it's enforced.** The seven-section shape is the documented protocol, and every non-routine decision is recorded against it at the moment of decision.
 
 **Where to read more.**
 - The protocol: [`meta/sanctum-protocol.md`](../../meta/sanctum-protocol.md)
-- The index: [`meta/sanctum-index.md`](../../meta/sanctum-index.md)
-- The closed sessions: [`sanctum/`](../../sanctum/)
-- The story of how it emerged: [`docs/story/STORY.md`](../story/STORY.md) §III
 
 ---
 
@@ -63,7 +60,7 @@ The audit-of-record principle says: for the consequential surfaces, write eviden
 | 7 | `DuressEvent` (R11-5) | Trigger `trg_duress_event_append_only` |
 | 8 | `RecoveryRequest` (R11-2) | Two-phase ceremony; rows transition only via UC-9 |
 | 9 | `TokenSignature` (R11-1) | Trigger `trg_token_signature_immutability` (with active-signature invariant) |
-| 10 | The `sanctum/` directory | Filesystem convention; the directory and `meta/sanctum-index.md` are kept in agreement |
+| 10 | The decision record | Filesystem convention; each non-routine decision is written once, at the moment of decision, and not rewritten |
 
 **The no-CASCADE rule (v8.50).** Polaris schema files contain zero `ON DELETE CASCADE` or `ON UPDATE CASCADE` clauses. A cascade would silently destroy audit-of-record evidence; the principle forbids any mechanism that erases history without explicit operator action. The rule is enforced by `test_no_fk_cascade_in_polaris_sql`. There is no allowlist; future need for cascade would be a Sanctum-class amendment.
 
@@ -98,7 +95,6 @@ The risk classes resolve the ambiguity by naming the line explicitly.
 
 **Where to read more.**
 - The architecture: [`meta/autonomy-architecture.md`](../../meta/autonomy-architecture.md)
-- The post-v2 declaration: [`sanctum/2026-05-12-post-v2-steady-state-declaration.md`](../../sanctum/2026-05-12-post-v2-steady-state-declaration.md)
 - The CLAUDE.md operator-side mirror: [`CLAUDE.md`](../../CLAUDE.md) §"Post-v2 default posture"
 
 ---
@@ -121,6 +117,6 @@ If you are a maintainer about to make a change: identify which principle the cha
 
 If you are a reviewer evaluating Polaris as an academic or professional artifact: the principles are the answer to "what makes this different from other identity-system reference implementations." The cryptographic substrate is the visible deliverable. The principles are the operating model that produced it.
 
-If you are an operator inheriting maintenance: read [STORY.md](../story/STORY.md) for context, this document for the contract, and [CLAUDE.md](../../CLAUDE.md) for the runbook.
+If you are an operator inheriting maintenance: read [MISSION.md](../../MISSION.md) for context, this document for the contract, and [CLAUDE.md](../../CLAUDE.md) for the runbook.
 
 The principles are the contract under which Polaris was built. They are also the contract under which it can be maintained without drift.

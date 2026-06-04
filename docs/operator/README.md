@@ -17,8 +17,6 @@ For developers contributing to Polaris, see
 | [`SECURITY.md`](SECURITY.md) | Cybersecurity posture + audit + controls |
 | [`PRIVACY.md`](PRIVACY.md) | Data minimization + operational privacy posture |
 | [`DR.md`](DR.md) | Disaster recovery procedures (RPO ≤1min / RTO ≤30min) |
-| [`SOC2.md`](SOC2.md) | SOC 2 control mapping (CC1-CC9) |
-| [`PENTEST.md`](PENTEST.md) | Pentest cadence + scope matrix + remediation SLA |
 
 ---
 
@@ -32,10 +30,9 @@ For developers contributing to Polaris, see
 5. [OPERATIONS.md](OPERATIONS.md) §"Verify" — confirm
 
 **Compliance audit:**
-1. [SOC2.md](SOC2.md) — control mapping
-2. [SECURITY.md](SECURITY.md) — STRIDE + controls
-3. [PENTEST.md](PENTEST.md) — pentest evidence
-4. [DR.md](DR.md) — RPO/RTO targets + drills
+1. [SECURITY.md](SECURITY.md) — STRIDE + controls
+2. [PRIVACY.md](PRIVACY.md) — data minimization posture
+3. [DR.md](DR.md) — RPO/RTO targets + drills
 
 **Production incident:**
 1. [OPERATIONS.md](OPERATIONS.md) §"Incident response"
@@ -68,7 +65,7 @@ naming + structural conventions.
 - Not narrative (that's in [`../story/`](../story/))
 - Not the academic write-up (that's in [`../paper/`](../paper/))
 - Not informal developer notes (that's in [`../../DEVNOTES/`](../../DEVNOTES/))
-- Not strategic decisions (those are in [`../../sanctum/`](../../sanctum/))
+- Not strategic decision records
 
 `docs/operator/` is **what an operator needs to deploy and run
 Polaris in production**, written so the operator never has to

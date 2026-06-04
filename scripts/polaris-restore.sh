@@ -8,8 +8,6 @@
 # the in-band MANIFEST.json, then restores:
 #
 #   - PostgreSQL database (pg_restore from the custom-format dump)
-#   - sanctum/ decision audit-of-record
-#   - journal/ episodic memory
 #
 # Refuses to clobber a non-empty database without --force.
 #
@@ -23,7 +21,6 @@
 #   --force                 Allow restore over a non-empty DB (DANGEROUS)
 #   --dry-run               Verify manifest + list what would be restored,
 #                           but make no changes
-#   --skip-fs               Skip filesystem-AoR restore (DB only)
 #   --skip-db               Skip database restore (FS-AoR only)
 #   --verify-schema-version Cross-check schema_version table against
 #                           migrations/*.up.sql on disk after restore.
@@ -140,7 +137,6 @@ cat <<BANNER
   Target DB:   ${TARGET_DB}$([[ "${USE_DOCKER_STACK}" -eq 1 ]] && echo " (via docker compose stack)" || echo "")
   Dry run:     $([[ "${DRY_RUN}" -eq 1 ]] && echo yes || echo no)
   Force:       $([[ "${FORCE}" -eq 1 ]] && echo yes || echo no)
-  Skip FS:     $([[ "${SKIP_FS}" -eq 1 ]] && echo yes || echo no)
   Skip DB:     $([[ "${SKIP_DB}" -eq 1 ]] && echo yes || echo no)
 
 BANNER
@@ -210,10 +206,6 @@ if [[ "${DRY_RUN}" -eq 1 ]]; then
     echo "  Would restore the following components:"
     [[ "${SKIP_DB}" -eq 0 ]] && \
         echo "    • PostgreSQL dump  →  database '${TARGET_DB}'"
-    [[ "${SKIP_FS}" -eq 0 ]] && {
-        echo "    • sanctum/         →  ${POLARIS_ROOT}/sanctum/"
-        echo "    • journal/         →  ${POLARIS_ROOT}/journal/"
-    }
     echo
     echo "  Dry-run complete. Re-run without --dry-run to apply."
     exit "${EXIT_OK}"
@@ -275,47 +267,6 @@ if [[ "${SKIP_DB}" -eq 0 ]]; then
     echo "  ✓ pg_restore complete (${restored_tables} tables in public schema)"
 else
     step "4/6" "DB restore skipped"
-fi
-
-# ---------------------------------------------------------------------------
-# Step 6: Restore filesystem AoR
-# ---------------------------------------------------------------------------
-if [[ "${SKIP_FS}" -eq 0 ]]; then
-    step "5/6" "restoring filesystem audit-of-record…"
-    fs_failed=0
-
-    if [[ -f "${EXTRACTED}/sanctum.tar.gz" ]] && [[ -s "${EXTRACTED}/sanctum.tar.gz" ]]; then
-        # Archive existing sanctum/ to a timestamped backup first; restore is non-destructive.
-        if [[ -d "${POLARIS_ROOT}/sanctum" ]]; then
-            preserved="${POLARIS_ROOT}/sanctum.pre-restore.$(date -u +%Y%m%dT%H%M%SZ)"
-            mv "${POLARIS_ROOT}/sanctum" "${preserved}"
-            echo "  • prior sanctum/ preserved at ${preserved}"
-        fi
-        tar -xzf "${EXTRACTED}/sanctum.tar.gz" -C "${POLARIS_ROOT}" \
-            && echo "  ✓ sanctum/ restored" \
-            || { echo "  ✗ sanctum/ restore failed"; fs_failed=1; }
-    else
-        echo "  • sanctum.tar.gz absent or empty — skipping"
-    fi
-
-    if [[ -f "${EXTRACTED}/journal.tar.gz" ]] && [[ -s "${EXTRACTED}/journal.tar.gz" ]]; then
-        if [[ -d "${POLARIS_ROOT}/journal" ]]; then
-            preserved="${POLARIS_ROOT}/journal.pre-restore.$(date -u +%Y%m%dT%H%M%SZ)"
-            mv "${POLARIS_ROOT}/journal" "${preserved}"
-            echo "  • prior journal/ preserved at ${preserved}"
-        fi
-        tar -xzf "${EXTRACTED}/journal.tar.gz" -C "${POLARIS_ROOT}" \
-            && echo "  ✓ journal/ restored" \
-            || { echo "  ✗ journal/ restore failed"; fs_failed=1; }
-    else
-        echo "  • journal.tar.gz absent or empty — skipping"
-    fi
-
-    if [[ "${fs_failed}" -ne 0 ]]; then
-        exit "${EXIT_FS_RESTORE_FAIL}"
-    fi
-else
-    step "5/6" "filesystem AoR restore skipped (--skip-fs)"
 fi
 
 # ---------------------------------------------------------------------------

@@ -18,7 +18,7 @@ polaris/                          ← repo root
 ├── README.md                     ← portfolio front-page
 ├── MISSION.md                    ← constitution (C1-C10 + Vocation)
 ├── ROADMAP.md                    ← prioritized backlog (R-* items)
-├── CHANGELOG.md                  ← audit-of-record (curated last-10; full history in archive/CHANGELOG-FULL.md)
+├── CHANGELOG.md                  ← audit-of-record (every ship)
 ├── CLAUDE.md                     ← agent runbook
 ├── LICENSE / NOTICE              ← legal
 │
@@ -34,12 +34,7 @@ polaris/                          ← repo root
 ├── docs/               ← all documentation (operator + reference + story + paper)
 ├── meta/               ← governance records (sanctum protocol, risk classes)
 ├── DEVNOTES/           ← informal developer notes
-├── patterns/           ← software-work catalog
-├── proposals/          ← long-form proposal drafts
-├── sanctum/            ← strategic-consultation records (v8.20 AoR)
-├── journal/            ← per-day session logs (v8.20 AoR)
 ├── scripts/            ← operator (polaris-*) + workflow (ai-*) scripts
-├── archive/            ← frozen history (CHANGELOG-FULL.md + non-ACTIVE sanctum/journal snapshots)
 ├── assets/             ← branding (logo)
 │
 ├── .git/               ← genesis 2026-05-15
@@ -77,10 +72,6 @@ The flat invariant layer plus the development record.
 | [`polaris_checks/`](../../polaris_checks/) | Flat C1-C10 invariant layer — one `check_*(repo_root)` per constraint; gates CI via `python3 -m polaris_checks.run` |
 | [`scripts/`](../../scripts/) | operator (polaris-*) + workflow (ai-*) scripts |
 | [`meta/`](../../meta/) | Governance records (sanctum-protocol, autonomy/risk classes, per-arc records) |
-| [`sanctum/`](../../sanctum/) | Strategic-consultation sessions (v8.20 AoR) |
-| [`journal/`](../../journal/) | Per-day session logs (v8.20 AoR) |
-| [`patterns/`](../../patterns/) | Software-work catalog |
-| [`proposals/`](../../proposals/) | Long-form proposal drafts |
 
 ### Layer 3: Documentation (for humans)
 
@@ -88,9 +79,9 @@ What the operator + developer + auditor needs to read.
 
 | Layer-3 dir | What |
 |---|---|
-| [`docs/operator/`](../operator/) | Runbooks (INSTALL, DEPLOYMENT, OPERATIONS, DR, SOC2, PENTEST, SECRETS, SECURITY, PRIVACY) |
+| [`docs/operator/`](../operator/) | Runbooks (INSTALL, DEPLOYMENT, OPERATIONS, DR, SECRETS, SECURITY, PRIVACY) |
 | [`docs/reference/`](../reference/) | Technical reference (API, DATA-MODEL, GLOSSARY, SCALING, **this SYSTEM-MAP**) |
-| [`docs/story/`](../story/) | Narrative + principles (STORY, PRINCIPLES) |
+| [`docs/story/`](../story/) | Principles (PRINCIPLES) |
 | [`docs/paper/`](../paper/) | Academic write-up |
 | [`DEVNOTES/`](../../DEVNOTES/) | Informal developer notes (cross-cutting + per-ship in `ships/`) |
 
@@ -111,11 +102,7 @@ polaris_checks/checks.py (machine-checkable enforcement of C1-C10)
 meta/sanctum-protocol.md (strategic-consultation protocol)
 meta/autonomy-architecture.md (LOW/MEDIUM/HIGH risk classes)
 
-sanctum/<date>-<topic>.md (DECIDED sessions; v8.20 AoR)
-meta/sanctum-index.md (chronological index)
-
-CHANGELOG.md (every ship; v8.20 AoR; never edited retroactively)
-journal/<date>.md (per-day narrative; v8.20 AoR)
+CHANGELOG.md (every ship; never edited retroactively)
 ```
 
 ---
@@ -128,16 +115,15 @@ here for self-contained navigation):
 | Question | Look here |
 |---|---|
 | What is Polaris? What is it NOT? | [`MISSION.md`](../../MISSION.md) |
-| What's next? Backlog by risk class? | [`ROADMAP.md`](../../ROADMAP.md) / [`docs/BACKLOG.md`](../BACKLOG.md) |
+| What's next? Backlog by risk class? | [`ROADMAP.md`](../../ROADMAP.md) |
 | What just shipped? | [`CHANGELOG.md`](../../CHANGELOG.md) (top entry = latest) |
 | Agent runbook / onboarding | [`CLAUDE.md`](../../CLAUDE.md) |
-| Why was a Decision made? | [`sanctum/<date>-<topic>.md`](../../sanctum/) — indexed at [`meta/sanctum-index.md`](../../meta/sanctum-index.md) |
+| How are strategic decisions recorded? | [`meta/sanctum-protocol.md`](../../meta/sanctum-protocol.md) |
 | Cross-cutting principle (AoR, concurrency, threat-model, style) | [`DEVNOTES/<name>.md`](../../DEVNOTES/) |
 | How does ship X work? | [`DEVNOTES/ships/<short-name>.md`](../../DEVNOTES/ships/) |
 | Naming + structural conventions | [`docs/CONVENTIONS.md`](../CONVENTIONS.md) |
 | Architectural map (this doc) | [`docs/reference/SYSTEM-MAP.md`](SYSTEM-MAP.md) |
 | The C1-C10 checks | [`polaris_checks/checks.py`](../../polaris_checks/checks.py) |
-| Day-by-day narrative | [`journal/<date>.md`](../../journal/) (indexed at [`journal/INDEX.md`](../../journal/INDEX.md)) |
 
 ---
 
@@ -148,8 +134,8 @@ here for self-contained navigation):
 | **Agent (Claude) starting a fresh session** | [`CLAUDE.md`](../../CLAUDE.md) → [`MISSION.md`](../../MISSION.md) → `python3 -m polaris_checks.run` |
 | **Operator deploying Polaris** | [`docs/operator/INSTALL.md`](../operator/INSTALL.md) → [`docs/operator/DEPLOYMENT.md`](../operator/DEPLOYMENT.md) → [`docs/operator/OPERATIONS.md`](../operator/OPERATIONS.md) |
 | **Developer contributing** | [`README.md`](../../README.md) → [`docs/CONVENTIONS.md`](../CONVENTIONS.md) → [`DEVNOTES/style.md`](../../DEVNOTES/style.md) → relevant `polaris_*/README.md` |
-| **Compliance auditor** | [`docs/operator/SOC2.md`](../operator/SOC2.md) → [`docs/operator/SECURITY.md`](../operator/SECURITY.md) → [`docs/operator/PENTEST.md`](../operator/PENTEST.md) → [`docs/operator/DR.md`](../operator/DR.md) |
-| **Academic reviewer** | `docs/paper/polaris_project_report.pdf` → [`docs/story/STORY.md`](../story/STORY.md) → [`docs/story/PRINCIPLES.md`](../story/PRINCIPLES.md) |
+| **Compliance auditor** | [`docs/operator/SECURITY.md`](../operator/SECURITY.md) → [`docs/operator/PRIVACY.md`](../operator/PRIVACY.md) → [`docs/operator/DR.md`](../operator/DR.md) |
+| **Academic reviewer** | `docs/paper/polaris_project_report.pdf` → [`docs/THESIS.md`](../THESIS.md) → [`docs/story/PRINCIPLES.md`](../story/PRINCIPLES.md) |
 
 ---
 
@@ -158,7 +144,7 @@ here for self-contained navigation):
 - Not source code (that's in `polaris_*/`)
 - Not the constitution (that's `MISSION.md`)
 - Not informal notes (those are `DEVNOTES/`)
-- Not strategic decisions (those are `sanctum/`)
+- Not strategic decisions (those follow the [`meta/sanctum-protocol.md`](../../meta/sanctum-protocol.md))
 
 `SYSTEM-MAP.md` is **the architectural centerpiece** — the single
 document that, if read in full, gives a complete sense of how

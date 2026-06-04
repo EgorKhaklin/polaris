@@ -1,7 +1,7 @@
 # meta/freeze-amendment-protocol.md: the rule for moving committed ceilings
 
-**Origin:** v9.29 Sanctum (`sanctum/2026-05-16-v9-29-constitution-sanctum-cm.md`),
-authored after an outside check caught this session performing
+**Origin:** v9.29 Sanctum decision, recorded after an outside check caught this
+session performing
 locally-valid-globally-a-ratchet expansion of the v9.28 13-item ceiling.
 **Status:** Binding on all future ships. The rule that catches the next
 instance of this pattern without an outside rescue.
@@ -141,9 +141,9 @@ Move 1 or Move 2.
 This section is append-only. Every amendment to a Polaris ceiling
 ever made gets one line here.
 
-| Date         | Ceiling             | Old → New                | Cost                                   | Sanctum |
-|--------------|---------------------|--------------------------|----------------------------------------|---------|
-| 2026-05-16   | freeze-line version | v9.30 → v9.31            | one ship slip                          | [v9.29 Sanctum](../sanctum/2026-05-16-v9-29-constitution-sanctum-cm.md) |
+| Date         | Ceiling             | Old → New                | Cost                                   | Decision |
+|--------------|---------------------|--------------------------|----------------------------------------|----------|
+| 2026-05-16   | freeze-line version | v9.30 → v9.31            | one ship slip                          | v9.29 Sanctum |
 
 When a future amendment lands, append exactly one row. Do not edit
 prior rows. The amendment log is itself audit-of-record.

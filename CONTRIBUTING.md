@@ -50,8 +50,8 @@ be refused on sight.
 - **HIGH** — touches the constitutional constraints, the schema security
   boundary, or the agent's autonomy boundaries.
 
-LOW PRs follow the Quick path. MEDIUM PRs need a proposal in
-`proposals/`. **HIGH PRs require a Sanctum session** — see below.
+LOW PRs follow the Quick path. MEDIUM PRs need a brief in the PR
+description. **HIGH PRs require a Sanctum session** — see below.
 
 ---
 
@@ -67,9 +67,8 @@ session:
 ./scripts/ai-sanctum.sh close <topic> --position A --decision ...
 ```
 
-Full spec: `meta/sanctum-protocol.md`. Index of all past sessions:
-`meta/sanctum-index.md`. Sanctum sessions live in `sanctum/` and are
-themselves a filesystem audit-of-record instance.
+Full spec: `meta/sanctum-protocol.md`. A Sanctum session is a
+structured decision record.
 
 When proposing a HIGH-risk change as an external contributor, file an
 issue first with the Sanctum invocation request. The agent will draft

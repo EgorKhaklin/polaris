@@ -29,27 +29,12 @@ The live constitutional constants are the ten hard constraints C1-C10 in
 | File | Purpose |
 |---|---|
 | [`sanctum-protocol.md`](sanctum-protocol.md) | Strategic-consultation protocol (the Sanctum) |
-| [`sanctum-index.md`](sanctum-index.md) | Chronological index of all Sanctum sessions |
-
-### Per-arc strategic records
-
-| File | Arc |
-|---|---|
-| [`arc-b-production.md`](arc-b-production.md) | Arc B: production deployment (Phase 1 ✅; Phase 2/3 ongoing) |
 
 ### Domain models
 
 | File | Purpose |
 |---|---|
 | [`redaction-proof.md`](redaction-proof.md) | M2-12 verification-graph redaction proof + adversary model |
-| [`missions-considered.md`](missions-considered.md) | v2 strategic-arc analysis (A/B/C/D considered; D+A chosen) |
-| [`lineage.md`](lineage.md) | Etymology of structural insights |
-
-Dated history (read as records of their date, not as current docs):
-[`polaris-self-roadmap-2026-05-14.md`](polaris-self-roadmap-2026-05-14.md) and the
-follow-on roadmap scans, [`cognitive-architecture-v2.md`](cognitive-architecture-v2.md) /
-[`cognitive-architecture-v3.md`](cognitive-architecture-v3.md), and
-[`cold-read-walkthrough-v9.27.md`](cold-read-walkthrough-v9.27.md).
 
 ---
 
@@ -62,9 +47,6 @@ follow-on roadmap scans, [`cognitive-architecture-v2.md`](cognitive-architecture
 [`sanctum-protocol.md`](sanctum-protocol.md), then `bash
 scripts/ai-sanctum.sh open <topic>`.
 
-**Want to see what was decided when?** [`sanctum-index.md`](sanctum-index.md)
-chronological + sanctum/ for full session bodies.
-
 ---
 
 ## What this directory is NOT
@@ -72,7 +54,6 @@ chronological + sanctum/ for full session bodies.
 - Not source code (that's in `polaris_*/`)
 - Not operator documentation (that's in `docs/operator/`)
 - Not informal developer notes (that's in `DEVNOTES/`)
-- Not session logs (that's in `journal/`)
 
 `meta/` is the governance and decision record, named explicitly so the
 reasoning can be audited, version-controlled, and updated when the

@@ -3,9 +3,7 @@
 #   for '# ====.*=====' to find the right section before adding routes.
 # Read before editing:
 #     ../DEVNOTES/known-gotchas.md          (CSP, Jinja {{}} in HTML comments)
-#     ../patterns/add-flask-route.md        (canonical recipe)
-#     ../patterns/add-list-page-pagination.md  (if list returns >100 rows)
-# Or:  ../scripts/ai-where.sh polaris_web/app.py
+#     ../docs/CONVENTIONS.md                (route + template conventions)
 # =============================================================================
 
 """

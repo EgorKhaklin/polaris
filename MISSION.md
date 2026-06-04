@@ -20,7 +20,7 @@ start of every session.
 
 | Date         | Old → New          | Cost                | Sanctum |
 |--------------|--------------------| ------------------- |---------|
-| 2026-05-16   | v9.30 → v9.31      | one ship slip       | [v9.29](sanctum/2026-05-16-v9-29-constitution-sanctum-cm.md) |
+| 2026-05-16   | v9.30 → v9.31      | one ship slip       | v9.29 |
 
 The amendment is logged once, with stated cost. No further amendments
 are pre-authorized. The next amendment requires another Sanctum + the
@@ -89,9 +89,8 @@ constraint, deeper than C1-C10, is that no person be compellable into
 renouncing, transferring, or surrendering their identity against their
 will.**
 
-This vocation was named in v9.11 by
-[`sanctum/2026-05-15-vocation-anti-coercion.md`](sanctum/2026-05-15-vocation-anti-coercion.md).
-It ratifies what the codebase already implements; it does not impose
+This vocation was named in v9.11. It ratifies what the codebase
+already implements; it does not impose
 a new requirement. Reading the seven load-bearing primitives forward,
 the vocation has been operative since v8.24:
 
@@ -336,8 +335,8 @@ contract. This section names that contract.
 
 The contract has **principles**, not implementations. The principles
 are load-bearing — removing any cascades through the others. The
-*current* implementation lives in `scripts/`, `meta/`, `DEVNOTES/`,
-`patterns/`, `sanctum/`, and `journal/`. The implementation is
+*current* implementation lives in `scripts/`, `meta/`, and
+`DEVNOTES/`. The implementation is
 substitutable. A future agent may use a different working substrate
 so long as it preserves all three principles.
 
@@ -349,8 +348,7 @@ strategic consultation: §I the Matter, §II Preparation, §III
 Alternatives, §IV Recommendation, §V Ask, §VI Decision (verbatim
 from VANTA), §VII Outcome (filled by agent after execution). Routine
 LOW-risk work does NOT produce a Sanctum. The full protocol is in
-`meta/sanctum-protocol.md`; sessions are indexed at
-`meta/sanctum-index.md`.
+`meta/sanctum-protocol.md`.
 
 A Sanctum exists for the same reason `TokenLifecycleEvent` exists:
 when a state-changing decision happens, the audit-of-record principle
@@ -362,12 +360,10 @@ Every primitive that changes state has a schema element + invariants
 that fully reconstruct operation history without a separate event-log
 table. Append-only at the data-content level, with bounded mutation
 (e.g., revocation as a state transition, not a delete). Currently
-**nine schema instances + one filesystem instance**: schema —
-`TokenLifecycleEvent`, `VerificationEvent`, `RecoveryRequest`,
-`EnrollmentStatusEvent`, `TokenSignature`, `AnchorBatch`,
-`AgencyTrustAttestation`, `TokenStateEpoch`, `DuressEvent` —
-collectively the v2 mission substrate; filesystem — `sanctum/*.md`
-sessions. The principle is canonicalized in
+**nine schema instances**: `TokenLifecycleEvent`, `VerificationEvent`,
+`RecoveryRequest`, `EnrollmentStatusEvent`, `TokenSignature`,
+`AnchorBatch`, `AgencyTrustAttestation`, `TokenStateEpoch`, and
+`DuressEvent`, collectively the v2 mission substrate. The principle is canonicalized in
 `DEVNOTES/audit-of-record.md`. New schema-touching ships extend the
 catalog; the principle is what gates them.
 
@@ -402,10 +398,10 @@ This section names principles, not implementations. The following
 are **current implementation**, not constitutional:
 
 - The `ai-*` developer scripts in `scripts/` (session priming, the
-  Sanctum/journal/proposal ledgers, link-check, the pre-ship gate)
+  decision-record helpers, link-check, the pre-ship gate)
 - The constraint lattice in `meta/constraint-lattice.md`
 - The flat invariant layer in `polaris_checks/`
-- The doc structure under `DEVNOTES/` / `patterns/` / `meta/`
+- The doc structure under `DEVNOTES/` / `meta/`
 
 Any of these may be substituted, renamed, restructured, or replaced
 without violating the constitution — as long as the three principles
@@ -438,9 +434,7 @@ itself names as deferred (PDF §9). **v2 closed 2026-05-12 at 12/12 ✅
 with the v8.28 UI graduation phase** (Option 3 close-out: dashboard
 substrate tiles, `/anchors` / `/epochs` / `/federation` viewers, token
 detail v2 state section). Both epochs are listed below: v1 as the
-historical record, v2 as the closed mission. The arcs that were
-considered and not chosen for v2 are documented in
-`meta/missions-considered.md`.
+historical record, v2 as the closed mission.
 
 ### Post-v2 strategic moment
 
@@ -533,8 +527,7 @@ preserved in this annotation; nothing was deleted.
 ### v2 done-list (closed 2026-05-12 at 12/12 ✅, opened 2026-05-09)
 
 The v2 arc is **D + A** (substrate-level demonstrations + the report's
-open problems). See `meta/missions-considered.md` for the full set of
-arcs evaluated and the case for this combination.
+open problems).
 
 **Substrate-level demonstrations (D — make Appendices E and F concrete):**
 
@@ -790,8 +783,7 @@ When the agent picks up Polaris in a fresh session:
    explicitly resurrects them — see `memory/deferred_items.md` and
    the v8.27 entry in CHANGELOG.md for the audit annotation.
 8. The arcs that were considered for v2 and not chosen (B —
-   adversarial hardening; C — Polaris-as-platform) live in
-   `meta/missions-considered.md`. A future session can resurrect them
+   adversarial hardening; C — Polaris-as-platform). A future session can resurrect them
    if the chosen arc completes or context shifts; the analysis is
    already done.
 

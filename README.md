@@ -21,7 +21,7 @@ _Cryptographically signed. Audit-of-record by construction. Compulsion-resistant
 [![WebAuthn MFA](https://img.shields.io/badge/auth-WebAuthn%20MFA-1f883d?logo=webauthn&logoColor=white&style=flat-square)](polaris_web/webauthn_auth.py)
 
 
-**Now shipping [v9.56](https://github.com/EgorKhaklin/polaris-id/releases/latest)** &nbsp;·&nbsp; post-quantum · zero-knowledge · compulsion-resistant &nbsp;·&nbsp; one double-click to launch
+**Now shipping [v9.57](https://github.com/EgorKhaklin/polaris-id/releases/latest)** &nbsp;·&nbsp; post-quantum · zero-knowledge · compulsion-resistant &nbsp;·&nbsp; one double-click to launch
 
 [**System map**](docs/reference/SYSTEM-MAP.md) · [**Conventions**](docs/CONVENTIONS.md) · [**Constitution (MISSION.md)**](MISSION.md) · [**Backlog (ROADMAP.md)**](ROADMAP.md) · [**Audit-of-record (CHANGELOG.md)**](CHANGELOG.md) · [**Agent runbook (CLAUDE.md)**](CLAUDE.md)
 
@@ -43,7 +43,7 @@ This repository is a **working reference implementation**: 26 schema tables, 14 
 
 It is not a slide deck. It runs.
 
-The system lives in [`polaris_sql`](polaris_sql/), [`polaris_web`](polaris_web/), [`polaris_cli`](polaris_cli/), [`polaris_zk`](polaris_zk/). Its C1-C10 invariants are machine-checked by [`polaris_checks`](polaris_checks/) (a flat layer of plain check functions). Everything under [`archive`](archive/) is frozen history and is not read to understand the system.
+The system lives in [`polaris_sql`](polaris_sql/), [`polaris_web`](polaris_web/), [`polaris_cli`](polaris_cli/), [`polaris_zk`](polaris_zk/). Its C1-C10 invariants are machine-checked by [`polaris_checks`](polaris_checks/) (a flat layer of plain check functions).
 
 ---
 
@@ -229,7 +229,7 @@ A full subcommand reference lives in [`docs/operator/INSTALL.md`](docs/operator/
 ```
                  ┌──────────────────────────────────────────────────┐
                  │              Polaris in numbers                  │
-                 │              (current as of v9.56)               │
+                 │              (current as of v9.57)               │
                  ├──────────────────────────────────────────────────┤
                  │  26 schema tables                                │
                  │  14 stored procedures (UC-1 .. UC-12)            │
@@ -269,8 +269,8 @@ Start at the file that matches what you came here for.
 
 |   |   |   |
 |---|---|---|
-| **[The story](docs/story/STORY.md)** | **[The system map](docs/reference/SYSTEM-MAP.md)** | **[The principles](docs/story/PRINCIPLES.md)** |
-| How Polaris was built between April 30 and May 16, 2026. Nine major versions, 146 ships, two single-day rampages, 59 formal decisions. | A single page that names every meaningful artifact in the repository and what it is for. Use this when you do not know where to start. | The principles that hold the system together, distilled. Read this before you change anything load-bearing. |
+| **[The architecture](docs/ARCHITECTURE-OVERVIEW.md)** | **[The system map](docs/reference/SYSTEM-MAP.md)** | **[The principles](docs/story/PRINCIPLES.md)** |
+| The four layers and how they connect: the schema, the application, the check layer, and the ZK prover. Read this to see how the pieces fit. | A single page that names every meaningful artifact in the repository and what it is for. Use this when you do not know where to start. | The principles that hold the system together, distilled. Read this before you change anything load-bearing. |
 | **[The schema](polaris_sql/01_schema.sql)** | **[The constitution](MISSION.md)** | **[The agent runbook](CLAUDE.md)** |
 | 26 tables. Start with `IdentityToken` and follow the foreign keys. Append-only invariants enforced at trigger level on nine of them. | C1 through C10. Ten hard constraints the system must never violate, each enforced at the schema level rather than in application code. | If you are an AI agent priming on this project, this is your entry point. |
 | **[The Atlas](polaris_web/static/atlas-globe.js)** | **[The ZK prover](polaris_zk/src/lib.rs)** | **[The CHANGELOG](CHANGELOG.md)** |
@@ -364,6 +364,6 @@ The academic project report ([docs/paper/polaris_project_report.pdf](docs/paper/
 
 Educational project for **Seton Hill University**, Spring 2026. Notional data only; not a real identity system. All cryptographic algorithm choices reflect current NIST PQC standardization (FIPS 204, FIPS 205) for academic accuracy.
 
-The constitution lives in [MISSION.md](MISSION.md). The build journal lives in [`journal/`](journal/) (indexed at [`journal/INDEX.md`](journal/INDEX.md)). The decision graph lives in [`sanctum/`](sanctum/) (indexed at [`meta/sanctum-index.md`](meta/sanctum-index.md)).
+The constitution lives in [MISSION.md](MISSION.md). The ship history lives in [CHANGELOG.md](CHANGELOG.md).
 
-If you read one document after this one, read [docs/story/STORY.md](docs/story/STORY.md).
+If you read one document after this one, read [MISSION.md](MISSION.md).

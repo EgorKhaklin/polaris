@@ -50,8 +50,8 @@
                 <code>TokenLifecycleEvent</code> row. Every
                 verification writes a <code>VerificationEvent</code>.
                 Both tables are append-only at the trigger level.
-                Twelve audit-of-record instances now span schema +
-                filesystem (sanctum, treasury, census).
+                Nine schema tables are append-only audit-of-record
+                instances, each enforced by a trigger.
             </p>
         </article>
 
@@ -112,10 +112,10 @@
         <strong>C9</strong> concurrency hazards tested with real threading,
         not mocks. The four cards above are the highlight reel for first-time
         visitors; the canonical text for all ten lives in
-        <a href="https://github.com/anthropics/polaris/blob/main/MISSION.md#the-hard-constraints-do-not-violate">MISSION.md §"The hard constraints"</a>.
+        <a href="https://github.com/EgorKhaklin/polaris-id/blob/main/MISSION.md#the-hard-constraints-do-not-violate">MISSION.md §"The hard constraints"</a>.
         Anti-coercion is the <em>vocation</em> all ten constraints
         serve — named in
-        <a href="https://github.com/anthropics/polaris/blob/main/MISSION.md#vocation">MISSION.md §"Vocation"</a>
+        <a href="https://github.com/EgorKhaklin/polaris-id/blob/main/MISSION.md#vocation">MISSION.md §"Vocation"</a>
         above C1-C10 (v9.11).
     </p>
 </section>
@@ -188,21 +188,21 @@ curl -fsS https://${POLARIS_DOMAIN}/api/health | jq .</code></pre>
         Postgres + Redis + gunicorn come up, <code>/api/health</code>
         returns structured per-component status. The operator
         runbook is
-        <a href="https://github.com/anthropics/polaris/blob/main/docs/operator/OPERATIONS.md">OPERATIONS.md</a>;
+        <a href="https://github.com/EgorKhaklin/polaris-id/blob/main/docs/operator/OPERATIONS.md">OPERATIONS.md</a>;
         the secrets primer is
-        <a href="https://github.com/anthropics/polaris/blob/main/docs/operator/SECRETS.md">SECRETS.md</a>.
+        <a href="https://github.com/EgorKhaklin/polaris-id/blob/main/docs/operator/SECRETS.md">SECRETS.md</a>.
     </p>
 </section>
 
 <section class="landing-foot" aria-labelledby="foot-title">
     <h2 id="foot-title" class="landing-section-title">Read more</h2>
     <ul class="landing-foot-links">
-        <li><a href="https://github.com/anthropics/polaris/blob/main/docs/story/STORY.md">The story</a> — how Polaris went from a course assignment to a reference implementation</li>
-        <li><a href="https://github.com/anthropics/polaris/blob/main/docs/reference/GLOSSARY.md">Glossary</a> — every defined term</li>
-        <li><a href="https://github.com/anthropics/polaris/blob/main/docs/reference/DATA-MODEL.md">Data model</a> — every table, every constraint</li>
-        <li><a href="https://github.com/anthropics/polaris/blob/main/docs/reference/API.md">API reference</a> — every endpoint</li>
-        <li><a href="https://github.com/anthropics/polaris/blob/main/docs/operator/SECURITY.md">Security posture</a> — threat model, controls, audit</li>
-        <li><a href="https://github.com/anthropics/polaris/blob/main/docs/operator/PRIVACY.md">Privacy posture</a> — data minimization, rotation, what the schema doesn't carry</li>
+        <li><a href="https://github.com/EgorKhaklin/polaris-id/blob/main/docs/THESIS.md">The thesis</a> — why identity cannot outrun its cryptographic primitives</li>
+        <li><a href="https://github.com/EgorKhaklin/polaris-id/blob/main/docs/reference/GLOSSARY.md">Glossary</a> — every defined term</li>
+        <li><a href="https://github.com/EgorKhaklin/polaris-id/blob/main/docs/reference/DATA-MODEL.md">Data model</a> — every table, every constraint</li>
+        <li><a href="https://github.com/EgorKhaklin/polaris-id/blob/main/docs/reference/API.md">API reference</a> — every endpoint</li>
+        <li><a href="https://github.com/EgorKhaklin/polaris-id/blob/main/docs/operator/SECURITY.md">Security posture</a> — threat model, controls, audit</li>
+        <li><a href="https://github.com/EgorKhaklin/polaris-id/blob/main/docs/operator/PRIVACY.md">Privacy posture</a> — data minimization, rotation, what the schema doesn't carry</li>
     </ul>
 </section>
 

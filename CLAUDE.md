@@ -7,8 +7,8 @@ fresh session, read this first.
 The cognitive apparatus — the ant swarm, HYDRA, the legions, the civitas/Denarius
 economy, the soldiers, foresight, and the ~50 `ai-*`/`polaris-*` cognitive
 scripts (~18k LOC + a large narrative corpus) — was removed and replaced by
-`polaris_checks`. A check is a check; there is no mythology. The development
-record (CHANGELOG, journal, sanctum, archive) is kept as history.
+`polaris_checks`. A check is a check; there is no mythology. The ship history
+lives in the CHANGELOG and in git; the old narrative corpus was pruned (v9.57).
 
 ---
 
@@ -18,7 +18,7 @@ A working reference implementation of a post-quantum, zero-knowledge,
 compulsion-resistant national identity-token system. Educational; notional data
 only. The real system:
 
-- [`polaris_sql/`](polaris_sql/) — 27-table schema, stored procedures, triggers (the security boundary).
+- [`polaris_sql/`](polaris_sql/) — 26-table schema, stored procedures, triggers (the security boundary).
 - [`polaris_web/`](polaris_web/) — the Flask app (`app.py`), `security.py`, `zk.py`, WebAuthn, the operational atlas.
 - [`polaris_zk/`](polaris_zk/) — the Plonky2 Merkle-inclusion ZK crate + `witness2/` (the independent second witness).
 - [`polaris_cli/`](polaris_cli/) — the CLI.
@@ -78,16 +78,13 @@ A ship is a coherent change, verified:
    `polaris_web/test_*.py` for behavior. `python3 -m polaris_checks.run` must pass.
 3. **Bump** `polaris_web/__version__.py` (`MAJOR.MINOR`).
 4. **CHANGELOG:** prepend a `## vX.Y — DATE (subtitle)` block.
-5. **Journal:** append a `- **decision** HH:MM — vX.Y SHIPPED — ...` line to
-   `journal/YYYY-MM-DD.md`.
-6. **Gate:** `bash scripts/ai-done.sh` must report READY; `ai-link-check.sh --ci`
+5. **Gate:** `bash scripts/ai-done.sh` must report READY; `ai-link-check.sh --ci`
    must resolve.
-7. **Definition of shipped:** the new test passes, the gate passes, the work
+6. **Definition of shipped:** the new test passes, the gate passes, the work
    closes against its spec.
 
-Strategic decisions still get a Sanctum file under [`sanctum/`](sanctum/) (indexed
-at [`meta/sanctum-index.md`](meta/sanctum-index.md)) — a decision record, not an
-enforcement apparatus.
+Strategic decisions get a Sanctum: a structured decision record. The protocol is
+[`meta/sanctum-protocol.md`](meta/sanctum-protocol.md).
 
 ---
 
@@ -97,7 +94,7 @@ enforcement apparatus.
 |---|---|
 | What is Polaris? What is it NOT? | [`MISSION.md`](MISSION.md) |
 | What's next? | [`ROADMAP.md`](ROADMAP.md) |
-| What just shipped? | [`CHANGELOG.md`](CHANGELOG.md) (full history in [`archive/CHANGELOG-FULL.md`](archive/CHANGELOG-FULL.md)) |
+| What just shipped? | [`CHANGELOG.md`](CHANGELOG.md) |
 | The C1-C10 checks | [`polaris_checks/checks.py`](polaris_checks/checks.py) |
 | Schema / procedures / triggers | [`polaris_sql/01_schema.sql`](polaris_sql/01_schema.sql) / `05_procedures.sql` / `06_triggers.sql` |
 | Flask app / templates / CSS | [`polaris_web/app.py`](polaris_web/app.py) / `templates/` / `static/` |
