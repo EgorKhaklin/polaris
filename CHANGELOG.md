@@ -5,6 +5,46 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.87 — 2026-06-04 (pass 6: close the two trust-boundary gaps prior passes left)
+
+A sixth adversarial review pass (six surfaces not deeply covered before: the
+un-reviewed procedures, the ZK subprocess boundary, session/auth internals,
+transaction-isolation concurrency, route input/authz, migration/AoR integrity).
+Four of six dimensions came back clean; two findings survived independent
+verification. Both are cases where an earlier pass closed a *class* of issue but
+left exactly one path uncovered.
+
+**`verify()` panicked on a malformed proof (MEDIUM).** v9.84 added a bounds
+check to `prove()` and the CHANGELOG claimed "compute-root/compute-leaves/verify
+all return clean Errs for malformed input." `verify()` did not. It ran
+`ProofWithPublicInputs::from_bytes(...)?` and then indexed
+`proof.public_inputs[0..4]` (and `[4]`, `[5]`, `[6]`) with no length check.
+Plonky2's `from_bytes` reads the public-input *count* straight from the
+caller-supplied buffer and does not constrain it to the circuit's count until
+the cryptographic verify, so a crafted proof deserializes `Ok` with a short
+`public_inputs` vector and the slice panics — process abort (exit 101).
+Reproduced deterministically: an all-zero `proof_hex` the length of a real proof
+(155600 hex chars) crashed at `lib.rs:329`. Reachable by any authenticated user
+via `POST /api/zk/verify`. It is fail-closed (the panic is before
+`verifier_data.verify()`, so it can never make an invalid proof verify true) and
+each verify is an isolated per-request subprocess (the crash is contained to that
+child, HTTP 400 — not a worker DoS), hence MEDIUM. `verify()` now returns
+`Ok(false)` when `public_inputs.len() < 7`. Confirmed: the same input now returns
+`{"verified":false}`, exit 0.
+
+**Inactive-account login was a timing oracle (LOW).** `authenticate()` defends
+the unknown-user path with a dummy scrypt verify so a not-found username costs
+the same as an active account with a wrong password. But the inactive-account
+branch (`if not user['is_active']`) returned *before* any hashing — ~0ms vs
+~scrypt — so an unauthenticated attacker could enumerate deactivated accounts by
+response time (CWE-208), the exact leak the dummy hash closes for not-found
+users. The password verify now runs *before* the inactive/locked branching, so
+every existing-user path does the same scrypt work.
+
+- `polaris_zk/src/lib.rs` — `verify()` length guard + `verify_rejects_malformed_proof_without_panicking` (8 ZK tests).
+- `polaris_web/security.py` — hash before the account-state branch.
+- `polaris_web/test_app.py` — `test_inactive_account_is_not_a_timing_oracle` (spies on the hash call; deterministic, not wall-clock).
+
 ## v9.86 — 2026-06-04 (prod syncs the polaris_app role password to the generated secret)
 
 A deploy finding from the fifth review pass. In the production stack the app and

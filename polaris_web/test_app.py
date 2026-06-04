@@ -3461,6 +3461,48 @@ class F01_AuthenticationTests(UnauthenticatedTestCase):
             cur.execute("DELETE FROM AppUser WHERE username='locked_oracle_victim'")
             conn.commit()
 
+    def test_inactive_account_is_not_a_timing_oracle(self):
+        """An inactive account hit with any password must run the SAME scrypt
+        work as an active account (and as the unknown-user dummy hash). The
+        inactive branch used to return BEFORE hashing, so its ~0ms response time
+        uniquely identified deactivated accounts (CWE-208) — three timing
+        classes: unknown ~scrypt, active+wrong ~scrypt, inactive ~0ms. Assert
+        the password hash actually runs on the inactive path (deterministic,
+        spying on the hash call rather than measuring flaky wall-clock)."""
+        from unittest import mock
+        from app import security as sec
+        from werkzeug.security import generate_password_hash
+        get_db = lambda: psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        with psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG) as conn, conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO AppUser (username, password_hash, role, "
+                "failed_login_count, locked_until, is_active) "
+                "VALUES (%s, %s, 'auditor', 0, NULL, FALSE) "
+                "ON CONFLICT (username) DO UPDATE SET "
+                "  password_hash=EXCLUDED.password_hash, is_active=FALSE",
+                ('inactive_timing_victim',
+                 generate_password_hash('CorrectPass!1', method='scrypt')))
+            conn.commit()
+        try:
+            real_hash = sec.check_password_hash
+            with mock.patch.object(sec, 'check_password_hash',
+                                   side_effect=real_hash) as spy:
+                user, err = sec.authenticate(get_db, 'inactive_timing_victim', 'WRONGpass')
+            self.assertIsNone(user, 'inactive account must not authenticate')
+            self.assertGreaterEqual(
+                spy.call_count, 1,
+                'the inactive-account path must run the password hash, else its '
+                '~0ms response is a timing oracle for deactivated accounts')
+            # Same generic message as an unknown user (no content-level leak either).
+            _, err_unknown = sec.authenticate(get_db, 'no-such-user-at-all', 'whatever')
+            self.assertEqual(
+                err, err_unknown,
+                'inactive-account response must equal the unknown-user response')
+        finally:
+            with psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG) as conn, conn.cursor() as cur:
+                cur.execute("DELETE FROM AppUser WHERE username='inactive_timing_victim'")
+                conn.commit()
+
     def test_logout_clears_session(self):
         """Logout must invalidate the session."""
         self._login('admin')

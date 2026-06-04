@@ -552,19 +552,25 @@ def authenticate(get_conn, username, password):
                        detail='unknown user')
                 return None, GENERIC_ERROR
 
+            # Verify the password BEFORE branching on account state (inactive or
+            # locked), so EVERY path for an existing user runs the same scrypt
+            # work. The inactive branch below used to return here without
+            # hashing; its ~0ms response time was a username-enumeration oracle
+            # for deactivated accounts (CWE-208) — the exact timing leak the
+            # unknown-user dummy hash above closes for the not-found path
+            # (unknown ~scrypt, inactive ~0ms, active+wrong ~scrypt made the
+            # inactive class uniquely identifiable). The lockout state, likewise,
+            # is revealed only to a caller who already proved knowledge of the
+            # password; an unknown user is never locked (it returns above before
+            # any counter bump), so a distinct "locked" response would uniquely
+            # confirm the account exists. SECURITY.md promises enumeration is
+            # prevented; this keeps that promise on every branch.
+            password_ok = check_password_hash(user['password_hash'], password)
+
             if not user['is_active']:
                 _audit(get_conn, 'LOGIN_FAILED', username=username,
                        user_id=user['user_id'], detail='account inactive')
                 return None, GENERIC_ERROR
-
-            # Verify the password BEFORE the lockout check. The lockout state is
-            # revealed only to a caller who already proved knowledge of the
-            # password; otherwise the distinct "temporarily locked" message is a
-            # username-enumeration oracle — an unknown user is never locked (it
-            # returns above before any counter bump), so a "locked" response
-            # would uniquely confirm the account exists. SECURITY.md promises
-            # enumeration is prevented.
-            password_ok = check_password_hash(user['password_hash'], password)
 
             # Lockout check.
             now = datetime.now()

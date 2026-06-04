@@ -323,6 +323,21 @@ pub fn verify(bundle: &ProofBundle) -> Result<bool> {
     let proof_bytes = hex::decode(&bundle.proof_hex)?;
     let proof = ProofWithPublicInputs::<F, C, D>::from_bytes(proof_bytes, &verifier_data.common)?;
 
+    // Our circuit commits to exactly 7 public inputs: root[0..4], epoch_id,
+    // context_id, nonce. Plonky2's from_bytes reads the public-input COUNT
+    // straight from the (caller-supplied) buffer and does not constrain it to
+    // the circuit's count until the cryptographic verify below — so a crafted
+    // proof can deserialize Ok with a shorter public_inputs vector, and the
+    // indexing on the next lines (`[0..4]`, `[4]`, `[5]`, `[6]`) would panic and
+    // abort the process. verify() is an attacker-reachable trust boundary
+    // (POST /api/zk/verify), so reject cleanly instead of crashing — the same
+    // panic-as-DoS class v9.84 closed for prove()'s leaf_index. Returning false
+    // is fail-closed: this branch is reached before verifier_data.verify(), so
+    // it can never let an invalid proof verify true.
+    if proof.public_inputs.len() < 7 {
+        return Ok(false);
+    }
+
     // Check public-input binding before letting Plonky2 verify, so a
     // mismatched public-input shape rejects fast.
     let expected_root = hex_to_hash_elements(&bundle.public_inputs.epoch_root_hex)?;
@@ -371,6 +386,36 @@ mod tests {
         };
         let bundle = prove(&witness, 42, 1, 99).unwrap();
         assert!(verify(&bundle).unwrap(), "honest prover should pass");
+    }
+
+    #[test]
+    fn verify_rejects_malformed_proof_without_panicking() {
+        // from_bytes reads the public-input count from the buffer, so a crafted
+        // proof can deserialize with fewer than the 7 public inputs the circuit
+        // commits to. Indexing public_inputs[0..4] used to panic (exit 101) on
+        // such input — an unhandled crash at the attacker-reachable verify
+        // boundary. An all-zero buffer the size of a real proof exercises it:
+        // from_bytes accepts it (pi_len reads as 0 -> empty vector), and the
+        // old slice would panic. verify() must now return cleanly, never crash.
+        let leaves = make_leaves(8);
+        let witness = WitnessInput {
+            leaf_seed_hex: leaves[3].clone(),
+            leaf_index: 3,
+            all_leaves_hex: leaves.clone(),
+        };
+        let real = prove(&witness, 42, 1, 99).unwrap();
+        let n = hex::decode(&real.proof_hex).unwrap().len();
+        let malformed = ProofBundle {
+            proof_hex: hex::encode(vec![0u8; n]),
+            public_inputs: real.public_inputs,
+        };
+        // No panic. A clean result either way: Ok(false) under the guard, or a
+        // plain Err if a future plonky2 rejects the buffer in from_bytes. Never
+        // an invalid proof verifying true.
+        match verify(&malformed) {
+            Ok(v) => assert!(!v, "a malformed proof must never verify true"),
+            Err(_) => {}
+        }
     }
 
     #[test]
