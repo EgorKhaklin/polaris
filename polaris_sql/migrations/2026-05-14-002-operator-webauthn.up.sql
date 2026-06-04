@@ -57,8 +57,13 @@
 -- assertion verifier accepts it as long as both are 0.
 CREATE TABLE OperatorWebauthnCredential (
     credential_id          VARCHAR(255)  PRIMARY KEY,
+    -- ON DELETE NO ACTION (the schema-wide default): deletion is explicit, never
+    -- a silent cascade. An operator with enrolled credentials cannot be deleted
+    -- until those credentials are explicitly removed (delete_credential), so a
+    -- stray AppUser delete can never silently drop MFA state. Operators are
+    -- deactivated (is_active=FALSE), not deleted, in normal operation.
     user_id                INTEGER       NOT NULL
-                               REFERENCES AppUser(user_id) ON DELETE CASCADE,
+                               REFERENCES AppUser(user_id) ON DELETE NO ACTION,
     public_key             BYTEA         NOT NULL,
     sign_count             BIGINT        NOT NULL DEFAULT 0,
     transports             VARCHAR(120),

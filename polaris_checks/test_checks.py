@@ -45,6 +45,17 @@ def test_csp_check_fails_on_unsafe_inline(tmp_path):
     assert out[0].level == "FAIL", "must FAIL when CSP enables 'unsafe-inline' for scripts"
 
 
+def test_fk_cascade_check_scans_migrations(tmp_path):
+    # A cascade smuggled into a migration (not just 01_schema.sql) must be caught.
+    (tmp_path / "polaris_sql").mkdir()
+    (tmp_path / "polaris_sql" / "migrations").mkdir()
+    (tmp_path / "polaris_sql" / "01_schema.sql").write_text("CREATE TABLE A (id SERIAL);\n")
+    (tmp_path / "polaris_sql" / "migrations" / "y.up.sql").write_text(
+        "ALTER TABLE B ADD CONSTRAINT fk FOREIGN KEY (a) REFERENCES A(id) ON DELETE CASCADE;\n")
+    out = checks.check_no_fk_cascade(tmp_path)
+    assert out[0].level == "FAIL", "must FAIL on a cascade in a migration, not only 01_schema.sql"
+
+
 def test_fk_cascade_check_fails_on_cascade(tmp_path):
     (tmp_path / "polaris_sql").mkdir()
     (tmp_path / "polaris_sql" / "x.sql").write_text(

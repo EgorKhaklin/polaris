@@ -5,6 +5,27 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.81 — 2026-06-04 (the no-cascade invariant now covers migrations, and the one live cascade is resolved)
+
+The fourth review pass found that `check_no_fk_cascade` — which enforces the
+no-`ON DELETE/UPDATE CASCADE` invariant (no silent cascade deletion) — globbed only
+top-level `polaris_sql/*.sql`, not `migrations/`. The one cascade in the whole tree,
+`OperatorWebauthnCredential.user_id REFERENCES AppUser ON DELETE CASCADE` (migration
+2026-05-14-002), was therefore live and unflagged — and the gap let any future
+migration smuggle in a genuinely destructive cascade (e.g. on an audit-of-record FK)
+past a green check.
+
+Fix: `check_no_fk_cascade` now scans the base schema AND every migration, and the
+cascade is resolved to `ON DELETE NO ACTION` (the schema-wide default). Deletion of
+an operator with enrolled WebAuthn credentials is now explicit — the credentials
+must be removed first — rather than a silent cascade; operators are deactivated, not
+deleted, in normal operation, and credential lookup is unaffected.
+
+- `polaris_checks/checks.py` — `check_no_fk_cascade` scans `migrations/` too
+  (+ detection test placing a cascade in a migration fixture).
+- `polaris_sql/migrations/2026-05-14-002-operator-webauthn.up.sql` — the FK is
+  `ON DELETE NO ACTION`. Verified: a fresh build's FK is NO ACTION, webauthn green.
+
 ## v9.80 — 2026-06-04 (operator scripts: validate argv to close four SQL injections)
 
 A fourth review pass (residual surfaces: anchoring, dashboard, duress, schema

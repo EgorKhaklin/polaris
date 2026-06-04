@@ -105,13 +105,18 @@ def check_crypto_algorithm_is_data(root: pathlib.Path) -> list[Finding]:
 def check_no_fk_cascade(root: pathlib.Path) -> list[Finding]:
     offenders = []
     sqldir = root / "polaris_sql"
-    for p in sorted(sqldir.glob("*.sql")) if sqldir.is_dir() else []:
+    files = []
+    if sqldir.is_dir():
+        # Scan the base schema AND migrations — a cascade smuggled into a
+        # migration is just as destructive as one in 01_schema.sql.
+        files = sorted(sqldir.glob("*.sql")) + sorted((sqldir / "migrations").glob("*.sql"))
+    for p in files:
         text = re.sub(r"--[^\n]*", "", p.read_text(errors="replace"))  # strip line comments
         for m in re.finditer(r"ON\s+(DELETE|UPDATE)\s+CASCADE", text, re.I):
             offenders.append(f"{p.name}: ON {m.group(1).upper()} CASCADE")
     if offenders:
         return _fail("fk_cascade", "destructive FK cascade(s): " + "; ".join(offenders[:5]))
-    return _ok("fk_cascade", "no ON DELETE/UPDATE CASCADE in schema")
+    return _ok("fk_cascade", "no ON DELETE/UPDATE CASCADE in schema or migrations")
 
 
 # ---------------------------------------------------------------------------
