@@ -5200,6 +5200,26 @@ class HealthEndpointTests(PolarisTestCase):
         self.assertIn('status', rl)
         self.assertIn(rl['status'], ('healthy', 'degraded', 'unhealthy'))
 
+    def test_health_does_not_leak_paths_or_error_detail(self):
+        """The unauthenticated /api/health must not echo absolute filesystem
+        paths (the zk binary, the state-dir probe) or raw exception text (which
+        embeds the DB host/port/name on a connection error) to anonymous callers
+        (CWE-209). The per-component status tokens convey health without the
+        detail, which is logged server-side instead."""
+        import json
+        from app import app as polaris_app
+        with polaris_app.test_client() as c:
+            r = c.get('/api/health')
+        data = r.get_json()
+        for name, check in data['checks'].items():
+            self.assertNotIn('error', check, f"{name} check leaks raw error text")
+            self.assertNotIn('path', check, f"{name} check leaks an absolute path")
+            self.assertNotIn('mount_probe', check,
+                             f"{name} check leaks the state-dir path")
+        # The state-dir probe (present on a healthy disk check before this fix)
+        # must not appear anywhere in the serialized body.
+        self.assertNotIn('mount_probe', json.dumps(data))
+
     def test_stats_endpoint_returns_hud_signals(self):
         r = self.client.get('/api/atlas/stats?bbox=-89,-179,89,179')
         self.assertEqual(r.status_code, 200)

@@ -1772,7 +1772,7 @@ def _health_check_database():
         if latency_ms > 500:
             status = 'degraded'
         if table_count < 20:
-            # We expect 27 tables in a fully-loaded schema; anything below 20
+            # We expect 26 tables in a fully-loaded schema; anything below 20
             # suggests a partial / broken load.
             status = 'unhealthy' if table_count == 0 else 'degraded'
         return {
@@ -1883,6 +1883,27 @@ def _health_check_disk():
         return {'status': 'degraded', 'error': str(exc)[:160]}
 
 
+# Per-component health keys that carry operator-only detail: raw exception text
+# (a psycopg2 connection error embeds the DB host / port / database name) and
+# absolute filesystem paths (the zk binary, the state-dir probe). /api/health is
+# unauthenticated (load-balancer + uptime probes), so these are logged to stderr
+# for operators but stripped from the response (CWE-209 information exposure).
+_HEALTH_SENSITIVE_KEYS = ('error', 'path', 'mount_probe')
+
+
+def _sanitize_health_checks(checks):
+    """Return a copy of `checks` with operator-only detail removed (logged to
+    stderr). The per-component `status` token, which conveys health, is kept."""
+    safe = {}
+    for name, check in checks.items():
+        leaked = {k: check[k] for k in _HEALTH_SENSITIVE_KEYS if k in check}
+        if leaked:
+            sys.stderr.write(f"[health] {name}: {leaked}\n")
+        safe[name] = {k: v for k, v in check.items()
+                      if k not in _HEALTH_SENSITIVE_KEYS}
+    return safe
+
+
 # Severity ordering used by /api/health to roll component statuses up to
 # the overall status. Higher number = worse.
 _HEALTH_SEVERITY = {'healthy': 0, 'degraded': 1, 'unhealthy': 2}
@@ -1944,7 +1965,9 @@ def api_health():
         'status': overall,
         'version': POLARIS_VERSION,
         'uptime_seconds': int(_time.time() - _APP_STARTED_AT),
-        'checks': checks,
+        # Strip operator-only detail (raw error text, absolute paths) from the
+        # unauthenticated response; the status tokens above already convey health.
+        'checks': _sanitize_health_checks(checks),
         'timestamp': datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z'),
     }
     code = 503 if overall == 'unhealthy' else 200

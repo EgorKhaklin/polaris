@@ -5,6 +5,28 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.76 — 2026-06-04 (/api/health stops leaking infrastructure detail to anonymous callers)
+
+The last finding from the deeper review's error-disclosure pass. `/api/health`
+is intentionally unauthenticated (load-balancer and uptime probes), but its
+per-component checks echoed operator-only detail to anyone: `_health_check_database`
+and `_health_check_redis` returned `str(exc)[:160]` on failure — and a psycopg2
+connection error embeds the DB host, port, and database name — while
+`_health_check_zk_binary` returned the binary's absolute path on every call and
+`_health_check_disk` returned the state-dir probe path. Any anonymous client could
+read internal topology, especially during an outage (CWE-209).
+
+Fix: `_sanitize_health_checks` strips the sensitive keys (`error`, `path`,
+`mount_probe`) from the response and logs them to stderr for operators instead.
+The per-component `status` tokens — which is all a probe needs — are preserved, so
+load balancers still see healthy/degraded/unhealthy.
+
+- `polaris_web/app.py` — `_sanitize_health_checks`, applied in `api_health`; also
+  corrected the stale "27 tables" comment to 26.
+- `polaris_web/test_app.py` — `test_health_does_not_leak_paths_or_error_detail`:
+  no check carries `error`/`path`/`mount_probe`, and the state-dir probe appears
+  nowhere in the body.
+
 ## v9.75 — 2026-06-04 (CLI: the read-only query is actually read-only, and bad args fail cleanly)
 
 Three CLI robustness/safety findings from the review's CLI pass.
