@@ -5,6 +5,42 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.88 — 2026-06-04 (pass 7 converges: a false redaction comment, and a Vocation guard for the evidence trail)
+
+A seventh adversarial review pass over six surfaces no prior pass had swept:
+template/DOM XSS, crypto-correctness (the ML-DSA-65 vs SHA3 placeholder path),
+C6 disclosure on the non-atlas read paths, the multi-step token state machine,
+the witness2 second-witness math, and audit-record content through the
+anti-coercion lens. **Zero security defects survived verification** — the
+hardening arc has converged. The one actionable item was a documentation defect.
+
+**A schema comment falsely claimed a column was ZK-redacted (LOW).**
+`VerificationEvent.requesting_purpose_text` (the operator-supplied reason for a
+verification) carried the inline comment "Like requestor_location, it is
+identifying-disclosure and is redacted for ZERO_KNOWLEDGE rows at read." That is
+false on both counts. The column is written on every disclosure level and is
+redacted *nowhere* — by design: it is the anti-coercion evidentiary trail (a
+coerced verification leaves the coercer's stated purpose on the permanent
+record; see migration `2026-05-15-002` and the verifications form's own help
+text). `requestor_location`, by contrast, genuinely *is* ZK-redacted at the read
+paths (C6, pass-3). A future engineer trusting the comment would either assume a
+protection that does not exist or "fix" the missing redaction and silently
+destroy the Vocation feature.
+
+The comment is corrected to describe the deliberate retention (and to note it
+does not weaken C2 — a ZERO_KNOWLEDGE row still carries no `token_id`). To stop
+the confusion from recurring as a real regression, a new Vocation check now
+guards the evidence trail:
+
+- `polaris_sql/01_schema.sql` — accurate comment on `requesting_purpose_text`.
+- `polaris_checks/checks.py` — `check_coercion_evidence_retained` (27th check):
+  fails if the schema falsely documents the trail as ZK-redacted, or if any read
+  path NULLs it for ZERO_KNOWLEDGE rows (which would destroy the anti-coercion
+  evidence). `test_checks.py` discriminates across four cases.
+
+With pass 7 returning no security findings, the multi-pass adversarial review
+(v9.64–v9.88, ~37 real findings fixed across seven passes) has converged.
+
 ## v9.87 — 2026-06-04 (pass 6: close the two trust-boundary gaps prior passes left)
 
 A sixth adversarial review pass (six surfaces not deeply covered before: the

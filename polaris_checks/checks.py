@@ -457,6 +457,49 @@ def check_c6_atlas_redacts_zk_location(root: pathlib.Path) -> list[Finding]:
 
 
 # ---------------------------------------------------------------------------
+# Vocation (anti-coercion) — the coercion-evidence trail must NOT be redacted.
+#
+# VerificationEvent.requesting_purpose_text is operator-supplied free text: a
+# coerced verification leaves the coercer's stated purpose on the permanent
+# record (the evidentiary chain). It is deliberately RETAINED on every
+# disclosure level, ZERO_KNOWLEDGE included — UNLIKE requestor_location, which
+# IS ZK-redacted (C6, the check above). Pass-7 found a stale schema comment that
+# falsely called it "redacted for ZERO_KNOWLEDGE rows at read"; a well-meaning
+# engineer reading that could add a redaction CASE and silently destroy the
+# anti-coercion feature. This guards against exactly that: the evidence trail
+# must never be NULLed for ZK rows at a read path, and the canonical schema must
+# not falsely claim it is.
+# ---------------------------------------------------------------------------
+def check_coercion_evidence_retained(root: pathlib.Path) -> list[Finding]:
+    schema = _read(root, "polaris_sql/01_schema.sql")
+    if "requesting_purpose_text" not in schema:
+        return _fail("vocation_coercion_evidence",
+                     "VerificationEvent.requesting_purpose_text (the coercion-evidence trail) is missing")
+    # The canonical schema must not FALSELY claim the evidence trail is redacted
+    # (the stale comment that invited the confusion). The same phrase legitimately
+    # describes requestor_location elsewhere, so only flag it when it sits in the
+    # comment block immediately preceding the requesting_purpose_text column.
+    col_at = schema.find("requesting_purpose_text VARCHAR")
+    false_claim = "is redacted for ZERO_KNOWLEDGE rows at read"
+    claim_at = schema.rfind(false_claim, 0, col_at) if col_at != -1 else -1
+    if claim_at != -1 and (col_at - claim_at) < 400:
+        return _fail("vocation_coercion_evidence",
+                     "01_schema.sql falsely documents requesting_purpose_text as ZK-redacted; it is "
+                     "the deliberately-retained anti-coercion evidentiary trail (Vocation)")
+    # No read path may redact the evidence trail to NULL for ZERO_KNOWLEDGE rows.
+    reads = (_read(root, "polaris_web/app.py")
+             + _read(root, "polaris_sql/11_atlas.sql")
+             + _read(root, "polaris_sql/05_procedures.sql"))
+    if re.search(r"THEN\s+NULL\s+ELSE[^;]*requesting_purpose_text", reads, re.I | re.S) or \
+       re.search(r"requesting_purpose_text[^;]*ZERO_KNOWLEDGE[^;]*THEN\s+NULL", reads, re.I | re.S):
+        return _fail("vocation_coercion_evidence",
+                     "a read path redacts requesting_purpose_text for ZERO_KNOWLEDGE rows — that "
+                     "destroys the anti-coercion evidentiary trail it exists to create (Vocation)")
+    return _ok("vocation_coercion_evidence",
+               "the coercion-evidence trail (requesting_purpose_text) is retained, not ZK-redacted (Vocation)")
+
+
+# ---------------------------------------------------------------------------
 # Schema completeness — every column a migration ADDs to an existing table must
 # also be declared in 01_schema.sql, so the canonical schema is complete on its
 # own and a cold reader (or a fresh 01_schema build) never silently lacks a
@@ -532,6 +575,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_table_count_matches_doc,
     check_local_clock_convention,
     check_c6_atlas_redacts_zk_location,
+    check_coercion_evidence_retained,
     check_no_migration_column_drift,
     check_operator_scripts_validate_argv,
 ]

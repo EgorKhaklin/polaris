@@ -313,5 +313,45 @@ def test_prod_app_password_synced_check_discriminates(tmp_path):
         "must PASS when the role password is synced to the app's secret and rotated at init"
 
 
+def test_coercion_evidence_retained_check_discriminates(tmp_path):
+    sql = tmp_path / "polaris_sql"
+    web = tmp_path / "polaris_web"
+    sql.mkdir(); web.mkdir()
+
+    GOOD_SCHEMA = (
+        "-- requesting_purpose_text is the anti-coercion evidentiary trail,\n"
+        "-- RETAINED on every disclosure level (unlike requestor_location).\n"
+        "    requesting_purpose_text VARCHAR(280),\n")
+
+    def write(schema, app="SELECT requesting_purpose_text FROM VerificationEvent;\n"):
+        (sql / "01_schema.sql").write_text(schema)
+        (sql / "11_atlas.sql").write_text("-- atlas\n")
+        (sql / "05_procedures.sql").write_text("-- procs\n")
+        (web / "app.py").write_text(app)
+
+    # 1. Column missing entirely -> FAIL.
+    write("CREATE TABLE VerificationEvent (id SERIAL);\n")
+    assert checks.check_coercion_evidence_retained(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the coercion-evidence column is missing"
+
+    # 2. Stale FALSE comment claiming ZK redaction, right before the column -> FAIL.
+    write("-- Like requestor_location, it is redacted for ZERO_KNOWLEDGE rows at read.\n"
+          "    requesting_purpose_text VARCHAR(280),\n")
+    assert checks.check_coercion_evidence_retained(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the schema falsely documents the trail as ZK-redacted"
+
+    # 3. A read path that NULLs the trail for ZK rows -> FAIL (destroys the feature).
+    write(GOOD_SCHEMA,
+          app=("SELECT CASE WHEN disclosure_level = 'ZERO_KNOWLEDGE' "
+               "THEN NULL ELSE requesting_purpose_text END FROM VerificationEvent;\n"))
+    assert checks.check_coercion_evidence_retained(tmp_path)[0].level == "FAIL", \
+        "must FAIL when a read path redacts the evidence trail for ZERO_KNOWLEDGE"
+
+    # 4. Retained + accurate comment -> OK.
+    write(GOOD_SCHEMA)
+    assert checks.check_coercion_evidence_retained(tmp_path)[0].level == "OK", \
+        "must PASS when the evidence trail is retained and not falsely documented"
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

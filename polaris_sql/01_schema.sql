@@ -339,11 +339,20 @@ CREATE TABLE VerificationEvent (
     latitude             DOUBLE PRECISION CHECK (latitude  IS NULL OR (latitude  BETWEEN  -90 AND  90)),
     longitude            DOUBLE PRECISION CHECK (longitude IS NULL OR (longitude BETWEEN -180 AND 180)),
     -- v9.20 / migration 2026-05-14..15. Operator-supplied free-text reason for
-    -- THIS verification (anti-coercion: a coerced verification leaves a stated-
-    -- purpose trail). NULL = no purpose supplied. Defined here so the canonical
-    -- schema is complete on its own; the matching migration adds it idempotently
-    -- to already-deployed databases. Like requestor_location, it is
-    -- identifying-disclosure and is redacted for ZERO_KNOWLEDGE rows at read.
+    -- THIS verification. NULL = no purpose supplied. Defined here so the
+    -- canonical schema is complete on its own; the matching migration adds it
+    -- idempotently to already-deployed databases.
+    --
+    -- Anti-coercion-direct (the Vocation): a coerced verification leaves a
+    -- stated-purpose trail — the coercer's stated context becomes part of the
+    -- permanent evidentiary chain. So, UNLIKE requestor_location (which
+    -- uc7_warrant_audit and the /verifications + /atlas read paths redact to
+    -- NULL for ZERO_KNOWLEDGE rows, C6), this column is RETAINED verbatim on
+    -- every disclosure level, ZERO_KNOWLEDGE included. Redacting it would
+    -- destroy the evidence trail it exists to create — do NOT add a ZK-redaction
+    -- CASE here (polaris_checks.check_coercion_evidence_retained guards this).
+    -- It does not weaken C2: a ZERO_KNOWLEDGE row still carries no token_id
+    -- (chk_disclosure_token_consistency), so the holder is not derivable from it.
     requesting_purpose_text VARCHAR(280),
     -- Disclosure-level integrity: ZERO_KNOWLEDGE events MUST NOT carry token_id;
     -- FULL events MUST carry token_id. SELECTIVE may go either way depending on
