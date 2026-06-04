@@ -107,12 +107,21 @@ inputs match the verification request before accepting. A proof for
 one triple cannot be replayed as another triple — different public
 inputs → different proof commitments.
 
-### R2. Replay resistance via nonce binding
+### R2. Nonce binding prevents proof substitution (not bundle replay)
 
-Each verification request includes a fresh nonce. The nonce is bound
-to the proof at generation time. A proof generated for nonce X
-cannot be replayed under nonce Y because the verifier checks the
-proof's bound nonce matches X.
+The nonce is a public input bound into the proof at generation time. A
+proof generated for nonce X cannot be presented under a different nonce
+Y, because the verifier checks the proof's bound nonce matches the one
+it expects. This prevents an attacker from re-labelling a captured proof
+under a different `(epoch, context, nonce)` triple.
+
+It does NOT by itself prevent replay of the *identical* request:
+`/api/zk/verify` does not issue or consume nonces (the prover chooses the
+nonce and carries it in the request), so the same bundle resubmitted
+verifies again. Bundle-replay resistance requires the single-use nonce
+store deferred in [`../threat-model.md`](../threat-model.md) T-T2; until
+then anti-replay relies on context-side enforcement and the
+`VerificationEvent` freshness window.
 
 ### R3. Witness-leak resistance IS the SNARK soundness property
 

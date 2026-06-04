@@ -1441,7 +1441,7 @@ def _parse_bbox(s):
 # Window labels → timedelta. The schema stores event_timestamp as
 # TIMESTAMP-without-zone (local wall clock) and the Polaris app+DB are
 # co-located; therefore Python's `datetime.now()` (also local) is the
-# right reference. Using `datetime.utcnow()` here would silently
+# right reference. Using a UTC clock here would silently
 # shift the boundary by the server's TZ offset — caught during the
 # v8.3 smoke test against a window=1h query that returned 0 rows for
 # events inserted 30 minutes ago.
@@ -2460,8 +2460,11 @@ def api_zk_verify():
     if not epoch:
         return jsonify(verified=False, reason="epoch not found"), 404
 
-    # R4: epoch-boundary check.
-    if epoch['valid_until'] < datetime.utcnow():
+    # R4: epoch-boundary check. valid_until is a TIMESTAMP-without-zone stored
+    # as local wall clock (app+DB co-located), so compare against datetime.now()
+    # like every other boundary in this module — a UTC clock would shift the
+    # boundary by the server's offset.
+    if epoch['valid_until'] < datetime.now():
         return jsonify(verified=False, reason="epoch expired")
 
     try:

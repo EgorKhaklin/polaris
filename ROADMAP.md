@@ -23,14 +23,21 @@ layer is [`polaris_checks/`](polaris_checks/), which gates CI via
 
 ## Next ships
 
-1. **PQC second witness.** Issuance is wired through
+1. **ZK verify single-use nonce store (real anti-replay).** `/api/zk/verify` binds
+   a proof to `(epoch, context, nonce)` but does not issue or consume nonces, so the
+   identical request replays and verifies again — the nonce binding only prevents
+   proof *substitution*. Add a single-use store (unique on
+   `(epoch_id, context_id, nonce)`, consumed on a verified result) so a captured
+   bundle cannot be resubmitted, making the R2 claim hold in code. Closes
+   `threat-model.md` T-T2. `S · medium · MEDIUM · hardening`
+2. **PQC second witness.** Issuance is wired through
    `pqc_signing.signature_bytes_for_token` (v9.58) and the real ML-DSA-65 path is one
    flag away (`POLARIS_USE_REAL_PQC=1`). Still open: a full independent ML-DSA-65
    second witness for the verify path, premature while real PQC is OFF by default;
    revisit when it goes live. `L · medium · MEDIUM · hardening`
-2. **PQC-posture audit** — audit Polaris against NIST PQC migration timelines;
+3. **PQC-posture audit** — audit Polaris against NIST PQC migration timelines;
    surface gaps. `S · low · LOW · cold-read-evidence`
-3. **CI: bump deprecated GitHub Actions before the deadline.** Live CI annotation:
+4. **CI: bump deprecated GitHub Actions before the deadline.** Live CI annotation:
    `actions/checkout@v4` plus `actions/setup-python@v5` run on Node.js 20, which
    GitHub force-migrates to Node 24 on **2026-06-16** and removes on **2026-09-16**.
    Bump to current major versions before then. `XS · low · LOW · hardening`

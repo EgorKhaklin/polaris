@@ -5,6 +5,41 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.69 — 2026-06-04 (ZK verify route: local-clock epoch boundary, honest replay scope)
+
+Completing the review by re-running the two dimensions that had hit a session
+limit (crypto-soundness, app-disclosure). Both surfaced a real issue in the ZK
+verify route.
+
+**Epoch boundary used the wrong clock (R4).** `/api/zk/verify` rejected proofs
+against expired epochs with `epoch['valid_until'] < datetime.utcnow()`, but
+`TokenStateEpoch.valid_until` is a `TIMESTAMP`-without-zone stored as local wall
+clock (app and DB are co-located), and every other Python boundary in `app.py`
+compares against `datetime.now()` — the atlas code even carries a comment that
+`utcnow()` is the wrong reference here. On any server not in UTC the epoch
+boundary shifted by the server's offset: valid proofs rejected early, or expired
+epochs accepted late. Fixed to `datetime.now()`, and added
+`check_local_clock_convention` (app.py must not reference `utcnow`) so the
+convention can't drift back. The check layer is now 21.
+
+**The "replay resistance" claim was an overclaim.** `zk-snark.md` R2 was titled
+"Replay resistance via nonce binding" and said "each verification request includes
+a fresh nonce," and `lib.rs` claimed the binding "defeats within-epoch replay." But
+the verifier reads the nonce from the same request that carries the proof and never
+issues or consumes nonces, so the identical bundle resubmitted verifies again. The
+binding prevents proof *substitution* (re-labelling a proof under a different
+`(epoch, context, nonce)`), not bundle replay — which the project's own
+`threat-model.md` T-T2 already lists as deferred. Corrected R2, the `lib.rs`
+header, and `zk-soundness.md` to state exactly what the binding does, and added the
+single-use nonce store to `ROADMAP.md` as the concrete hardening that would make
+the claim hold in code.
+
+- `polaris_web/app.py` — epoch-boundary check uses `datetime.now()`.
+- `polaris_checks/checks.py` — `check_local_clock_convention` + detection test.
+- `DEVNOTES/ships/zk-snark.md`, `polaris_zk/src/lib.rs`, `DEVNOTES/zk-soundness.md`
+  — replay claim scoped to proof substitution; bundle replay noted as deferred.
+- `ROADMAP.md` — ZK verify single-use nonce store added under Next ships.
+
 ## v9.68 — 2026-06-04 (consistency: a true table count, a version module that points only at live things)
 
 The review's recent-regressions pass found two honesty gaps the earlier cleanups

@@ -326,6 +326,21 @@ def check_table_count_matches_doc(root: pathlib.Path) -> list[Finding]:
     return _ok("table_count", f"ARCHITECTURE-OVERVIEW.md table count matches the schema ({n})")
 
 
+# ---------------------------------------------------------------------------
+# Local-wall-clock convention — the DB stores TIMESTAMP-without-zone and app+DB
+# are co-located, so every Python boundary compares against datetime.now().
+# A datetime.utcnow() would silently shift the boundary by the server's UTC
+# offset (and is deprecated). One such bug shipped in the ZK epoch check.
+# ---------------------------------------------------------------------------
+def check_local_clock_convention(root: pathlib.Path) -> list[Finding]:
+    app = _read(root, "polaris_web/app.py")
+    if "utcnow" in app:
+        return _fail("local_clock",
+                     "app.py references utcnow; the DB stores local-wall-clock "
+                     "TIMESTAMPs, so compare against datetime.now() (see the atlas TZ note)")
+    return _ok("local_clock", "app.py uses local-wall-clock datetime.now() for boundaries, never utcnow()")
+
+
 CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_csp_forbids_unsafe_inline,
     check_one_active_token_index,
@@ -347,6 +362,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_open_redirect_guard,
     check_cookie_secure_in_production,
     check_table_count_matches_doc,
+    check_local_clock_convention,
 ]
 
 

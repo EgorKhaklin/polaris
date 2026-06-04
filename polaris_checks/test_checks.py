@@ -168,5 +168,13 @@ def test_table_count_check_fails_on_doc_drift(tmp_path):
     assert out[0].level == "FAIL", "must FAIL when the doc table count contradicts the schema"
 
 
+def test_local_clock_check_fails_on_utcnow(tmp_path):
+    (tmp_path / "polaris_web").mkdir()
+    (tmp_path / "polaris_web" / "app.py").write_text(
+        "if epoch['valid_until'] < datetime.utcnow():\n    pass\n")
+    out = checks.check_local_clock_convention(tmp_path)
+    assert out[0].level == "FAIL", "must FAIL when app.py compares boundaries against utcnow()"
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

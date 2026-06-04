@@ -14,10 +14,13 @@
 // Public inputs: epoch_root [4 field elements], epoch_id, context_id, nonce
 // Private inputs: leaf value, sibling hashes (the inclusion path)
 //
-// Per the R1-R9 audit refinements, the (epoch, context, nonce)
-// binding defeats replay across epochs, cross-context proof reuse,
-// and within-epoch replay. The witness-leak resistance is the SNARK's
-// zero-knowledge property (Plonky2's standard FRI commitment scheme).
+// Per the R1-R9 audit refinements, the (epoch, context, nonce) binding
+// prevents proof substitution: a proof cannot be re-labelled across
+// epochs or contexts, or under a different nonce. It does NOT by itself
+// prevent replay of the identical bundle — that needs the single-use
+// nonce store deferred in threat-model.md T-T2. The witness-leak
+// resistance is the SNARK's zero-knowledge property (Plonky2's standard
+// FRI commitment scheme).
 //
 // Hash function: Poseidon (Plonky2 native). Different from the schema's
 // SHA3-256 used by R10-2 AnchorBatch — these are distinct commitments
