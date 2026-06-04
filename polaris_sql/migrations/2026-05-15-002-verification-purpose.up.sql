@@ -22,27 +22,38 @@
 --   - NO LLM-based classification or validation (per Sanctum §IV.3)
 -- ============================================================================
 
+-- Idempotent. requesting_purpose_text (+ its CHECK) is also defined in
+-- 01_schema.sql so the canonical schema is complete on its own; on a fresh
+-- 00_load_all build the column + constraint already exist and these statements
+-- are no-ops, while on an older deployed database they add them. (CI applies
+-- migrations after the schema load.)
 ALTER TABLE VerificationEvent
-    ADD COLUMN requesting_purpose_text VARCHAR(280);
+    ADD COLUMN IF NOT EXISTS requesting_purpose_text VARCHAR(280);
 
 COMMENT ON COLUMN VerificationEvent.requesting_purpose_text IS
-    'v9.20 / Sanctum 2026-05-15-verification-purpose-and-audit-access.md. '
+    'v9.20 / a recorded decision (verification-purpose-and-audit-access). '
     'Operator-supplied free-text reason for THIS verification. NULL for '
     'legacy rows + cases where no purpose was supplied. Append-only via '
     'the table-level VerificationEvent trigger.';
 
--- Length CHECK: 280 chars is the cap (per Sanctum §IV.3); zero-length
--- is disallowed (a NULL is the legitimate "no purpose supplied" path;
--- empty string is operator error and should be caught early).
-ALTER TABLE VerificationEvent
-    ADD CONSTRAINT chk_purpose_text_length CHECK (
-        requesting_purpose_text IS NULL
-        OR char_length(TRIM(BOTH FROM requesting_purpose_text)) BETWEEN 1 AND 280
-    );
+-- Length CHECK: 280 chars is the cap; zero-length is disallowed (a NULL is the
+-- legitimate "no purpose supplied" path; empty string is operator error).
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'chk_purpose_text_length'
+    ) THEN
+        ALTER TABLE VerificationEvent
+            ADD CONSTRAINT chk_purpose_text_length CHECK (
+                requesting_purpose_text IS NULL
+                OR char_length(TRIM(BOTH FROM requesting_purpose_text)) BETWEEN 1 AND 280
+            );
+    END IF;
+END $$;
 
 -- Optional: an index for purpose-text search (not strictly needed but
 -- helpful when investigating "what verifications mentioned X")
-CREATE INDEX idx_verification_purpose_text_gin
+CREATE INDEX IF NOT EXISTS idx_verification_purpose_text_gin
     ON VerificationEvent USING GIN (to_tsvector('english', requesting_purpose_text))
     WHERE requesting_purpose_text IS NOT NULL;
 

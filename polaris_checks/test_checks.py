@@ -176,6 +176,17 @@ def test_local_clock_check_fails_on_utcnow(tmp_path):
     assert out[0].level == "FAIL", "must FAIL when app.py compares boundaries against utcnow()"
 
 
+def test_migration_drift_check_fails_on_column_missing_from_schema(tmp_path):
+    (tmp_path / "polaris_sql").mkdir()
+    (tmp_path / "polaris_sql" / "migrations").mkdir()
+    (tmp_path / "polaris_sql" / "01_schema.sql").write_text(
+        "CREATE TABLE AppUser (user_id SERIAL PRIMARY KEY);\n")
+    (tmp_path / "polaris_sql" / "migrations" / "x.up.sql").write_text(
+        "ALTER TABLE AppUser ADD COLUMN secret_drift_col TEXT;\n")
+    out = checks.check_no_migration_column_drift(tmp_path)
+    assert out[0].level == "FAIL", "must FAIL when a migration adds a column missing from 01_schema.sql"
+
+
 def test_c6_atlas_zk_check_fails_when_zk_location_not_redacted(tmp_path):
     (tmp_path / "polaris_sql").mkdir()
     (tmp_path / "polaris_web").mkdir()

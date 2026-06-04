@@ -366,6 +366,31 @@ def check_c6_atlas_redacts_zk_location(root: pathlib.Path) -> list[Finding]:
                "ZK verification location is excluded/redacted at the atlas + list read paths (C6)")
 
 
+# ---------------------------------------------------------------------------
+# Schema completeness — every column a migration ADDs to an existing table must
+# also be declared in 01_schema.sql, so the canonical schema is complete on its
+# own and a cold reader (or a fresh 01_schema build) never silently lacks a
+# column the app writes. The migrations stay (idempotent) for deployed DBs.
+# ---------------------------------------------------------------------------
+def check_no_migration_column_drift(root: pathlib.Path) -> list[Finding]:
+    schema = _read(root, "polaris_sql/01_schema.sql")
+    mig_dir = root / "polaris_sql" / "migrations"
+    missing = []
+    if mig_dir.is_dir():
+        for path in sorted(mig_dir.glob("*.up.sql")):
+            text = path.read_text(encoding="utf-8")
+            for m in re.finditer(r"ADD COLUMN(?:\s+IF NOT EXISTS)?\s+(\w+)", text, re.I):
+                col = m.group(1)
+                if not re.search(rf"\b{re.escape(col)}\b", schema):
+                    missing.append(f"{path.name}:{col}")
+    if missing:
+        return _fail("migration_drift",
+                     "migration-added column(s) missing from 01_schema.sql: "
+                     + ", ".join(missing[:6]))
+    return _ok("migration_drift",
+               "every migration-added column is declared in 01_schema.sql (no schema drift)")
+
+
 CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_csp_forbids_unsafe_inline,
     check_one_active_token_index,
@@ -389,6 +414,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_table_count_matches_doc,
     check_local_clock_convention,
     check_c6_atlas_redacts_zk_location,
+    check_no_migration_column_drift,
 ]
 
 

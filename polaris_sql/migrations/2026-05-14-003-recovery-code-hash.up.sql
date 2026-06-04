@@ -32,19 +32,30 @@
 -- ADDITIVE (data side): yes — no existing rows mutated.
 -- ============================================================================
 
+-- Idempotent: recovery_code_hash (+ its CHECK) is also declared in
+-- 01_schema.sql so the canonical schema is complete; on a fresh 00_load_all
+-- build it already exists and these are no-ops, while on an older deployed DB
+-- they add it.
 ALTER TABLE AppUser
-    ADD COLUMN recovery_code_hash VARCHAR(64);
+    ADD COLUMN IF NOT EXISTS recovery_code_hash VARCHAR(64);
 
 -- The hash is stored hex-encoded SHA-256 of the operator's printed
 -- mnemonic (joined with single spaces, lowercased; matching the
 -- generator's digest computation). NULL is the default — operators
 -- bind a code via `polaris-generate-recovery-code.sh --bind-to
 -- <username>` only when solo-deployment recovery is required.
-ALTER TABLE AppUser
-    ADD CONSTRAINT chk_recovery_code_hash_format CHECK (
-        recovery_code_hash IS NULL
-        OR recovery_code_hash ~ '^[0-9a-f]{64}$'
-    );
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint WHERE conname = 'chk_recovery_code_hash_format'
+    ) THEN
+        ALTER TABLE AppUser
+            ADD CONSTRAINT chk_recovery_code_hash_format CHECK (
+                recovery_code_hash IS NULL
+                OR recovery_code_hash ~ '^[0-9a-f]{64}$'
+            );
+    END IF;
+END $$;
 
 COMMENT ON COLUMN AppUser.recovery_code_hash IS
     'SHA-256 (lowercase hex) of operator-printed recovery mnemonic. '

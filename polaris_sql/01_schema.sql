@@ -172,13 +172,22 @@ CREATE TABLE AppUser (
     last_login_at        TIMESTAMP,
     failed_login_count   INTEGER      NOT NULL DEFAULT 0,
     locked_until         TIMESTAMP,
+    -- WebAuthn MFA deadline (migration 2026-05-14-002): NULL = no requirement;
+    -- a future TIMESTAMPTZ is the deadline the login flow checks against now().
+    webauthn_required_after  TIMESTAMPTZ,
+    -- SHA-256 of the operator's recovery code (migration 2026-05-14-003). NULL
+    -- until a code is enrolled. Defined here so the canonical schema is complete;
+    -- the matching migrations add these idempotently to deployed databases.
+    recovery_code_hash       VARCHAR(64),
 
     CONSTRAINT chk_appuser_role
         CHECK (role IN ('admin', 'operator', 'auditor')),
     CONSTRAINT chk_appuser_username_format
         CHECK (username ~ '^[a-z0-9._-]{3,50}$'),
     CONSTRAINT chk_appuser_failed_count_nonneg
-        CHECK (failed_login_count >= 0)
+        CHECK (failed_login_count >= 0),
+    CONSTRAINT chk_recovery_code_hash_format
+        CHECK (recovery_code_hash IS NULL OR recovery_code_hash ~ '^[0-9a-f]{64}$')
 );
 
 CREATE INDEX idx_appuser_username ON AppUser(username);
@@ -329,6 +338,13 @@ CREATE TABLE VerificationEvent (
     -- new rows must populate from agency / requestor location lookup.
     latitude             DOUBLE PRECISION CHECK (latitude  IS NULL OR (latitude  BETWEEN  -90 AND  90)),
     longitude            DOUBLE PRECISION CHECK (longitude IS NULL OR (longitude BETWEEN -180 AND 180)),
+    -- v9.20 / migration 2026-05-14..15. Operator-supplied free-text reason for
+    -- THIS verification (anti-coercion: a coerced verification leaves a stated-
+    -- purpose trail). NULL = no purpose supplied. Defined here so the canonical
+    -- schema is complete on its own; the matching migration adds it idempotently
+    -- to already-deployed databases. Like requestor_location, it is
+    -- identifying-disclosure and is redacted for ZERO_KNOWLEDGE rows at read.
+    requesting_purpose_text VARCHAR(280),
     -- Disclosure-level integrity: ZERO_KNOWLEDGE events MUST NOT carry token_id;
     -- FULL events MUST carry token_id. SELECTIVE may go either way depending on
     -- which attributes are disclosed.
@@ -336,6 +352,10 @@ CREATE TABLE VerificationEvent (
         (disclosure_level = 'ZERO_KNOWLEDGE' AND token_id IS NULL) OR
         (disclosure_level = 'FULL'           AND token_id IS NOT NULL) OR
         (disclosure_level = 'SELECTIVE')
+    ),
+    CONSTRAINT chk_purpose_text_length CHECK (
+        requesting_purpose_text IS NULL
+        OR char_length(TRIM(BOTH FROM requesting_purpose_text)) BETWEEN 1 AND 280
     )
 );
 

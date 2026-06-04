@@ -104,8 +104,11 @@ COMMENT ON COLUMN OperatorWebauthnCredential.sign_count IS
 --
 -- The polaris-create-operator.sh script (v8.93) will be updated in this
 -- same ship to set this to now()+30d for new admin accounts.
+-- Idempotent: webauthn_required_after is also declared in 01_schema.sql so the
+-- canonical schema is complete; on a fresh 00_load_all build it already exists
+-- and this is a no-op, while on an older deployed DB it adds the column.
 ALTER TABLE AppUser
-    ADD COLUMN webauthn_required_after TIMESTAMPTZ;
+    ADD COLUMN IF NOT EXISTS webauthn_required_after TIMESTAMPTZ;
 
 COMMENT ON COLUMN AppUser.webauthn_required_after IS
     'WebAuthn enrollment deadline (v8.97 / Position B). NULL = no MFA '

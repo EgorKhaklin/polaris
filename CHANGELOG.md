@@ -5,6 +5,33 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.79 — 2026-06-04 (schema completeness: 01_schema.sql declares every column the app writes)
+
+The review noted that `VerificationEvent.requesting_purpose_text` existed only in
+a migration, not in `01_schema.sql`'s `CREATE TABLE` — so a fresh build from
+`01_schema.sql` alone lacked a column the app writes. A sweep found two more in
+the same state: `AppUser.webauthn_required_after` and `AppUser.recovery_code_hash`.
+The supported build (`00_load_all` + migrations) was always complete, but the
+canonical schema file read on its own was not, and a cold reader would miss them.
+
+Fix: all three columns (and their CHECK constraints) are now declared in
+`01_schema.sql`, and the three migrations that add them are idempotent
+(`ADD COLUMN IF NOT EXISTS`, guarded `ADD CONSTRAINT`), so on a fresh load the
+column already exists and the migration is a no-op, while on an older deployed
+database the migration still adds it. `check_no_migration_column_drift` cross-checks
+every migration `ADD COLUMN` against `01_schema.sql`, so this drift cannot recur
+(the check layer is now 23).
+
+This also closes the review's note that `requesting_purpose_text` and
+`requestor_location` are identifying-disclosure: both are documented as such in the
+schema, and v9.77 already redacts `requestor_location` for ZERO_KNOWLEDGE rows at
+every read path (`requesting_purpose_text` is an intentional anti-coercion
+evidentiary field that no read path exposes).
+
+- `polaris_sql/01_schema.sql` — the three columns + CHECKs declared.
+- `polaris_sql/migrations/*.up.sql` — the three column migrations made idempotent.
+- `polaris_checks/checks.py` — `check_no_migration_column_drift` + detection test.
+
 ## v9.78 — 2026-06-04 (atlas event feed: a full-precision cursor stops dropping sub-second events)
 
 The atlas event feed (`/api/atlas/events`) paginates by the keyset cursor
