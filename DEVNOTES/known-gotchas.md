@@ -68,10 +68,9 @@ this is correct because the browser places the tag in the DOM (readable
 via `getElementById`) but never executes it (`type` is `application/json`,
 not JavaScript). No CSP violation.
 
-**v8.47 added SecurityWatcher channel 6** to scan templates for
-inline event-handler attributes + executable `<script>` blocks on
-every HYDRA pass. The channel allowlists `application/json`,
-`text/template`, and similar data-island MIME types.
+**`polaris_checks` scans templates** for inline event-handler
+attributes + executable `<script>` blocks (the C5 check). It allowlists
+`application/json`, `text/template`, and similar data-island MIME types.
 
 **If you need inline JS for any reason: don't.** Add a new
 `static/*.js` file and load it via `<script src="..." defer></script>`.
@@ -208,9 +207,9 @@ random param) — this forces Flask to re-render the template, and any
 new `?v=` in that template lands. Just hard-reloading the same URL
 sometimes doesn't.
 
-v8.5 added `scripts/ai-cache-bust.sh` that auto-bumps `?v=` on
-content change. v8.6 made the version a content hash so identical
-content keeps the same URL (cache stays useful).
+The `?v=` query parameter on `/static/*.js` is a content hash, so
+identical content keeps the same URL (cache stays useful) and any
+edit changes the URL.
 
 ### Postgres function overloading silently keeps both signatures
 
@@ -274,26 +273,24 @@ test scripts have to remember.
 
 ---
 
-## Cognitive layer
+## Docs / release
 
 ### Stale numbers in MISSION.md
 
 Symptom: MISSION.md done-list item 7 says "134 Python tests"; reality
 is 200+. The number was correct in v6/v7 and then drifted across many
-releases without anyone updating the doc. v8.6's `ai-test-counts.sh`
-auto-detects and can `--update` the line.
-
-Discipline: run `scripts/ai-test-counts.sh` before releasing; or just
-`scripts/ai-done.sh` which includes it.
+releases without anyone updating the doc. There is no auto-updater;
+verify counts against the actual suites before editing the line.
 
 ### "is this ready to ship?" checklists, scattered
 
-Pre-v8.6 every release had to remember: tests green, status green,
-journal updated, CHANGELOG updated, link-check clean, no orphaned
-debug code, no stale `?v=v8.X` cache busters. Easy to miss one.
+Every release had to remember: tests green, CHANGELOG updated,
+link-check clean, no orphaned debug code, no stale `?v=v8.X` cache
+busters. Easy to miss one.
 
-v8.6's `ai-done.sh` runs all ten checks and prints a single verdict.
-Make this the last step before claiming a feature is shipped.
+`scripts/ai-done.sh` runs `polaris_checks` plus the link-check and
+prints a single verdict. Make this the last step before claiming a
+feature is shipped.
 
 ---
 
@@ -381,8 +378,7 @@ it's `data-submit-on-change`. The only inline `<script>`
 remaining is the `application/json` data-island in `atlas.html`
 (non-executable; CSP allows it).
 
-**SecurityWatcher channel 6 (v8.47)** scans templates on every
-HYDRA pass and flags any new inline event-handler attribute or
-executable `<script>` as drift. Never add `'unsafe-inline'` to
-CSP. If you need inline JS, you do not. Add a new `static/*.js`
-file.
+**`polaris_checks` (the C5 check)** scans templates and flags any
+new inline event-handler attribute or executable `<script>` as
+drift. Never add `'unsafe-inline'` to CSP. If you need inline JS,
+you do not. Add a new `static/*.js` file.

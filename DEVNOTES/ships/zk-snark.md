@@ -12,9 +12,9 @@ what v1 ships, what v1 deliberately defers.
 
 ## The picked combination: C3 + A4 + B3
 
-The M2-1 alignment-exploration Sanctum (closed 2026-05-11) narrowed
-the 4 × 3 × 3 design space (4 SNARK families, 3 circuit designs, 3
-trusted-setup postures) to a single combination:
+The M2-1 alignment-exploration narrowed the 4 × 3 × 3 design space
+(4 SNARK families, 3 circuit designs, 3 trusted-setup postures) to a
+single combination:
 
 - **C3 — Transparent setup.** No ceremony, by construction. The most
   honest posture — removes a trust assumption entirely rather than
@@ -98,7 +98,7 @@ Poseidon root as a hex-encoded byte sequence (same hex format as
 
 ## Audit refinements (R1–R9)
 
-All folded into the proposal and shipped:
+All folded into the design and shipped:
 
 ### R1. Honest-prover binding to (epoch, context, nonce)
 
@@ -151,7 +151,7 @@ Measured on a 2026 desktop with TREE_DEPTH=4:
 
 Future optimization: cache the verifier circuit data so each verify
 call doesn't rebuild the circuit. v1 ships without this caching;
-the regression is named in the proposal §"Performance budget."
+the regression is named here in §"Performance budget."
 
 ### R7. Operator-driven epoch closure
 
@@ -233,7 +233,7 @@ applies. No verification flow runs both checks for the same event.
    boundaries, amortized across all ZK verifications in the epoch
    window.
 6. **Mechanism-design note:** Plonky2 over Goldilocks + Poseidon
-   was picked at the alignment-exploration Sanctum (C3+A4+B3) for
+   was picked in the alignment exploration (C3+A4+B3) for
    post-quantum-comfortable assumptions and tooling maturity. The
    substitutability principle holds: the circuit, prover, and
    verifier could be swapped for any SNARK satisfying the same
@@ -260,9 +260,3 @@ applies. No verification flow runs both checks for the same event.
 - `DEVNOTES/substrate.md` — Plonky2 + Rust toolchain rows.
 - `DEVNOTES/audit-of-record.md` — `TokenStateEpoch` is the 7th instance.
 - `DEVNOTES/concurrency.md` — per-procedure advisory-lock is the 6th catalog entry.
-- `proposals/M2-1-zk-snark-plonky2-merkle.md` — the audited ship-proposal.
-- `proposals/M2-1-snark-exploration.md` — the alignment-exploration
-  proposal that narrowed the design space.
-- `sanctum/2026-05-11-m2-1-snark-exploration.md` — exploration Sanctum
-  (closed; VANTA picked C3+A4+B3).
-- `sanctum/2026-05-11-m2-1-zk-snark-plonky2-merkle.md` — ship-Sanctum.

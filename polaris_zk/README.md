@@ -2,11 +2,9 @@
 
 This Rust crate is the post-quantum-comfortable ZK-SNARK
 implementation for Polaris's `ZERO_KNOWLEDGE` verification
-disclosure level. Built v8.23 (2026-05-11), Sanctum-authorized
-`sanctum/2026-05-11-m2-1-zk-snark-plonky2-merkle.md`
-(decision: C3 transparent + A4 Plonky2 + B3 hybrid; chosen for
+disclosure level. Built v8.23 (2026-05-11): Plonky2, chosen for
 post-quantum sovereignty + FRI-based proof system + no trusted
-setup).
+setup.
 
 It is the **5th and final** primitive in the Substrate-D arc
 (M2-1; the other four are M2-2 anchoring, M2-3 substrate catalog,
@@ -110,8 +108,7 @@ constraints:
   Shor's algorithm if Poseidon survives Grover (which it does
   with the 256-bit security level used here).
 
-If a future swarm watcher (HYDRA `ant_colony` or analog) wants
-to monitor ZK proof generation latency, it should subprocess
+Any monitoring of ZK proof generation latency should subprocess
 this binary and time it; never embed prover state into Python
 (would break the substrate-isolation discipline).
 
@@ -121,8 +118,7 @@ this binary and time it; never embed prover state into Python
 
 | Question | Read |
 |---|---|
-| Why Plonky2 + FRI vs Groth16 + ECDSA? | `sanctum/2026-05-11-m2-1-snark-exploration.md` |
-| Authorizing Sanctum (final design) | `sanctum/2026-05-11-m2-1-zk-snark-plonky2-merkle.md` |
+| Why Plonky2 + FRI vs Groth16 + ECDSA? | `DEVNOTES/threat-model.md` (PQ section) |
 | Ship CHANGELOG entry | search `CHANGELOG.md` for `v8.23` |
 | Per-ship reference doc | `DEVNOTES/ships/zk-snark.md` |
 | Adversary walk + threat model | `DEVNOTES/threat-model.md` (PQ section) |

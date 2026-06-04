@@ -47,8 +47,7 @@ Two documents that together cover the what and the how. Added v8.59 as the publi
 - **Active backlog** → `ROADMAP.md` at root.
 - **Release log** → `CHANGELOG.md` at root.
 - **Agent semantic memory** (concurrency, atlas-scaling, known-gotchas, rate-limiter, threat-model, substrate) → `DEVNOTES/`.
-- **Design and governance notes** (constraint lattice, redaction proof) → `meta/`.
-- **Sanctum protocol** (v8.19+) → `meta/sanctum-protocol.md`. The decision-record protocol for each major decision (MEDIUM/HIGH risk or cross-cutting structural change).
+- **Design notes** (constraint lattice, redaction proof) → `meta/`.
 - **Audit-of-record principle** (v8.20) → `DEVNOTES/audit-of-record.md`. Defines the append-only, cross-cutting pattern shared by TokenLifecycleEvent, VerificationEvent, EnrollmentStatusEvent, RecoveryRequest, TokenSignature, AnchorBatch (v8.21), AgencyTrustAttestation (v8.22), TokenStateEpoch (v8.23), and DuressEvent (v8.24).
 
 ## Re-evaluation triggers

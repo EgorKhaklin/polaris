@@ -1,9 +1,7 @@
 # DEVNOTES/ships/webauthn.md
 
-**Introduced:** v8.97 (Position B from
-`sanctum/2026-05-14-webauthn-operator-auth.md`, selected by VANTA
-in-chat as "B"). Shipped end-to-end same-day under heavy-production
-posture; first non-example migration via the v8.95 framework.
+**Introduced:** v8.97. Shipped end-to-end same-day; first non-example
+migration via the v8.95 framework.
 
 This file is the canonical write-up for Polaris's WebAuthn-MFA operator
 authentication: how operator credentials are registered, how MFA is
@@ -52,8 +50,7 @@ New operators created via `scripts/polaris-create-operator.sh` get a
 - `polaris_web/test_structural_invariants.py` — schema invariants on
   `OperatorWebauthnCredential` (FK to AppUser, public_key bytes
   required, transports JSONB)
-- Round-trip drill verified at v8.97 ship-time (10-step manual drill
-  documented in the Sanctum's §VI Outcome).
+- Round-trip drill verified at v8.97 ship-time (10-step manual drill).
 
 ## Operator-recovery path
 
@@ -66,9 +63,9 @@ recovery:
    at operator-creation time. This is the second factor for the
    recovery ceremony itself.
 
-Per the Sanctum decision, there is NO bypass path. A single-admin
-deployment with the only admin locked out is by-design unrecoverable
-without restoring from backup. The constitutional clause "identity is
+By design, there is NO bypass path. A single-admin deployment with the
+only admin locked out is by-design unrecoverable without restoring from
+backup. The constitutional clause "identity is
 not money" extends here: the operator-auth surface is intentionally
 non-monetary in its blast radius.
 
@@ -100,9 +97,8 @@ Stable. Three known classes of future work:
 
 ## Cross-references
 
-- `sanctum/2026-05-14-webauthn-operator-auth.md` — the decision file
 - `polaris_web/webauthn_auth.py` — the implementation
-- `migrations/2026-05-14-002-operator-webauthn.up.sql` — the schema
-  migration
+- `polaris_sql/migrations/2026-05-14-002-operator-webauthn.up.sql` — the
+  schema migration
 - `MISSION.md` §Vocation — the anti-coercion rationale (operator
   compulsion resistance)

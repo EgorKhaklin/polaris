@@ -32,7 +32,7 @@ polaris/                          ← repo root
 ├── polaris_checks/     ← flat C1-C10 invariant layer
 │
 ├── docs/               ← all documentation (operator + reference + story + paper)
-├── meta/               ← governance records (sanctum protocol, risk classes)
+├── meta/               ← structural records (constraint lattice, redaction proof, TLA+)
 ├── DEVNOTES/           ← informal developer notes
 ├── scripts/            ← operator (polaris-*) + workflow (ai-*) scripts
 ├── assets/             ← branding (logo)
@@ -63,15 +63,15 @@ The actual product — the thing being built.
 | [`polaris_zk/`](../../polaris_zk/) | Rust crate — Plonky2 ZK-SNARK prover/verifier + `witness2/` independent second witness |
 | [`polaris_cli/`](../../polaris_cli/) | CLI utilities |
 
-### Layer 2: Checks and governance
+### Layer 2: Checks and structural records
 
-The flat invariant layer plus the development record.
+The flat invariant layer plus the structural records.
 
 | Layer-2 dir | What |
 |---|---|
 | [`polaris_checks/`](../../polaris_checks/) | Flat C1-C10 invariant layer — one `check_*(repo_root)` per constraint; gates CI via `python3 -m polaris_checks.run` |
 | [`scripts/`](../../scripts/) | operator (polaris-*) + workflow (ai-*) scripts |
-| [`meta/`](../../meta/) | Governance records (sanctum-protocol, autonomy/risk classes, per-arc records) |
+| [`meta/`](../../meta/) | Structural records (constraint lattice, redaction proof, structural architecture, TLA+ models) |
 
 ### Layer 3: Documentation (for humans)
 
@@ -90,7 +90,6 @@ What the operator + developer + auditor needs to read.
 ## The constitutional spine
 
 These documents are the load-bearing constitutional surfaces.
-Touching them requires the Sanctum protocol.
 
 ```
 MISSION.md (constitution)
@@ -99,8 +98,7 @@ MISSION.md (constitution)
     └── Mission v1 + v2 done-lists
 
 polaris_checks/checks.py (machine-checkable enforcement of C1-C10)
-meta/sanctum-protocol.md (strategic-consultation protocol)
-meta/autonomy-architecture.md (LOW/MEDIUM/HIGH risk classes)
+meta/constraint-lattice.md (how C1-C10 compose and depend on each other)
 
 CHANGELOG.md (every ship; never edited retroactively)
 ```
@@ -115,10 +113,10 @@ here for self-contained navigation):
 | Question | Look here |
 |---|---|
 | What is Polaris? What is it NOT? | [`MISSION.md`](../../MISSION.md) |
-| What's next? Backlog by risk class? | [`ROADMAP.md`](../../ROADMAP.md) |
+| What's next? | [`ROADMAP.md`](../../ROADMAP.md) |
 | What just shipped? | [`CHANGELOG.md`](../../CHANGELOG.md) (top entry = latest) |
 | Agent runbook / onboarding | [`CLAUDE.md`](../../CLAUDE.md) |
-| How are strategic decisions recorded? | [`meta/sanctum-protocol.md`](../../meta/sanctum-protocol.md) |
+| How do C1-C10 compose? | [`meta/constraint-lattice.md`](../../meta/constraint-lattice.md) |
 | Cross-cutting principle (AoR, concurrency, threat-model, style) | [`DEVNOTES/<name>.md`](../../DEVNOTES/) |
 | How does ship X work? | [`DEVNOTES/ships/<short-name>.md`](../../DEVNOTES/ships/) |
 | Naming + structural conventions | [`docs/CONVENTIONS.md`](../CONVENTIONS.md) |
@@ -144,7 +142,7 @@ here for self-contained navigation):
 - Not source code (that's in `polaris_*/`)
 - Not the constitution (that's `MISSION.md`)
 - Not informal notes (those are `DEVNOTES/`)
-- Not strategic decisions (those follow the [`meta/sanctum-protocol.md`](../../meta/sanctum-protocol.md))
+- Not the structural records (those are in `meta/`)
 
 `SYSTEM-MAP.md` is **the architectural centerpiece** — the single
 document that, if read in full, gives a complete sense of how

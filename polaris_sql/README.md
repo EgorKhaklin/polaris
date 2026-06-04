@@ -2,15 +2,15 @@
 
 This directory contains the complete SQL realization of the Polaris
 database design specified in `docs/paper/polaris_project_report.pdf`. The schema
-is in BCNF (proven in §6.5 of the report), implements **27 tables**
+is in BCNF (proven in §6.5 of the report), implements **26 tables**
 (12 core entities + `GenomicAnchor` from M2-4 + `QuantumObserverBinding`
 scaffold from M2-5 + `IssuerDiscretionPolicy` from M2-11 +
 `EnrollmentStatusEvent` from M2-9 + `RecoveryRequest` from M2-7 +
 `TokenSignature` from M2-6 + `AnchorBatch` from M2-2 / R10-2 +
 `AgencyTrustAttestation` from M2-8 / R11-3 + `TokenStateEpoch` and
 `TokenStateEpochLeaf` from M2-1 / R10-1 + `DuressEvent` from M2-10 +
-`Pheromone` (v9.04 swarm substrate) + `AppUser` and `AuthAuditLog`
-(v6 web auth) + cognitive-layer support tables), 54
+`LifecycleArchiveCheckpoint` + `AppUser` and `AuthAuditLog`
+(v6 web auth)), 54
 foreign keys, 74 `CHECK` constraints, the partial unique index that
 enforces one-active-token-per-person, the state-machine trigger from
 Appendix A, **14 stored procedures** (UC-1, UC-4, UC-5, UC-6, UC-7,
@@ -42,7 +42,7 @@ psql -d polaris -f 00_load_all.sql
 
 That single command:
 
-1. Creates all 27 tables (`01_schema.sql`)
+1. Creates all 26 tables (`01_schema.sql`)
 2. Adds the partial unique index, the v6 spatial index on
    `VerificationEvent(latitude, longitude)`, the genomic-anchor
    indexes, the revocation-rate index (R11-6), the enrollment-event
@@ -91,7 +91,7 @@ labels valid` (plus all assertion-suite messages).
 | File | Purpose |
 |------|---------|
 | `00_load_all.sql` | Master driver that runs every file in order |
-| `01_schema.sql` | DDL: 27 tables (incl. GenomicAnchor, QuantumObserverBinding, IssuerDiscretionPolicy, EnrollmentStatusEvent, RecoveryRequest, TokenSignature, AnchorBatch, AgencyTrustAttestation, TokenStateEpoch, TokenStateEpochLeaf, DuressEvent, Pheromone, AppUser, AuthAuditLog, and cognitive-layer support tables), 54 FKs, 74 CHECK constraints |
+| `01_schema.sql` | DDL: 26 tables (incl. GenomicAnchor, QuantumObserverBinding, IssuerDiscretionPolicy, EnrollmentStatusEvent, RecoveryRequest, TokenSignature, AnchorBatch, AgencyTrustAttestation, TokenStateEpoch, TokenStateEpochLeaf, DuressEvent, LifecycleArchiveCheckpoint, AppUser, AuthAuditLog), 54 FKs, 74 CHECK constraints |
 | `02_indexes.sql` | Partial unique indexes + spatial + genomic + revocation-rate + enrollment-event + recovery-queue + active-signature indexes + secondary indexes |
 | `03_view.sql` | `ActiveTokens` + `IndividualCurrentEnrollment` views |
 | `04_data.sql` | Coherent sample data with 8 individuals across all five enrollment states + TokenSignature backfill |
@@ -193,9 +193,9 @@ The data is constructed so that:
 
 ## Test suite breakdown
 
-63 SQL assertions total, distributed across three files. Counted by
-`scripts/ai-test-counts.sh` (which greps `PERFORM _record(...)` and
-similar test-helper calls).
+63 SQL assertions total, distributed across three files. The count
+comes from the `PERFORM _record(...)` and similar test-helper calls in
+the suite files.
 
 ### Core suite — `08_tests.sql` (36 assertions, 10 sections)
 

@@ -2,8 +2,6 @@
 
 **Status:** Demonstrator artifact, NOT maintained verification
 infrastructure.
-**Origin:** BIG MISSION Sanctum (`sanctum/2026-05-15-big-mission.md`),
-item High #1
 **Last reviewed:** 2026-05-15 (v9.23)
 
 ## What this directory IS
@@ -17,11 +15,10 @@ issue/revoke operations.
 
 ## What this directory is NOT
 
-Ongoing verification infrastructure. The Anti-Architect (BIG MISSION
-Sanctum, §II High #1) refused the broader scope of "ship TLA+ specs
-for C1, C2, C3" on AP7 grounds (premature abstraction). The
-maintenance burden of keeping multiple specs in sync with schema
-changes outweighs the marginal value when:
+Ongoing verification infrastructure. The broader scope of "ship TLA+
+specs for C1, C2, C3" is deliberately out of scope: the maintenance
+burden of keeping multiple specs in sync with schema changes
+outweighs the marginal value when:
 
 - Hypothesis property tests (`test_invariants_property.py`) already
   cover C1, C2, C3 with randomized inputs
@@ -30,9 +27,9 @@ changes outweighs the marginal value when:
 - Structural invariants (`test_structural_invariants.py`) pin the
   enforcement primitives in place
 
-This single spec is shipped as a demonstrator artifact. If a future
-Sanctum decides formal verification should become a maintained
-surface, that's a separate ship.
+This single spec is shipped as a demonstrator artifact. If formal
+verification should later become a maintained surface, that's a
+separate ship.
 
 ## Running the spec
 
@@ -77,16 +74,11 @@ Model checking completed. No error has been found.
 
 ## Future specs (NOT planned in v9.23)
 
-The Anti-Architect's refusal stands until a Sanctum reopens it.
-Candidates if reopened:
+Candidates if the scope is ever reopened:
 
 - C1 audit-of-record: state machine of append-only behaviors
 - C2 zero-knowledge: information-flow proof of disclosure separation
 - C7 cryptographic-rotation: state machine of algorithm transitions
 
-Each would require a separate Sanctum + ship. Default action: leave
-this directory as the one demonstrator.
-
----
-
-*Per BIG MISSION Sanctum, 2026-05-15.*
+Each would require a separate ship. Default action: leave this
+directory as the one demonstrator.

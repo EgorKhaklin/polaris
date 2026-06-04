@@ -1,6 +1,5 @@
 # DEVNOTES/observability.md — operator runbook for application metrics
 
-**Origin:** BIG MISSION Tier 8 #11 Sanctum (`sanctum/2026-05-16-tier-7-8-thesis-test-and-freeze-line.md`).
 **Audience:** operator running a deployed Polaris instance.
 **Scope:** this document covers OBSERVING THE RUNNING APPLICATION.
 An operator should be able to monitor production behavior with
@@ -20,7 +19,7 @@ metrics backend is required.
 | `auth_failures_per_minute`      | trailing-5-minute average failed-login + WebAuthn  | Spike = credential-stuffing or coerced-operator probe |
 | `duress_events_total`           | monotonic count of duress-code-triggered logins     | **NON-ZERO IS THE ANTI-COERCION ALARM.** Page immediately. |
 
-Per the v9.27 Sanctum joint resolution: **duress events are the
+As of v9.27, **duress events are the
 headline.** An unobservable duress signal is the coercion-cover
 failure mode — the duress-code feature (R11-5 / M2-10) becomes
 decorative if no one alerts on it.
@@ -53,8 +52,8 @@ per line. Pipe them wherever you already collect logs:
 The `/api/metrics` endpoint is intended for periodic-poll scraping. If
 you run Prometheus and want it natively, write a tiny exporter that
 polls `/api/metrics` and exports the four counters. Polaris does NOT
-ship a Prometheus exporter — per the v9.27 Sanctum joint resolution:
-no metrics backend without an operator who runs it.
+ship a Prometheus exporter, by design: no metrics backend without an
+operator who runs it.
 
 ---
 
@@ -148,11 +147,6 @@ observability.record_auth_failure(kind='password', username=username)
 observability.record_duress_event(individual_id=..., agency_id=...)
 ```
 
-These are the call-sites the v9.27 ship wires in. Adding new
-call-sites requires a Sanctum decision (per the v9.30 freeze line) —
-the metric taxonomy is part of the constitutional record from v9.31
-forward.
-
----
-
-*Per BIG MISSION Tier 8 Sanctum 2026-05-16, item #11.*
+These are the call-sites the v9.27 ship wires in. Keep the metric
+taxonomy minimal: add a new call-site only when a new operator-facing
+signal genuinely warrants one.

@@ -28,30 +28,24 @@ to the prioritized backlog below when adopted as an R-id.
   itself the dishonesty the project's discipline forbids. Two honest moves,
   both VANTA's call: (a) reflect the permanent terminus ("has not been
   independently validated") and pin it with a check, or (b) amend the
-  deadline via Sanctum plus freeze-amendment-protocol. `S · high · MEDIUM · cold-read-evidence`
+  deadline through an explicit, recorded decision. `S · high · MEDIUM · cold-read-evidence`
 
 **Next ships:**
 
-1. **[PARTIAL] Wire suites into CI.** Done: the ZK two-witness
-   differential plus `witness2/` self-tests plus `polaris_checks` now gate
-   CI, and `pytest` is in `requirements.txt`. **Still open:** wire
-   `test_app.py` plus `test_cli.py` (DB-backed) once confirmed green against
-   the CI sample DB, deferred because they are not verifiable from the local
-   env (no psycopg2). `S · high · LOW · measurement`
-2. **[PARTIAL] PQC lone verifier** — `pqc_signing.py` is an integration
-   island: `app.py` never imports it, `uc1_issue` never calls `sign()`.
-   **Still open (deferred):** a full independent ML-DSA-65 second witness,
-   premature while the path is OFF by default and unwired; revisit when it
-   goes live. `L · medium · MEDIUM · hardening`
-3. **ZK anonymity set is demo-scale (`TREE_DEPTH=4`, ≤16 leaves).** Re-run
+1. **PQC second witness.** Issuance is wired through
+   `pqc_signing.signature_bytes_for_token` (v9.58) and the real ML-DSA-65 path
+   is one flag away (`POLARIS_USE_REAL_PQC=1`). Still open: a full independent
+   ML-DSA-65 second witness for the verify path, premature while real PQC is
+   OFF by default; revisit when it goes live. `L · medium · MEDIUM · hardening`
+2. **ZK anonymity set is demo-scale (`TREE_DEPTH=4`, ≤16 leaves).** Re-run
    the circuit setup at `TREE_DEPTH=14` (16,384 leaves) for a realistic set;
    the second witness already generalizes. `L · medium · MEDIUM · hardening`
-4. **PQC-posture audit** — audit Polaris against NIST PQC
-   migration timelines; surface gaps. `S · low · LOW · cold-read-evidence`
-5. **CI: bump deprecated GitHub Actions before the deadline.** Live CI annotation:
-   `actions/checkout@v4` plus `actions/setup-python@v5` run on Node.js 20,
-   which GitHub force-migrates to Node 24 on **2026-06-16** and removes on
-   **2026-09-16**. Bump to current major versions before then.
+3. **PQC-posture audit** — audit Polaris against NIST PQC migration
+   timelines; surface gaps. `S · low · LOW · cold-read-evidence`
+4. **CI: bump deprecated GitHub Actions before the deadline.** Live CI
+   annotation: `actions/checkout@v4` plus `actions/setup-python@v5` run on
+   Node.js 20, which GitHub force-migrates to Node 24 on **2026-06-16** and
+   removes on **2026-09-16**. Bump to current major versions before then.
    `XS · low · LOW · hardening`
 
 ---
@@ -60,8 +54,6 @@ This file is the prioritized backlog. Each item has:
 
 - **Mission link** — which item in `MISSION.md`'s done-list this
   advances (or which constraint it strengthens)
-- **Risk class** — `LOW` (autonomous-eligible), `MEDIUM` (propose-and-
-  wait), `HIGH` (explicit human approval required)
 - **Effort estimate** — rough magnitude
 - **Acceptance criteria** — how we know it's done
 
@@ -102,7 +94,7 @@ and audit-log archive+purge.
 VANTA-named:
 
 - ✅ **WebAuthn operator auth** *(shipped v8.97)* — Position B (WebAuthn-MFA). Migration `2026-05-14-002-operator-webauthn` (first non-example migration; validates the v8.95 framework on a real schema change) adds `OperatorWebauthnCredential` + `AppUser.webauthn_required_after` + 5 new AuthAuditLog event types. `polaris_web/webauthn_auth.py` + 7 new routes in `app.py` handle registration + assertion ceremonies via the Duo Labs `webauthn` package. Login flow modified for grace_period / mfa_required / mfa_overdue states. `scripts/polaris-recover-admin.sh` (second-admin pairing) + `scripts/polaris-generate-recovery-code.sh` (printed mnemonic) handle recovery. `polaris-create-operator.sh` sets 30-day deadline for new admin accounts. threat-model § T-S4 + SECRETS.md § 7 + OPERATIONS.md §Operator authentication document the operator runbook. 10-step end-to-end drill + round-trip enrollment drill green.
-- ✅ **Audit log rotation** *(shipped v8.93)* — `scripts/polaris-rotate-logs.sh` wraps `polaris-archive.sh` + verify + `polaris-purge.sh` in one cron-ready pipeline. 5-year default cutoff per Sanctum §V. Cron recipe in OPERATIONS.md. Greppable exit codes for incident response.
+- ✅ **Audit log rotation** *(shipped v8.93)* — `scripts/polaris-rotate-logs.sh` wraps `polaris-archive.sh` + verify + `polaris-purge.sh` in one cron-ready pipeline. 5-year default cutoff Cron recipe in OPERATIONS.md. Greppable exit codes for incident response.
 - **Multi-instance scaling completion** — Phase 2.5 work: read replica routing via Caddy/HAProxy; Redis Sentinel or Cluster topology; PostGIS Phase 2 atlas function rewrite (`atlas_clusters_*` / `atlas_points_*` gain a `CASE` branch on `pg_extension` presence; ≥3× benchmark at 10M+ events).
 
 Scan additions (2026-05-14):
@@ -120,16 +112,16 @@ Phase 3 opened 2026-05-14 (Position A: Wave-1 autonomous-eligible 5 items in one
 
 VANTA-named:
 
-- **Multi-region deployment** ⬜ — read-replicas across regions; failover orchestration; data-locality requirements per jurisdiction. Gating condition: production-deployment-pressure trigger (operator names a real data-locality constraint). Will get its own Sanctum.
-- ✅ **Disaster recovery runbook** *(shipped v9.01)* — [`docs/operator/DR.md`](docs/operator/DR.md) (~450 lines): RPO ≤ 1min / RTO ≤ 30min targets named (per Sanctum §IV.1); 8 failure-class procedures; severity matrix (SEV-1/2/3/4); decision tree; on-call playbook; communications templates (status-page snippets + post-mortem template); drill cadence (monthly verify, quarterly restore, half-yearly failover, annual ransomware tabletop).
-- ✅ **SOC 2 readiness checklist** *(shipped v9.01)* — a ~520-line SOC 2 readiness checklist: TSCs in-scope per Sanctum §IV.2 (Security mandatory + Availability + Confidentiality; Processing Integrity + Privacy out-of-scope as operator-layer); CC1-CC9 mapping table — every common-criteria control mapped to existing C-constraints / scripts that satisfy it; 7 evidence-collection SQL recipes (admin authentications by quarter, schema changes in audit period, token revocations, emergency-password-login authorizations, audit-log purges, append-only enforcement check, WebAuthn-MFA enforcement check); known-limitations section for audit transparency.
+- **Multi-region deployment** ⬜ — read-replicas across regions; failover orchestration; data-locality requirements per jurisdiction. Gating condition: production-deployment-pressure trigger (operator names a real data-locality constraint). Will be scoped when the trigger fires.
+- ✅ **Disaster recovery runbook** *(shipped v9.01)* — [`docs/operator/DR.md`](docs/operator/DR.md) (~450 lines): RPO ≤ 1min / RTO ≤ 30min targets named; 8 failure-class procedures; severity matrix (SEV-1/2/3/4); decision tree; on-call playbook; communications templates (status-page snippets + post-mortem template); drill cadence (monthly verify, quarterly restore, half-yearly failover, annual ransomware tabletop).
+- ✅ **SOC 2 readiness checklist** *(shipped v9.01)* — a ~520-line SOC 2 readiness checklist: TSCs in-scope (Security mandatory + Availability + Confidentiality; Processing Integrity + Privacy out-of-scope as operator-layer); CC1-CC9 mapping table — every common-criteria control mapped to existing C-constraints / scripts that satisfy it; 7 evidence-collection SQL recipes (admin authentications by quarter, schema changes in audit period, token revocations, emergency-password-login authorizations, audit-log purges, append-only enforcement check, WebAuthn-MFA enforcement check); known-limitations section for audit transparency.
 
 Scan additions (2026-05-14):
 
 - **Distributed tracing** ⬜ — OpenTelemetry integration for cross-service request flows. **Gated on Phase 2.5 multi-instance** (deferral note: tracing-without-a-distributed-stack is overhead without payoff; reopens automatically when the second hop exists to trace through).
-- ✅ **HSM / KMS integration for secret material** *(shipped v9.01)* — [`docs/operator/SECRETS.md`](docs/operator/SECRETS.md) § 8 (~280 lines added): three operator-pick paved paths per Sanctum §IV.3 (HashiCorp Vault Transit Engine, AWS KMS envelope encryption, GCP Secret Manager); each with install + Polaris integration shape + IAM policy + key-rotation automation + cost notes; comparison matrix; migration recipe from v8.77 file-mounted to KMS-backed (preserves user sessions across the cut).
-- ✅ **Penetration test schedule + reporting cadence** *(shipped v9.01)* — a ~280-line penetration-test schedule: annual cycle (internal Q1 + external Q3) per Sanctum §IV.4; scope matrix (every STRIDE entry mapped to in/out-of-scope + test approach); remediation SLA (HIGH 30d / MEDIUM 90d / LOW next-cycle); report-archive policy (filesystem AoR + SHA-256 manifest, 7-year retention); vendor evaluation checklist; 12-scenario minimum-tests-per-cycle list; follow-up testing protocol.
-- ✅ **Certificate transparency monitoring** *(shipped v9.01)* — [`scripts/polaris-ct-monitor.sh`](scripts/polaris-ct-monitor.sh) (~220 lines): polls crt.sh API for cert-issuance events on ${POLARIS_DOMAIN}; SHA-256 fingerprint allowlist in `$STATE_DIR/ct-monitor/known.txt`; daily 06:00 UTC cron per Sanctum §IV.5; greppable exit codes (0 ok / 4 inconclusive / 5 anomaly); alert sink = file + stderr per Sanctum §IV.5 (operator integrates with their alerting stack); OPERATIONS.md § "Certificate transparency monitoring (v9.01)" documents setup + on-alert procedure.
+- ✅ **HSM / KMS integration for secret material** *(shipped v9.01)* — [`docs/operator/SECRETS.md`](docs/operator/SECRETS.md) § 8 (~280 lines added): three operator-pick paved paths (HashiCorp Vault Transit Engine, AWS KMS envelope encryption, GCP Secret Manager); each with install + Polaris integration shape + IAM policy + key-rotation automation + cost notes; comparison matrix; migration recipe from v8.77 file-mounted to KMS-backed (preserves user sessions across the cut).
+- ✅ **Penetration test schedule + reporting cadence** *(shipped v9.01)* — a ~280-line penetration-test schedule: annual cycle (internal Q1 + external Q3); scope matrix (every STRIDE entry mapped to in/out-of-scope + test approach); remediation SLA (HIGH 30d / MEDIUM 90d / LOW next-cycle); report-archive policy (filesystem AoR + SHA-256 manifest, 7-year retention); vendor evaluation checklist; 12-scenario minimum-tests-per-cycle list; follow-up testing protocol.
+- ✅ **Certificate transparency monitoring** *(shipped v9.01)* — [`scripts/polaris-ct-monitor.sh`](scripts/polaris-ct-monitor.sh) (~220 lines): polls crt.sh API for cert-issuance events on ${POLARIS_DOMAIN}; SHA-256 fingerprint allowlist in `$STATE_DIR/ct-monitor/known.txt`; daily 06:00 UTC cron; greppable exit codes (0 ok / 4 inconclusive / 5 anomaly); alert sink = file + stderr (operator integrates with their alerting stack); OPERATIONS.md § "Certificate transparency monitoring (v9.01)" documents setup + on-alert procedure.
 
 ### Maintenance rule
 
@@ -199,7 +191,6 @@ Items without the prefix are still active.
 - **Effort:** ~1-2 sessions
 - **Acceptance:**
   - `MISSION.md`, `ROADMAP.md`, `docs/BACKLOG.md` exist
-  - The LOW/MEDIUM/HIGH risk classes are documented
   - Demonstrated by completing at least one R7-* item in the same
     session that the planning layer was built
 
@@ -337,7 +328,7 @@ Items without the prefix are still active.
   `_federation_trust_holds` verification flow gate. See
   `DEVNOTES/ships/federation.md`.
 - **Mission link:** v2 done-list item M2-8 ✅
-- **Risk class:** was HIGH; delivered as MEDIUM-risk per Sanctum
+- **Risk class:** was HIGH; delivered as MEDIUM-risk
 - **Effort:** delivered
 
 ---
@@ -357,7 +348,7 @@ Numbered R10-* (substrate) to leave room for further v8/v9 items above.
   - ✅ Plonky2 circuit (FRI-based, post-quantum-comfortable) proves
     Merkle inclusion in `TokenStateEpoch.merkle_root` bound to
     `(epoch_id, context_id, nonce)` public inputs. C3+A4+B3 picked
-    at the M2-1 alignment-exploration Sanctum.
+    at the M2-1 alignment exploration.
   - ✅ Server-side verifier (`polaris_web/zk.py` → `polaris_zk/`
     subprocess) accepts valid proofs and rejects tampered ones
   - ✅ `TokenStateEpoch` + `TokenStateEpochLeaf` tables — the
@@ -715,9 +706,7 @@ PDF §9 triads.
 ## v16 — Arc B, Production deployment (active multi-phase, opened 2026-05-14)
 
 Production-readiness arc. Opened by VANTA's heavy-production
-directive on 2026-05-14, authorized via
-`sanctum/2026-05-14-steady-state-revocation-heavy-production.md`
-and `sanctum/2026-05-14-arc-b-production-deployment-opening.md`.
+directive on 2026-05-14.
 
 Phase 1 closes the gap between Polaris's architectural sophistication
 and its production-deployability. The full strategic record lives in
@@ -841,10 +830,10 @@ Scoped to Phase 3:
 
 ## Post-freeze candidates (surfaced 2026-05-17 polish pass)
 
-### ✅ Archive-extension Sanctum (CHANGELOG aging-out mechanism) — **DONE in v9.38**
+### ✅ Archive-extension (CHANGELOG aging-out mechanism) — **DONE in v9.38**
 
-Shipped 2026-05-17 in v9.38 via
-`sanctum/2026-05-17-changelog-archive-extension.md`. Amendment:
+Shipped 2026-05-17 in v9.38.
+Amendment:
 archive grows APPENDS-only (no edits/deletions of existing rows).
 v9.24–v9.27 moved byte-identical from CHANGELOG.md to a new
 "Post-v9.24 ships" section in archive/CHANGELOG-FULL.md.
@@ -869,7 +858,7 @@ archive) is kept as history.
 ## Process notes
 
 - Items move from `docs/BACKLOG.md` → ROADMAP.md when they have mission
-  alignment + risk class + effort estimate + acceptance criteria.
+  alignment + effort estimate + acceptance criteria.
 - Items leave the roadmap by being done (move to CHANGELOG) or by
   being formally rejected (move to `meta/rejected.md` with rationale).
 - The roadmap is read first each session, alongside `MISSION.md`. If it

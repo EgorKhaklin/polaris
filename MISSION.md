@@ -5,18 +5,11 @@ addition, every refactor must be checkable against this document.
 When something here conflicts with a request, the request is wrong —
 or the mission needs explicit, deliberate amendment.
 
-`scripts/ai-status.sh` reads this file to score current state against
-mission. `scripts/ai-propose.sh` reads it to score backlog items.
-`scripts/ai-mission.sh` prints it back so the agent re-grounds at the
-start of every session.
-
 ---
 
 ## Freeze line — definition of done (v9.27, amended once v9.29)
 
-**Per BIG MISSION Tier 8 #12 Sanctum (`sanctum/2026-05-16-tier-7-8-thesis-test-and-freeze-line.md`):**
-
-**AMENDMENT LOG (per `meta/freeze-amendment-protocol.md`):**
+**AMENDMENT LOG:**
 
 | Date         | Old → New          | Cost                | Sanctum |
 |--------------|--------------------| ------------------- |---------|
@@ -225,9 +218,6 @@ fundamentally broken regardless of what tests still pass.
 | C9 | Tests for concurrency hazards use real threading, not mocks | `test_app.py::ConcurrencyTests` |
 | C10 | Identity attestation never carries spending authority | architectural — no `MonetaryClaim` table |
 
-When `ai-status.sh` runs, it greps each of these into existence and
-flags anything missing.
-
 ---
 
 
@@ -328,100 +318,6 @@ separation, not just claim it.
 
 ---
 
-## The agent contract
-
-Polaris is built and maintained by an agent operating under a
-contract. This section names that contract.
-
-The contract has **principles**, not implementations. The principles
-are load-bearing — removing any cascades through the others. The
-*current* implementation lives in `scripts/`, `meta/`, and
-`DEVNOTES/`. The implementation is
-substitutable. A future agent may use a different working substrate
-so long as it preserves all three principles.
-
-### Principle 1 — The Sanctum protocol
-
-MEDIUM-risk and HIGH-risk decisions are recorded as audit-of-record
-sessions in `sanctum/`. The session is a structured agent-operator
-strategic consultation: §I the Matter, §II Preparation, §III
-Alternatives, §IV Recommendation, §V Ask, §VI Decision (verbatim
-from VANTA), §VII Outcome (filled by agent after execution). Routine
-LOW-risk work does NOT produce a Sanctum. The full protocol is in
-`meta/sanctum-protocol.md`.
-
-A Sanctum exists for the same reason `TokenLifecycleEvent` exists:
-when a state-changing decision happens, the audit-of-record principle
-demands a row. Strategic decisions are state-changing.
-
-### Principle 2 — Audit-of-record
-
-Every primitive that changes state has a schema element + invariants
-that fully reconstruct operation history without a separate event-log
-table. Append-only at the data-content level, with bounded mutation
-(e.g., revocation as a state transition, not a delete). Currently
-**nine schema instances**: `TokenLifecycleEvent`, `VerificationEvent`,
-`RecoveryRequest`, `EnrollmentStatusEvent`, `TokenSignature`,
-`AnchorBatch`, `AgencyTrustAttestation`, `TokenStateEpoch`, and
-`DuressEvent`, collectively the v2 mission substrate. The principle is canonicalized in
-`DEVNOTES/audit-of-record.md`. New schema-touching ships extend the
-catalog; the principle is what gates them.
-
-### Principle 3 — Risk classes
-
-Three risk classes gate agent autonomy:
-
-- **LOW** — autonomous-eligible. The agent ships without
-  propose-and-wait.
-- **MEDIUM** — propose-and-wait. The agent drafts a proposal or
-  brief and presents it; VANTA approves before execution.
-- **HIGH** — explicit human approval required. No execution without
-  VANTA naming the item.
-
-Specified in `meta/autonomy-architecture.md`. Risk class is the
-default sort order in `ai-propose`; it is what makes
-MEDIUM/HIGH-risk Sanctum-triggering rather than execution-triggering.
-
-The three principles are nested: the Sanctum protocol relies on
-audit-of-record, and audit-of-record relies on risk-class gating to
-decide when a Sanctum is needed. Removing any of the three cascades
-through the others — the same Removable Test applied to C1–C10 in
-`meta/structural-architecture.md`. (A fourth principle, CM — a
-self-monitoring "meta-constraint" over the old cognitive apparatus —
-existed from v8.30 to v9.54; v9.55 cut the apparatus and the
-invariant-checking job moved to the flat, tested `polaris_checks`
-layer described under `## The hard constraints` above.)
-
-### What this section is NOT
-
-This section names principles, not implementations. The following
-are **current implementation**, not constitutional:
-
-- The `ai-*` developer scripts in `scripts/` (session priming, the
-  decision-record helpers, link-check, the pre-ship gate)
-- The constraint lattice in `meta/constraint-lattice.md`
-- The flat invariant layer in `polaris_checks/`
-- The doc structure under `DEVNOTES/` / `meta/`
-
-Any of these may be substituted, renamed, restructured, or replaced
-without violating the constitution — as long as the three principles
-above remain preserved and the C1-C10 checks still pass. This is
-structurally analogous to how C10 names the property ("identity ≠
-money") without naming the mechanism (the absence of a `MonetaryClaim`
-table is the *current* mechanism; a different mechanism preserving the
-property would still satisfy C10).
-
-### Why this section exists
-
-Before v8.30, the cognitive layer was load-bearing but unnamed in
-the constitution. CM was the only constitutional reference. The
-Architect surfaced this gap in every brief from v8.20 onward; the
-v8.29 audit pass made the gap explicit. This section closes that
-gap. The Sanctum that authorized it is
-`sanctum/2026-05-12-cognitive-layer-constitutional-elevation.md`.
-
----
-
 ## What "done" looks like for Polaris
 
 The done-list has two epochs. The v1 done-list (the SCS-230 deliverable
@@ -435,69 +331,6 @@ with the v8.28 UI graduation phase** (Option 3 close-out: dashboard
 substrate tiles, `/anchors` / `/epochs` / `/federation` viewers, token
 detail v2 state section). Both epochs are listed below: v1 as the
 historical record, v2 as the closed mission.
-
-### Post-v2 strategic moment
-
-With both done-lists closed (v1 + v2), Polaris moved through two
-posture phases. The constitutional core (C1-C10, the agent-contract
-principles, G-guards) is preserved across both; only the agent's
-default response shape to ambiguous requests changes.
-
-**Phase 1 — Post-v2 steady-state (2026-05-12 → 2026-05-14):**
-**Resolved 2026-05-12: steady-state** by
-`sanctum/2026-05-12-post-v2-steady-state-declaration.md`.
-Default posture: **decline-and-surface**. The agent shipped
-LOW-risk maintenance only; the Architect surfaced drift, not
-new scope. Arc B (prod-deploy) / Arc C (partner) / novel arc
-were the only named triggers that would open new mission scope.
-
-**Phase 2 — Heavy-production (2026-05-14 → present):**
-**Active.** Revoked the steady-state contract via
-`sanctum/2026-05-14-steady-state-revocation-heavy-production.md`
-(HIGH-risk, DECIDED). The third v8.31 trigger condition
-(*novel arc with documented external cause*) fired in-chat:
-VANTA's directive *"polaris and the sub projects are currently
-far from being complete… do the whole thing… boil the ocean."*
-First manifestation: Arc B Phase 1 (production deployment)
-shipped same day as v8.77. By v8.85 the day's ledger reads ten
-ships across Arc B Phases 1, 1.5, 2 + ARCH-002/003/004
-(docs, UX, test-depth) + an OPEN Sanctum for the constitutional
-question on audit-log deletion-from-hot.
-
-**Default posture under heavy-production: active-production.**
-The agent ships the complete thing per the standing-
-instructions block (`DEVNOTES/style.md`): *do the whole thing,
-do it right, do it with tests, do it with documentation, ship
-the complete thing, the marginal cost of completeness is near
-zero with AI*. The Architect surfaces drift AND production-
-readiness gaps. Constitutional questions still go through
-Sanctum (Pattern #20 Constitutional Discipline, first instance
-shipped v8.84) — heavy-production accelerates execution, it
-does not skip the protocol.
-
-**What does NOT change under heavy-production:**
-
-- **C1-C10** preserved verbatim
-- **The three agent-contract principles** (Sanctum, AoR,
-  risk classes) preserved verbatim
-- **G-guards G1-G31** all in force (G27/G28/G29 added v8.77 for the
-  production-stack surface; G30/G31 added v8.87 for the audit-log
-  archive+purge constitutional carve-out). (G32/G33 governed the
-  v9.07 Pheromone archive+purge framework; that framework was part of
-  the cognitive apparatus cut in v9.55, so the two guards retired with
-  the table they protected.)
-- **Audit-of-record discipline** (v8.20) — every ship still
-  produces a CHANGELOG entry; every MEDIUM/HIGH decision still
-  gets a Sanctum (the protocol is faster — DECIDED-on-arrival
-  when the directive is unambiguous — not skipped)
-- **The override pattern audit-of-record** still recorded in
-  §IX of relevant Sanctums; no override is invisible
-
-**Both contracts are operator-revocable.** VANTA may return to
-steady-state at any time via a fresh Sanctum; the agent does
-not unilaterally adopt or change postures. The constraint is on
-the *agent*, not on VANTA.
-
 ### v1 done-list (closed 2026-05-09)
 
 1. ✅ Schema models the full lifecycle of an identity token (achieved v1)
@@ -506,7 +339,7 @@ the *agent*, not on VANTA.
 4. ✅ Cybersecurity controls: CSP, CSRF, rate-limit, role-based auth (achieved v4)
 5. ✅ Concurrency hazards identified and sealed with tests (achieved v6)
 6. ✅ Scales to 2M+ events with bounded API responses (achieved v6)
-7. ✅ Test coverage: 1077 Python (12 test classes incl. property + redaction-property) + 171 SQL self-tests (achieved v6/v7; growing each release — last counted via ai-test-counts.sh)
+7. ✅ Test coverage: 1077 Python (12 test classes incl. property + redaction-property) + 171 SQL self-tests (achieved v6/v7; growing each release)
 8. ✅ Threat model: STRIDE-categorized, every threat mapped to a control (DEVNOTES/threat-model.md)
 9. ✅ Antimeridian-spanning bbox queries (wrap-aware predicate; 11_atlas.sql)
 10. ✅ Cursor pagination on list pages (achieved v7.4 — keyset cursors on /tokens and /verifications)
@@ -520,8 +353,8 @@ the *agent*, not on VANTA.
 2026-05-09 to v8.26, then re-classified as `✗ RETIRED` once it
 became clear (after the v2 close-out) that they were not paused
 pending a future epoch — they were outside the mission scope.
-Memory file `memory/deferred_items.md` binds `ai-propose` to skip
-them. Audit-of-record: the `DEFERRED 2026-05-09` history is
+Memory file `memory/deferred_items.md` records that they should stay
+skipped. Audit-of-record: the `DEFERRED 2026-05-09` history is
 preserved in this annotation; nothing was deleted.
 
 ### v2 done-list (closed 2026-05-12 at 12/12 ✅, opened 2026-05-09)
@@ -754,40 +587,3 @@ open conditions look like, see **`meta/arc-b-production.md`**.
 For the operator-facing runbook, see `docs/operator/OPERATIONS.md`
 and `docs/operator/SECRETS.md`.
 
----
-
-## The agent's relationship to this mission
-
-When the agent picks up Polaris in a fresh session:
-
-1. Read this file first. It's the canonical statement of intent.
-2. Anything in `ROADMAP.md` should trace back to a ⬜ in the v2
-   done-list (M2-1..M2-12), or to a maintenance / hardening concern
-   that supports the existing v1 work without violating C1–C10.
-3. Anything in `docs/BACKLOG.md` should be a candidate for promotion to
-   ROADMAP, contingent on mission alignment.
-4. When the agent proposes work via `scripts/ai-propose.sh`, the
-   proposal includes a one-line **mission alignment** justification
-   (which v2 item; or which v1 constraint the work strengthens).
-5. When the agent executes work, the post-execution journal entry
-   notes which mission item moved (e.g. "advanced M2-3 from ⬜ to
-   ✅" or "advanced item 10 from 🟡 to ✅").
-6. When `scripts/ai-status.sh` runs, it scores current state against
-   the constraints (C1–C10) and BOTH done-lists (v1: items 1-15;
-   v2: M2-1..M2-12).
-7. v1 items 13–15 are **RETIRED** (v8.27), not paused. They were
-   `⏸ DEFERRED` from 2026-05-09 through v8.26; once v2 closed and
-   the items were re-examined, they proved to be out-of-scope rather
-   than waiting on a future epoch. `ai-propose` skips them under
-   either marker. They reappear on the active queue only if the user
-   explicitly resurrects them — see `memory/deferred_items.md` and
-   the v8.27 entry in CHANGELOG.md for the audit annotation.
-8. The arcs that were considered for v2 and not chosen (B —
-   adversarial hardening; C — Polaris-as-platform). A future session can resurrect them
-   if the chosen arc completes or context shifts; the analysis is
-   already done.
-
-The mission is the agent's reward function. The reward signal is:
-"did this advance Polaris toward the v2 done-list (or close a v1
-deferred item the user has resurrected) without violating any C1–C10
-hard constraint?"

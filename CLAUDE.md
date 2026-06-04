@@ -83,9 +83,6 @@ A ship is a coherent change, verified:
 6. **Definition of shipped:** the new test passes, the gate passes, the work
    closes against its spec.
 
-Strategic decisions get a Sanctum: a structured decision record. The protocol is
-[`meta/sanctum-protocol.md`](meta/sanctum-protocol.md).
-
 ---
 
 ## Where does X live?

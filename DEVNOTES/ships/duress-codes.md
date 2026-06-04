@@ -39,7 +39,7 @@ R11-5 implements this at the schema + verification-flow layer:
 
 ## Six audit refinements (R1–R6)
 
-All folded into the proposal and shipped:
+All shipped:
 
 ### R1. Constant-time hash comparison
 
@@ -252,8 +252,6 @@ link added in v8.25.
 - `polaris_web/test_app.py` — `DuressCodeTests` (13 tests).
 - `DEVNOTES/audit-of-record.md` — `DuressEvent` is the 8th instance.
 - `MISSION.md` — M2-10 marked ✅; v2 done-list = 12/12.
-- `proposals/R11-5-duress-codes.md` — the audited ship-proposal.
-- `sanctum/2026-05-11-r11-5-duress-codes.md` — ship-Sanctum.
 
 ## v2 mission-closure
 

@@ -108,7 +108,7 @@ system.
   `WEBAUTHN_ASSERTED`, `WEBAUTHN_ASSERTION_FAILED`,
   `WEBAUTHN_DEREGISTERED`, and `EMERGENCY_PASSWORD_LOGIN_AUTHORIZED`
   event for forensic reconstruction.
-- Recovery flow (Sanctum §IV.3): a locked-out admin (lost authenticator)
+- Recovery flow: a locked-out admin (lost authenticator)
   is recovered via `scripts/polaris-recover-admin.sh` (a second admin
   opens a short emergency-login window, audited as
   `EMERGENCY_PASSWORD_LOGIN_AUTHORIZED`) OR via a printed recovery
@@ -118,12 +118,8 @@ system.
 **Residual risk:** LOW after the WebAuthn-MFA enrollment deadline
 passes (T-S4 is mitigated by structural defense-in-depth). MEDIUM
 during the 30-day grace period (password-only login still works
-for un-enrolled admins). The constitutional concession of the
-emergency-login window is itself audited and time-bounded
-(default 15 min).
-
-See `sanctum/2026-05-14-webauthn-operator-auth.md` for the full
-constitutional record of Position B.
+for un-enrolled admins). The emergency-login window is itself
+audited and time-bounded (default 15 min).
 
 ---
 

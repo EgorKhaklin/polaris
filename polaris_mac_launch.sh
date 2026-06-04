@@ -1,5 +1,5 @@
 #!/bin/bash
-# AI-context: macOS double-click launcher with self-heal. Subcommands: doctor, nuke, watch. file_mtime() is OS-aware (BSD vs GNU stat). docker_compose_up_with_heal auto-wipes volume on stale-password detection. See DEVNOTES/known-gotchas.md. Run scripts/ai-where.sh polaris_mac_launch.sh before editing.
+# AI-context: macOS double-click launcher with self-heal. Subcommands: doctor, nuke, watch. file_mtime() is OS-aware (BSD vs GNU stat). docker_compose_up_with_heal auto-wipes volume on stale-password detection. See DEVNOTES/known-gotchas.md.
 # =============================================================================
 #  POLARIS / macOS Launch Controller
 #  Version: 2.5  /  2026-05-08

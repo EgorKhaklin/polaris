@@ -62,8 +62,6 @@ report, extended for Critical findings as the patch warrants.
 - The SQL schema, procedures, triggers, indexes (`polaris_sql/`)
 - The Rust ZK prover/verifier (`polaris_zk/`)
 - The invariant-check layer (`polaris_checks/`)
-- The Sanctum protocol implementation (`scripts/ai-sanctum.sh`,
-  `meta/sanctum-protocol.md`)
 - The operator scripts in `scripts/polaris-*.sh`
 - The Dockerfiles and `docker-compose*.yml`
 - The launcher (`polaris_mac_launch.sh`, `Polaris.command`)
@@ -86,12 +84,6 @@ report, extended for Critical findings as the patch warrants.
 - **Third-party dependencies' upstream vulnerabilities** that have not
   yet been pinned in `polaris_web/requirements.txt`. File those upstream
   first; we'll pick them up at the next dependency-rotation pass.
-- **Disagreement recorded in a Sanctum decision.** The Sanctum protocol
-  exists to surface contested positions before a decision is taken; a
-  recorded disagreement is the protocol working as designed, not a
-  vulnerability. A genuine finding here is one that lets an attacker
-  tamper with the Sanctum audit-of-record under `sanctum/` without
-  authorization.
 
 ---
 

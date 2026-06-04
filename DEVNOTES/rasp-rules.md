@@ -1,7 +1,5 @@
 # RASP rules — runtime application self-protection
 
-**Origin:** BIG MISSION Sanctum (`sanctum/2026-05-15-big-mission.md`),
-item High #3
 **Status:** Rule catalog with implemented vs gap status per rule
 
 ---
@@ -10,9 +8,9 @@ item High #3
 
 "RASP" is a vendor marketing term for a cluster of techniques that all
 boil down to: detect anomalous behavior at runtime, and respond with
-something more granular than "drop the request". The Anti-Architect
-refused the framework framing per the BIG MISSION Sanctum; this document
-catalogs the *concrete rules* and their implementation status.
+something more granular than "drop the request". This document refuses
+the framework framing and instead catalogs the *concrete rules* and their
+implementation status.
 
 Three rule classes:
 
@@ -182,11 +180,10 @@ TLS suite by default; no `tls_min_version` override needed
 
 ## Implementation cadence
 
-This document is a catalog, not a ship-in-this-Sanctum implementation
-list. Per the Sanctum, the agent does NOT in-line a new framework for
-all gaps. Each gap (R-RL-3, R-AN-1, R-AN-2, R-AN-3, R-AN-5, R-ED-2,
-R-ED-3) is a candidate for a future LOW-risk ship; operator priority
-+ vocation alignment determines order.
+This document is a catalog, not a one-shot implementation list. It does
+NOT in-line a new framework for all gaps. Each gap (R-RL-3, R-AN-1,
+R-AN-2, R-AN-3, R-AN-5, R-ED-2, R-ED-3) is a candidate for a future
+incremental ship; operator priority + vocation alignment determines order.
 
 Recommended order (vocation-weighted):
 1. R-RL-3 (per-agency-individual rate limit) — anti-coercion direct
@@ -213,4 +210,4 @@ limited.
 
 ---
 
-*Per BIG MISSION Sanctum, 2026-05-15. Rule status as of v9.23.*
+*Rule status as of v9.23.*

@@ -19,7 +19,7 @@ whole document.
 - Typo, link rot, bare reference fix, missed test case, documentation gap.
 - Open an issue first; submit a PR with a clear before/after.
 - PR description must include: motivation, change, blast radius.
-- No need to invoke the Sanctum for LOW-risk changes.
+- Small fixes do not need a design discussion first.
 
 ---
 
@@ -39,41 +39,20 @@ be refused on sight.
 
 ---
 
-## Risk classes
+## Change review
 
-`meta/autonomy-architecture.md` defines three risk classes:
+Changes are sized by blast radius:
 
-- **LOW** — additive, reversible, single-surface. Doc, test, dev-script
-  refactor, isolated bug fix.
-- **MEDIUM** — multi-surface, requires regression coverage, may change
-  documented behavior.
-- **HIGH** — touches the constitutional constraints, the schema security
-  boundary, or the agent's autonomy boundaries.
+- **Small** — docs, tests, a dev-script tweak, an isolated bug fix. Follow the
+  Quick path above: open an issue, submit a focused PR with a clear before/after.
+- **Substantive** — multi-surface work, new behavior, or anything touching the
+  schema, the security boundary, or the C1-C10 constraints. Open an issue first
+  describing the change and its constraint/vocation alignment; the maintainer
+  reviews the approach before you build it.
 
-LOW PRs follow the Quick path. MEDIUM PRs need a brief in the PR
-description. **HIGH PRs require a Sanctum session** — see below.
-
----
-
-## The Sanctum protocol
-
-For MEDIUM/HIGH-risk strategic decisions — opening a new arc, changing
-what Polaris IS or IS NOT, or weakening a constraint — open a Sanctum
-session:
-
-```bash
-./scripts/ai-sanctum.sh open <topic>
-# ... agent records positions; operator decides; agent ships ...
-./scripts/ai-sanctum.sh close <topic> --position A --decision ...
-```
-
-Full spec: `meta/sanctum-protocol.md`. A Sanctum session is a
-structured decision record.
-
-When proposing a HIGH-risk change as an external contributor, file an
-issue first with the Sanctum invocation request. The agent will draft
-the alternatives and their tradeoffs; VANTA decides; the resulting
-Sanctum file is the constitutional record.
+A change that weakens any of C1-C10, or moves Polaris toward becoming a coercion
+vector, is refused regardless of how it is submitted. You cannot bypass that by
+sending a large PR cold.
 
 ---
 
@@ -145,19 +124,17 @@ Do NOT file a public issue for security vulnerabilities. See
 
 ## Communication
 
-Polaris is maintained primarily through agent-operator collaboration. The
-typical flow:
+Polaris is maintained by a single author with AI assistance. For a
+substantive change, the typical flow is:
 
-1. Operator (VANTA) names a need or pastes an error.
-2. Agent (Claude) surfaces options + opens a Sanctum if MEDIUM/HIGH.
-3. Operator authorizes a position.
-4. Agent ships the implementation + tests + documentation in one pass.
-5. The Sanctum file records the decision for MEDIUM/HIGH changes.
+1. Open an issue describing the need in concrete terms, including its
+   constraint or vocation alignment.
+2. The maintainer surfaces options and tradeoffs and picks a direction.
+3. The change ships in one pass: implementation, tests, and documentation
+   together.
 
-For external contributors, file an issue describing the need in concrete
-terms, including the constraint or vocation alignment. Acknowledge
-that the Sanctum protocol governs MEDIUM/HIGH decisions; you cannot
-bypass it by submitting a large PR cold.
+A change that weakens C1-C10 is refused regardless of how it is submitted;
+you cannot bypass that by sending a large PR cold.
 
 ---
 

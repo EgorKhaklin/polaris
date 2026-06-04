@@ -247,7 +247,7 @@ field, to support AJAX/JSON callers).
    relationships require an explicit attestation per pair — N agencies
    wanting full pairwise trust pay O(N²) attestations. Accepted: this
    is the *correct* trade for the threat model. A future
-   "trust group" abstraction (Sanctum-class) could amortize the cost
+   "trust group" abstraction could amortize the cost
    without weakening the no-transitivity invariant.
 6. **Mechanism-design note:** The schema records *facts* (this
    agency attests this target); agencies *decide* what to do with
@@ -271,5 +271,3 @@ field, to support AJAX/JSON callers).
 - `DEVNOTES/audit-of-record.md` — `AgencyTrustAttestation` is the 6th instance.
 - `DEVNOTES/concurrency.md` — per-attesting-agency advisory-lock is the 5th catalog entry.
 - `MISSION.md` — M2-8 marked ✅ in the v2 done-list.
-- `sanctum/2026-05-11-r11-3-issuer-federation.md` — the consultation that authorized this work.
-- `proposals/R11-3-issuer-federation.md` — the audited proposal.

@@ -156,25 +156,6 @@ operator-visible `/verifications` doesn't surface duress; the
 
 ---
 
-## Sanctum sessions (10 — `sanctum/`)
-
-Indexed at `meta/sanctum-index.md`. As of v8.26:
-
-| # | Date | Topic | Decision |
-|---|---|---|---|
-| 1 | 2026-05-11 | R11-6 issuer-discretion (backfill) | yes |
-| 2 | 2026-05-11 | R11-4 tiered enrollment (backfill) | yes |
-| 3 | 2026-05-11 | R11-2 catastrophic-loss recovery (backfill) | yes |
-| 4 | 2026-05-11 | R11-1 multi-sig transitional (backfill) | yes |
-| 5 | 2026-05-11 | v8.20 Sanctum self-monitoring (first under-protocol) | yes |
-| 6 | 2026-05-11 | R10-2 functional DID anchoring | yes |
-| 7 | 2026-05-11 | R11-3 issuer federation | yes |
-| 8 | 2026-05-11 | M2-1 SNARK exploration (alignment-exploration variant) | C3+A4+B3 |
-| 9 | 2026-05-11 | M2-1 ZK-SNARK Plonky2+Merkle ship | yes |
-| 10 | 2026-05-11 | R11-5 duress codes (v2 mission-closer) | yes |
-
----
-
 ## v2 mission status
 
 **12/12 ✅** — every PDF §9 open problem structurally addressed. See

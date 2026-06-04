@@ -16,10 +16,8 @@ Sections:
   CSRF, rate limits, atlas, sessions
 - [Production deployment](#production-deployment) —
   Caddy, TLS, Docker secrets, /api/health
-- [Agent-contract principles](#agent-contract-principles) — Sanctum,
-  audit-of-record, risk classes
-- [Governance & meta](#governance--meta) — risk classes, larping,
-  override, parking-vs-deciding
+- [Governance & meta](#governance--meta) — mission, larping,
+  threat-model vocabulary
 
 ---
 
@@ -197,8 +195,7 @@ reconstructed from ZK events alone.
 
 **ZK-SNARK** — Zero-Knowledge Succinct Non-Interactive Argument of
 Knowledge. Polaris ships a real ZK-SNARK in v8.23 (R10-1 / M2-1)
-using Plonky2 + a hybrid-Merkle circuit (C3+A4+B3 from the M2-1
-exploration Sanctum). The prover proves "I hold a token in this
+using Plonky2 + a hybrid-Merkle circuit. The prover proves "I hold a token in this
 epoch's Merkle root" without revealing which token, bound to
 `(epoch_id, context_id, nonce)` public inputs. See
 `DEVNOTES/ships/zk-snark.md`.
@@ -223,9 +220,7 @@ operation it records, without a separate event-log table.
 Canonicalized in `DEVNOTES/audit-of-record.md`. The schema instances:
 `TokenLifecycleEvent`, `VerificationEvent`, `EnrollmentStatusEvent`,
 `AnchorBatch`, `RecoveryRequest`, `TokenSignature`,
-`AgencyTrustAttestation`, `TokenStateEpoch`, `DuressEvent`. The
-`sanctum/*.md` strategic-consultation sessions are the filesystem
-instance.
+`AgencyTrustAttestation`, `TokenStateEpoch`, `DuressEvent`.
 
 **CHECK constraint** — a row-level invariant declared in the
 schema. Polaris has 74 CHECK constraints across its 27 tables; they
@@ -353,57 +348,20 @@ the password+session model for high-privilege roles.
 
 ---
 
-## Agent-contract principles
-
-The three principles that govern how an agent works on Polaris.
-They sit alongside the C1-C10 constraints in MISSION.md; the
-constraints define what the system must be, these define how
-changes to it are made.
-
-**1. Sanctum** — the formal agent-operator strategic consultation
-protocol. Each session is a file in `sanctum/<date>-<topic>.md`
-with a fixed structure (Matter / Phase scope / Design /
-Recommendation / Alternatives / Decision / Outcome). MEDIUM- or
-HIGH-risk decisions require a Sanctum. Spec:
-`meta/sanctum-protocol.md`. Index: `meta/sanctum-index.md`.
-
-**2. AoR (audit-of-record)** — see "Audit-of-record" above.
-
-**3. Risk class** — see "Risk class" below.
-
-**G-guards** — structural enforcement guards in the test suite that
-prevent drift. G27-G29 cover production deployment (TLS in prod,
-no env-secrets in prod, structured /api/health). Each guard names
-one invariant that a test mechanically enforces.
-
----
-
 ## Governance & meta
-
-**Bounded autonomy** — the framework defined in
-`meta/autonomy-architecture.md`. The agent acts autonomously on
-LOW-risk roadmap items and proposes-and-waits for MEDIUM/HIGH
-risk. Heavy-production posture (v8.77) reasserts the bias toward
-shipping the complete thing.
 
 **DEFERRED** — a threat in `DEVNOTES/threat-model.md` whose
 mitigation is acknowledged but not yet implemented. Distinct from
 ACCEPTED (a threat the system explicitly tolerates).
 
 **Done-list** — the checklist in MISSION.md that defines what
-"done" means for Polaris. The agent's reward function. v1 closed
-2026-05-09; v2 closed 2026-05-12 at 12/12 ✅. Arc-specific
-done-lists live in `meta/arc-<letter>-*.md`.
+"done" means for Polaris. v1 closed 2026-05-09; v2 closed
+2026-05-12 at 12/12 ✅.
 
-**Episodic memory** — the journal entries in
-`journal/YYYY-MM-DD.md`. Captures what happened in each session.
-
-**Heavy-production posture** — the operating mode adopted via
-`sanctum/2026-05-14-steady-state-revocation-heavy-production.md`.
-Replaces the v8.31 post-v2 steady-state decline-and-surface
-default with an active-production "ship the complete thing"
-default. The three agent-contract principles and C1-C10 are
-preserved verbatim; only the default response shape changes.
+**G-guards** — structural enforcement guards in the test suite that
+prevent drift. G27-G29 cover production deployment (TLS in prod,
+no env-secrets in prod, structured /api/health). Each guard names
+one invariant that a test mechanically enforces.
 
 **Larping** — a recurring failure mode VANTA flagged early on:
 substituting feelings of significance for actual output. Tracked
@@ -411,43 +369,22 @@ in `DEVNOTES/style.md`. Standing instruction: name this pattern
 when it appears.
 
 **Mission** — the constitution defined in `MISSION.md`. What
-Polaris is, what it isn't, and the 10 hard constraints. The agent
-re-grounds against this at the start of every session.
+Polaris is, what it isn't, and the 10 hard constraints.
 
 **Override pattern** — a pattern (#14: Workaround Risk; recorded
 in `DEVNOTES/style.md`) describing how a quick fix can mask the
-need for a real fix. The Sanctum protocol's "alternatives" section
-exists partly to force naming of overrides before they become the
-fix.
-
-**Parking-vs-deciding** — the discipline of distinguishing
-"deferred to a named future trigger" (parking) from "decided not
-to do" (rejection). Parked items live in
-`memory/deferred_items.md`; rejected items live in
-`meta/rejected.md` (if/when populated).
+need for a real fix.
 
 **Pattern** — a recurring shape recorded in `DEVNOTES/style.md`.
 Examples: #14 Workaround Risk, #19 Clarity, #21 Closure, #23
 Empirical Iteration.
 
-**Risk class** — see `meta/autonomy-architecture.md`. LOW
-(autonomous-eligible), MEDIUM (propose-and-wait, often Sanctum),
-HIGH (explicit human approval, always Sanctum).
-
 **Roadmap** — the prioritized list of next-version items in
-`ROADMAP.md`. Items reference mission, risk class, effort, and
-acceptance.
+`ROADMAP.md`. Items reference mission, effort, and acceptance.
 
 **Semantic memory** — the DEVNOTES files (`concurrency.md`,
 `atlas-scaling.md`, `known-gotchas.md`, `style.md`,
 `threat-model.md`). Captures stable facts about the system.
-
-**Steady-state contract (v8.31)** — the post-v2 default posture
-adopted 2026-05-12 (Sanctum
-`sanctum/2026-05-12-post-v2-steady-state-declaration.md`).
-Decline-and-surface for ambiguous expansion. **Revoked 2026-05-14**
-in favor of heavy-production posture; the constitutional core was
-preserved.
 
 **STRIDE** — Microsoft's threat-modeling framework: Spoofing,
 Tampering, Repudiation, Information Disclosure, Denial of service,

@@ -1,8 +1,7 @@
 # `polaris_sql/migrations/` — schema-migration files
 
 This directory holds the hand-written SQL files that the `schema_version`
-registry (see `00_migrations_table.sql`) tracks. Position C of
-`sanctum/2026-05-14-schema-migration-framework.md` (DECIDED 2026-05-14).
+registry (see `00_migrations_table.sql`) tracks.
 
 The runner is `scripts/polaris-migrate.sh`. It reads this directory,
 compares against the `schema_version` table, and applies or reverts.
@@ -38,7 +37,7 @@ collision-resistant even when multiple authors work the same day.
 
 ---
 
-## Bidirectional (Sanctum §IV.2)
+## Bidirectional
 
 Every migration ships with a `.down.sql`. There is no exception.
 
@@ -68,7 +67,7 @@ COMMIT;
 
 ---
 
-## Append-only registry (Sanctum §IV.3)
+## Append-only registry
 
 The `schema_version` table is append-only. A revert does NOT delete
 the original apply-row; it appends a new row with `event_type='reverted'`.
@@ -169,7 +168,6 @@ audit-of-record. Use the operator's own ID; do not share accounts.
 
 ## Why custom (not Alembic or sqitch)
 
-Position C from `sanctum/2026-05-14-schema-migration-framework.md`.
 Polaris already ships its own operator scripts (`polaris-create-operator.sh`,
 `polaris-rotate-logs.sh`, this runner), already has the audit-of-record
 discipline that maps perfectly to `schema_version`, and already speaks

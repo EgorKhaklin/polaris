@@ -129,11 +129,9 @@ cannot disappear a holder's history" — is also preserved: any
 purge produces an append-only checkpoint row, so attempted
 tidying still leaves a permanent record.
 
-Position B was selected via Sanctum 2026-05-14 over Position A
-(literal no-deletions-ever; operationally infeasible past ~5
-years) and Position C (PostgreSQL partitioning; non-trivial
-migration). See `sanctum/2026-05-14-audit-log-deletion-from-hot.md`
-for the full rationale.
+This manifest-hashed-archive design was selected over a literal
+no-deletions-ever policy (operationally infeasible past ~5 years)
+and over PostgreSQL partitioning (non-trivial migration).
 
 ### Identity ≠ money (C10)
 
@@ -141,7 +139,7 @@ Polaris's deliberate refusal to carry value (C10) means it's
 structurally not a financial-surveillance database. There's no
 schema for transactions, balances, spending patterns, or merchant
 codes. Adding any of those would require schema changes that the
-agent (per `meta/autonomy-architecture.md`) refuses on sight.
+Vocation (anti-coercion, in `MISSION.md`) refuses on sight.
 
 ### CSP `script-src 'self'` (C5)
 

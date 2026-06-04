@@ -94,7 +94,7 @@ cd polaris
 cat CLAUDE.md  # the document you should read first
 # Then attempt: "ship a small contained feature, X"
 # Log every moment you needed knowledge that wasn't in the docs
-# Compare your trajectory to journal/ + sanctum/
+# Compare your trajectory to CLAUDE.md + MISSION.md
 ```
 
 If you conduct this experiment, send the results (publicly or privately

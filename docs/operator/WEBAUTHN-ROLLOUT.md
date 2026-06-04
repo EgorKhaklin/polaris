@@ -1,7 +1,5 @@
 # WebAuthn rollout runbook
 
-**Origin:** BIG MISSION Sanctum (`sanctum/2026-05-15-big-mission.md`),
-item Critical #1
 **Status:** Phased rollout procedure for operator-facing WebAuthn-MFA
 **Last reviewed:** 2026-05-15 (v9.23)
 
@@ -22,7 +20,7 @@ route). The end-to-end test coverage is in
 
 ## Architecture (5-minute brief)
 
-Per the v8.97 Position B Sanctum, WebAuthn is:
+As of v8.97, WebAuthn is:
 
 - **Mandatory for admin role.** The `AppUser.webauthn_required_after`
   column governs enforcement: if NULL, never enforced; if set, the
@@ -202,7 +200,9 @@ psql -d polaris -c "DELETE FROM OperatorWebauthnCredential
 # (rough heuristic; actual filter depends on attestation policy)
 ```
 
-This is a HIGH-risk operation that requires a Sanctum decision.
+This is a destructive operation: it invalidates existing credentials
+and forces every affected operator to re-enroll. Confirm a recovery
+path (second admin or printed recovery code) is in place first.
 
 ---
 
@@ -234,13 +234,13 @@ backup:
 
 ```bash
 ./scripts/polaris-restore.sh /var/backups/polaris-{latest}.tar.gz \
-  --skip-fs  # keeps the current cognitive-layer state
+  --skip-fs  # keeps the current on-disk filesystem state
 # Then re-deploy with WEBAUTHN_REQUIRED_AFTER reset to NULL for that user
 ```
 
-This is a constitutional event (a recovery from backup is itself a
-filesystem AoR moment) — file a Sanctum recording the recovery
-context.
+A recovery from backup is an audit-of-record event. The append-only
+audit tables (C1) record the restore; confirm those rows are present
+after recovery.
 
 ---
 
@@ -274,14 +274,8 @@ These verify the operator runbook + script ship together.
 
 ## Related
 
-- `sanctum/2026-05-14-webauthn-operator-auth.md` (v8.97 Position B
-  origin)
-- `sanctum/2026-05-15-big-mission.md` §II Critical #1 (this rollout
-  doc)
 - `polaris_web/webauthn_auth.py` (459 lines, full implementation)
 - `scripts/polaris-recover-admin.sh` (v8.97 recovery flow)
 - `scripts/polaris-set-webauthn-deadline.sh` (v9.23 deadline-set
   helper)
 - `scripts/polaris-generate-recovery-code.sh` (recovery code path)
-
-*Per BIG MISSION Sanctum, 2026-05-15.*

@@ -21,7 +21,7 @@ _Cryptographically signed. Audit-of-record by construction. Compulsion-resistant
 [![WebAuthn MFA](https://img.shields.io/badge/auth-WebAuthn%20MFA-1f883d?logo=webauthn&logoColor=white&style=flat-square)](polaris_web/webauthn_auth.py)
 
 
-**Now shipping [v9.57](https://github.com/EgorKhaklin/polaris-id/releases/latest)** &nbsp;·&nbsp; post-quantum · zero-knowledge · compulsion-resistant &nbsp;·&nbsp; one double-click to launch
+**Now shipping [v9.59](https://github.com/EgorKhaklin/polaris-id/releases/latest)** &nbsp;·&nbsp; post-quantum · zero-knowledge · compulsion-resistant &nbsp;·&nbsp; one double-click to launch
 
 [**System map**](docs/reference/SYSTEM-MAP.md) · [**Conventions**](docs/CONVENTIONS.md) · [**Constitution (MISSION.md)**](MISSION.md) · [**Backlog (ROADMAP.md)**](ROADMAP.md) · [**Audit-of-record (CHANGELOG.md)**](CHANGELOG.md) · [**Agent runbook (CLAUDE.md)**](CLAUDE.md)
 
@@ -229,7 +229,7 @@ A full subcommand reference lives in [`docs/operator/INSTALL.md`](docs/operator/
 ```
                  ┌──────────────────────────────────────────────────┐
                  │              Polaris in numbers                  │
-                 │              (current as of v9.57)               │
+                 │              (current as of v9.59)               │
                  ├──────────────────────────────────────────────────┤
                  │  26 schema tables                                │
                  │  14 stored procedures (UC-1 .. UC-12)            │
@@ -259,7 +259,7 @@ Most reference implementations of an identity system put their rules in applicat
 
 Those rules are then machine-checked by [`polaris_checks`](polaris_checks/) — a flat layer of plain `check_*(repo_root)` functions, one per constitutional constraint, each with *tested detection correctness* (it provably fails on a broken input). `python3 -m polaris_checks.run` gates CI directly. A check is a check: no framework, no mythology, ~350 legible lines a second engineer reads in minutes.
 
-> Earlier versions carried an elaborate "cognitive substrate" — an introspection swarm, a simulated Roman economy, a self-governance apparatus — meant to let an AI agent maintain the system. **v9.55 removed it:** ~18k LOC of apparatus replaced by the flat check layer above. The development record of that arc is preserved in the CHANGELOG and `sanctum/` history. The principles it served (the constitution) are unchanged; the implementation is simply honest now.
+> Earlier versions carried an elaborate "cognitive substrate" — an introspection swarm, a simulated Roman economy, a self-governance apparatus — meant to let an AI agent maintain the system. **v9.55 removed it:** ~18k LOC of apparatus replaced by the flat check layer above. The development record of that arc is preserved in the CHANGELOG and the git history. The principles it served (the constitution) are unchanged; the implementation is simply honest now.
 
 ---
 

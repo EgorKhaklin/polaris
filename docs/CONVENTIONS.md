@@ -18,18 +18,18 @@ unprefixed nouns for everything else.
 |---|---|---|
 | `polaris_<domain>/` | `polaris_web/`, `polaris_sql/`, `polaris_checks/`, `polaris_zk/`, `polaris_cli/` | Python package convention; namespaced; unambiguous when `pip install`'d |
 | Unprefixed singular | `assets/`, `journal/` | Doesn't grow plural ("we have 1 logo" / "we have 1 journal-stream") |
-| Unprefixed plural | `docs/`, `scripts/`, `meta/`, `sanctum/`, `archive/`, `DEVNOTES/` | Container of similar items |
+| Unprefixed plural | `docs/`, `scripts/`, `meta/`, `archive/`, `DEVNOTES/` | Container of similar items |
 | ALL_CAPS | `DEVNOTES/` | Historical (v8.x); preserved per v8.20 AoR |
 
-**Rule:** never rename a top-level directory without a Sanctum
-(touches v8.20 AoR + thousands of cross-references).
+**Rule:** never rename a top-level directory casually (it touches
+v8.20 AoR and thousands of cross-references).
 
 ---
 
 ## 2. Top-level file naming
 
 **Pattern:** `ALL_CAPS.md` for constitutional docs; `Title.md` for
-governance docs; `lowercase.<ext>` for everything else.
+conventional + agent-runbook docs; `lowercase.<ext>` for everything else.
 
 | Pattern | Example | What |
 |---|---|---|
@@ -148,46 +148,20 @@ invariants: `Test<ShipID><ShipFeatureName>`.
 
 ---
 
-## 7. Sanctum sessions
-
-Path: `sanctum/<YYYY-MM-DD>-<short-slug>.md`.
-
-**Required structure** (per [`../meta/sanctum-protocol.md`](../meta/sanctum-protocol.md)):
-- Frontmatter: Date, Petitioner, Principal, Trigger, Risk class
-- §I The Matter
-- §II Preparation
-- §III Alternatives considered (≥2 unless genuinely unary)
-- §IV Recommendation
-- §V What's needed from VANTA
-- §VI Decision (filled by VANTA)
-- §VII Outcome (records + cross-references; when shipped)
-
-**Terminal states:**
-- `OPEN` — §VI empty; awaiting decision
-- `DECIDED` — §VI filled; not yet shipped
-- `DECIDED + CLOSED` — shipped; §VII Outcome filled
-- `REJECTED` — §VI declined; preserved per v8.20
-
-**v8.20 AoR pin:** every Sanctum session is filesystem-AoR; `meta/sanctum-index.md` is the chronological index; both never auto-deleted.
-
----
-
-## 8. Journal entries
+## 7. Journal entries
 
 Path: `journal/<YYYY-MM-DD>.md` (per-day flat-list).
 
 **Entry format:**
 ```markdown
-- **decision** HH:MM — <ship-version SHIPPED — title; risk class; description>
+- **decision** HH:MM — <ship-version SHIPPED — title; description>
 - **learning** HH:MM — <what was learned + cross-ref>
 - **bug** HH:MM — <bug found + fix landed>
 ```
 
-`ai-journal.sh` provides the canonical entry interface.
-
 ---
 
-## 9. CHANGELOG entries
+## 8. CHANGELOG entries
 
 `CHANGELOG.md` at repo root. New entries at TOP of file (newest first).
 
@@ -197,9 +171,7 @@ Path: `journal/<YYYY-MM-DD>.md` (per-day flat-list).
 ```
 
 **Body sections** (when applicable):
-- **Risk class:** LOW / MEDIUM / HIGH (composite or specific)
 - **Why this ship:** the directive that triggered it
-- **Source:** Sanctum reference if applicable
 - Per-item subsections describing the change
 - **Constitutional preservation** verified
 - **Live drill** verified
@@ -211,7 +183,7 @@ the prior.
 
 ---
 
-## 10. Versioning
+## 9. Versioning
 
 `POLARIS_VERSION` lives in [`polaris_web/__version__.py`](../polaris_web/__version__.py)
 (canonical source as of v9.06 / C5). Format: `MAJOR.MINOR` (e.g., `9.08`).
@@ -225,7 +197,7 @@ the prior.
 
 ---
 
-## 11. Documentation cross-references
+## 10. Documentation cross-references
 
 **Markdown links must resolve.** `bash scripts/ai-link-check.sh`
 walks every Markdown link of shape `[text]` followed by `(path)` and
@@ -238,13 +210,12 @@ confirms target exists. CI runs this on every push.
   rot when fork count grows)
 
 **Cross-arc references are typed:**
-- "Sanctum-decided in `sanctum/2026-05-14-<topic>.md`" (placeholder format; real refs use real paths)
 - "v8.95 (CHANGELOG) — schema migration framework"
 - "v9.04 / Wave 1 / A1" — for ship + wave + item identification
 
 ---
 
-## 12. Em-dashes
+## 11. Em-dashes
 
 **Forbidden in own-prose Markdown** per `DEVNOTES/style.md` (VANTA
 standing instruction). The `em-dash-warn` pre-commit hook surfaces
@@ -261,7 +232,7 @@ sentence break.
 
 ---
 
-## 13. Comments + docstrings
+## 12. Comments + docstrings
 
 **Code comments default to none.** Only add a comment when the WHY
 is non-obvious: a hidden constraint, a subtle invariant, a
@@ -275,27 +246,24 @@ reader.
 
 **Do:**
 - Reference the constitutional source ("per C2 — zero-knowledge")
-- Reference the Sanctum if the choice was Sanctum-decided
 - Name the surprising-to-a-reader fact ("SET LOCAL evaporates at
   COMMIT — that's intentional carve-out closure")
 
 ---
 
-## 14. Backwards-compat removals
+## 13. Backwards-compat removals
 
 **When deleting code that may have callers:**
 
-1. Sanctum if MEDIUM/HIGH-risk
-2. Add a CHANGELOG entry under the deletion ship
-3. Add a `check_*` to `polaris_checks/checks.py` pinning the deletion
+1. Add a CHANGELOG entry under the deletion ship
+2. Add a `check_*` to `polaris_checks/checks.py` pinning the deletion
    if the deletion is itself load-bearing
-4. Update `meta/sanctum-index.md` if Sanctum-decided
-5. NEVER silently delete from CHANGELOG/sanctum/journal — those are
+3. NEVER silently delete from CHANGELOG/journal — those are
    v8.20 AoR
 
 ---
 
-## 15. Where these conventions live
+## 14. Where these conventions live
 
 This file (`docs/CONVENTIONS.md`) is the single source of truth.
 Changes happen here, then propagate by reference. Other docs that

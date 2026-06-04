@@ -52,9 +52,9 @@ Equally important. Polaris does not:
   structurally inaccessible at the ZERO_KNOWLEDGE disclosure level
   (C2 trigger enforces `token_id IS NULL`).
 
-Each of these is a deliberate constitutional decision, recorded in
-Sanctum files (`sanctum/` directory). The Vocation (anti-coercion)
-sits above C1-C10 and refuses any drift toward these patterns on sight.
+Each of these is a deliberate constitutional decision. The Vocation
+(anti-coercion) sits above C1-C10 and refuses any drift toward these
+patterns on sight.
 
 ---
 
@@ -256,22 +256,6 @@ that the codebase keeps the shape those guarantees depend on (for
 example, that CSP forbids inline scripts (C5) and that cryptographic
 algorithms flow through the `CryptographicAlgorithm` table (C7)).
 
-### The Sanctum protocol
-
-For MEDIUM/HIGH-risk strategic decisions (opening a new arc, changing
-what Polaris IS or IS NOT) the agent does NOT present an ad-hoc
-recommendation in chat. The agent enters the Sanctum
-(`scripts/ai-sanctum.sh`).
-
-The Sanctum protocol is a 4-state lifecycle: OPEN → DECIDING →
-DECIDED → SHIPPED (CLOSED is the canonical synonym for SHIPPED).
-Intermediate states are optional. The Sanctum file is itself an
-audit-of-record instance (a decision record), indexed at
-`meta/sanctum-index.md`.
-
-Decisions are classified LOW / MEDIUM / HIGH risk. LOW-risk changes
-ship directly; MEDIUM and HIGH risk go through Sanctum.
-
 ---
 
 ## §VIII. What the test suite covers
@@ -341,28 +325,25 @@ machine-checkable record of which primitives are load-bearing.
 
 ---
 
-## §XI. The constitutional moment
+## §XI. Steady state
 
-The post-v2 declaration (`sanctum/2026-05-12-post-v2-steady-state-
-declaration.md`) records that Polaris reached steady-state on
-2026-05-12. The default posture for ambiguous requests is
-DECLINE-AND-SURFACE: the agent does not silently expand into new
-mission scope. New scope requires explicit operator authorization
-via Sanctum.
+Polaris reached steady-state on 2026-05-12. The default posture for
+ambiguous requests is DECLINE-AND-SURFACE: the system does not silently
+expand into new mission scope. New scope requires explicit operator
+authorization.
 
 This is itself an anti-coercion primitive: a coerced operator cannot
-direct the agent into unbounded mission expansion without an
-audit-of-record. The constraint binds the agent, not the operator;
-the operator may authorize new scope at any time.
+direct the system into unbounded mission expansion. The constraint
+binds scope expansion, not the operator; the operator may authorize
+new scope at any time.
 
 ---
 
 ## §XII. Where the project stands
 
 The current trajectory closed the gap between architectural
-sophistication and operational reality: production deployment, the
-Sanctum protocol for strategic decisions, and the flat
-`polaris_checks/` layer that gates CI.
+sophistication and operational reality: production deployment and the
+flat `polaris_checks/` layer that gates CI.
 
 The vocation (anti-coercion) is named and sits above C1-C10. The
 ontology layer refuses cross-individual aggregation. Operator-facing
@@ -379,15 +360,11 @@ requirement, or a large jump in verification volume.
 - `MISSION.md` — the constitution
 - `CLAUDE.md` — agent runbook (doubles as developer onboarding)
 - `polaris_checks/checks.py` — the flat C1-C10 invariant layer
-- `meta/autonomy-architecture.md` — risk classes + agent autonomy
-- `meta/sanctum-protocol.md` — Sanctum protocol spec
+- `meta/constraint-lattice.md` — the C1-C10 constraint lattice
+- `meta/structural-architecture.md` — structural enforcement primitives
 - `DEVNOTES/style.md` — VANTA's standing instructions
 - `DEVNOTES/threat-model.md` — schema/runtime STRIDE model
 - `docs/operator/OPERATIONS.md` — day-2 runbook
 - `docs/operator/DR-SINGLE-REGION.md` (v9.23) — disaster recovery
 - `docs/operator/WEBAUTHN-ROLLOUT.md` (v9.23) — WebAuthn rollout
 - `docs/RED-TEAM-SCOPE.md` (v9.23) — external red-team scope
-
----
-
-*Per BIG MISSION Sanctum.*

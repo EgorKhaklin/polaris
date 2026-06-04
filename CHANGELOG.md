@@ -5,6 +5,49 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.59 — 2026-06-04 (professional cleanup: cut the agent-governance scaffolding)
+
+Made the repository a clean, normal software project: removed the apparatus cruft,
+fixed the broken tooling, pruned the dev-script sprawl, and cut the remaining
+"how-an-AI-built-this" governance scaffolding that made it read as unusual rather
+than professional. The thesis is untouched: C1-C10 and the anti-coercion Vocation,
+the product, and the `polaris_checks` invariant layer.
+
+**Removed:**
+
+- Apparatus cruft left on disk: `polaris_swarm/` (the orphaned civitas JSON), plus
+  `.DS_Store` and `.pytest_cache` (gitignored; were never tracked).
+- 15 vestigial / methodology scripts (`scripts/` went 43 to 29): the session
+  helpers (`ai-prime`, `ai-help`, `ai-recall`, `ai-snapshot`, `ai-cache-bust`,
+  `ai-coverage`, `ai-where`, `ai-journal`), the agent-governance scripts
+  (`ai-sanctum`, `ai-propose`, `ai-mission`, `ai-status`, `ai-test-counts`), and
+  the `polaris-ai-done-hook` wrapper.
+- The agent-governance meta docs: `meta/sanctum-protocol.md`,
+  `meta/autonomy-architecture.md`, `meta/freeze-amendment-protocol.md`.
+
+**Fixed:**
+
+- `.pre-commit-config.yaml` was broken: it invoked three deleted scripts (`ai-meta`,
+  `ai-coherence`, the structural-invariants suite) and a deleted doc. Rewritten to
+  run `polaris_checks` + `ai-link-check` + the real hooks.
+- `MISSION.md` (793 to 589 lines): cut the "agent contract" and "agent's
+  relationship to this mission" methodology sections and the strategic-posture
+  subsection. The constitution (C1-C10, the Vocation, the freeze line, the
+  architectural soul, the done-lists) is unchanged.
+- `CONTRIBUTING.md`: replaced the Sanctum / risk-class governance with a normal
+  change-review process.
+- De-methodologized the rest of the doc tree (`CLAUDE`, `SECURITY`, `README`,
+  `ROADMAP`, and ~32 docs via two parallel cleanup passes): removed the dead
+  Sanctum / risk-class references and the provenance citations to the deleted
+  record.
+- Corrected two now-false items in the live backlog (the full product suite is in
+  CI as of v9.56; PQC issuance is wired as of v9.58).
+
+Verified: `polaris_checks` 12 ok READY, `ai-link-check` resolves all 225
+references, every script parses, the pre-commit config is valid YAML.
+
+---
+
 ## v9.58 — 2026-06-04 (post-quantum signing wired into issuance)
 
 Closes the one honesty gap the codebase itself flagged as "the most damning

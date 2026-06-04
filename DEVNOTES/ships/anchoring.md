@@ -109,15 +109,13 @@ discretion visible:
 2. **No `close_anchor_batch_chain` procedure.** A future tooling
    layer might add a procedure that takes (batch_id, external_chain,
    external_chain_tx) and flips `committed_to_chain = TRUE`. R10-2
-   deliberately ships without it — see the v8.21 Sanctum decision
-   §VI.
+   deliberately ships without it.
 
 3. **Hash algorithm is not in the schema.** As above, it's an
    operator-policy choice recorded in this DEVNOTES file. If you want
-   to query "which hash function was used for batch N", you read the
-   relevant Sanctum / journal entry or this file. The Merkle proof
-   format itself encodes the hash function implicitly via the proof
-   geometry.
+   to query "which hash function was used for batch N", you read this
+   file. The Merkle proof format itself encodes the hash function
+   implicitly via the proof geometry.
 
 ## 10,000 leaf hard cap
 
@@ -205,5 +203,3 @@ to change.
 - `DEVNOTES/concurrency.md` — per-algorithm advisory-lock is the
   4th entry in the catalog.
 - `MISSION.md` — M2-2 marked ✅ in the v2 done-list.
-- `sanctum/2026-05-11-r10-2-functional-did-anchoring.md` — the
-  consultation that authorized this work.

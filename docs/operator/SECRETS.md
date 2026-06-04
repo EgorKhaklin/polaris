@@ -412,7 +412,7 @@ own the secrets, not root); checks for entropy availability
 ## 7. WebAuthn-MFA enrollment & recovery (v8.97 / Position B)
 
 Operator authentication adds a phishing-resistant second factor for
-admin accounts, recorded as a decision under the Sanctum protocol.
+admin accounts.
 
 ### 7.1 First-time enrollment
 

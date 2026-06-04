@@ -1,7 +1,5 @@
 # Red-team scope — Polaris external adversarial exercise
 
-**Origin:** BIG MISSION Sanctum (`sanctum/2026-05-15-big-mission.md`),
-item High #4
 **Status:** Scope document; an actual engagement is commissioned by the
 operator, not by the agent
 **Last reviewed:** 2026-05-15 (v9.23)
@@ -140,9 +138,9 @@ The engagement is successful if:
 2. For any finding the team produces, Polaris's response time from
    notification → fix → ship is within the SECURITY.md timeline
    (Critical 14 days, High 30 days, Medium 90 days, Low 180 days).
-3. The post-mortem includes a Sanctum file recording the engagement
-   summary + decisions about which findings shipped vs which were
-   accepted with documented rationale.
+3. The post-mortem records the engagement summary + decisions about
+   which findings shipped vs which were accepted with documented
+   rationale.
 4. The repository updates: `CHANGELOG.md` entry for each shipped fix;
    `DEVNOTES/known-gotchas.md` extension for each accepted finding;
    credit (with consent) to the engaging firm in `CHANGELOG.md`.
@@ -199,7 +197,7 @@ to the maintainer first; public-disclosure timeline per
 **Evidence retention:** the engaging firm must hand over:
 - Per-finding repro steps (executable, not narrative)
 - Per-finding suggested remediation
-- Sanitized engagement timeline (for the post-mortem Sanctum)
+- Sanitized engagement timeline (for the post-mortem)
 - Tool inventory used (for the operator to evaluate detection coverage)
 
 ---
@@ -209,7 +207,7 @@ to the maintainer first; public-disclosure timeline per
 If/when the operator commissions an engagement against this scope and
 returns findings, the agent commits to:
 
-1. Open a Sanctum per Critical or High finding
+1. Record the decision and rationale per Critical or High finding
 2. Ship under the SECURITY.md severity timeline
 3. Document in `CHANGELOG.md` + `DEVNOTES/known-gotchas.md`
 4. Add a `check_*` in `polaris_checks/` where applicable (regression
@@ -218,5 +216,4 @@ returns findings, the agent commits to:
 
 ---
 
-*Per BIG MISSION Sanctum, 2026-05-15. Operator commissions; agent
-specifies scope.*
+*Operator commissions; agent specifies scope.*

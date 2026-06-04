@@ -77,13 +77,13 @@ constraints accrete by accident. ✓ Not larping.
 Roadmap priority weights follow a Fibonacci sequence (1, 2, 3, 5,
 8, 13) to encode that work-sized-13 isn't 13× harder than work-
 sized-1, it's combinatorially harder. Linear scoring (1, 2, 3, 4,
-5) systematically under-penalizes large items. The Fibonacci
-weighting makes `scripts/ai-propose.sh` prefer many small wins over
-one large gamble. Standard in agile estimation.
+5) systematically under-penalizes large items, so the Fibonacci
+weighting favors many small wins over one large gamble. Standard in
+agile estimation.
 
-**Removable test:** Could the weights be linear? Yes, and the
-proposal output would change, favoring HIGH-risk items more
-heavily. Concrete behavioral effect means load-bearing. ✓ Not
+**Removable test:** Could the weights be linear? Yes, and ranking
+the ROADMAP backlog would change, favoring large items more
+heavily. Concrete effect on prioritization means load-bearing. ✓ Not
 larping.
 
 ### 3. Cross-layer invariants: "the rule at one layer should appear at the layers that depend on it"
@@ -112,8 +112,6 @@ Reason: human working memory holds ~7±2 items (Miller 1956);
 problems decomposed into much more than that are under-chunked,
 much less are over-chunked.
 
-Used in `patterns/decomposition-targets.md` as a pre-flight check.
-
 **Removable test:** Empirically, decompositions outside 3/7/12
 tend to either lose detail or accumulate it. The DEVNOTES files
 honour the bound (most have ≤ 7 sections). ✓ Not larping.
@@ -123,14 +121,13 @@ honour the bound (most have ≤ 7 sections). ✓ Not larping.
 ## What this layer does NOT do
 
 It does NOT replace existing analysis with overlay framing. The
-threat model is still STRIDE; the architecture is still risk-
-classified; the tests are still pytest, SQL self-tests, and the
-`polaris_checks` invariant layer. The constraint-lattice framing is
-an OVERLAY that adds:
+threat model is still STRIDE; the tests are still pytest, SQL
+self-tests, and the `polaris_checks` invariant layer. The
+constraint-lattice framing is an OVERLAY that adds:
 
 - **Completeness checks**, the constraint lattice says "ten
   constraints, argue if you want to add an eleventh"
-- **Priority weighting**, Fibonacci scaling for proposals
+- **Priority weighting**, Fibonacci scaling for ROADMAP backlog
 - **Cross-layer scanning**, invariants checked end-to-end by
   `polaris_checks`
 
@@ -172,12 +169,12 @@ Removable Test is what keeps it grounded.
 
 ## Maintenance: when structural vocabulary creeps in unbacked
 
-When reading a journal entry, DEVNOTE, or doc that uses structural
+When reading a DEVNOTE, CHANGELOG entry, or doc that uses structural
 language, ask:
 
 1. **Does this element impose a removable constraint?** If you
    delete the lattice mapping, does anything break? If you delete
-   the Fibonacci weights, does ai-propose's output change? If
+   the Fibonacci weights, does the ROADMAP ranking change? If
    neither, the element is decorative. Remove it.
 
 2. **Could a more precise word do the same work?** If "lattice"
@@ -186,8 +183,8 @@ language, ask:
    precise, not heavier.
 
 3. **Is the writer using this to FEEL profound, or to BE precise?**
-   The first is larping; the second is structure. The journal
-   entry should answer this.
+   The first is larping; the second is structure. The prose should
+   answer this.
 
 ---
 
@@ -201,4 +198,3 @@ language, ask:
 - `meta/lineage.md`, etymology: which older frameworks each
   structural insight is drawn from (kept separate so the
   operational docs stay focused)
-- `patterns/decomposition-targets.md`, the 3/7/12 recipe

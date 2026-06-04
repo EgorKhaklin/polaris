@@ -4,8 +4,7 @@ Polaris's `polaris_zk` crate uses the words *proof*, *zero-knowledge*, and
 *post-quantum*. This is the honest ledger: which of those claims are rigorous,
 which are demo-scale, and exactly where the edges are. It is modeled on Glass's
 `docs/soundness.md` and was added in v9.44 as the documentation half of the
-Glass bounded-integration decision
-(`sanctum/2026-06-03-glass-bounded-integration.md`).
+Glass bounded-integration decision.
 
 The short version, up front:
 
@@ -110,6 +109,4 @@ misreading of the spec, and never substitutes for an external audit.
 | The independent witness | `polaris_zk/witness2/` (+ `test_witness2.py`) |
 | The verdict differential | `polaris_web/test_zk_second_witness.py` |
 | The two-witness principle | [`DEVNOTES/two-witness-principle.md`](two-witness-principle.md) |
-| Why Plonky2 + FRI | `sanctum/2026-05-11-m2-1-snark-exploration.md` |
-| The Glass bounded-integration decision | `sanctum/2026-06-03-glass-bounded-integration.md` |
 | Per-ship ZK reference | [`DEVNOTES/ships/zk-snark.md`](ships/zk-snark.md) |

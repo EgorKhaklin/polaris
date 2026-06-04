@@ -1,8 +1,8 @@
 # QuantumObserverBinding — RESERVED-NOT-PLANNED
 
-**Status:** RESERVED-NOT-PLANNED (mirrors v9.16 Position C′ pattern)
-**Origin:** M2-5 substrate scaffold shipped v8.11 (`sanctum/2026-05-11-...`)
-**Decision:** v9.23 (BIG MISSION Sanctum, item Medium #1)
+**Status:** RESERVED-NOT-PLANNED
+**Origin:** M2-5 substrate scaffold shipped v8.11
+**Decision:** v9.23
 **Last reviewed:** 2026-05-15
 
 ---
@@ -35,33 +35,28 @@ existing token corpus.
 
 ## Why we are NOT building it
 
-Per the BIG MISSION Sanctum (`sanctum/2026-05-15-big-mission.md` §II,
-Medium #1), the Anti-Architect surfaced two anti-patterns:
+Two problems argue against implementing it now:
 
-- **AP7 (premature abstraction):** there is no deployed quantum threat
+- **Premature abstraction:** there is no deployed quantum threat
   to defend against. Building infrastructure for a hypothetical
   algorithm-rotation event whose triggering conditions cannot be
   named is the textbook abstraction-without-grounding failure mode.
-- **AP8 (larping):** "QuantumObserverBinding" is a naming flourish.
+- **Honest naming:** "QuantumObserverBinding" is a naming flourish.
   The underlying concept is "future post-quantum algorithm rotation
   table". Calling it Quantum Observer Binding makes it sound more
-  built-than-it-is, which the operator-facing demo would inherit if
-  we implemented it. See v9.21 closing-pass discipline: the demo
-  must not lie about what Polaris does.
+  built than it is, which the operator-facing demo would inherit if
+  we implemented it. The demo must not lie about what Polaris does.
 
-The Architect's counter-position was that the substrate is a
-*cognitive-layer artifact* even if not functionally used — it
-documents the migration model so future implementers know the
-schema shape. The Anti-Architect conceded this point. The scaffold
-stays in the schema; what we are NOT doing is implementing the
-write path or coupling it to any code that fires today.
+The substrate stays in the schema because it documents the migration
+model so future implementers know the schema shape. What we are NOT
+doing is implementing the write path or coupling it to any code that
+fires today.
 
 ---
 
 ## Triggers for promotion to OPERATIONAL
 
-Mirroring the v9.16 RESERVED-NOT-PLANNED framing for Arc G, the
-following operational triggers would justify reopening this decision:
+The following operational triggers would justify reopening this decision:
 
 1. **NIST PQC successor algorithm finalized** with a deployment
    timeline that intersects Polaris's expected service life. ML-DSA-65
@@ -116,30 +111,22 @@ operator if the capability is documented as unbuilt).
 
 ## Related decisions
 
-- v9.16 `sanctum/2026-05-15-open-arcs-debate.md` — Position C′
-  RESERVED-NOT-PLANNED framing originated here
-- v8.11 `sanctum/2026-05-11-m2-1-snark-exploration.md` — M2-5
-  scaffold shipped
-- v8.20 audit-of-record discipline — old documents are frozen; the
-  v8.11 ship's SCAFFOLD status is not retroactively edited
+- v9.16 — RESERVED-NOT-PLANNED framing originated here
+- v8.11 — M2-5 scaffold shipped
+- v8.20 — old documents are frozen; the v8.11 ship's SCAFFOLD status
+  is not retroactively edited
 
 ---
 
 ## Removal
 
-If a future Sanctum decides to remove the table entirely (rather than
-promote it to OPERATIONAL), the constitutional record of the removal
-must include:
+If the table is removed entirely (rather than promoted to OPERATIONAL),
+the record of the removal must include:
 
-- A new Sanctum file explaining why the substrate is no longer needed
+- A note explaining why the substrate is no longer needed
 - A migration that DROP TABLEs `QuantumObserverBinding`
 - Update to this document marking it CLOSED-REMOVED
 - Update to `MISSION.md` v2 done-list (currently lists M2-5 as
-  "scaffold shipped"; would move to "removed by Sanctum decision")
+  "scaffold shipped"; would move to "removed")
 
-The default action is to leave the substrate in place. Removal is
-itself a HIGH-risk Sanctum event.
-
----
-
-*Per BIG MISSION Sanctum, 2026-05-15*
+The default action is to leave the substrate in place.

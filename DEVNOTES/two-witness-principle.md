@@ -5,10 +5,9 @@
 > promise, not a proof.
 
 Adopted v9.44 from the Glass language's Pentecost discipline, as the transferable
-half of the 2026-06-03 Glass bounded-integration decision
-(`sanctum/2026-06-03-glass-bounded-integration.md`). Glass's own ledger states it
-plainly: a proof you cannot independently check is just a promise, and a verifier
-you trust because it agrees with itself is not a verifier.
+half of the 2026-06-03 Glass bounded-integration decision. Glass's own ledger
+states it plainly: a proof you cannot independently check is just a promise, and a
+verifier you trust because it agrees with itself is not a verifier.
 
 ## The rule
 
@@ -43,9 +42,6 @@ elsewhere:
 
 - **C9** requires concurrency hazards to be tested with real threading, not
   asserted. Same spirit: prove the property, do not claim it.
-- The **oracle-runner** (`scripts/polaris-oracle-runner.sh`) already cross-checks
-  computed results against an independent reference.
-- The **HYDRA** watchers are deliberately redundant observers of the same system.
 
 The two-witness principle extends that posture to the one place it was missing:
 the ZK verdict, which until v9.44 rested on a single Rust verifier.

@@ -1,29 +1,28 @@
 # Polaris pre-commit hooks
 #
-# v9.06 / Wave 2 / G1 — surfaced by the polaris-self-roadmap-2026-05-14
-# macro-to-micro scan. Pre-v9.06 multiple drift classes were caught
-# only after they landed (venv-pollution, stale POLARIS_VERSION,
-# F5-soldier-exemption violation). Pre-commit hooks run a fast subset
-# of structural invariants + ai-link-check + ai-meta BEFORE push, so
-# the regressions never reach the substrate.
+# A fast pre-push safety net. CI runs the full suite; these hooks catch the
+# common regressions before they land.
 #
 # Install:
-#     pip install pre-commit  (in the dev venv)
-#     pre-commit install        (one-time per clone; writes .git/hooks/pre-commit)
+#     pip install pre-commit      # in the dev venv
+#     pre-commit install          # one-time per clone
 #
 # Run manually:
 #     pre-commit run --all-files
 #
-# CI runs the full structural-invariants suite (always; not just hooks).
-# These hooks are the operator's pre-push safety net, not a replacement
-# for CI.
-
-# Use local hooks since Polaris is a git-or-no-git decision (Wave 3 / C2).
-# Local hooks work whether or not the repo is initialized as git.
+# Local hooks (no network); every entry is also runnable by hand from scripts/.
 repos:
   - repo: local
     hooks:
-      # ---- Fast tier (always run; <5s) -------------------------------
+      # The flat C1-C10 invariant layer. Exits non-zero on any FAIL.
+      - id: polaris-checks
+        name: polaris-checks (C1-C10 invariant layer)
+        entry: python3 -m polaris_checks.run
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      # Cross-reference integrity: every Markdown link + code path resolves.
       - id: ai-link-check
         name: ai-link-check (Markdown + cross-ref resolution)
         entry: bash scripts/ai-link-check.sh --ci
@@ -31,64 +30,31 @@ repos:
         pass_filenames: false
         always_run: true
 
-      - id: ai-meta
-        name: ai-meta (cognitive-layer self-monitoring)
-        entry: bash scripts/ai-meta.sh
-        language: system
-        pass_filenames: false
-        always_run: true
-
-      # ---- Hygiene tier (always run; <30s) ---------------------------
-      - id: ai-coherence
-        name: ai-coherence (structural ↔ codebase coherence)
-        entry: bash scripts/ai-coherence.sh
-        language: system
-        pass_filenames: false
-        always_run: true
-
-      # ---- Test tier (Python files only; ~20s) -----------------------
-      - id: structural-invariants
-        name: structural invariants suite (test_structural_invariants.py)
-        entry: bash -c 'PYTHONPATH=. python3 -m unittest polaris_web.test_structural_invariants 2>&1'
-        language: system
-        pass_filenames: false
-        files: '\.(py|sh|sql|md|yml|yaml)$'
-
-      # ---- Forbid POLARIS_SECRET_KEY literal in compose -------------
-      # G28 from v8.77: production compose must not contain
-      # POLARIS_SECRET_KEY: literal. Pre-commit hook surfaces it.
-      - id: g28-no-sensitive-env-in-prod-compose
-        name: G28 — no sensitive env vars in production compose
-        entry: bash -c 'if grep -E "^\s*POLARIS_SECRET_KEY:\s*[\"a-zA-Z]" polaris_web/docker-compose.prod.yml 2>/dev/null; then echo "G28 violation: POLARIS_SECRET_KEY literal in prod compose"; exit 1; fi'
+      # Production compose must never carry a literal POLARIS_SECRET_KEY.
+      - id: no-secret-in-prod-compose
+        name: no sensitive env var literals in production compose
+        entry: bash -c 'if grep -E "^\s*POLARIS_SECRET_KEY:\s*[\"a-zA-Z]" polaris_web/docker-compose.prod.yml 2>/dev/null; then echo "POLARIS_SECRET_KEY literal in prod compose"; exit 1; fi'
         language: system
         pass_filenames: false
         files: '^polaris_web/docker-compose\.prod\.yml$'
 
-      # ---- Forbid em-dash in NEW own-prose Markdown (v9.09: blocking on new) ---
-      # VANTA standing instruction (DEVNOTES/style.md): no em-dashes
-      # in human-readable prose Claude writes. CHANGELOG entries are
-      # exempt (audit-of-record; can't be retroactively edited).
-      # journal/ entries are exempt (already-shipped historical record).
-      #
-      # v9.09 / N1: blocking on NEW em-dashes only (via git diff --cached).
-      # Existing em-dash debt (~290 across CLAUDE/MISSION/ROADMAP/BACKLOG/
-      # README) stays per v8.20 AoR — historical content. New additions
-      # are blocked. A separate v9.10+ cleanup ship would zero the debt.
-      # Operator can `pre-commit run --skip em-dash-block-new` if false-positive.
+      # VANTA standing instruction (DEVNOTES/style.md): no em-dashes in
+      # own-prose docs. Blocks only NEW em-dashes (via the staged diff);
+      # CHANGELOG entries are exempt as audit-of-record.
       - id: em-dash-block-new
         name: em-dash block on new lines (DEVNOTES/style.md)
         entry: |
           bash -c '
-            DIFF=$(git diff --cached --unified=0 -- CLAUDE.md MISSION.md ROADMAP.md docs/BACKLOG.md README.md 2>/dev/null);
+            DIFF=$(git diff --cached --unified=0 -- CLAUDE.md MISSION.md ROADMAP.md README.md CONTRIBUTING.md 2>/dev/null);
             if [ -z "$DIFF" ]; then exit 0; fi;
             VIOL=$(echo "$DIFF" | grep -E "^\+" | grep -v "^\+\+\+" | grep "—" || true);
             if [ -n "$VIOL" ]; then
-              echo "✗ Adding em-dash to own-prose docs (DEVNOTES/style.md forbids):";
+              echo "Adding em-dash to own-prose docs (DEVNOTES/style.md forbids):";
               echo "$VIOL" | head -5 | sed "s/^/  /";
-              echo "Substitute em-dash with: \":\" (colon), \",\" (comma), \"(...)\" (parens), sentence-break.";
+              echo "Substitute with a colon, comma, parentheses, or a sentence break.";
               exit 1;
             fi;
           '
         language: system
         pass_filenames: false
-        files: '^(CLAUDE\.md|MISSION\.md|ROADMAP\.md|README\.md|docs/BACKLOG\.md)$'
+        files: '^(CLAUDE\.md|MISSION\.md|ROADMAP\.md|README\.md|CONTRIBUTING\.md)$'
