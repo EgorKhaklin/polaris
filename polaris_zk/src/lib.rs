@@ -260,6 +260,19 @@ pub fn prove(
     context_id: u64,
     nonce: u64,
 ) -> Result<ProofBundle> {
+    // Validate the caller-supplied index against the REAL leaf count before
+    // using it. build_merkle_tree pads to 2^TREE_DEPTH, so an index past the
+    // real leaves but within the padded range slips past tree.prove() and then
+    // panics on the all_leaves_hex[leaf_index] slice; an index past the padded
+    // range panics inside plonky2. Return the crate's error instead of aborting
+    // the process — prove() is a trust boundary the app shells into.
+    if witness.leaf_index >= witness.all_leaves_hex.len() {
+        return Err(anyhow!(
+            "leaf_index {} out of range (only {} leaves)",
+            witness.leaf_index,
+            witness.all_leaves_hex.len()
+        ));
+    }
     let tree = build_merkle_tree(&witness.all_leaves_hex)?;
     let merkle_proof = tree.prove(witness.leaf_index);
     let root_hex = hash_elements_to_hex(&tree.cap.0[0].elements);

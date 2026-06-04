@@ -5,6 +5,31 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.84 — 2026-06-04 (uc1 refuses deprecated algorithms; the ZK prover bounds-checks its index)
+
+Two findings from a fifth review pass (the procedures uc1-uc6 and the Rust crate).
+
+**uc1 minted tokens under a deprecated algorithm (MEDIUM).** `uc1_issue_and_activate`
+validated only that the issuing agency held ISSUE/BOTH authorization on the
+algorithm — never its `deprecation_date`. So a brand-new ACTIVE token could be
+issued under a retired/weakened (potentially pre-quantum) algorithm.
+`uc6_migrate_algorithm` already refuses to migrate a token *to* a deprecated
+algorithm, so the system already treats "deprecated" as a state that must block new
+signatures — uc1 was the asymmetric gap. uc1 now performs the same deprecation
+check before any writes.
+
+**The ZK prover panicked on an out-of-range index (LOW).** `polaris_zk::prove`
+used the caller-supplied `leaf_index` (`all_leaves_hex[leaf_index]`, and inside
+plonky2) with no bounds check, so an index past the real leaf count aborted the
+process (exit 101) instead of returning an error — `compute-root`/`compute-leaves`/
+`verify` all return clean `Err`s for malformed input. `prove` now validates
+`leaf_index < all_leaves_hex.len()` and returns the crate's `Result` error.
+
+- `polaris_sql/05_procedures.sql` — uc1 deprecation guard.
+- `polaris_zk/src/lib.rs` — `prove` index bounds check.
+- `polaris_web/test_check_constraints.py` — `TestUC1Issuance` (deprecated rejected,
+  live succeeds). Rust: the 7 circuit tests pass; the binary returns a clean error.
+
 ## v9.83 — 2026-06-04 (bound three unbounded resources an attacker could grow)
 
 The fourth review pass found three places where memory or metric cardinality grew

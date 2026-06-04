@@ -911,5 +911,45 @@ class TestUC4ReserveActivation(_CheckBase):
         self.assertEqual(lost_status, 'REVOKED')
 
 
+class TestUC1Issuance(_CheckBase):
+    """uc1_issue_and_activate must refuse to mint a token under a DEPRECATED
+    algorithm — uc6_migrate_algorithm already refuses to migrate a token TO a
+    deprecated algorithm, and uc1 must not create one under it either (a live
+    token signed with a retired/weakened algorithm). Runs in the per-test
+    transaction and rolls back (the deprecation UPDATE is discarded)."""
+
+    def test_uc1_refuses_deprecated_algorithm(self):
+        with self.conn.cursor() as cur:
+            cur.execute(
+                "SELECT algorithm_id FROM AgencyAlgorithmAuth "
+                "WHERE agency_id = 1 AND authorization_type IN ('ISSUE','BOTH') LIMIT 1")
+            alg = cur.fetchone()['algorithm_id']
+            cur.execute(
+                "UPDATE CryptographicAlgorithm "
+                "SET deprecation_date = CURRENT_TIMESTAMP - INTERVAL '1 day' "
+                "WHERE algorithm_id = %s", (alg,))
+            with self.assertRaises(pg_errors.InvalidParameterValue):
+                cur.execute(
+                    "SELECT uc1_issue_and_activate('Dep Test','1990-01-01','US-CA',1,%s,"
+                    "'FINGERPRINT',1,'MULTI_MODAL','TKN-DEPTEST','SN-DEPTEST',NULL,"
+                    "ARRAY[1])", (alg,))
+
+    def test_uc1_succeeds_under_a_live_algorithm(self):
+        # Control: a non-deprecated algorithm issues normally.
+        with self.conn.cursor() as cur:
+            cur.execute(
+                "SELECT a.algorithm_id FROM AgencyAlgorithmAuth a "
+                "JOIN CryptographicAlgorithm c ON c.algorithm_id = a.algorithm_id "
+                "WHERE a.agency_id = 1 AND a.authorization_type IN ('ISSUE','BOTH') "
+                "  AND (c.deprecation_date IS NULL OR c.deprecation_date > CURRENT_TIMESTAMP) "
+                "LIMIT 1")
+            alg = cur.fetchone()['algorithm_id']
+            cur.execute(
+                "SELECT uc1_issue_and_activate('Live Test','1990-01-01','US-CA',1,%s,"
+                "'FINGERPRINT',1,'MULTI_MODAL','TKN-LIVETEST','SN-LIVETEST',NULL,"
+                "ARRAY[1]) AS token_id", (alg,))
+            self.assertIsNotNone(cur.fetchone()['token_id'])
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

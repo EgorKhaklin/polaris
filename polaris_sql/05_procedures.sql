@@ -82,6 +82,20 @@ BEGIN
             USING ERRCODE = 'insufficient_privilege';
     END IF;
 
+    -- Step 1b: refuse issuance under a deprecated algorithm. uc6_migrate_algorithm
+    -- already refuses to migrate a token TO a deprecated algorithm; uc1 must not
+    -- mint a brand-new ACTIVE token under one either (it would be a live token
+    -- signed with an algorithm the system already considers retired/weakened —
+    -- exactly what the algorithm-as-data, post-quantum-migration design prevents).
+    PERFORM 1 FROM CryptographicAlgorithm
+     WHERE algorithm_id = p_algorithm_id
+       AND (deprecation_date IS NULL OR deprecation_date > CURRENT_TIMESTAMP);
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Algorithm % is deprecated; cannot issue a new token under it',
+            p_algorithm_id
+            USING ERRCODE = 'invalid_parameter_value';
+    END IF;
+
     -- Step 2: insert Individual if no existing record (UC-1 step 2).
     --   The application normally checks for an existing individual first;
     --   this procedure simplifies by always inserting a new individual,
