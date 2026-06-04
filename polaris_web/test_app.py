@@ -602,6 +602,48 @@ class UC1Tests(PolarisTestCase):
         self.assertEqual(r.status_code, 200)
         self.assertHTML(r, 'Issued and activated token', 'Test UC1 Holder')
 
+    def test_issuance_signature_comes_from_signing_module(self):
+        """v9.58: the issuance route stores the signing module's output in
+        TokenSignature.signature_bytes (a deterministic SHA3-256 binding of
+        token_value with POLARIS_USE_REAL_PQC unset), not a hardcoded SQL
+        string. This is the test that the pqc_signing island is wired."""
+        import hashlib
+        token_value = 'TKN-PQC-WIRE-0001'
+        r = self._post('/uc1/issue', data={
+            'legal_name': 'PQC Wire Holder',
+            'date_of_birth': '1985-06-20',
+            'jurisdiction': 'US-OH',
+            'issuing_agency_id': '1',
+            'algorithm_id': '1',
+            'biometric_binding_type': 'IRIS',
+            'witness_agency_id': '2',
+            'liveness_check_type': 'MULTI_MODAL',
+            'token_value': token_value,
+            'physical_serial': 'SN-PQC-WIRE-0001',
+            'hardware_model': 'TitanQ-3',
+            'contexts': ['1'],
+        }, follow_redirects=True)
+        self.assertEqual(r.status_code, 200)
+        self.assertHTML(r, 'Issued and activated token')
+
+        conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT s.signature_bytes FROM TokenSignature s "
+                    "JOIN IdentityToken t ON s.token_id = t.token_id "
+                    "WHERE t.token_value = %s", (token_value,))
+                row = cur.fetchone()
+        finally:
+            conn.close()
+        self.assertIsNotNone(row, "no TokenSignature for the issued token")
+        stored = bytes(row['signature_bytes'])
+        expected = hashlib.sha3_256(token_value.encode('utf-8')).digest()
+        self.assertEqual(stored, expected,
+            "issuance signature is not the signing module's SHA3-256 placeholder; "
+            "the route may be bypassing pqc_signing")
+        self.assertNotIn(b'UC1_ISSUE_PLACEHOLDER', stored)
+
     def test_unauthorized_algorithm_rejected(self):
         """Agency 2 (PA) does not hold a grant on algorithm 4 (SLH-DSA-256s)."""
         r = self._post('/uc1/issue', data={

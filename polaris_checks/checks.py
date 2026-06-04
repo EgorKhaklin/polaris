@@ -195,6 +195,30 @@ def check_no_debug_artifacts(root: pathlib.Path) -> list[Finding]:
     return _ok("debug_artifacts", "no pdb/breakpoint debug artifacts in source")
 
 
+# ---------------------------------------------------------------------------
+# Post-quantum signing is wired into issuance, not an island (v9.58).
+# The uc1_issue route must route the issuance signature through
+# pqc_signing.signature_bytes_for_token(), and uc1_issue_and_activate must
+# accept it (p_signature_bytes). Otherwise the headline post-quantum claim
+# decays back into a hardcoded SQL string and the signing module is dead code.
+# ---------------------------------------------------------------------------
+def check_pqc_signing_wired(root: pathlib.Path) -> list[Finding]:
+    proc = _read(root, "polaris_sql/05_procedures.sql")
+    if "p_signature_bytes" not in proc:
+        return _fail("pqc_wired",
+                     "uc1_issue_and_activate must accept p_signature_bytes so the app "
+                     "supplies the issuance signature (it is a hardcoded SQL string otherwise)")
+    app = _read(root, "polaris_web/app.py")
+    if "import pqc_signing" not in app:
+        return _fail("pqc_wired", "app.py does not import pqc_signing")
+    if "signature_bytes_for_token" not in app:
+        return _fail("pqc_wired",
+                     "app.py does not call pqc_signing.signature_bytes_for_token; the "
+                     "issuance signature would bypass the signing module")
+    return _ok("pqc_wired",
+               "issuance signature routes through pqc_signing.signature_bytes_for_token")
+
+
 CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_csp_forbids_unsafe_inline,
     check_one_active_token_index,
@@ -207,6 +231,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_gitignore_no_trailing_comments,
     check_zk_two_witness_present,
     check_no_debug_artifacts,
+    check_pqc_signing_wired,
 ]
 
 

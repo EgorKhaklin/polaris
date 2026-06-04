@@ -5,6 +5,44 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.58 — 2026-06-04 (post-quantum signing wired into issuance)
+
+Closes the one honesty gap the codebase itself flagged as "the most damning
+critique" (`pqc_signing.py`'s own docstring): the headline post-quantum claim was,
+at the data level, a hardcoded SQL string. The `uc1_issue_and_activate` procedure
+wrote `TokenSignature.signature_bytes = 'UC1_ISSUE_PLACEHOLDER_<id>'`, and the
+real-signing module was an unused island.
+
+**The wiring.** The `uc1_issue` route now calls the new
+`pqc_signing.signature_bytes_for_token(token_value)` and passes the result to the
+procedure via a new trailing `p_signature_bytes BYTEA DEFAULT NULL` parameter. So
+every token issued through the app gets its signature from the signing module:
+
+- **Default (flag unset, including CI):** a deterministic SHA3-256 binding of the
+  token value. Not a cryptographic signature (no private key), but a real binding
+  produced by the signing module, single-sourced and reproducible, not a magic
+  string.
+- **`POLARIS_USE_REAL_PQC=1` + liboqs:** a real ML-DSA-65 (FIPS 204) signature.
+- **Flag set but liboqs missing:** the route fails loud (`PQCUnavailableError`),
+  never silently downgrading an operator who asked for real PQC.
+
+**Backward-compatible.** The new parameter defaults to NULL, and the procedure
+`COALESCE`s to the legacy placeholder string when no signature is supplied, so
+every existing SQL caller and test is unchanged (the 12-argument call still works;
+the function is dropped and recreated because adding a parameter changes its
+signature).
+
+**Guarded.** A new flat check, `polaris_checks.check_pqc_signing_wired`, asserts the
+procedure accepts `p_signature_bytes` and the app routes issuance through
+`signature_bytes_for_token`, with a detection test that FAILs if either regresses.
+A DB-backed `test_app` test issues a token through the route and asserts the stored
+`signature_bytes` equals `sha3_256(token_value)`, proving the path end to end.
+
+Verified: schema loads (78/78 SQL self-tests), `test_check_constraints` 62 OK, the
+issuance/signature suites green, `polaris_checks` 12 ok READY.
+
+---
+
 ## v9.57 — 2026-06-04 (documentation prune: less is more)
 
 The de-larp removed the apparatus *code*; this removes the documentation bloat it

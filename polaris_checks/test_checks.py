@@ -77,5 +77,23 @@ def test_debug_artifact_check_fails(tmp_path):
     assert out[0].level == "FAIL", "must FAIL on a breakpoint() in source"
 
 
+def test_pqc_wired_check_fails_when_issuance_bypasses_signing_module(tmp_path):
+    (tmp_path / "polaris_sql").mkdir()
+    (tmp_path / "polaris_web").mkdir()
+    # Procedure accepts the param, but the app never routes through the module.
+    (tmp_path / "polaris_sql" / "05_procedures.sql").write_text(
+        "CREATE FUNCTION uc1_issue_and_activate(p_signature_bytes BYTEA) ...\n")
+    (tmp_path / "polaris_web" / "app.py").write_text(
+        "import pqc_signing  # imported but never used for issuance\n")
+    out = checks.check_pqc_signing_wired(tmp_path)
+    assert out[0].level == "FAIL", "must FAIL when the app never calls signature_bytes_for_token"
+
+    # And it must FAIL when the procedure hardcodes the signature (no param).
+    (tmp_path / "polaris_sql" / "05_procedures.sql").write_text(
+        "CREATE FUNCTION uc1_issue_and_activate(p_token_value VARCHAR) ...\n")
+    out2 = checks.check_pqc_signing_wired(tmp_path)
+    assert out2[0].level == "FAIL", "must FAIL when the procedure does not accept p_signature_bytes"
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

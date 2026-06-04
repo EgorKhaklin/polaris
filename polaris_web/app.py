@@ -74,6 +74,7 @@ import anchoring
 import zk
 import webauthn_auth
 import observability  # v9.31 freeze condition 6 — operator-readable metrics surface
+import pqc_signing    # v9.58 — issuance signature comes from the signing module
 
 # v8.93 — Prometheus-compatible /metrics endpoint. The dependency is
 # optional at runtime: if prometheus_client is unavailable, /metrics
@@ -3374,9 +3375,15 @@ def uc1_issue():
     if request.method == 'POST':
         try:
             contexts = [int(c) for c in request.form.getlist('contexts')]
+            # v9.58: the issuance signature comes from the signing module —
+            # a real ML-DSA-65 signature when POLARIS_USE_REAL_PQC=1 + liboqs
+            # are present, a deterministic SHA3-256 placeholder otherwise —
+            # rather than a hardcoded SQL string. Passed as p_signature_bytes.
+            sig_bytes, _sig_alg = pqc_signing.signature_bytes_for_token(
+                request.form['token_value'])
             new_token_id = query("""
                 SELECT uc1_issue_and_activate(
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                 ) AS token_id
             """, (
                 request.form['legal_name'],
@@ -3391,9 +3398,12 @@ def uc1_issue():
                 request.form['physical_serial'],
                 request.form.get('hardware_model') or None,
                 contexts,
+                psycopg2.Binary(sig_bytes),
             ), fetch='returning')['token_id']  # 'returning' commits the transaction
             flash(f'Issued and activated token #{new_token_id}', 'success')
             return redirect(url_for('tokens_detail', tok_id=new_token_id))
+        except pqc_signing.PQCUnavailableError as e:
+            flash(f'Issuance blocked: {e}', 'error')
         except (psycopg2.Error, ValueError, KeyError) as e:
             flash(db_error_to_message(e), 'error')
 

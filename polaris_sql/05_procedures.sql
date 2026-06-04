@@ -42,6 +42,15 @@
 --   procedure so partial-state issuance is impossible.
 -- ----------------------------------------------------------------------------
 
+-- v9.58: the signature stored in TokenSignature.signature_bytes now comes from
+-- the app's signing module (polaris_web/pqc_signing.py) via the new trailing
+-- p_signature_bytes parameter. DROP first: adding a parameter changes the
+-- function signature, so CREATE OR REPLACE alone would create an overload
+-- rather than replace the 12-argument version. DEFAULT NULL keeps every
+-- existing caller working unchanged.
+DROP FUNCTION IF EXISTS uc1_issue_and_activate(
+    varchar, date, varchar, integer, integer, varchar, integer, varchar,
+    varchar, varchar, varchar, integer[]);
 CREATE OR REPLACE FUNCTION uc1_issue_and_activate(
     p_legal_name              VARCHAR(200),
     p_dob                     DATE,
@@ -54,7 +63,8 @@ CREATE OR REPLACE FUNCTION uc1_issue_and_activate(
     p_token_value             VARCHAR(128),
     p_physical_serial         VARCHAR(64),
     p_hardware_model          VARCHAR(50),
-    p_permitted_contexts      INTEGER[]
+    p_permitted_contexts      INTEGER[],
+    p_signature_bytes         BYTEA   DEFAULT NULL
 ) RETURNS INTEGER
 LANGUAGE plpgsql
 AS $$
@@ -95,16 +105,17 @@ BEGIN
     RETURNING token_id INTO v_token_id;
 
     -- R11-1 / M2-6: issue a TokenSignature row alongside the IdentityToken
-    -- so the M:N invariant (every token has ≥ 1 active signature) is
-    -- satisfied from the moment the token exists. In production, the
-    -- signature bytes would come from a hardware-attested signing
-    -- ceremony; for the reference implementation we record a deterministic
-    -- placeholder. The procedure does not accept a signature_bytes
-    -- parameter because the cryptographic-ceremony layer is outside the
-    -- database; future versions could lift this to a CLI param.
+    -- so the M:N invariant (every token has >= 1 active signature) is
+    -- satisfied from the moment the token exists. v9.58: the signature bytes
+    -- now come from the app's signing module (polaris_web/pqc_signing.py) via
+    -- p_signature_bytes — a real ML-DSA-65 signature when POLARIS_USE_REAL_PQC=1
+    -- and liboqs are present, a deterministic SHA3-256 binding of token_value
+    -- otherwise. Direct SQL callers that pass NULL fall back to the legacy
+    -- deterministic string, so existing tooling and tests are unaffected.
     INSERT INTO TokenSignature (token_id, algorithm_id, signature_bytes)
     VALUES (v_token_id, p_algorithm_id,
-            ('UC1_ISSUE_PLACEHOLDER_' || v_token_id::TEXT)::BYTEA);
+            COALESCE(p_signature_bytes,
+                     ('UC1_ISSUE_PLACEHOLDER_' || v_token_id::TEXT)::BYTEA));
 
     INSERT INTO TokenLifecycleEvent
         (token_id, actor_agency_id, event_type, reason_code)

@@ -119,8 +119,11 @@ Strategic decisions get a Sanctum: a structured decision record. The protocol is
    (`style-src 'unsafe-inline'` is fine). `polaris_checks` enforces this.
 6. **`{{ ... }}` in HTML comments breaks Jinja.** Use `{# … #}`.
 7. **Post-quantum signing** (`POLARIS_USE_REAL_PQC=1`) needs liboqs + `pip install
-   oqs`. Off by default → `token_value` is a deterministic placeholder. The path
-   is not yet wired into issuance (`pqc_signing.py` is an island).
+   oqs`. As of v9.58 the `uc1_issue` route signs through
+   `pqc_signing.signature_bytes_for_token()` and stores the result in
+   `TokenSignature.signature_bytes`: real ML-DSA-65 when the flag + liboqs are
+   present, a deterministic SHA3-256 placeholder otherwise (the default, incl.
+   CI). `polaris_checks.check_pqc_signing_wired` guards the wiring.
 
 ---
 

@@ -19,18 +19,19 @@ deployment has the native library installed.
     2. pip install oqs (or pip install liboqs-python)
     3. Verify: python3 -c "import polaris_web.pqc_signing as p; print(p.availability_report())"
     4. Set POLARIS_USE_REAL_PQC=1 in production env
-    5. This makes `sign()` / `verify()` produce + check real ML-DSA-65
-       signatures. (See the wiring note below: the issuance ROUTE does
-       not yet call `sign()`, so this step enables the primitive, not
-       end-to-end real-signature issuance.)
+    5. This makes the `uc1_issue` route store real ML-DSA-65 signatures in
+       `TokenSignature.signature_bytes` (and `sign()` / `verify()` produce
+       and check real signatures).
 
-**Wiring status (honest accounting, v9.47):** this module is an
-integration *island*. `app.py` does not import it, and the issuance
-route (`uc1_issue`) does not call `sign()` — so even with
-POLARIS_USE_REAL_PQC=1, token issuance still writes the deterministic
-`token_value` string. Flag-on enables the module's `sign()`/`verify()`
-API and `polaris-pqc-status.sh`; it does NOT by itself change issuance
-behavior. Wiring `sign()` into `uc1_issue` is a separate, unshipped step.
+**Wiring status (v9.58): WIRED.** `app.py`'s `uc1_issue` route calls
+`signature_bytes_for_token()` and passes the result to
+`uc1_issue_and_activate(..., p_signature_bytes := ...)`, so every token
+issued through the app gets its `TokenSignature.signature_bytes` from this
+module. With the flag unset (default) that is a deterministic SHA3-256
+placeholder; with `POLARIS_USE_REAL_PQC=1` + liboqs it is a real ML-DSA-65
+signature. The procedure COALESCEs to the legacy placeholder string only for
+direct SQL callers that pass no signature, so existing tooling is unaffected.
+`polaris_checks.check_pqc_signing_wired` asserts this wiring stays in place.
 
 Per the two-witness principle (`DEVNOTES/two-witness-principle.md`),
 the ML-DSA-65 verdict is a **lone verifier** (single liboqs impl, no
@@ -173,6 +174,45 @@ def sign(message: bytes) -> SigningResult:
         signature_hex=signature.hex(),
         message_hash_hex=digest.hex(),
     )
+
+
+# Label recorded for the dependency-free placeholder so it can never be
+# mistaken for a real signature in logs, tests, or operator tooling.
+PLACEHOLDER_LABEL = "DETERMINISTIC-PLACEHOLDER-SHA3-256"
+
+
+def signature_bytes_for_token(token_value: str) -> tuple:
+    """Produce the bytes stored in `TokenSignature.signature_bytes` at issuance.
+
+    This is the single entry point the issuance route (`uc1_issue`) calls, so
+    token issuance routes through this module rather than writing a hardcoded
+    SQL placeholder. Returns `(signature_bytes, algorithm_label)`:
+
+    - **Flag unset (default, including CI):** a deterministic SHA3-256 binding
+      of `token_value`. This is NOT a cryptographic signature (there is no
+      private key); it is a reproducible placeholder that lets the reference
+      implementation run without the native library. Label: `PLACEHOLDER_LABEL`.
+    - **`POLARIS_USE_REAL_PQC=1` + liboqs available:** a real ML-DSA-65
+      (FIPS 204) signature over `token_value`. Label: `"ML-DSA-65"`.
+    - **Flag set but liboqs unavailable:** raises `PQCUnavailableError` (fail
+      loud; never silently downgrade an operator who asked for real PQC).
+
+    The caller stores the bytes in `TokenSignature.signature_bytes` and records
+    the algorithm in `TokenSignature.algorithm_id` (C7: algorithm by reference).
+    """
+    flag_set = os.environ.get("POLARIS_USE_REAL_PQC", "0") == "1"
+    if flag_set and not _OQS_AVAILABLE:
+        raise PQCUnavailableError(
+            "POLARIS_USE_REAL_PQC=1 but liboqs-python is not importable: "
+            f"{_OQS_IMPORT_ERROR}. Install per this module's docstring or unset the flag."
+        )
+    if flag_set:
+        # flag_set AND _OQS_AVAILABLE (otherwise we raised above)
+        result = sign(token_value.encode("utf-8"))
+        return bytes.fromhex(result.signature_hex), result.algorithm_name
+    # Flag off: deterministic, dependency-free placeholder (not a signature).
+    digest = hashlib.sha3_256(token_value.encode("utf-8")).digest()
+    return digest, PLACEHOLDER_LABEL
 
 
 def verify(
