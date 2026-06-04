@@ -5,6 +5,19 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.90 — 2026-06-04 (CI: bump the deprecated Node 20 actions ahead of the deadline)
+
+CI was annotating every run: `actions/checkout@v4` and `actions/setup-python@v5`
+run on Node.js 20, which GitHub force-migrates to Node 24 on **2026-06-16** and
+removes on **2026-09-16**. Bumped both to the current major (verified latest via
+the GitHub API: `checkout@v6.0.3`, `setup-python@v6.2.0`), which run on Node 24:
+
+- `.github/workflows/ci.yml` — `actions/checkout@v4` → `@v6`,
+  `actions/setup-python@v5` → `@v6`.
+
+A pure CI-hygiene change; the workflow's own green run on the bumped actions is
+the verification. Clears ROADMAP "Next ships" #3.
+
 ## v9.89 — 2026-06-04 (real anti-replay: /api/zk/verify consumes a single-use nonce)
 
 The review arc converged at v9.88, so this picks up the top of the forward
