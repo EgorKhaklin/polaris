@@ -23,6 +23,35 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from witness2 import merkle, poseidon, verifier
 from witness2.poseidon_constants import P, POSEIDON_TEST_VECTORS
 
+# External anchor for the Merkle math. These roots and the inclusion path are
+# the INDEPENDENT Rust witness's output (polaris-zk compute-leaves) for fixed
+# leaf sets, captured once. Pinning the Python second witness to them verifies
+# its build_root / root_from_path against external ground truth rather than
+# against itself: a wrong-but-deterministic implementation (wrong MDS, flipped
+# index bits, wrong padding) would survive a self-referential round-trip but
+# fails here. Regenerate after any depth/encoding change with:
+#   echo '{"leaves_hex":["aa..","bb..","cc.."]}' | polaris-zk compute-leaves
+_ANCHOR_LEAVES = ["aa" * 32, "bb" * 32, "cc" * 32]
+_ANCHOR_ROOT = "8fe699f2fb373f24557cd712e277b5a05b44f62037653b91227e414ada7331d7"
+_ANCHOR_PATH0 = [
+    "bb" * 32,
+    "e69d3d8967339e1ad6026a96b530d8db5251396ac0f636eb846c1a3804a89492",
+    "cc4ff1aad14a1ab6cfb201991b58858df20aa362d79a8fde03e58a3241fc9621",
+    "5ae05c29f70ae06164dea29dc57c249a5fc056e9bf94fb4642a53cc70c3a7067",
+    "442646061a92545147092c2e0db3c18c274d85bff37c7d1640a088afa0ea22f5",
+    "ae615bd1c8b5e6e939d497bd349bac86970159fcf0237eb772666f68973505d0",
+    "4a61495d1a5f2225038fee8e642a1d5a10fb7dc441f7a8ddc3300d0860125649",
+    "e35508e23eed79e9f9c1c446c6429a3cb1a43aa86edac916f5790b8bfce468b7",
+    "1629fd0c72d76ffe5a7a0adbf3cf728d27a9f99551d41bd3b389294a1267d32b",
+    "4ef1c9572144a23c9e84af352cc04e9597919dee33c6f02c45f41f7935daf1fc",
+    "c340117b3fb6f7cc53eaa3e4b119e991f78d331df5717c70412aaf00468f7ec2",
+    "c3d3b50aadba6e8de39850f0b6aa1b0d4cd4d9b076acc5e17536c83b5bc78b21",
+    "219d838e168925ed168071ee6f8401fbe20458214c9ee38e4c6fd2e9698c6161",
+    "7f8f37d821f86f2969c6a1c7aed775c9f8f48845fab14108c55dcf9907a276ec",
+]
+_ANCHOR_SINGLE_LEAF = "dd" * 32
+_ANCHOR_SINGLE_ROOT = "fba229f3061680027107f5158cdcd6309e3b41e44790a05ef5f26b9eac3d0631"
+
 
 def test_poseidon_matches_plonky2_vectors():
     poseidon.self_test()  # raises on mismatch
@@ -51,9 +80,35 @@ def test_hex_element_roundtrip():
 
 
 def test_single_leaf_root_is_leaf_digest():
-    # A 1-leaf tree pads to 16; its root is well-defined and stable.
+    # A 1-leaf tree pads to the full depth; its root is well-defined and stable.
     leaf = "aa" * 32
     assert len(merkle.build_root([leaf])) == 64
+
+
+def test_build_root_matches_external_rust_root():
+    # Value-pinned against the independent Rust witness (not against the Python
+    # function under test). A wrong-but-deterministic build_root fails here.
+    assert merkle.build_root(_ANCHOR_LEAVES) == _ANCHOR_ROOT
+
+
+def test_single_leaf_root_matches_external_rust_root():
+    assert merkle.build_root([_ANCHOR_SINGLE_LEAF]) == _ANCHOR_SINGLE_ROOT
+
+
+def test_membership_holds_against_external_root():
+    # The committed root is the EXTERNAL anchor constant, NOT root_from_path()
+    # recomputed here, so a True verdict genuinely confirms the Python witness's
+    # path traversal reproduces the Rust-derived root. This is the assertion the
+    # self-referential round-trip tests could not make.
+    assert merkle.membership_holds(
+        _ANCHOR_LEAVES[0], 0, _ANCHOR_PATH0, _ANCHOR_ROOT) is True
+
+
+def test_membership_fails_against_external_root_with_wrong_leaf():
+    # Same external root + path, different leaf -> the traversal must NOT
+    # reproduce the anchor root.
+    assert merkle.membership_holds(
+        _ANCHOR_LEAVES[1], 0, _ANCHOR_PATH0, _ANCHOR_ROOT) is False
 
 
 def test_inclusion_path_reconstructs_root():

@@ -5,6 +5,42 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.67 — 2026-06-04 (test rigor: fail-loud PQC and an externally-anchored second witness)
+
+Two test-coverage gaps the review's test-rigor pass found, where a test could
+pass while the thing it implies was broken.
+
+**PQC fail-loud was untested.** `pqc_signing`'s load-bearing safety property —
+with `POLARIS_USE_REAL_PQC=1` but liboqs missing, raise rather than silently
+downgrade to the deterministic placeholder — had no direct test. Only the
+flag-unset DB path was exercised (via `test_app`) and the static wiring grep
+(`check_pqc_signing_wired`). A regression that let the flag-set-but-unavailable
+branch fall through to the placeholder digest — a silent downgrade of an operator
+who asked for real PQC — would have passed the whole suite. New
+`polaris_web/test_pqc_signing.py` (9 cases, no DB, no liboqs needed): the
+placeholder is exactly `sha3_256(token_value)` with the non-signature label, and
+every entry point (`signature_bytes_for_token`, `sign`, `verify`) raises
+`PQCUnavailableError` when the flag is set but liboqs is forced unavailable. Wired
+into CI alongside `test_app`.
+
+**The second witness's positive Merkle tests were self-referential.**
+`test_witness2.py`'s membership/ACCEPT cases computed the committed root with the
+same `root_from_path` they then checked against — `f(x) == f(x)`, true for any
+deterministic implementation including a wrong one (wrong MDS, flipped index bits,
+wrong padding). The only value anchor (`test_root_agreement_bit_identical`) is
+gated behind the Rust binary, so when the differential is skipped the standalone
+suite could not catch a wrong-but-deterministic Python witness. Added value-pinned
+tests against roots produced by the **independent Rust witness** (captured
+constants): `build_root` for a fixed multi-leaf and single-leaf set, and a
+membership check whose committed root is the external anchor constant, not a
+self-recompute. The Python witness's Merkle math is now anchored to external
+ground truth even with no binary present.
+
+- `polaris_web/test_pqc_signing.py` — new (9 tests).
+- `polaris_zk/witness2/test_witness2.py` — 4 externally-anchored Merkle tests
+  (13 total); the weak length-only single-leaf assertion now pins the value.
+- `.github/workflows/ci.yml` — runs `test_pqc_signing` in the app-suite step.
+
 ## v9.66 — 2026-06-04 (harden the login redirect and the session cookie)
 
 Two security findings from the review's auth-security pass.

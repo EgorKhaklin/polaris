@@ -120,7 +120,7 @@ jobs:
 
       - name: Application + CLI suites (DB, with ZK binary)
         run: |
-          cd polaris_web && python3 -m unittest test_app -v
+          cd polaris_web && python3 -m unittest test_app test_pqc_signing -v
           cd ../polaris_cli && python3 -m unittest test_cli -v
 
       - name: ai-link-check
