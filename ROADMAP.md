@@ -30,10 +30,6 @@ layer is [`polaris_checks/`](polaris_checks/), which gates CI via
    revisit when it goes live. `L · medium · MEDIUM · hardening`
 2. **PQC-posture audit** — audit Polaris against NIST PQC migration timelines;
    surface gaps. `S · low · LOW · cold-read-evidence`
-3. **CI: bump deprecated GitHub Actions before the deadline.** Live CI annotation:
-   `actions/checkout@v4` plus `actions/setup-python@v5` run on Node.js 20, which
-   GitHub force-migrates to Node 24 on **2026-06-16** and removes on **2026-09-16**.
-   Bump to current major versions before then. `XS · low · LOW · hardening`
 
 ---
 
