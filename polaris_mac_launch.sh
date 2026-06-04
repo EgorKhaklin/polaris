@@ -635,42 +635,6 @@ launch_native() {
         exit 1
     fi
 
-    # v9.02: kick off a one-shot Mycelium swarm bloom in the background
-    # so the dev launcher always has fresh pheromones — closes the
-    # HYDRA ant_colony "zero pheromones in 72h" ALERT for dev users.
-    # In production, the every-6h cron (docs/operator/OPERATIONS.md § Mycelium swarm
-    # cron schedule) handles this; the dev launcher doesn't install
-    # crons so the one-shot covers the gap. ~30-90s in the background;
-    # log to /tmp/polaris_swarm_oneshot.log; never blocks startup.
-    #
-    # Point the swarm at the launcher's venv python (it has psycopg2);
-    # without POLARIS_HYDRA_PYTHON set the swarm falls back to system
-    # python which usually lacks psycopg2 + can't deposit pheromones.
-    # v9.02 + v9.03 hybrid swarm one-shot: commanders ONCE + soldiers
-    # for 30 seconds. Closes the v8.85-era HYDRA ant_colony "zero
-    # pheromones in 72h" ALERT for dev users with both commander
-    # peaks AND soldier background. Production handles via the
-    # every-6h cron (commanders) + every-30min cron (soldiers) per
-    # docs/operator/OPERATIONS.md § Mycelium swarm cron schedule.
-    #
-    # `polaris_swarm.colony --hybrid --duration 30`:
-    #   - commanders: full --swarm phase (legions + civitas)
-    #   - soldiers: 30-second tight loop with aggregation
-    if [ -x "$WEB_DIR/venv/bin/python3" ] && [ -d "$SCRIPT_DIR/polaris_swarm" ]; then
-        log "Kicking off one-shot hybrid swarm in background (commanders + soldiers, ~60s)"
-        (
-            cd "$SCRIPT_DIR"
-            POLARIS_DB_HOST="${POLARIS_DB_HOST:-localhost}" \
-            POLARIS_DB_NAME="${POLARIS_DB_NAME:-polaris_test}" \
-            POLARIS_DB_USER="${POLARIS_DB_USER:-$USER}" \
-            POLARIS_DB_PASSWORD="${POLARIS_DB_PASSWORD:-}" \
-            POLARIS_PORT="${POLARIS_PORT:-2222}" \
-                nohup "$WEB_DIR/venv/bin/python3" -m polaris_swarm.colony --hybrid --duration 30 \
-                > /tmp/polaris_swarm_oneshot.log 2>&1 &
-            disown 2>/dev/null || true
-        )
-    fi
-
     ok "Native Polaris running at http://localhost:$PORT (pid $(cat "$PID_FILE"))"
     print_credentials
     open_browser "http://localhost:$PORT/"

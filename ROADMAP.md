@@ -9,161 +9,50 @@
 <!-- history (audit-of-record).                                    -->
 <!-- ============================================================ -->
 
-## 🔭 OPEN NOW — living backlog (updated 2026-06-03, v9.48)
+## 🔭 OPEN NOW — living backlog (updated 2026-06-03, v9.55)
 
-Tagging: `effort(XS/S/M/L) · value · risk · freeze-category`. The
-v9.31 freeze permits hardening / measurement / cold-read-evidence;
-a new-arc item needs a Sanctum naming an external trigger.
+Tagging: `effort(XS/S/M/L) · value · risk · category`. As of v9.55 the
+cognitive apparatus was removed; the live invariant layer is
+[`polaris_checks/`](polaris_checks/), gating CI via
+`python3 -m polaris_checks.run`. Add new ideas here as they arise; move
+to the prioritized backlog below when adopted as an R-id.
 
 **Flagged for VANTA (decision required):**
 
-- **[VANTA] THESIS v9.40 terminus has passed unactioned.** MISSION.md:70
+- **[VANTA] THESIS v9.40 terminus has passed unactioned.** MISSION.md
   says the strong "agent-maintainable production identity system" claim
   *retires permanently* if no external cold-read occurs by v9.40. We are
-  at v9.45 with only the system's own walkthrough, never an external one,
+  past v9.40 with only the system's own walkthrough, never an external one,
   yet `docs/THESIS.md` still uses the softer conditional "RETIRED *until*
   evidence supports it." Leaving the softer wording past the deadline is
   itself the dishonesty the project's discipline forbids. Two honest moves,
   both VANTA's call: (a) reflect the permanent terminus ("has not been
-  independently validated") + pin it with an invariant, or (b) amend the
-  deadline via Sanctum + freeze-amendment-protocol. `S · high · MEDIUM · cold-read-evidence`
+  independently validated") and pin it with a check, or (b) amend the
+  deadline via Sanctum plus freeze-amendment-protocol. `S · high · MEDIUM · cold-read-evidence`
 
-**Next ships (agent-actionable under heavy-production authorization):**
+**Next ships:**
 
-1. **[PARTIAL ✅ v9.46] Wire suites into CI.** Done: the v9.44 ZK two-witness
-   differential + witness2 self-tests + pure HYDRA suites now gate CI, and
-   `pytest` is in `requirements.txt`. **Still open:** wire `test_app.py` +
-   `test_cli.py` (DB-backed) once confirmed green against the CI sample DB —
-   deferred because they are not verifiable from the local env (no psycopg2).
-   `S · high · LOW · measurement`
-2. **[PARTIAL ✅ v9.47] PQC lone verifier** — recorded as an explicit two-witness
-   ABSTAIN; the docstring overclaim (flag-on enables real-signature issuance)
-   was corrected (it is an integration island: `app.py` never imports it,
-   `uc1_issue` never calls `sign()`). **Still open (deferred):** a full
-   independent ML-DSA-65 second witness — premature while the verdict is OFF by
-   default and unwired; revisit when the path goes live. `L · medium · MEDIUM · hardening`
-3. **Foresight experiment is in limbo — cut the knot.** The v9.12 deal
-   (≥50% candidate acceptance over 6 monthly briefs, else sunset) can neither
-   graduate nor sunset: 20 briefs but all in one month, cadence stalled.
-   Either wire `ai-foresight.sh` into a real monthly cron, or open the removal
-   Sanctum and retire the surface. `M · medium · MEDIUM · measurement`
-4. **ZK anonymity set is demo-scale (`TREE_DEPTH=4`, ≤16 leaves).** Re-run
+1. **[PARTIAL] Wire suites into CI.** Done: the ZK two-witness
+   differential plus `witness2/` self-tests plus `polaris_checks` now gate
+   CI, and `pytest` is in `requirements.txt`. **Still open:** wire
+   `test_app.py` plus `test_cli.py` (DB-backed) once confirmed green against
+   the CI sample DB, deferred because they are not verifiable from the local
+   env (no psycopg2). `S · high · LOW · measurement`
+2. **[PARTIAL] PQC lone verifier** — `pqc_signing.py` is an integration
+   island: `app.py` never imports it, `uc1_issue` never calls `sign()`.
+   **Still open (deferred):** a full independent ML-DSA-65 second witness,
+   premature while the path is OFF by default and unwired; revisit when it
+   goes live. `L · medium · MEDIUM · hardening`
+3. **ZK anonymity set is demo-scale (`TREE_DEPTH=4`, ≤16 leaves).** Re-run
    the circuit setup at `TREE_DEPTH=14` (16,384 leaves) for a realistic set;
    the second witness already generalizes. `L · medium · MEDIUM · hardening`
-5. **Apparatus-reduction Sanctum** — cut-deeper signal firing since v9.29
-   (core/apparatus ratio 0.29). Walk ACTIVE sanctums, transition those now
-   embodied as structural invariants to SUPERSEDED (files stay; only
-   classification changes). Own Sanctum, execution-intent present. `M · medium · HIGH · measurement`
-6. **PQC-posture audit** (FS-5B5F30C9) — audit Polaris against NIST PQC
+4. **PQC-posture audit** — audit Polaris against NIST PQC
    migration timelines; surface gaps. `S · low · LOW · cold-read-evidence`
-7. **R13-3 / R13-4 Mycelium bloom + deliberation** (only if Arc E is still
-   open) — additive brain-map bloom overlay + deliberation threshold; unblocks
-   the R13-5 HYDRA-vs-Mycelium decision. `M · medium · LOW · new-arc`
-8. **CI: bump deprecated GitHub Actions before the deadline.** Live CI annotation
-   (seen on the v9.49 run): `actions/checkout@v4` + `actions/setup-python@v5` run
-   on Node.js 20, which GitHub force-migrates to Node 24 on **2026-06-16** and
-   removes on **2026-09-16**. Bump to current major versions before then.
+5. **CI: bump deprecated GitHub Actions before the deadline.** Live CI annotation:
+   `actions/checkout@v4` plus `actions/setup-python@v5` run on Node.js 20,
+   which GitHub force-migrates to Node 24 on **2026-06-16** and removes on
+   **2026-09-16**. Bump to current major versions before then.
    `XS · low · LOW · hardening`
-
-**Recently shipped (this session, 2026-06-03):** v9.44 ZK two-witness (Glass
-bounded-integration); v9.45 secret-leak gitignore fix + foresight integrity;
-v9.46 CI wiring (ZK two-witness + HYDRA suites gate CI); v9.47 PQC two-witness
-ABSTAIN + docstring honesty; v9.48 ai-swarm-validate honest header. Six commits;
-gate READY throughout. **Next tier needs VANTA's call** — see the "Flagged for
-VANTA" item above (THESIS terminus) plus the foresight keep/kill (#3) and
-apparatus-reduction (#5) decisions.
-
----
-
-## Layer-1 candidates (per S2 Position C, 2026-05-15)
-
-The v9.04 → v9.08 phase invested heavily in Layer-2/3 (cognitive
-substrate + tools). Per the [cognitive-layer-ratio Sanctum](sanctum/2026-05-15-cognitive-layer-ratio.md)
-Position C, v9.10+ deliberately surfaces Layer-1 advances. This
-section is the operator-facing list of next Layer-1 candidates;
-the Architect's brief reads from it when scoring next moves.
-
-**Cadence rule**: at least 1 Layer-1 candidate must ship per 5
-composite ships, OR an explicit Sanctum must record why the cycle
-remained Layer-2/3-focused. Tracked via the
-`scripts/ai-architect.sh` "Layer ratio (last 5 ships)" line in
-`emit_outlook` (added v9.10 alongside this section).
-
-**Current candidates (operator-tunable):**
-
-1. **L1-1 — Pheromone rotation SQL self-tests** (✅ shipped v9.10)
-   The v9.07 Pheromone rotation framework has end-to-end drill but
-   no SQL-level structural enforcement. Section S in
-   `polaris_sql/08_tests.sql` adds 10 DO-block invariants
-   (trigger-rejection paths + GUC carve-out + checkpoint
-   append-only + CHECK constraints + admin-role validation).
-
-2. **L1-2 — Arc B Phase 2.5 multi-instance scaling completion**
-   (gated on production-scale data; could be opened defensively).
-   Foundations shipped v8.83 (pgbouncer + scaling recipes); the
-   read-replica + Redis-cluster + PostGIS Phase 2 work is deferred
-   per OPERATIONS.md "Scaling" section. Could be opened defensively
-   under a Sanctum to surface the trade-offs.
-
-3. **L1-3 — UC-13 (TBD)** — a new use case addressing a real-world
-   identity-token gap that v8.97 WebAuthn didn't cover. Explicit
-   operator trigger required (no autonomous arc-opening).
-   Architect-suggested neighborhood: cross-jurisdictional trust
-   federation enrollment, attestation-chain visualization for
-   Census.
-
-
-## Auto-promoted action candidates (v9.11+)
-
-Per the v9.11 ship (Chapter X — closing the observe→correlate→act loop),
-HYDRA's ActionQueue auto-promotes top-N actionable findings into this
-section. Each item carries a stable ID derived from its title; re-runs
-of the promotion are idempotent (no duplicates).
-
-**Operator workflow:**
-1. Triage these candidates during the next Architect brief review.
-2. Promote a candidate to a real R-id (in the prioritized backlog
-   below) when adopting it as work.
-3. Remove a candidate when explicitly declining (write a one-line
-   "declined: <reason>" comment so re-promotion of the same finding
-   doesn't re-add it; see the "decline marker" convention below).
-
-**Decline marker convention:** to permanently decline a candidate
-without removing the entry, prefix its line with `- ~~AP-XXXXXXXX~~`
-(strikethrough) plus a `<!-- declined: reason -->` comment. The
-auto-promotion logic detects struck-through entries and does NOT
-re-promote even if the underlying finding recurs.
-
-**Promotion rules (conservative by design):**
-- Only LOW + MEDIUM risk promote autonomously; HIGH still requires Sanctum
-- Correlations (multi-watcher consensus) always promote
-- Singleton findings only promote if severity = alert
-- Idempotent: re-running adds nothing if the action ID is present
-
-
-## Foresight candidates (v9.12+)
-
-Per the v9.12 ship (Position B foresight surface),
-`bash scripts/ai-foresight.sh --promote` writes top-N foresight
-candidates from monthly briefs into this section. Each item carries a
-stable ID derived from its title; re-runs are idempotent.
-
-**Operator workflow:**
-1. Read the brief at `journal/foresight/YYYY-MM-DD.md` first.
-2. Triage candidates here: promote to a real R-id when adopting; mark
-   with strikethrough + `<!-- declined: reason -->` when declining.
-3. The empirical-graduation rule (50% acceptance over 6 monthly briefs)
-   gates whether the foresight surface earns the right to expand into a
-   subsystem. Below threshold + 6 briefs in: sunset warning fires.
-
-**Decline marker convention** (same shape as AP-XXXXXXXX):
-prefix the line with `- ~~FS-XXXXXXXX~~ <!-- declined: reason -->` to
-prevent re-promotion of the same finding even if it surfaces again.
-
-**Promotion rules:**
-- LOW + MEDIUM only auto-promote; HIGH still requires Sanctum
-- Vocation-alignment hint is REQUIRED (not advisory)
-- Idempotent: re-running adds nothing if the FS-ID is present
 
 ---
 
@@ -176,80 +65,11 @@ This file is the prioritized backlog. Each item has:
 - **Effort estimate** — rough magnitude
 - **Acceptance criteria** — how we know it's done
 
-`scripts/ai-propose.sh` reads this file. `scripts/ai-status.sh` checks
-which items have advanced.
-
----
-
-- ~~**AP-E8FCC9A5**~~ (MEDIUM/one-day, score=7.0, source=finding: ant_colony) — Investigate: Cannot reach Mycelium swarm (DB offline) <!-- declined: dev-environment artifact (local DB offline / psycopg2 not in venv per the session-start gotcha), not durable mission work. Triaged v9.46. -->
-  - rationale: ant_colony_watcher: PheromoneReader returned db_offline status: no DB connection (psycopg2 missing or DB unreachable). The swarm runtime is not observable from this watcher's vantage. Verify Postgr...
-  - constraints touched: (none cited)
-  - vocation: anti-coercion (advances identity inviolability)
-  - first promoted: 2026-05-15
-
-- ~~**AP-4866529A**~~ (MEDIUM/one-day, score=7.0, source=finding: cognitive) — Investigate: Sanctum index drift <!-- declined: expected gap, not a defect. 67 sanctum files / 65 index entries (v9.46): non-strategic Sanctum files are intentionally not indexed; the index is maintained per the ship runbook. -->
-  - rationale: cognitive_watcher: sanctum/ has 49 session file(s) but meta/sanctum-index.md has 48 entry/entries. Run `ai-sanctum.sh close` to re-index, or inspect manually.
-  - constraints touched: (none cited)
-  - vocation: anti-coercion (operational reliability serves availability of identity)
-  - first promoted: 2026-05-15
-
-- ~~**AP-BB688443**~~ (MEDIUM/one-day, score=7.0, source=finding: schema) — Investigate: psycopg2 not importable <!-- declined: dev-environment artifact (psycopg2 not in the watcher's venv); an install step, not mission work. Triaged v9.46. -->
-  - rationale: schema_watcher: SchemaWatcher requires psycopg2. Install it in the same venv the Flask app uses.
-  - constraints touched: (none cited)
-  - vocation: unclear (operator triage; AP5 candidate)
-  - first promoted: 2026-05-15
-
-- ~~**AP-3ACE3236**~~ (LOW/one-shot, score=2.0, source=correlation: performance, security) — Investigate cross-watcher correlation: runtime:health <!-- declined: low-severity (info) dev-runtime correlation, same DB-offline root as the trio above. Triaged v9.46. -->
-  - rationale: 2 watcher(s) (performance, security) independently surfaced findings on node_id='runtime:health' with combined severity info. Multi-watcher consensus is high-confidence signal.
-  - constraints touched: (none cited)
-  - vocation: anti-coercion (operational reliability serves availability of identity)
-  - first promoted: 2026-05-15
-
-- **FS-5B5F30C9** (LOW/one-shot, source=foresight: §V) — Audit Polaris's posture against external category: "Post-quantum cryptography migration timelines (NIST PQC finalists; deployment milestones
-  - rationale: Audit Polaris's posture against external category: "Post-quantum cryptography migration timelines (NIST PQC finalists; deployment milestones)". Surface gaps via adversary_watcher pass.
-  - vocation: anti-coercion (defensive scan)
-  - first promoted: 2026-05-15
-
-## Polaris-self roadmap (2026-05-14, post-v9.04)
-
-VANTA asked Polaris to scan itself macro-to-micro and produce a gap
-roadmap "as if you are Polaris itself". That document is
-[`meta/polaris-self-roadmap-2026-05-14.md`](meta/polaris-self-roadmap-2026-05-14.md).
-
-It contains 30 items in 4 waves:
-
-- **Wave 1 (14 items, autonomous-eligible bug-fix carve-out):**
-  F5 soldier-exemption violation [A1, HIGH-priority constitutional
-  bug surfaced by the scan], MISSION test-count drift [A2], systemic
-  ant venv-pollution refactor [B1+B2], requirements.txt creation [C3],
-  ai-help inline flags [C4], brief-archive collision detection [D1],
-  central PheromoneReader window defaults [D2], in-memory `--diff`
-  cleanup [D4], full --save→--diff integration test [E1], CLAUDE.md
-  intro/Where-X-lives updates [F1+F3+F4], README v9.04 paragraph
-  [F2], HYDRA `--deterministic` flag [I2]. Composite ship as v9.05
-  recommended.
-- **Wave 2 (8 items, MEDIUM):** brief-archive unification
-  Architect↔HYDRA [C1], canonical POLARIS_VERSION source [C5],
-  Pheromone rotation Sanctum [D5 — opens a Sanctum], Hypothesis
-  tests for v9.04 modules [E2], pre-commit hooks [G1],
-  cognitive_watcher channel for journal/hydra/ freshness [H1 — the
-  lens watching itself], node_id format documentation + lint [I1],
-  90-second Claude onboarding doc [J3].
-- **Wave 3 (4 items, Sanctum-class HIGH):** git-or-no-git decision
-  [C2], Pheromone rotation framework [D5 implementation], unified
-  cognitive-layer dashboard [J1], Treasury 60-day sim review [J4].
-- **Wave 4 (ongoing):** since-last-session diff at session start
-  [J2], monthly macro-to-micro re-scan.
-
-Wave 1 is autonomous-eligible under standing rules; awaiting
-VANTA confirmation to ship as v9.05.
-
 ---
 
 ## What needs done before it can become a deployable system
 
-VANTA's deployability checklist (2026-05-14) plus
-Architect+HYDRA scan additions. The base three lines are the
+VANTA's deployability checklist (2026-05-14). The base three lines are the
 operator-facing summary; the indented items name the concrete
 deferred work each phase carries. Add to this section when a
 genuinely new gap is surfaced; never silently delete (the
@@ -258,22 +78,20 @@ checklist is itself audit-of-record).
 ### ✅ Phase 1 — production deployment shipped
 
 Shipped across v8.77 (Arc B Phase 1) → v8.81 (Phase 1.5) →
-v8.83/v8.84/v8.87/v8.88 (Phase 2 foundations) → v8.91 (Treasury
-rebalance). The system can be deployed to a single Linux host
-behind TLS, with secrets handled correctly, structured
-monitoring, manifest-verified backup/restore, audit-log
-archive+purge, and operator-readable Treasury diagnostics.
+v8.83/v8.84/v8.87/v8.88 (Phase 2 foundations). The system can be
+deployed to a single Linux host behind TLS, with secrets handled
+correctly, structured monitoring, manifest-verified backup/restore,
+and audit-log archive+purge.
 
-- **TLS** via Caddy + Let's Encrypt auto-issuance (G27)
-- **File-mounted secrets** via Docker secrets + `*_FILE` env vars (G28)
-- **Structured `/api/health`** with per-component checks (G29)
+- **TLS** via Caddy + Let's Encrypt auto-issuance
+- **File-mounted secrets** via Docker secrets + `*_FILE` env vars
+- **Structured `/api/health`** with per-component checks
 - **Backup** with manifest-hashed tarball (`polaris-backup.sh`, v8.77)
 - **Restore** with verify mode + force-required guard (`polaris-restore.sh`, v8.81)
 - **Audit-log archive** export-only, C1-preserving (`polaris-archive.sh`, v8.84)
-- **Audit-log purge** under constitutional carve-out + `LifecycleArchiveCheckpoint` (`polaris-purge.sh` + G30/G31, v8.87)
+- **Audit-log purge** under constitutional carve-out + `LifecycleArchiveCheckpoint` (`polaris-purge.sh`, v8.87)
 - **pgbouncer** connection pooling foundation (v8.83)
 - **PostGIS** schema foundation, optional-dependency (v8.88)
-- **Treasury rebalance** under Sanctum-decided Position B (v8.91)
 - **Operator runbook** `docs/operator/OPERATIONS.md` (~1000+ lines)
 - **Secrets primer** `docs/operator/SECRETS.md`
 - **Public landing + demo** at `/` and `/demo` (v8.79)
@@ -283,16 +101,16 @@ archive+purge, and operator-readable Treasury diagnostics.
 
 VANTA-named:
 
-- ✅ **WebAuthn operator auth** *(shipped v8.97)* — Position B (WebAuthn-MFA) from [sanctum/2026-05-14-webauthn-operator-auth.md](sanctum/2026-05-14-webauthn-operator-auth.md). Migration `2026-05-14-002-operator-webauthn` (first non-example migration; validates the v8.95 framework on a real schema change) adds `OperatorWebauthnCredential` + `AppUser.webauthn_required_after` + 5 new AuthAuditLog event types. `polaris_web/webauthn_auth.py` + 7 new routes in `app.py` handle registration + assertion ceremonies via the Duo Labs `webauthn` package. Login flow modified for grace_period / mfa_required / mfa_overdue states. `scripts/polaris-recover-admin.sh` (second-admin pairing) + `scripts/polaris-generate-recovery-code.sh` (printed mnemonic) handle recovery. `polaris-create-operator.sh` sets 30-day deadline for new admin accounts. threat-model § T-S4 + SECRETS.md § 7 + OPERATIONS.md §Operator authentication document the operator runbook. 10-step end-to-end drill + round-trip enrollment drill green. **Shipped same-day as the v8.96 Sanctum opening; architect's two-ship estimate compressed to one under heavy-production.**
+- ✅ **WebAuthn operator auth** *(shipped v8.97)* — Position B (WebAuthn-MFA) from [sanctum/2026-05-14-webauthn-operator-auth.md](sanctum/2026-05-14-webauthn-operator-auth.md). Migration `2026-05-14-002-operator-webauthn` (first non-example migration; validates the v8.95 framework on a real schema change) adds `OperatorWebauthnCredential` + `AppUser.webauthn_required_after` + 5 new AuthAuditLog event types. `polaris_web/webauthn_auth.py` + 7 new routes in `app.py` handle registration + assertion ceremonies via the Duo Labs `webauthn` package. Login flow modified for grace_period / mfa_required / mfa_overdue states. `scripts/polaris-recover-admin.sh` (second-admin pairing) + `scripts/polaris-generate-recovery-code.sh` (printed mnemonic) handle recovery. `polaris-create-operator.sh` sets 30-day deadline for new admin accounts. threat-model § T-S4 + SECRETS.md § 7 + OPERATIONS.md §Operator authentication document the operator runbook. 10-step end-to-end drill + round-trip enrollment drill green.
 - ✅ **Audit log rotation** *(shipped v8.93)* — `scripts/polaris-rotate-logs.sh` wraps `polaris-archive.sh` + verify + `polaris-purge.sh` in one cron-ready pipeline. 5-year default cutoff per Sanctum §V. Cron recipe in OPERATIONS.md. Greppable exit codes for incident response.
 - **Multi-instance scaling completion** — Phase 2.5 work: read replica routing via Caddy/HAProxy; Redis Sentinel or Cluster topology; PostGIS Phase 2 atlas function rewrite (`atlas_clusters_*` / `atlas_points_*` gain a `CASE` branch on `pg_extension` presence; ≥3× benchmark at 10M+ events).
 
-Architect+HYDRA scan additions (2026-05-14):
+Scan additions (2026-05-14):
 
 - ✅ **WAL archiving / point-in-time recovery** *(shipped v8.93)* — pgbackrest paved-path recipe in OPERATIONS.md § "Point-in-time recovery". Full + differential schedule, archive-check cron, restore-to-time procedure. RPO drops from 24h to ~1 minute.
 - ✅ **Schema migration framework** *(shipped v8.95)* — Position C (custom polaris-native) from [sanctum/2026-05-14-schema-migration-framework.md](sanctum/2026-05-14-schema-migration-framework.md). `polaris_sql/00_migrations_table.sql` creates the `schema_version` registry (13th audit-of-record); `scripts/polaris-migrate.sh` runs status/up/down/dry-run with SHA-256 tamper detection (exit 6); `polaris_sql/migrations/` holds the hand-written .up + .down SQL pairs; first example migration ships (`2026-05-14-001-idx-checkpoint-recent`). End-to-end drill clean. `docs/operator/OPERATIONS.md` § "Schema migrations (v8.95)" documents the operator workflow. v1.0 production cutover path unblocked.
-- ✅ **Prometheus-compatible `/metrics` endpoint** *(shipped v8.93)* — `/metrics` route in app.py via `prometheus_client`. Counters (`polaris_requests_total` by route/method/status; `polaris_verifications_total` by disclosure_level), histograms (`polaris_request_latency_seconds`, `polaris_db_query_latency_seconds`), gauges (`polaris_pheromones_recent` — Mycelium liveness; `polaris_app_info` version label). Graceful fallback if `prometheus_client` is unavailable. OPERATIONS.md gains scrape-config + alerting-rule examples.
-- ✅ **CI/CD pipeline configuration** *(shipped v8.93)* — `.github/workflows/ci.yml` runs the full test suite on every push: 278 structural invariants, 62 CHECK regression tests, Hypothesis property tests, ZK crate `cargo test`, bash syntax check, `ai-link-check --ci`, `ai-meta`, `ai-coherence`. PostgreSQL 16 service container with the polaris schema loaded.
+- ✅ **Prometheus-compatible `/metrics` endpoint** *(shipped v8.93)* — `/metrics` route in app.py via `prometheus_client`. Counters (`polaris_requests_total` by route/method/status; `polaris_verifications_total` by disclosure_level), histograms (`polaris_request_latency_seconds`, `polaris_db_query_latency_seconds`), gauge (`polaris_app_info` version label). Graceful fallback if `prometheus_client` is unavailable. OPERATIONS.md gains scrape-config + alerting-rule examples.
+- ✅ **CI/CD pipeline configuration** *(shipped v8.93)* — `.github/workflows/ci.yml` runs the test suite on every push: the `polaris_checks` invariant layer, CHECK regression tests, Hypothesis property tests, ZK crate `cargo test`, bash syntax check, and `ai-link-check --ci`. PostgreSQL 16 service container with the polaris schema loaded.
 - ✅ **Encryption-at-rest recipe** *(shipped v8.93)* — OPERATIONS.md § "Encryption at rest" with three operator-pick options (LUKS on bare-metal, TDE on managed Postgres, fscrypt/eCryptfs for per-directory). Verification step. PRIVACY.md cross-references.
 - ✅ **Operator onboarding script** *(shipped v8.93)* — `scripts/polaris-create-operator.sh` with werkzeug scrypt password hash (matching `security.py:hash_password`), AppUser format validation (chk_appuser_username_format + chk_appuser_role), AuthAuditLog ACCOUNT_CREATED entry in the same transaction, idempotency guard against duplicate usernames, `--dry-run` mode, `--password-file` for non-interactive use, interactive stty -echo prompt for tty use.
 
@@ -304,18 +122,14 @@ VANTA-named:
 
 - **Multi-region deployment** ⬜ — read-replicas across regions; failover orchestration; data-locality requirements per jurisdiction. Gating condition: production-deployment-pressure trigger (operator names a real data-locality constraint). Will get its own Sanctum.
 - ✅ **Disaster recovery runbook** *(shipped v9.01)* — [`docs/operator/DR.md`](docs/operator/DR.md) (~450 lines): RPO ≤ 1min / RTO ≤ 30min targets named (per Sanctum §IV.1); 8 failure-class procedures; severity matrix (SEV-1/2/3/4); decision tree; on-call playbook; communications templates (status-page snippets + post-mortem template); drill cadence (monthly verify, quarterly restore, half-yearly failover, annual ransomware tabletop).
-- ✅ **SOC 2 readiness checklist** *(shipped v9.01)* — [`docs/operator/SOC2.md`](docs/operator/SOC2.md) (~520 lines): TSCs in-scope per Sanctum §IV.2 (Security mandatory + Availability + Confidentiality; Processing Integrity + Privacy out-of-scope as operator-layer); CC1-CC9 mapping table — every common-criteria control mapped to existing C-constraints / G-guards / scripts that satisfy it; 7 evidence-collection SQL recipes (admin authentications by quarter, schema changes in audit period, token revocations, emergency-password-login authorizations, audit-log purges, append-only enforcement check, WebAuthn-MFA enforcement check); known-limitations section for audit transparency.
+- ✅ **SOC 2 readiness checklist** *(shipped v9.01)* — [`docs/operator/SOC2.md`](docs/operator/SOC2.md) (~520 lines): TSCs in-scope per Sanctum §IV.2 (Security mandatory + Availability + Confidentiality; Processing Integrity + Privacy out-of-scope as operator-layer); CC1-CC9 mapping table — every common-criteria control mapped to existing C-constraints / scripts that satisfy it; 7 evidence-collection SQL recipes (admin authentications by quarter, schema changes in audit period, token revocations, emergency-password-login authorizations, audit-log purges, append-only enforcement check, WebAuthn-MFA enforcement check); known-limitations section for audit transparency.
 
-Architect+HYDRA scan additions (2026-05-14):
+Scan additions (2026-05-14):
 
-- **Distributed tracing** ⬜ — OpenTelemetry integration for cross-service request flows. **Gated on Phase 2.5 multi-instance** (architect's own deferral note: tracing-without-a-distributed-stack is overhead without payoff; reopens automatically when the second hop exists to trace through).
+- **Distributed tracing** ⬜ — OpenTelemetry integration for cross-service request flows. **Gated on Phase 2.5 multi-instance** (deferral note: tracing-without-a-distributed-stack is overhead without payoff; reopens automatically when the second hop exists to trace through).
 - ✅ **HSM / KMS integration for secret material** *(shipped v9.01)* — [`docs/operator/SECRETS.md`](docs/operator/SECRETS.md) § 8 (~280 lines added): three operator-pick paved paths per Sanctum §IV.3 (HashiCorp Vault Transit Engine, AWS KMS envelope encryption, GCP Secret Manager); each with install + Polaris integration shape + IAM policy + key-rotation automation + cost notes; comparison matrix; migration recipe from v8.77 file-mounted to KMS-backed (preserves user sessions across the cut).
 - ✅ **Penetration test schedule + reporting cadence** *(shipped v9.01)* — [`docs/operator/PENTEST.md`](docs/operator/PENTEST.md) (~280 lines): annual cycle (internal Q1 + external Q3) per Sanctum §IV.4; scope matrix (every STRIDE entry mapped to in/out-of-scope + test approach); remediation SLA (HIGH 30d / MEDIUM 90d / LOW next-cycle); report-archive policy (filesystem AoR + SHA-256 manifest, 7-year retention); vendor evaluation checklist; 12-scenario minimum-tests-per-cycle list; follow-up testing protocol.
 - ✅ **Certificate transparency monitoring** *(shipped v9.01)* — [`scripts/polaris-ct-monitor.sh`](scripts/polaris-ct-monitor.sh) (~220 lines): polls crt.sh API for cert-issuance events on ${POLARIS_DOMAIN}; SHA-256 fingerprint allowlist in `$STATE_DIR/ct-monitor/known.txt`; daily 06:00 UTC cron per Sanctum §IV.5; greppable exit codes (0 ok / 4 inconclusive / 5 anomaly); alert sink = file + stderr per Sanctum §IV.5 (operator integrates with their alerting stack); OPERATIONS.md § "Certificate transparency monitoring (v9.01)" documents setup + on-alert procedure.
-
-Plus operator hygiene fold-in:
-
-- ✅ **Mycelium swarm cron schedule** *(shipped v9.01)* — closes the v8.85-era HYDRA ant_colony "zero pheromones in 72h" ALERT surfaced by today's macro scan; OPERATIONS.md § "Mycelium swarm cron schedule (v9.01)" documents the every-6h cron recipe; `Pheromone` table grows ~220K rows/year at this cadence; `polaris-rotate-logs.sh` handles quarterly archive+purge.
 
 ### Maintenance rule
 
@@ -381,12 +195,11 @@ Items without the prefix are still active.
 
 - **Mission link:** Across-cutting; advances how the agent itself
   works on Polaris
-- **Risk class:** LOW (additive scripts + docs; no code path change)
+- **Risk class:** LOW (additive docs; no code path change)
 - **Effort:** ~1-2 sessions
 - **Acceptance:**
   - `MISSION.md`, `ROADMAP.md`, `docs/BACKLOG.md` exist
-  - `scripts/ai-status.sh`, `scripts/ai-propose.sh` work end-to-end
-  - `meta/autonomy-architecture.md` documents the risk classes
+  - The LOW/MEDIUM/HIGH risk classes are documented
   - Demonstrated by completing at least one R7-* item in the same
     session that the planning layer was built
 
@@ -459,9 +272,8 @@ Items without the prefix are still active.
   - DEVNOTES/atlas-scaling.md § "PostGIS-optional scaling path"
     documents the design trade-off + sample ST_DWithin query.
   - OPERATIONS.md § "PostGIS" recipe for operator enablement.
-  - 7 new structural invariants in
-    `TestArchHydraTop4PostGISFoundation` enforce optional-
-    dependency, idempotency, GENERATED-ALWAYS-AS-STORED pattern.
+  - Tests enforce the optional-dependency guard, idempotency, and
+    the GENERATED-ALWAYS-AS-STORED pattern.
   - **Without-PostGIS path verified** live (the default for the
     dev environment): schema loads cleanly, atlas functions
     continue to work via B-tree.
@@ -900,837 +712,6 @@ PDF §9 triads.
 
 ---
 
-## v12 — Arc D, Swarm / HYDRA (closed 2026-05-12 at 8/8 ✅, opened 2026-05-12)
-
-Authorized by Sanctum
-`sanctum/2026-05-12-new-chapter-swarm-hydra-arc-opening.md`. Evolves
-Polaris's single-Architect cognitive synthesis into a multi-agent
-swarm + unified HYDRA host. Modeled on BettaFish's ForumEngine pattern
-(prior art, not vendored).
-
-See `MISSION.md` §"Arc D — Swarm / HYDRA" for the done-list (H1..H8).
-
-### ✅ R12-1. HYDRA host (`polaris_hydra/host.py`)
-
-**Delivered v8.37** (2026-05-12). Phase 1 of Arc D.
-
-**Shipped:**
-- `polaris_hydra/host.py` — aggregator that gathers `WatcherReport`s
-  and emits a `HydraSynthesis` via either Claude Opus 4.7 (with
-  adaptive thinking, when `ANTHROPIC_API_KEY` is set) or a
-  deterministic structured fallback (CI + offline mode).
-- LLM-call path uses streaming (`messages.stream`) +
-  `get_final_message()` per the Anthropic skill defaults.
-- CLI entry point (`python -m polaris_hydra.host`) supports
-  `--watcher NAME`, `--query "…"`, `--json`, `--help`.
-
-- **Mission link:** Arc D done-list item H1
-- **Risk class:** MEDIUM (architectural edge)
-
-### ✅ R12-2. SchemaWatcher (`polaris_hydra/watchers/schema_watcher.py`)
-
-**Delivered v8.37** (2026-05-12). First watcher; proves the swarm
-contract end-to-end.
-
-**Shipped:**
-- Reads `information_schema.triggers`, `pg_indexes`, `pg_views`, and
-  audit-of-record table row counts.
-- Detects the v8.32 silent-failure mode (12_v7_constraints.sql DDL
-  not applied as superuser) explicitly: separate `alert` finding
-  category for v7-hardening misses.
-- Graceful fallback when psycopg2 absent or DB unreachable: emits
-  an `alert` finding rather than crashing HYDRA.
-
-- **Mission link:** Arc D done-list item H2
-- **Risk class:** LOW (additive, read-only)
-
-### ✅ R12-3. CognitiveWatcher
-
-**Delivered v8.38** (2026-05-12). Second watcher; closes the
-Phase-2-first-watcher slot. Closes MISSION done-list item H3.
-
-**Shipped:**
-- `polaris_hydra/watchers/cognitive_watcher.py` — invokes
-  `scripts/ai-meta.sh` as a subprocess and classifies the verdict
-  (`healthy` / `drift` / `broken`); reads the pattern catalog
-  dynamically from `scripts/ai-pattern.sh` and measures warmth
-  against `journal/*.md` mentions; checks `ai-*.sh` script mtimes
-  for `> 60d` staleness; verifies `sanctum/` count parity with
-  `meta/sanctum-index.md` entries.
-- Honors the v8.30 substitutability principle: the watcher reads
-  from canonical sources, does not duplicate their logic.
-- Caught its own design bug at first smoke: my initial hardcoded
-  `EXPECTED_PATTERNS` list disagreed with the actual catalog
-  (Investigation/Audit/Recovery in catalog; not in my list).
-  Refactored to derive from the catalog dynamically; the watcher
-  now flags catalog-size drift instead of name drift.
-- 3 new structural tests (67/67 total).
-
-- **Mission link:** Arc D done-list item H3
-- **Risk class:** LOW (additive, read-only)
-
-### ✅ R12-4. SecurityWatcher
-
-**Delivered v8.39** (2026-05-12). Third watcher; closes MISSION
-done-list item H4.
-
-**Shipped:**
-- `polaris_hydra/watchers/security_watcher.py` — five-channel
-  watcher: CSP literal scan + no-unsafe-inline check; CSRF
-  validate_csrf + dual-transport (form + X-CSRFToken) check;
-  `/api/health` rate-limiter probe (1.5s timeout; offline = info
-  not alert); role-gating decorator counts (47 login_required + 25
-  require_role baseline observed at v8.39, flag-on-drop);
-  R6 anti-revealing scan across 9 operator-visible templates +
-  rendered-text scan of verifications_form.html (Jinja comments
-  + HTML attributes stripped before keyword check).
-- **Self-calibrated mid-ship.** First version had a guessed
-  baseline (50/10) and over-strict R6 scan; watcher reported
-  drift + alert that were both false positives. Refactored:
-  baselines observed empirically (47/25); R6 scan strips Jinja
-  `{# … #}` comments + `="..."` attributes before keyword check
-  (so `verifications_form.html`'s legitimate `name="duress_code"`
-  doesn't false-positive).
-- 4 new structural tests including a Jinja-stripping unit test
-  (71/71 total).
-
-- **Mission link:** Arc D done-list item H4
-- **Risk class:** LOW (additive, read-only, graceful on offline app)
-
-### ✅ R12-5. MissionWatcher
-
-**Delivered v8.40** (2026-05-12). Fourth watcher; closes MISSION
-done-list item H5.
-
-**Shipped:**
-- `polaris_hydra/watchers/mission_watcher.py` — four channels:
-  done-list rollup (parses ✅ / ⬜ / ✗ across v1 [15 items],
-  v2 [M2-1..M2-12], Arc D [H1..H8]; flags arithmetic mismatches as
-  alerts); steady-state marker verification (the v8.31 phrase
-  `Resolved 2026-05-12: steady-state` must still be present);
-  section anchor presence (v1/v2/Arc-D headers); stale-⬜ detection
-  (> 7 days without journal OR ROADMAP mention).
-- **Self-calibrated mid-ship.** First smoke reported 6 stale ⬜
-  items; investigation showed H1 + H2 had been delivered in v8.37
-  but never marked ✅ in MISSION.md (real audit-of-record arrearage).
-  Backfilled H1/H2 ✅ + H5 ✅ in the same ship. Watcher then
-  reported 3 remaining stale (H6/H7/H8) — also a false-positive,
-  since those items are scheduled in ROADMAP with acceptance
-  criteria. Refined the watcher: pending items mentioned in a
-  recently-touched ROADMAP count as "scheduled, not forgotten."
-- 3 new structural tests including done-list-arithmetic invariants
-  (74/74 total).
-
-- **Mission link:** Arc D done-list item H5
-- **Risk class:** LOW (additive, read-only, file parsing only)
-
-### ✅ R12-6. AdversaryWatcher
-
-**Delivered v8.41** (2026-05-12). Fifth watcher; closes MISSION
-done-list item H6.
-
-**Shipped:**
-- `polaris_hydra/watchers/adversary_watcher.py` — invokes
-  `scripts/ai-adversary.sh` once per C-constraint (10 subprocess
-  calls, 5s per-walk timeout). Parses the six-section equilibrium
-  structure with substring-matched headers (so e.g.
-  `Second-best attack (if equilibrium holds)` matches the canonical
-  `Second-best attack` prefix). Surfaces each constraint's
-  second-best attack in `evidence_summary` so HYDRA can cite the
-  full game-theoretic threat map.
-- **Self-calibrated mid-ship.** First smoke reported 10/10 walks
-  malformed because my exact-match parser missed the parenthetical
-  in the actual section header. Refined to substring matching;
-  now 10/10 clean.
-- 3 new structural tests including a contract test that asserts
-  all 10 walks complete + each has a non-empty second-best attack
-  (77/77 total).
-
-- **Mission link:** Arc D done-list item H6
-- **Risk class:** LOW (10 read-only subprocess calls, 5s per-walk
-  timeout, no state modification)
-
-### ✅ R12-7. PerformanceWatcher
-
-**Delivered v8.42** (2026-05-12). Sixth watcher; **closes Phase 2 of
-Arc D — 6/6 watchers live.** Closes MISSION done-list item H7.
-
-**Shipped:**
-- `polaris_hydra/watchers/performance_watcher.py` — three channels:
-  - **Atlas latency** times `/api/atlas/stats`, `/clusters`, `/points`
-    with a 3 s budget; drift at > 200 ms, alert at > 1 s. App
-    offline reports `info` (not alert) so the watcher doesn't
-    cry-wolf on a stopped instance.
-  - **App-self-report** GETs `/api/health` (if reachable) and
-    surfaces the JSON-reported overall status.
-  - **Query-plan spot-check** runs `EXPLAIN (ANALYZE, BUFFERS,
-    FORMAT JSON)` on the canonical bbox query against
-    `VerificationEvent`. **Row-threshold-gated:** below 1000 rows
-    the optimizer's choice to Seq Scan is the correct plan and is
-    not flagged. Above the threshold, Seq Scan triggers a
-    regression alert.
-- **Self-calibrated mid-ship.** First smoke flagged the seed-DB
-  Seq Scan (9 rows) as `alert: SEQ_SCAN_REGRESSION`. Added
-  `SEQ_SCAN_REGRESSION_ROW_THRESHOLD = 1000` so the watcher
-  respects optimizer reality. **This was the fifth consecutive
-  Phase-2 ship where the watcher caught its own calibration bug
-  mid-build** — a pattern worth naming. The swarm grows up by
-  catching itself.
-- 3 new structural tests (80/80 total — Phase 2 close-out).
-
-- **Mission link:** Arc D done-list item H7
-- **Risk class:** LOW (read-only timing + one offline EXPLAIN
-  ANALYZE; query-plan check is gated on app availability)
-
-### ✅ R12-8. HYDRA constitutional integration
-
-**Delivered v8.43** (2026-05-12). **Closes Phase 3 of Arc D and Arc D
-itself.** Sanctum-authorized
-(`sanctum/2026-05-12-hydra-constitutional-integration.md`, Option C —
-narrow naming). Closes MISSION done-list item H8.
-
-**Shipped:**
-- **MISSION.md §"What this section is NOT"** extended with one new
-  bullet naming the HYDRA swarm (`polaris_hydra/`) and its six
-  watchers (schema, cognitive, security, mission, adversary,
-  performance) as the operative synthesis implementation as of
-  v8.43, cross-referenced to both the arc-opening Sanctum
-  (v8.37) and the constitutional-integration Sanctum (v8.43).
-  The closing paragraph extended with an explicit substitutability
-  clause: *"A future agent may replace the HYDRA swarm with a
-  different synthesis pattern without amending this section,
-  provided the four principles still hold."* The v8.30
-  substitutability principle is preserved verbatim.
-- Arc D header in MISSION.md transitions
-  `(active, opened 2026-05-12)` → `(closed 2026-05-12, opened 2026-05-12)`.
-- **`TestHydraConstitutionalIntegration` class** in
-  `polaris_web/test_structural_invariants.py` — 2 soft-check tests:
-  one asserts the HYDRA naming + directory cross-reference are
-  present in the cognitive-substrate section; one asserts the
-  substitutability qualifier follows the HYDRA mention. Both pin
-  the *property*, not the prose. **82/82 structural tests pass.**
-- The `## The cognitive substrate` section's substitutable-
-  implementation enumeration also gains a script-count update
-  (27 → 28 ai-* scripts, reflecting ai-hydra.sh added v8.37).
-
-**Constitutional principles unchanged.** The four principles
-(Sanctum, AoR, risk classes, CM) are untouched. HYDRA is named as
-*operative implementation*, not as a new principle.
-
-- **Mission link:** Arc D done-list item H8
-- **Risk class:** MEDIUM (Sanctum-authorized; constitutional
-  documentation amendment)
-
----
-
-## v13 — Arc E, Mycelium / genuine swarm intelligence (active, opened 2026-05-13)
-
-Authorized by `sanctum/2026-05-13-arc-e-swarm-intelligence-opening.md`.
-v8.31 trigger 3 fired again on VANTA's "Mission Prompt: Genuine
-Swarm Intelligence Layer." Arc E replaces HYDRA's centralized
-synthesis with a stigmergic ant-colony pattern depositing pheromones
-onto brain-map nodes. Phase 1 (E1) shipped v8.62; subsequent
-phases earn their own ai-done gates.
-
-### ✅ R13-1. Mycelium Phase 1 — pheromone substrate (`v8.62`)
-
-The 11th audit-of-record instance plus the swarm scaffold.
-
-**Shipped:**
-
-- `Pheromone` table + `trg_pheromone_append_only` trigger +
-  3 indexes (`polaris_sql/01_schema.sql` + `06_triggers.sql`).
-- `polaris_swarm/` module: `base.py` (Pheromone dataclass + Ant
-  base + `effective_intensity()` decay), `ants/` (3 starter ants),
-  `colony.py` (deposit runner with per-ant advisory locks —
-  the 7th catalog entry).
-- `scripts/ai-swarm-bloom.{sh,py}` — operator-facing renderer.
-- `TestMyceliumPhaseOne` (4 tests; G6-G9 contract guards).
-
-**Pattern realized:** v8.42 self-calibration realized once more
-(the colony's first run surfaced a real drift the v8.61
-ai-coherence check had missed — `/api/heartbeat` documented as
-GET when actually POST). Fixed in the same ship.
-
-- **Mission link:** Arc E done-list item E1
-- **Risk class:** MEDIUM (Sanctum-authorized; new schema +
-  cognitive-layer scaffold)
-
-### ✅ R13-2. Expand the cohort to 12 ants (`v8.63`)
-
-Added 9 ants to reach 12 total covering all 7 HYDRA watcher
-domains. Each <100 LOC. Each independent (G6). Each LLM-free (G8).
-Cohort is deliberately overlapping so removing 3-5 ants degrades
-coverage gracefully.
-
-**Shipped:** ant_aor_immutability + ant_fk_cascade_guard (schema),
-ant_stale_script + ant_pattern_warmth (cognitive), ant_csp_health
-(security), ant_done_list_arithmetic (mission),
-ant_adversary_walk_complete (adversary),
-ant_atlas_endpoint_health (performance), ant_ship_burst
-(trajectory). Two ants self-calibrated mid-ship — the 7th
-instance of the self-calibration pattern.
-
-- **Mission link:** Arc E done-list item E2
-- **Risk class:** LOW (additive, deterministic, no schema changes)
-
-### ⬜ R13-3. Brain-map bloom integration
-
-Render pheromone intensity directly on `meta/brain-map/brain-map.html`
-as a color overlay (heatmap on graph nodes). Operator sees structural
-attention in situ rather than via a separate sorted list.
-
-- **Acceptance:** brain-map HTML accepts an optional embedded
-  `pheromone` blob and colors nodes by effective intensity at
-  render time; `ai-brain-map.sh --with-bloom` flag wires it up.
-- **Mission link:** Arc E done-list item E3
-- **Risk class:** LOW (additive rendering, no schema/security
-  changes)
-
-### ⬜ R13-4. Deliberation threshold + optional LLM translation
-
-When N pheromones accumulate on one node within T minutes,
-optionally invoke ONE LLM call (in the Architect voice) to
-translate the pattern into prose. The pheromone log remains the
-truth; the prose is commentary. Threshold is configurable; LLM
-absence falls back to deterministic structured output.
-
-- **Acceptance:** `ai-swarm-bloom --deliberate` mode that checks
-  the threshold and either calls Claude Opus 4.7 OR emits a
-  deterministic summary; threshold and budget are env-var
-  configurable.
-- **Mission link:** Arc E done-list item E4
-- **Risk class:** LOW (additive optional surface)
-
-### ⬜ R13-5. HYDRA-vs-Mycelium decision Sanctum
-
-After R13-2..R13-4 are in operation for enough time to evaluate,
-a Phase 3+ Sanctum decides whether HYDRA stays (as a synthesis
-commentator) or steps aside in favor of Mycelium alone.
-v8.30 substitutability authorizes either outcome.
-
-- **Acceptance:** Sanctum opened; Architect's brief includes a
-  prediction-vs-reality scan over E1-E4 evidence; VANTA decides.
-- **Mission link:** Arc E done-list item E5
-- **Risk class:** MEDIUM (constitutional question; touches the
-  HYDRA naming in MISSION.md §"What this section is NOT")
-
-### ✅ R13-10. Acceleration + consciousness cohort expansion (`v8.69`)
-
-**Sanctum-authorized:**
-`sanctum/2026-05-13-arc-e-acceleration-consciousness-cohort-e10.md`.
-VANTA: *"design a cohort that evolves the swarm from
-maintenance/immune system to development acceleration + swarm
-consciousness."* The 100-day report identified the cohort as
-overwhelmingly immune-system-shaped (detecting drift from
-documented state). E10 adds two new perceptual modes.
-
-**Shipped:**
-
-- **5 acceleration ants** (gaze outward at the future):
-  `ant_todo_debt`, `ant_test_gap`, `ant_recent_churn`,
-  `ant_unbumped_version`, `ant_changelog_gap`.
-- **5 consciousness ants** (gaze inward at the self):
-  `ant_self_model_accuracy` (FIRST ALERT-capable),
-  `ant_swarm_inventory_drift`, `ant_treasury_health`,
-  `ant_legion_doctrine_health` (SECOND ALERT-capable),
-  `ant_brain_map_freshness`.
-- 4 legion modules extended (cognitive 2→7, performance 2→3,
-  trajectory 2→4, docs 3→5); **no new legions** (Hydra-9
-  preserved). Total cohort **18 → 28**.
-- legio_trajectory now uses all three TRIPLEX_ACIES tiers:
-  T1 ship_burst → T2 journal_silence + recent_churn → T3
-  changelog_gap.
-- legio_docs T2 gains swarm_inventory_drift; T3 gains
-  unbumped_version.
-- 2 new G-guards:
-  - **G17** — acceleration ants are read-only with respect to
-    source files (no write opens, no `Path.write_*`, no
-    `os.replace`/`os.rename`/`shutil` mutation).
-  - **G18** — consciousness ants observe swarm self-state
-    (registries, meta docs, FS-AoR rolls), never runtime
-    pheromones. Preserves the ant/citizen architectural
-    boundary.
-- `ALL_ANTS` grew 18 → 28; `__all__` and ALL_ANTS list updated.
-- 7 new structural-invariants in `TestArcEE10Cohort` (134 → **141**).
-- TIME_DEPENDENT exclusion set in `test_legion_deploy_is_deterministic`
-  extended with the four new time-using ants.
-
-**Architectural decision:** the Sanctum explicitly REJECTED
-creating new legions (Legio Velocitas / Legio Conscientia) on
-the grounds that Hydra-9 mythology must be preserved per the
-v8.65 commitment. The 10 ants distribute into existing legions
-whose domain they naturally serve. `legio_cognitive` becomes
-the project's self-monitoring HUB (7 ants, 5 of which observe
-the swarm itself).
-
-**First ALERT-capable ants.** The 100-year report observed 0
-ALERTs in 100 years; both E10 consciousness ants are designed
-to fire ALERT when the swarm's self-CLAIMS diverge from its
-self-REALITY. `ant_legion_doctrine_health` deliberately uses
-filesystem introspection (not `from polaris_swarm.legions
-import`) to preserve G11 verbatim.
-
-**Pacing decision:** the Architect cautioned that collapsing
-Phase 1 (6 ants) + Phase 2 (4 ants) into a single mega-ship
-contradicts the multi-day pacing established for Arc F. VANTA
-chose Option D ("Ship all 10 ants in one mega-ship today")
-explicitly, accepting the risk. After E10 ships, the prior
-Arc F sequence holds (F2 → F3 → F4).
-
-- **Mission link:** Arc E done-list item E10
-- **Risk class:** MEDIUM (10 new ants in one ship; 2 new
-  G-guards; structural-invariant expansion; doctrine extension
-  in 4 legions)
-
-### ✅ R13-9. Post-100-year-architect refinements (`v8.67`)
-
-**Sanctum-authorized:**
-`sanctum/2026-05-13-civitas-100-year-architect-report.md`.
-VANTA asked the Architect to run the civitas across 100 simulated
-years and report with recommendations. Three primary
-recommendations surfaced; VANTA ratified R1 + R2 + one minor
-refinement.
-
-**Shipped:**
-
-- **R1: Heartbeat pheromones** — proof-of-deployment layer in
-  `colony.py`. One heartbeat per actually-deployed ant per pass
-  (intensity=0.5, half-life=24h, observation_type=heartbeat).
-  Citizens filter via `_is_heartbeat()`. The bloom now
-  distinguishes silent-and-deployed from silent-and-not-deployed.
-- **R2: Augur threshold lowered 3 → 2** in
-  `civitas/augur_bloom_reader.py`. Convergence detection now
-  reachable at the actual swarm scale.
-- **Eques INTERESTING_PAIRS expansion** in
-  `civitas/eques_correlator.py`: added Mission+Trajectory and
-  Cognitive+Trajectory.
-- 3 new structural-invariants in `TestHeartbeatPheromones`
-  (127 → 130 total).
-- **R3 (Cursus Honorum / reputation) deferred** per Architect's
-  recommendation; needs ≥30 days of heartbeat-distinguished
-  operation before promotion-on-signal-volume becomes safe.
-
-**First post-ship run produced exactly the predicted Eques
-correlation:** `legio_mission and legio_trajectory both fired
-within 6h` — the dominant-signal correlation pair the 100-year
-simulation predicted.
-
-- **Mission link:** Arc E done-list item E9
-- **Risk class:** LOW (additive heartbeat + threshold tuning;
-  preserves all G1-G14 guards)
-
-### ✅ R13-8. Civitas — civilian classes (`v8.66`)
-
-**Sanctum-authorized:**
-`sanctum/2026-05-13-arc-e-civitas-civilian-classes.md`.
-VANTA: *"we need probably peasant class / worker class / upper
-class ants… use roman civilization as a metaphor."* The Roman
-metaphor expands beyond legions; Polaris becomes a full Civitas.
-
-**Shipped:**
-
-- `polaris_swarm/civitas/` — new parallel hierarchy to legions
-- 4 citizen modules: PlebsForumWatcher, EquesCorrelator,
-  AugurBloomReader, CensorRollKeeper
-- `polaris_swarm/civitas/census-roll.json` — filesystem-AoR
-  (2nd filesystem-AoR instance after `sanctum/`)
-- `colony.py` refactored: `run_swarm()` two-phase deployment;
-  `run_colony()` preserved for Phase 1 only
-- `meta/civitas.md` — complete Polaris-as-Civitas mapping
-- G12-G14 architectural guards
-- 5 new structural-invariants (`TestMyceliumCivitas`; 122→127)
-
-**Proposal-driven autogenesis:** the Roman ratification pattern.
-Citizens deposit `proposal_new_ant` pheromones; operators ratify
-by materializing real ant files. Literal autogenesis is
-forbidden (G13).
-
-- **Mission link:** Arc E done-list item E8
-- **Risk class:** HIGH (new parallel abstraction; constitutional
-  G12-G14; refactored colony runner; preserves all four
-  principles and G6-G11)
-
-### ✅ R13-7. Hydra nine-heads completion (`v8.65`)
-
-**Sanctum-authorized:**
-`sanctum/2026-05-13-arc-e-hydra-nine-heads-completion.md`.
-VANTA: *"the hydra has 9 heads not 7 ,, we need 2 more."*
-The canonical Lernaean Hydra (Apollodorus) has nine heads, one
-immortal. v8.65 promotes Mycelium to nine Legions and recognizes
-CM as the immortal 10th head (narrative only).
-
-**Shipped:**
-
-- Two new legions:
-  - `legio_substrate` (Legatus Dependentia) — CUNEUS doctrine
-  - `legio_docs` (Legatus Memoria) — TRIPLEX_ACIES doctrine
-- Six new ants (12 → 18 total):
-  - **Substrate cohort**: ant_substrate_catalog (LEAD),
-    ant_dependency_in_use, ant_rust_toolchain
-  - **Docs cohort**: ant_docs_structure (T1), ant_readme_counts
-    (T2), ant_devnotes_ships_coverage (T3)
-- `ALL_LEGIONS` extended 7 → 9
-- `test_legion_count_matches_seven` renamed →
-  `test_legion_count_matches_nine`
-- MISSION.md Arc E gains E7 ✅ + the **immortal 10th head**
-  paragraph mapping CM to the deathless head of the myth
-- substrate.md gained D3 + anthropic entries (real drift the
-  new ants surfaced on first scan)
-
-**Self-calibration:** the 8th instance of the pattern. First
-post-ship colony run produced 5 genuine drift findings; mid-ship
-fixes folded in (substrate.md updated, ant_dependency_in_use
-first-party allowlist extended, ant_done_list_arithmetic Arc E
-fallback updated).
-
-- **Mission link:** Arc E done-list item E7
-- **Risk class:** MEDIUM (constitutional count change 7→9;
-  preserves all four principles + G6-G11)
-
-### ✅ R13-6. Legion structure with Roman tactics (`v8.64`)
-
-**Sanctum-authorized:**
-`sanctum/2026-05-13-arc-e-legion-structure-with-tactics.md`.
-VANTA observed in chat that each HYDRA watcher is structurally a
-Roman general; the 12 Phase-2 ants were domain-themed but
-organizationally homeless. R13-6 introduces the **Legion**
-construct — 7 Legions (one per HYDRA watcher domain) each
-commanded by a Legatus, each operating under one of 5 Roman
-tactical doctrines.
-
-**Shipped:**
-
-- `polaris_swarm/legions/base.py` — `Legion` ABC + `Tactic` enum
-  + `TacticConfig` dataclass + 5 dispatcher functions
-  (`_deploy_testudo`, `_deploy_triplex_acies`, `_deploy_cuneus`,
-  `_deploy_vexillatio`, `_deploy_auxilia`).
-- 7 legio modules: legio_schema, legio_cognitive, legio_security,
-  legio_mission, legio_adversary, legio_performance,
-  legio_trajectory. Each declares its NAME / DOMAIN / LEGATUS /
-  ANTS / TACTIC.
-- `polaris_swarm/colony.py` refactored to iterate `ALL_LEGIONS`;
-  AoR preserved (`deposited_by` = ant.NAME; legion in evidence
-  JSONB).
-- `scripts/ai_swarm_bloom.py` gained `--by-legio` grouping mode.
-- `TestMyceliumLegions` (5 tests; 117 → **122 total**): G10
-  partition contract, G11 reverse-knowledge contract, count == 7,
-  TacticConfig validation, dispatch determinism.
-
-**Recruitment authority:** within Arc E, a Legatus can add ants
-to its cohort without requiring a separate Sanctum, as long as
-G6-G11 still pass. The partition contract enforces correctness
-automatically.
-
-**Default tactic per legion:**
-
-| Legion | Tactic |
-|---|---|
-| Legio Schema | TESTUDO |
-| Legio Cognitive | TESTUDO |
-| Legio Security | TESTUDO |
-| Legio Mission | TESTUDO |
-| Legio Adversary | CUNEUS (lead = walk-completeness ant) |
-| Legio Performance | TESTUDO |
-| Legio Trajectory | **TRIPLEX_ACIES** (hastati=ship_burst, principes=journal_silence) |
-
-- **Mission link:** Arc E done-list item E6
-- **Risk class:** MEDIUM (structural reorg under Arc E; preserves
-  all four principles, G6-G9 unchanged, adds G10-G11)
-
----
-
-## v15 — Arc G, Roman Empire opening (active multi-day, opened 2026-05-13)
-
-Authorized by
-`sanctum/2026-05-13-arc-g-roman-empire-opening.md`. VANTA's
-Option C choice overrode the Architect's recommendation; the
-brief's §III–§V cautionary readings remain on record. Phase 1
-ships today; Phases 2 and 3 deferred to future Sanctums per VANTA's
-own phasing in the original proposal.
-
-### ✅ R15-1. Phase 1 foundations (`v8.71`)
-
-**Sanctum-authorized:** override-style — the Architect
-recommended Option A (decline today; revisit with operational
-data); VANTA chose Option C (ship Phase 1 in full). The
-Hydra-9 mythology is amended: 9 Republican legions + N Imperial
-legions, CM still the immortal 10th head.
-
-**Shipped:**
-
-- **Legio Praetorian (TESTUDO)** — constitutional guard:
-  - `ant_mission_drift` (ALERT-capable) — MISSION.md anchor +
-    C1-C10 presence
-  - `ant_principle_invariant` (ALERT-capable) — implementation
-    presence of the four principles
-- **Legio Engineer (CUNEUS)** — development acceleration above
-  source layer (deliberately scoped to NOT duplicate v8.69 / E10):
-  - `ant_build_freshness` (lead) — build artifacts, Rust target,
-    vendored-asset drift, `__pycache__` orphans
-  - `ant_release_velocity` (follower) — long-term cadence
-    characterization (stagnation / burst / median gap)
-- **TribuniPlebisWatcher** (new 6th citizen class) — usability
-  advocate, observing command/doc drift, CLAUDE.md complexity,
-  and Sanctum-protocol entropy.
-- **Via Appia** — `priority: bool` field on AntFinding +
-  bloom-renderer 1.5× multiplier. Auto-promotes for ALERT-kind
-  and intensity ≥7.0.
-- **G-guards G21–G25** — Praetorian-observes-constitutional;
-  Tribuni-observes-usability; Via-Appia-is-property;
-  new-legions-require-Sanctum; cohort-growth-50%-requires-Sanctum.
-- 12 new structural-invariants in `TestArcGRomanEmpire`
-  (150 → **162 total**).
-
-**The Hydra-9 amendment:** `polaris_swarm.legions` now exposes
-`REPUBLICAN_LEGIONS` (the 9 mortal Hydra heads, fixed at 9) and
-`IMPERIAL_LEGIONS` (Arc G+ additions, grows by Sanctum). `ALL_LEGIONS`
-is the union. The v8.65 mythological commitment is preserved as
-the Republican-legion floor; the Empire metaphor is honored via
-the parallel registry.
-
-**Tribuni Plebis fires immediately on its first run:** detects
-**13 Sanctums opened on 2026-05-13** (today), flagging it as the
-highest-friction day in project history. The very ship that
-authorized the Tribuni surfaces this signal. The signal is real;
-the Architect's pacing-caution from the override Sanctum §V is
-empirically corroborated by the new citizen class.
-
-- **Mission link:** Arc G done-list item G1
-- **Risk class:** HIGH (Hydra-9 amendment; 5 new G-guards;
-  Empire-pattern infrastructure shipped against Architect's
-  Option A recommendation)
-
-### ⬜ R15-2. Phase 2 projection (deferred)
-
-Legio Tribune (external stakeholder advocacy), Legio Gladiator
-(permanent adversarial arena / spike detector), Cursus Honorum
-behavioral activation (R3 from 100-year report — needs 30 days
-of operation), Lares et Penates (module-level guardians; the
-100-year-report antipattern named by the Architect), Pomerium
-dynamic enforcement.
-
-- **Architect's recommendation:** Phase 2 items require
-  empirical justification ≥40% firing rate (VANTA's own metric)
-  on Phase 1 units before earning a ship. The Architect's §III
-  brief named most of Phase 2 as either premature or
-  micro-redundant; if shipped, each item earns its own Sanctum.
-- **Mission link:** Arc G done-list item G2
-- **Risk class:** MEDIUM-to-HIGH (per item)
-- **Earliest ship:** TBD — gated on operational data
-
-### ⬜ R15-3. Phase 3 empire (deferred indefinitely)
-
-Senate voting mechanics, provincial governor pattern, Mos
-Maiorum v2, Vestal Virgins, Decline & Fall graceful degradation
-protocol.
-
-- **Architect's strong opinion:** these items require Polaris
-  to have grown materially in scale (multiple operators,
-  external partners via Arc B/C, persistent legions with
-  competing interests). Today none of those conditions exist.
-- **Mission link:** Arc G done-list item G3
-- **Risk class:** HIGH (introduces governance, complexity,
-  potential constitutional drift)
-- **Earliest ship:** indefinite; revisit at Arc B/C openings
-
----
-
-## v14 — Arc F, the Denarius / economic dimension (active, opened 2026-05-13; reopened with F5 amendment)
-
-Authorized by `sanctum/2026-05-13-arc-f-denarius-opening.md`.
-After the 100-year + 100-day Architect reports, VANTA opened the
-economic dimension. *Money makes the world go round* — and in
-Polaris terms, the denarius is the substrate that lets us
-distinguish ants whose pheromones lead to drift resolution
-from ants whose pheromones decay unread.
-
-The arc is **explicitly multi-day**. Phases F2-F4 each earn
-their own Sanctum and ship no sooner than the previous phase
-plus an explicit cooldown.
-
-### ✅ R14-5. Steady-state ants reward exemption (`v8.73`)
-
-**Sanctum-authorized:**
-`sanctum/2026-05-13-arc-f-f5-steady-state-ants-reward-exemption.md`.
-The empirical case from the 100-year post-v8.72 simulation
-(`sanctum/2026-05-13-civitas-100-year-post-v8-72-report.md` §V/R1):
-no ant reached Eques in 100 simulated years; the F4 Cursus
-Honorum multipliers were behaviorally unreachable because most
-v8.69+ ants emit steady-state observations that never "resolve."
-
-**Shipped:**
-
-- `polaris_swarm/civitas/treasury.py`: `STEADY_STATE_ANTS`
-  frozenset (9 ants) + revised `compute_rewards()` that skips
-  both reward AND penalty events for allowlisted ants.
-- Allowlist contents: `ant_recent_churn`, `ant_changelog_gap`,
-  `ant_ship_burst`, `ant_release_velocity`, `ant_test_gap`,
-  `ant_todo_debt`, `ant_pattern_warmth`, `ant_stale_script`,
-  `ant_unbumped_version`.
-- **G26** (new) — additions to `STEADY_STATE_ANTS` require
-  Sanctum authorization. Enforced structurally:
-  `test_g26_allowlist_matches_sanctum_enumeration` cross-checks
-  the in-code allowlist against the F5 Sanctum's enumeration.
-- 6 new structural-invariants in `TestArcFF5SteadyStateExemption`
-  (168 → 174 total).
-
-**G15 + G16 preserved.** Existing treasury events stay as
-recorded; only future computations exempt the allowlist.
-`compute_rewards` remains a pure function — same input still
-yields same output. Allowlisted ants' historical (negative)
-balances stay where they are per audit-of-record discipline.
-
-**Verification:** five-scenario replay confirms the design —
-drift-class ants still receive +10/−2 events; steady-state ants
-receive zero; determinism holds.
-
-- **Mission link:** Arc F done-list item F5
-- **Risk class:** MEDIUM (amends the F1 reward function; touches
-  the core compute_rewards path; preserves G15 + G16)
-
-### ✅ R14-1. Treasury + Quaestor + drift-resolution rewards (`v8.68`)
-
-**Sanctum-authorized:**
-`sanctum/2026-05-13-arc-f-denarius-opening.md`.
-Phase F1 of Arc F. The economic substrate for the Civitas.
-
-**Shipped:**
-
-- `polaris_swarm/civitas/treasury.py` — denarii ledger helpers,
-  reward function (`compute_rewards`), property-class
-  classifier
-- `polaris_swarm/civitas/quaestor_treasurer.py` — the 5th
-  citizen, financial magistrate
-- `polaris_swarm/civitas/treasury-roll.json` — filesystem-AoR
-  ledger (3rd FS-AoR instance after sanctum/ + census-roll.json)
-- `ALL_CITIZENS` extended 4 → 5; `test_civitas_count_matches_four`
-  renamed `..._matches_five`
-- 4 new structural-invariants in `TestArcFDenarius` (130 → 134)
-- New G-guards: **G15** (treasury filesystem-AoR), **G16** (reward
-  function deterministic)
-- `meta/denarius.md` — complete economic-dimension doc
-
-**Reward function:** drift-resolution rewards.
-
-| Event | Effect |
-|---|---|
-| Drift resolved (fingerprint present-then-absent) | +10 denarii |
-| Persistent silence (fingerprint ≥3 passes) | −2 denarii |
-| Volume (more pheromones) | 0 denarii (neutral) |
-
-**Goodhart's Law mitigation by design:** the function rewards
-signal, not volume.
-
-**First-pass behavior demonstrated:** Quaestor silent on first
-pass (no last_pass_fingerprints to compare); treasury-roll.json
-populated with this pass's 5 fingerprints; future passes will
-detect resolutions (when project state changes) or persistent
-silences (after 3 unchanged passes).
-
-- **Mission link:** Arc F done-list item F1
-- **Risk class:** MEDIUM (new citizen + new FS-AoR; preserves
-  C10 — denarii are swarm currency, not identity currency)
-
-### ✅ R14-2. Chaos test for silent ants (`v8.70`)
-
-**Sanctum-authorized:**
-`sanctum/2026-05-13-arc-f-accelerated-pacing-override.md`.
-VANTA collapsed multi-day F2/F3/F4 pacing into one ship via
-Option B; the Architect cautioned about state-dependencies and
-VANTA accepted.
-
-**Shipped:**
-
-- `polaris_swarm/chaos.py` — deterministic harness with four
-  FailureMode variants (RAISE_EXCEPTION, RETURN_MALFORMED,
-  RETURN_SILENT, RETURN_INFLATED), `ChaosInjector` wrapper,
-  `run_chaos_pass()` runner, `ChaosResult` dataclass.
-- 3 new structural-invariants in `TestArcFAcceleratedPacing`
-  verify harness existence + heartbeat-suppression detection +
-  spike-detector-gap surfacing.
-
-**Architectural finding:** 3 of 4 failure modes are caught by
-existing detection layers (heartbeat suppression for
-crashes/malformed; treasury fingerprint loss for silence).
-**Spike detection is the architectural gap** — there is no
-detector for an over-producing ant. F2 surfaces this gap
-structurally; a future ship may add a spike detector.
-
-- **Mission link:** Arc F done-list item F2
-- **Risk class:** LOW (test infrastructure; no constitutional
-  changes)
-
-### ✅ R14-3. Cohort growth via proposal exercise (`v8.70`)
-
-**Sanctum-authorized:** same Sanctum as R14-2.
-
-**Shipped:**
-
-- `AugurBloomReader` extended with `_observe_uncovered_namespaces()`
-  — scans WATCHED_NAMESPACES (today: `proposals/`); when a
-  namespace has ≥3 files and zero ant coverage, emits
-  `proposal_new_ant` via the v8.66 G13 helper.
-- `ant_proposal_stagnation` materialized — the first ant
-  ratified through the proposal-driven autogenesis loop.
-  Surfaces proposals/*.md files ≥30 days stagnant; three
-  severity tiers (shipped-but-lingers, scheduled-but-untouched,
-  genuinely-stagnant). Lands in legio_trajectory T2 (proposal
-  stagnation is a pacing signal, sibling to journal_silence
-  and recent_churn).
-- ALL_ANTS: 28 → 29.
-- 3 new structural-invariants verify registry placement +
-  Augur proposal emission + loop closure once coverage exists.
-
-**The G13 proposal-driven autogenesis loop is now closed
-end-to-end for the first time in cohort history.** Future
-proposals will follow the same path: Augur observes uncovered
-namespace → emits proposal_new_ant → operator ratifies →
-Architect materializes → ant joins legion → Augur stops
-proposing for that namespace.
-
-- **Mission link:** Arc F done-list item F3
-- **Risk class:** MEDIUM (exercises G13 mechanism for the first
-  time; ratification recorded in the override Sanctum)
-
-### ✅ R14-4. Cursus Honorum activation (structural) (`v8.70`)
-
-**Sanctum-authorized:** same Sanctum as R14-2.
-
-**Shipped:**
-
-- `treasury.CURSUS_MULTIPLIER = {pleb: 1.0, eques: 1.5, patrician: 2.0}`.
-- `multiplier_for(balance)` + `multiplier_for_ant(roll, name)`
-  + `is_sanctum_chair_eligible(roll, name)` +
-  `patrician_ants(roll)` — the F4 public surface.
-- `SANCTUM_CHAIR_MIN_DENARII = 10_001` (patrician threshold).
-- `scripts/ai_swarm_bloom.py::render_top_nodes()` consults the
-  treasury per-ant; applies multipliers to effective intensity
-  before aggregation. Backward-compatible: omit `root` → 1.0×
-  multipliers everywhere (pre-F4 behavior).
-- **G19** — multipliers are monotonic non-decreasing in
-  balance (pleb ≤ eques ≤ patrician). Enforced structurally.
-- **G20** — Sanctum-chair eligibility derives ONLY from denarii
-  balance; never from Polaris identity-layer attributes. C10
-  (pomerium) preserved. Enforced by a source-scan test
-  forbidding identity-symbol references in treasury.py code.
-- 3 new structural-invariants verify G19 monotonicity + G20
-  strict-civitas + the 29-ant count from F3.
-
-**Behaviorally inert today** — max positive ant balance is 76
-denarii; every ant is pleb; every multiplier is 1.0×; no ant is
-Sanctum-chair eligible. **As denarii accumulate through real
-drift-resolution operation, the multipliers engage
-automatically; no further code ship is needed for F4 to "go
-live."** Operation time is the only remaining variable.
-
-- **Mission link:** Arc F done-list item F4
-- **Risk class:** MEDIUM (introduces intensity weighting + new
-  eligibility predicate; structural readiness, not behavior
-  change in v8.70)
-
----
-
 ## v16 — Arc B, Production deployment (active multi-phase, opened 2026-05-14)
 
 Production-readiness arc. Opened by VANTA's heavy-production
@@ -1771,19 +752,19 @@ only Caddy exposing ports).
 X-Content-Type / Referrer-Policy / Permissions-Policy headers +
 edge rate-limit + HTTP→HTTPS redirect + h1/h2/h3.
 
-- **G27 added:** Production requires TLS. Enforced structurally.
+- **Check added:** Production requires TLS. Enforced by a test.
 - **Mission link:** Arc B done-list (Phase 1)
 - **Risk class:** MEDIUM
 
 ### ✅ R16-4. Structured `/api/health` (`v8.77`)
 
 **Shipped:** Rewrote `/api/health` from the v7.5 prototype to the
-G29 contract — `{status, version, uptime_seconds, checks: {database,
-redis, zk_binary, disk}, timestamp}`. Each component carries its own
-status; overall = worst per-component status. HTTP 503 on
-`unhealthy`, 200 otherwise.
+structured contract — `{status, version, uptime_seconds, checks:
+{database, redis, zk_binary, disk}, timestamp}`. Each component
+carries its own status; overall = worst per-component status. HTTP
+503 on `unhealthy`, 200 otherwise.
 
-- **G29 added:** Structured-JSON contract enforced structurally.
+- **Check added:** Structured-JSON contract enforced by a test.
 - **Mission link:** Arc B done-list (Phase 1)
 - **Risk class:** LOW
 
@@ -1796,8 +777,8 @@ env vars. Production compose mounts `./secrets/*` at
 `POLARIS_DB_PASSWORD_FILE`. `polaris-generate-secrets.sh` +
 `polaris-rotate-secret.sh` complete the lifecycle.
 
-- **G28 added:** No sensitive env-var literals in production
-  compose. Enforced structurally.
+- **Check added:** No sensitive env-var literals in production
+  compose. Enforced by a test.
 - **Mission link:** Arc B done-list (Phase 1)
 - **Risk class:** MEDIUM
 
@@ -1815,17 +796,16 @@ on failure.
 
 **Shipped:** `scripts/polaris-backup.sh` produces a single
 timestamped tarball with `pg_dump` (custom), `sanctum/`, `journal/`,
-`treasury-roll.json`, `census-roll.json`, `meta/sanctum-index.md`,
-and a `MANIFEST.json` with SHA-256 hashes. `--verify-latest` mode
-re-hashes the newest backup to detect bit-rot.
+`meta/sanctum-index.md`, and a `MANIFEST.json` with SHA-256 hashes.
+`--verify-latest` mode re-hashes the newest backup to detect bit-rot.
 
 - **Mission link:** Arc B done-list (Phase 1)
 - **Risk class:** LOW
 
-### ✅ R16-8. Structural invariants for the deploy stack (`v8.77`)
+### ✅ R16-8. Tests for the deploy stack (`v8.77`)
 
 **Shipped:** `TestArcBProductionDeploymentStack` (8 tests):
-deploy-stack-files-exist, G27 TLS, G28 no-env-secrets, G29 health
+deploy-stack-files-exist, TLS-required, no-env-secrets, health
 contract, Dockerfile-prod non-root, Caddyfile security headers,
 deploy-scripts executable, secrets-dir gitignored.
 
@@ -1844,7 +824,7 @@ sanctum-index entry, journal entry for 2026-05-14.
 ### ⬜ R16-10. Phase 2 / Phase 3 deferred items
 
 Scoped to Phase 2 (open via fresh VANTA directive or
-Architect-surfaced gap after Phase 1 soak):
+a gap surfaced after Phase 1 soak):
 
 - WebAuthn + hardware-token operator auth
 - Audit-log archive policy (S3 / Glacier rotation)
@@ -1871,26 +851,18 @@ v9.24–v9.27 moved byte-identical from CHANGELOG.md to a new
 test_changelog_compressed cap restored from 14 → 11. Future
 agings-out follow the same pattern.
 
-### ⬜ Apparatus-reduction Sanctum (sanctum-scope cut-deeper signal)
+### ✅ Apparatus reduction — **DONE in v9.55**
 
-`polaris-sanctum-status` reports ratio 0.29 (14 core / 48 apparatus
-ACTIVE) — APPARATUS-DOMINANT, "cut deeper" trigger fired since v9.29.
-This is its own HIGH-risk Sanctum: identify SUPERSEDED-but-not-marked
-sanctums and apparatus sanctums whose decisions have been embodied as
-invariants, transition them to SUPERSEDED, observe whether ratio
-improves.
-
-- **Justification under freeze:** (b) Measurement — the sanctum-status
-  scorecard is part of the cognitive-loop earning measurement; reducing
-  apparatus weight without losing audit-of-record is a measurement
-  refinement, not new scope.
-- **Risk:** HIGH (touches every Sanctum file's classification + the
-  ratio definition itself).
-- **Cost:** requires careful walk-through of all ACTIVE sanctums; AP2
-  would fire if opened without execution intent. Defer until a
-  dedicated session.
-- **Surfaced by:** 2026-05-17 polish pass joint Architect ↔ Anti-
-  Architect review (Class C item).
+Shipped 2026-06-03. The cognitive apparatus (the swarm, the HYDRA
+host, the legions, the civitas/Denarius economy, foresight, and the
+~50 `ai-*`/`polaris-*` cognitive scripts) was cut wholesale (~52k
+lines) and replaced by the flat invariant layer
+[`polaris_checks/`](polaris_checks/), one `check_*(repo_root)` per
+constraint, gating CI via `python3 -m polaris_checks.run`. The
+product (`polaris_sql/`, `polaris_web/`, `polaris_cli/`,
+`polaris_zk/`) and the C1-C10 constraints plus the Vocation are
+unchanged. The development record (CHANGELOG, journal, sanctum,
+archive) is kept as history.
 
 ---
 
@@ -1900,6 +872,5 @@ improves.
   alignment + risk class + effort estimate + acceptance criteria.
 - Items leave the roadmap by being done (move to CHANGELOG) or by
   being formally rejected (move to `meta/rejected.md` with rationale).
-- The roadmap is checked at the start of every agent session via
-  `scripts/ai-status.sh`. If the roadmap is older than 30 days
-  without movement, that's a flag.
+- The roadmap is read first each session, alongside `MISSION.md`. If it
+  is older than 30 days without movement, that's a flag.

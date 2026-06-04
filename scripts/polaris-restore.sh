@@ -8,10 +8,8 @@
 # the in-band MANIFEST.json, then restores:
 #
 #   - PostgreSQL database (pg_restore from the custom-format dump)
-#   - sanctum/ filesystem audit-of-record
+#   - sanctum/ decision audit-of-record
 #   - journal/ episodic memory
-#   - polaris_swarm/civitas/treasury-roll.json (Arc F denarii ledger)
-#   - polaris_swarm/civitas/census-roll.json (Arc E citizen registry)
 #
 # Refuses to clobber a non-empty database without --force.
 #
@@ -215,8 +213,6 @@ if [[ "${DRY_RUN}" -eq 1 ]]; then
     [[ "${SKIP_FS}" -eq 0 ]] && {
         echo "    • sanctum/         →  ${POLARIS_ROOT}/sanctum/"
         echo "    • journal/         →  ${POLARIS_ROOT}/journal/"
-        echo "    • treasury-roll.json  →  polaris_swarm/civitas/"
-        echo "    • census-roll.json    →  polaris_swarm/civitas/"
     }
     echo
     echo "  Dry-run complete. Re-run without --dry-run to apply."
@@ -314,17 +310,6 @@ if [[ "${SKIP_FS}" -eq 0 ]]; then
     else
         echo "  • journal.tar.gz absent or empty — skipping"
     fi
-
-    mkdir -p "${POLARIS_ROOT}/polaris_swarm/civitas"
-    for roll in treasury-roll.json census-roll.json; do
-        src="${EXTRACTED}/${roll}"
-        if [[ -f "${src}" ]] && [[ -s "${src}" ]]; then
-            cp "${src}" "${POLARIS_ROOT}/polaris_swarm/civitas/${roll}"
-            echo "  ✓ ${roll} restored"
-        else
-            echo "  • ${roll} absent or empty — skipping"
-        fi
-    done
 
     if [[ "${fs_failed}" -ne 0 ]]; then
         exit "${EXIT_FS_RESTORE_FAIL}"

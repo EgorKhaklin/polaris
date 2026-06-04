@@ -16,9 +16,9 @@ unprefixed nouns for everything else.
 
 | Pattern | Example | Why |
 |---|---|---|
-| `polaris_<domain>/` | `polaris_web/`, `polaris_sql/`, `polaris_hydra/`, `polaris_swarm/`, `polaris_zk/`, `polaris_cli/` | Python package convention; namespaced; unambiguous when `pip install`'d |
+| `polaris_<domain>/` | `polaris_web/`, `polaris_sql/`, `polaris_checks/`, `polaris_zk/`, `polaris_cli/` | Python package convention; namespaced; unambiguous when `pip install`'d |
 | Unprefixed singular | `assets/`, `journal/` | Doesn't grow plural ("we have 1 logo" / "we have 1 journal-stream") |
-| Unprefixed plural | `docs/`, `scripts/`, `meta/`, `patterns/`, `proposals/`, `sanctum/`, `archives/`, `DEVNOTES/` | Container of similar items |
+| Unprefixed plural | `docs/`, `scripts/`, `meta/`, `sanctum/`, `archive/`, `DEVNOTES/` | Container of similar items |
 | ALL_CAPS | `DEVNOTES/` | Historical (v8.x); preserved per v8.20 AoR |
 
 **Rule:** never rename a top-level directory without a Sanctum
@@ -44,12 +44,12 @@ governance docs; `lowercase.<ext>` for everything else.
 
 | Family | Pattern | Read by |
 |---|---|---|
-| Cognitive layer | `scripts/ai-<verb>.sh` | Agents (Claude) |
+| Agent layer | `scripts/ai-<verb>.sh` | Agents (Claude) |
 | Operator layer | `scripts/polaris-<verb>.sh` | Humans (operators) |
 | Helpers | `scripts/<name>.py` | Other scripts (shell-out) |
 
 **Rule:** every script's first comment block (after shebang) is
-the doc-comment that `ai-help.sh` parses. Format:
+the doc-comment. Format:
 
 ```bash
 #!/bin/bash
@@ -81,7 +81,7 @@ EXIT_SHA_MISMATCH=4
 
 ```
 polaris_<domain>/
-├── README.md                # required (audited by ant_readme_counts)
+├── README.md                # required
 ├── __init__.py              # may be empty; package marker
 ├── <module>.py              # one module per concept; lowercase + _-separated
 └── <subpkg>/
@@ -94,8 +94,7 @@ polaris_<domain>/
 - Every top-level package has a README.md
 - Every subpkg has a README.md
 - `test_<module>.py` is colocated with the module under test (or
-  cross-referenced in the module's docstring if not — `ant_test_gap`
-  surfaces violations)
+  cross-referenced in the module's docstring if not)
 
 ---
 
@@ -135,16 +134,15 @@ migrations/                   # paired up/down per v8.95 framework
 |---|---|
 | `polaris_web/test_app.py` | App-level + route tests |
 | `polaris_web/test_check_constraints.py` | SQL CHECK constraint regression |
-| `polaris_web/test_structural_invariants.py` | Project-wide structural pins |
 | `polaris_web/test_invariants_property.py` | Hypothesis property tests (C1/C2/C3) |
 | `polaris_web/test_redaction_property.py` | M2-12 redaction-proof property tests |
-| `polaris_web/test_hydra_revamp.py` | v9.04 modules unit tests |
-| `polaris_web/test_hydra_property.py` | v9.06 / E2 Hypothesis property tests |
+| `polaris_web/test_e2e_atlas.py` | End-to-end atlas route tests |
+| `polaris_web/test_zk_second_witness.py` | ZK second-witness parity tests |
 | `polaris_cli/test_cli.py` | CLI tests |
+| `polaris_checks/test_checks.py` | C1-C10 check detection-correctness tests |
 
-**Test class naming:** `TestPascalCaseDescriptor` (e.g.,
-`TestArcBProductionDeploymentStack`). For per-ship invariants:
-`Test<ShipID><ShipFeatureName>` (e.g., `TestWave3V907`).
+**Test class naming:** `TestPascalCaseDescriptor`. For per-ship
+invariants: `Test<ShipID><ShipFeatureName>`.
 
 **Test function naming:** `test_snake_case_descriptor`.
 
@@ -154,21 +152,21 @@ migrations/                   # paired up/down per v8.95 framework
 
 Path: `sanctum/<YYYY-MM-DD>-<short-slug>.md`.
 
-**Required structure** (per `meta/sanctum-protocol.md`):
-- Frontmatter: Date, Petitioner, Principal, Trigger, Risk class, Status
+**Required structure** (per [`../meta/sanctum-protocol.md`](../meta/sanctum-protocol.md)):
+- Frontmatter: Date, Petitioner, Principal, Trigger, Risk class
 - §I The Matter
-- §II The architect's positions (≥2; ≤4)
-- §III Architect's recommendation
-- §IV Open questions for VANTA (resolutions if architect-recommended)
-- §V Decision (when DECIDED)
-- §VI Outcome (records + cross-references; when shipped)
-- §VII Cross-references
+- §II Preparation
+- §III Alternatives considered (≥2 unless genuinely unary)
+- §IV Recommendation
+- §V What's needed from VANTA
+- §VI Decision (filled by VANTA)
+- §VII Outcome (records + cross-references; when shipped)
 
-**Status field values:**
-- `OPEN` — awaiting decision
-- `DECIDED` — Position selected, not yet shipped
-- `DECIDED + CLOSED` — shipped; §VI Outcome filled
-- `REJECTED` — declined; preserved per v8.20
+**Terminal states:**
+- `OPEN` — §VI empty; awaiting decision
+- `DECIDED` — §VI filled; not yet shipped
+- `DECIDED + CLOSED` — shipped; §VII Outcome filled
+- `REJECTED` — §VI declined; preserved per v8.20
 
 **v8.20 AoR pin:** every Sanctum session is filesystem-AoR; `meta/sanctum-index.md` is the chronological index; both never auto-deleted.
 
@@ -177,8 +175,6 @@ Path: `sanctum/<YYYY-MM-DD>-<short-slug>.md`.
 ## 8. Journal entries
 
 Path: `journal/<YYYY-MM-DD>.md` (per-day flat-list).
-Optional: `journal/<YYYY-MM-DD>-architect.md` (Architect brief; via `ai-architect.sh --save`).
-Optional: `journal/hydra/<YYYY-MM-DD>-<HHMM>.md` (HYDRA brief; via `ai-hydra.sh --full --save`; v9.04+).
 
 **Entry format:**
 ```markdown
@@ -204,7 +200,7 @@ Optional: `journal/hydra/<YYYY-MM-DD>-<HHMM>.md` (HYDRA brief; via `ai-hydra.sh 
 - **Risk class:** LOW / MEDIUM / HIGH (composite or specific)
 - **Why this ship:** the directive that triggered it
 - **Source:** Sanctum reference if applicable
-- Per-item subsections with structural invariant counts
+- Per-item subsections describing the change
 - **Constitutional preservation** verified
 - **Live drill** verified
 - `POLARIS_VERSION` bump line
@@ -215,29 +211,7 @@ the prior.
 
 ---
 
-## 10. node_id format (Pheromone substrate)
-
-`<domain>:<key>` — colon-prefixed. Used by ants + soldiers when
-depositing Pheromones; HYDRA's CorrelationEngine splits on `:` for
-domain-prefix matching (Strategy 2).
-
-Canonical domains (see `DEVNOTES/hydra-pheromone-integration.md`
-for the full table):
-- `route:` — HTTP routes
-- `schema:` — DB tables
-- `infra:` — infrastructure (logs, db, routes)
-- `cognitive:` — cognitive layer (sanctum, hydra_brief)
-- `swarm:` — swarm cohort (commander, soldier)
-- `civitas:` — citizen layer (treasury, census)
-- `mission:` — mission-doc surfaces
-- `build:` — build artifacts (reserved)
-
-**Historical (kept for backwards-compat; new code prefers canonical):**
-- `file:`, `module:`
-
----
-
-## 11. Versioning
+## 10. Versioning
 
 `POLARIS_VERSION` lives in [`polaris_web/__version__.py`](../polaris_web/__version__.py)
 (canonical source as of v9.06 / C5). Format: `MAJOR.MINOR` (e.g., `9.08`).
@@ -251,16 +225,16 @@ for the full table):
 
 ---
 
-## 12. Documentation cross-references
+## 11. Documentation cross-references
 
 **Markdown links must resolve.** `bash scripts/ai-link-check.sh`
 walks every Markdown link of shape `[text]` followed by `(path)` and
 confirms target exists. CI runs this on every push.
 
 **Cross-references prefer relative paths:**
-- `[X](../meta/architect.md)` — relative ✓
-- `[X](/Users/vanta/Desktop/polaris/meta/architect.md)` — absolute ✗
-- `[X](https://github.com/.../meta/architect.md)` — URL ✗ (would
+- `[X](../meta/constraint-lattice.md)` — relative ✓
+- `[X](/Users/vanta/Desktop/polaris/meta/constraint-lattice.md)` — absolute ✗
+- `[X](https://github.com/.../meta/constraint-lattice.md)` — URL ✗ (would
   rot when fork count grows)
 
 **Cross-arc references are typed:**
@@ -270,7 +244,7 @@ confirms target exists. CI runs this on every push.
 
 ---
 
-## 13. Em-dashes
+## 12. Em-dashes
 
 **Forbidden in own-prose Markdown** per `DEVNOTES/style.md` (VANTA
 standing instruction). The `em-dash-warn` pre-commit hook surfaces
@@ -287,7 +261,7 @@ sentence break.
 
 ---
 
-## 14. Comments + docstrings
+## 13. Comments + docstrings
 
 **Code comments default to none.** Only add a comment when the WHY
 is non-obvious: a hidden constraint, a subtle invariant, a
@@ -300,29 +274,28 @@ reader.
 - Reference callers ("used by module Y")
 
 **Do:**
-- Reference the constitutional source ("per v9.05 / A1 — F5
-  soldier exemption")
+- Reference the constitutional source ("per C2 — zero-knowledge")
 - Reference the Sanctum if the choice was Sanctum-decided
 - Name the surprising-to-a-reader fact ("SET LOCAL evaporates at
   COMMIT — that's intentional carve-out closure")
 
 ---
 
-## 15. Backwards-compat removals
+## 14. Backwards-compat removals
 
 **When deleting code that may have callers:**
 
 1. Sanctum if MEDIUM/HIGH-risk
 2. Add a CHANGELOG entry under the deletion ship
-3. Add a structural invariant pinning the deletion if the deletion
-   is itself load-bearing
+3. Add a `check_*` to `polaris_checks/checks.py` pinning the deletion
+   if the deletion is itself load-bearing
 4. Update `meta/sanctum-index.md` if Sanctum-decided
-5. NEVER silently delete from CHANGELOG/sanctum/journal/treasury-
-   roll — those are v8.20 AoR
+5. NEVER silently delete from CHANGELOG/sanctum/journal — those are
+   v8.20 AoR
 
 ---
 
-## 16. Where these conventions live
+## 15. Where these conventions live
 
 This file (`docs/CONVENTIONS.md`) is the single source of truth.
 Changes happen here, then propagate by reference. Other docs that

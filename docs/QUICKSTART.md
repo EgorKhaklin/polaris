@@ -167,24 +167,23 @@ surveillance primitive and is structurally refused).
 
 ## Understand what's running
 
-The Polaris codebase has three concentric layers:
+The Polaris codebase has three layers:
 
-1. **Cognitive layer** (root + `scripts/` + `meta/` + `journal/`):
-   the system's reward function (`MISSION.md`), the active backlog
-   (`ROADMAP.md`), the agent runbook (`CLAUDE.md`), and the scripts
-   that orchestrate sessions. If you're going to operate Polaris,
-   read `CLAUDE.md` first — it's the agent runbook, but doubles as a
+1. **Governance layer** (root + `meta/` + `journal/`): the
+   constitution (`MISSION.md`), the active backlog (`ROADMAP.md`), the
+   agent runbook (`CLAUDE.md`), and the C1-C10 invariant checks
+   (`polaris_checks/`). If you're going to operate Polaris, read
+   `CLAUDE.md` first; it's the agent runbook, but doubles as a
    developer onboarding doc.
-2. **Knowledge layer** (`DEVNOTES/`, `patterns/`, `meta/`): durable
-   memory — what races exist, what bit the developer last quarter,
-   the canonical recipe for a new Flask route.
+2. **Knowledge layer** (`DEVNOTES/`, `meta/`): durable memory, what
+   races exist, what bit the developer last quarter, the canonical
+   recipe for a new Flask route.
 3. **Reference + source layer** (`docs/`, `polaris_sql/`,
-   `polaris_web/`, `polaris_cli/`): operator/architect docs and the
-   actual source tree.
+   `polaris_web/`, `polaris_cli/`, `polaris_zk/`): operator/developer
+   docs and the actual source tree.
 
-Run `bash scripts/ai-prime.sh` to get an ≤80-line primer on current
-state. It tells you what just shipped, what's in the active backlog,
-what's recently modified.
+Run `python3 -m polaris_checks.run` to verify the C1-C10 invariants
+hold against the current tree.
 
 ---
 
@@ -238,7 +237,7 @@ has hit; check there before assuming a new bug.
 
 ## Where to go next
 
-- **Architect's view of the system:** `docs/ARCHITECTURE-OVERVIEW.md`
+- **System overview:** `docs/ARCHITECTURE-OVERVIEW.md`
   (v9.23 companion to this document)
 - **Constitutional design:** `MISSION.md`
 - **Operator runbook in depth:** `docs/operator/OPERATIONS.md`
@@ -246,7 +245,7 @@ has hit; check there before assuming a new bug.
 - **WebAuthn rollout:** `docs/operator/WEBAUTHN-ROLLOUT.md`
 - **Security disclosure:** `SECURITY.md`
 - **Contributing:** `CONTRIBUTING.md`
-- **Cognitive layer architecture:** `meta/cognitive-loop.md`
+- **C1-C10 invariant checks:** `polaris_checks/`
 
 ---
 

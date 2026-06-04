@@ -2,12 +2,9 @@
 
 **Origin:** BIG MISSION Tier 8 #11 Sanctum (`sanctum/2026-05-16-tier-7-8-thesis-test-and-freeze-line.md`).
 **Audience:** operator running a deployed Polaris instance.
-**Distinction:** this document covers OBSERVING THE RUNNING APPLICATION.
-The cognitive-layer observability (HYDRA + Mycelium + Sanctum) is
-covered separately under `meta/cognitive-loop.md`. The two are
-deliberately separate per the Anti-Architect's constraint: an
-operator should be able to monitor production behavior without
-loading the cognitive substrate.
+**Scope:** this document covers OBSERVING THE RUNNING APPLICATION.
+An operator should be able to monitor production behavior with
+nothing more than the running stack.
 
 ---
 
@@ -106,9 +103,8 @@ Every line emitted is `{"ts": ..., "pid": ..., "event": ..., ...fields}`.
 | `duress_event`         | duress-code login succeeded                  | `individual_id`, `agency_id`              |
 | (future)               | additional events added per ship             |                                           |
 
-The taxonomy is deliberately minimal. Per the Anti-Architect's
-constraint: events should be the operator's load-bearing signals,
-not noise.
+The taxonomy is deliberately minimal: events should be the
+operator's load-bearing signals, not noise.
 
 ---
 

@@ -5,7 +5,7 @@
 # Sometimes you need everything-at-once: handing off a session to another
 # agent, copying state into a long-context prompt, or producing a report
 # for a session retrospective. This script emits a single self-contained
-# Markdown document covering the cognitive layer's full picture.
+# Markdown document covering the project's full picture.
 #
 # Sections:
 #   1. Identity      — date, git status surrogate (recent files), test counts
@@ -40,8 +40,8 @@ Host: $(uname -s) $(uname -r)
 Repo: $ROOT
 
 This is a self-contained primer. Read it once and you have the full
-operational state of Polaris's cognitive layer, mission progress, and
-recent decisions.
+operational state of Polaris: mission progress, roadmap, and recent
+decisions.
 HDR
 
 # -----------------------------------------------------------------------------
@@ -132,7 +132,7 @@ fi
 sec "Top-level file map"
 # -----------------------------------------------------------------------------
 printf '```\n'
-printf '  Cognitive layer (root + scripts/ + meta/ + journal/):\n'
+printf '  Top-level docs (root):\n'
 ls -1 *.md 2>/dev/null | sed 's/^/    /'
 printf '\n  Reference docs (docs/):\n'
 ls -1 docs/*.md 2>/dev/null | sed 's|^docs/|    |'

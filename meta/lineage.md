@@ -1,44 +1,40 @@
 # meta/lineage.md
 
-Appendix. Where each structural insight in Polaris's cognitive
+Appendix. Where each structural insight in Polaris's structural
 layer is drawn from. Kept separate from the operational docs so
 they can stay focused on what the layer DOES, not where the
 analogies came from.
 
 This file is for the curious. Reading it is optional. The
-operational layer (`meta/structural-architecture.md`,
-`meta/constraint-lattice.md`, `meta/structural-constants.json`,
-`scripts/ai-coherence.sh`, `scripts/ai-pattern.sh`,
-`scripts/ai-lattice.sh`) does not reference it.
+operational docs (`meta/structural-architecture.md`,
+`meta/constraint-lattice.md`) do not reference it.
 
-The point of recording lineage: when a future agent (or human)
-asks "why these specific shapes? where did the 10-node lattice
-come from?" the answer is here, not implicit in the names.
+The point of recording lineage: when a future reader asks "why
+these specific shapes? where did the 10-node lattice come from?"
+the answer is here, not implicit in the names.
 
 ---
 
 ## The 10-node constraint lattice
 
 **Drawn from:** the Kabbalistic *Tree of Life*, a 10-node graph
-(plus an 11th "hidden" node, Da'at) arranged in three columns
-and four tiers, used in Hebrew mysticism to model emanation from
-the divine into the manifest world.
+arranged in three columns and four tiers, used in Hebrew
+mysticism to model emanation from the divine into the manifest
+world.
 
 **What survived in Polaris:**
 - The fixed 10-node count (closure as a forcing function)
-- The three-pillar structure (expansion / contraction / balance,
+- The three-pillar structure (expansion, contraction, balance,
   originally "Mercy / Severity / Equilibrium")
 - The dependency cascade across nodes (removing one node breaks
-  the others — originally the doctrine that emanations depend on
+  the others, originally the doctrine that emanations depend on
   upstream emanations)
-- The "hidden 11th" reserved slot for future meta-constraints
-  (originally Da'at, "Knowledge")
 
 **What didn't:**
 - The Hebrew names (Keter / Chokmah / Binah / Chesed / Gevurah /
-  Tiferet / Netzach / Hod / Yesod / Malkuth / Da'at) — replaced
-  with structural position names (APEX / EXPAND·N / CONTRACT·N /
-  BALANCE·N / MANIFEST / reserved meta-slot)
+  Tiferet / Netzach / Hod / Yesod / Malkuth), replaced with
+  structural position names (APEX / EXPAND·N / CONTRACT·N /
+  BALANCE·N / MANIFEST)
 - The theology
 - Any "divine" or "sacred" framing
 
@@ -47,8 +43,8 @@ claim that a small set of categories can be COMPLETE,
 INTERDEPENDENT, and BALANCED across opposites. Engineering needs
 exactly this for hard constraints: the C1-C10 set must close
 (no ad-hoc additions), must depend on each other (so removing
-one cascades), and must balance permissive/restrictive forces
-(expansion needs contraction to remain safe).
+one cascades), and must balance permissive against restrictive
+forces (expansion needs contraction to remain safe).
 
 ---
 
@@ -69,7 +65,7 @@ sequence representing recurring human-scale situations
   focused on the happy path
 
 **What didn't:**
-- The card names (Fool, Magician, High Priestess, etc.) —
+- The card names (Fool, Magician, High Priestess, etc.),
   replaced with engineering pattern names (Greenfield,
   Composition, HiddenState, etc.)
 - Imagery, divination, suit symbolism
@@ -78,7 +74,7 @@ sequence representing recurring human-scale situations
 a catalog of software-work shapes. Smaller taxonomies over-
 generalize; larger ones fragment. And the Tarot's reversed-
 meaning convention is exactly the *shadow* concept that gives
-the catalog its predictive power — knowing a shape primes you
+the catalog its predictive power: knowing a shape primes you
 for its characteristic failure.
 
 ---
@@ -124,13 +120,13 @@ vocabulary already.
 
 **What didn't:**
 - The original Hermetic names (Mentalism / Correspondence /
-  Vibration / Polarity / Rhythm / Cause-Effect / Gender) —
+  Vibration / Polarity / Rhythm / Cause-Effect / Gender),
   replaced with structural names (Intent / Correspondence /
   Symmetry / Polarity / Cadence / CauseEffect / Duality)
 - Any metaphysical claims
 
 **Why the analogy worked:** the Hermetic principle of
-correspondence — "as above, so below" — is precisely the rule
+correspondence, "as above, so below", is precisely the rule
 that a constraint at one layer (schema CHECK) should be reflected
 at the layers that depend on it (API validation, UI form,
 documentation). It's a useful catalog of layer-consistency
@@ -165,25 +161,22 @@ Two reasons:
    inspirations came from makes it easier to evaluate which
    ones to keep, modify, or drop.
 2. **Honesty.** The structural insights *were* drawn from older
-   frameworks. Pretending otherwise — claiming the lattice was
-   designed from first principles — would be a different kind
+   frameworks. Pretending otherwise, claiming the lattice was
+   designed from first principles, would be a different kind
    of intellectual dishonesty. The frameworks survived because
    they encoded real structure; recognizing that lineage isn't
    weakness, it's accurate attribution.
 
-The operational layer doesn't reference this file because the
-operational layer doesn't need to. The structural insights stand
-on their Removable Test (do they impose a testable constraint?),
-not on their lineage.
+The operational docs don't reference this file because they
+don't need to. The structural insights stand on their Removable
+Test (do they impose a testable constraint?), not on their
+lineage.
 
 ---
 
 ## What to read instead
 
-- `meta/structural-architecture.md` — the operational philosophy
-- `meta/constraint-lattice.md` — the C1-C10 mapping
-- `meta/structural-constants.json` — the canonical numbers
-- `patterns/decomposition-targets.md` — the 3/7/12 recipe
-- `scripts/ai-coherence.sh` — the diagnostic script
-- `scripts/ai-pattern.sh` — the pattern catalog tool
-- `scripts/ai-lattice.sh` — the lattice walk tool
+- `meta/structural-architecture.md`: the operational philosophy
+- `meta/constraint-lattice.md`: the C1-C10 mapping
+- `MISSION.md`: the C1-C10 constitution, the canonical constraints
+- `patterns/decomposition-targets.md`: the 3/7/12 recipe

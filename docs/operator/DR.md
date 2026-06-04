@@ -6,7 +6,7 @@ is lost, ransomware encrypts the disk, an entire region goes dark,
 or a more mundane operator-error wipes a critical row.
 
 It is written for the **on-call engineer at 03:00 with an open
-incident**, not for the architect at design time.
+incident**, not for the engineer at design time.
 
 ---
 
@@ -67,7 +67,7 @@ If this fails, the RPO regresses to the last successful base backup
 The Polaris alert layer (v8.93 Prometheus `/metrics` endpoint) emits
 metrics that map to severity: `polaris_app_info` absent → SEV-1;
 `polaris_db_query_latency_seconds` p99 > 5s → SEV-2; etc.
-PolarisHigh5xx and PolarisSwarmDormant Prometheus alerting rules
+PolarisHigh5xx and related Prometheus alerting rules
 (OPERATIONS.md) classify automatically.
 
 ---
@@ -331,8 +331,8 @@ sudo dd if=/dev/sda of=/external-drive/forensic-image.img bs=4M status=progress
 #       across the trust boundary)
 aws s3 ls s3://${POLARIS_BACKUP_BUCKET}/ --recursive | tail -10
 
-#    b. Filesystem AoR backups (sanctum/, journal/, treasury-roll.json)
-#       — these should be in the same offsite bucket with the same MFA-delete
+#    b. Filesystem AoR backups (sanctum/, journal/)
+#       these should be in the same offsite bucket with the same MFA-delete
 
 # 4. Provision a fresh host (different region, different credentials,
 #    different SSH keys); install Polaris from clean source; restore
@@ -382,8 +382,8 @@ In the interim:
    secondary incident.
 
 Multi-region is on the deployability checklist as ⬜ Phase 3
-deferred per architect's note: blocks on production-deployment-pressure
-trigger; will get its own Sanctum when an operator names a real
+deferred: it blocks on production-deployment-pressure
+trigger and will get its own Sanctum when an operator names a real
 data-locality constraint.
 
 ---

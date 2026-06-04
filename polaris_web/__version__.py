@@ -27,7 +27,7 @@ Bump procedure:
     5. Run final verification (tests + link-check + meta + coherence)
 """
 
-__version__: str = "9.55"
+__version__: str = "9.56"
 
 
 # Backwards-compat alias for code that imported `POLARIS_VERSION`

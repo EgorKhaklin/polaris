@@ -2,7 +2,7 @@
 # =============================================================================
 # scripts/ai-sanctum.sh — the Polaris Sanctum (v8.19)
 #
-# The protocol for agent-operator strategic consultation. When the Architect
+# The protocol for agent-operator strategic consultation. When the agent
 # identifies a move that crosses a defined weight threshold (risk class,
 # scope, structural impact), the agent does not casually present it in chat.
 # The agent enters the Sanctum: writes a structured document, presents it
@@ -25,11 +25,9 @@
 #
 # Entry triggers (see meta/sanctum-protocol.md §"When to enter"):
 #     - MEDIUM- or HIGH-risk propose-and-wait
-#     - cross-arc decisions
-#     - structural changes to the cognitive layer
-#     - architectural-soul reframes
+#     - cross-cutting decisions
+#     - structural changes to the schema or invariant layer
 #     - pre-implementation alignment audits
-#     - substrate-layer additions
 #
 # Routine LOW-risk work does NOT trigger the Sanctum.
 # =============================================================================
@@ -60,7 +58,7 @@ ai-sanctum.sh — the Polaris Sanctum (strategic-consultation protocol)
   open <topic> [--strict]
       Start a new Sanctum session. Creates sanctum/YYYY-MM-DD-<topic>.md
       from the template. With --strict, refuses to open if no matching
-      proposal exists in proposals/ AND no recent Architect brief.
+      proposal exists in proposals/ AND no recent journal trace.
 
   close <topic> --decision "..." --outcome "..."
       Record VANTA's decision and the post-execution outcome. Updates
@@ -122,11 +120,11 @@ cmd_open() {
 
     # Preparation check. Two paths are accepted:
     #   (a) standard:    proposals/<slug>*.md exists AND a today-dated
-    #                    journal entry mentions "architect" (the brief
-    #                    that surfaced this move).
+    #                    journal trace records the work that surfaced
+    #                    this move.
     #   (b) structural:  caller passes --structural to declare "this is
-    #                    a cognitive-layer change with no proposal; the
-    #                    audit is in chat / in the protocol spec itself."
+    #                    a structural change with no proposal; the audit
+    #                    is in chat / in the protocol spec itself."
     #                    Skips the proposal check but still wants a
     #                    today-dated journal trace.
     local prep_warnings=""
@@ -134,20 +132,20 @@ cmd_open() {
     if [ "$structural" != "--structural" ]; then
         proposal_match=$(find "$ROOT/proposals" -maxdepth 1 -name "*${slug}*.md" 2>/dev/null | head -1)
         if [ -z "$proposal_match" ]; then
-            prep_warnings="${prep_warnings}- No proposal at proposals/*${slug}*.md (use --structural for cognitive-layer changes)\n"
+            prep_warnings="${prep_warnings}- No proposal at proposals/*${slug}*.md (use --structural for changes with no proposal)\n"
         fi
     fi
 
-    # Brief-recency check uses journal content, not file mtime — mtime is
+    # Journal-recency check uses file presence, not file mtime — mtime is
     # fragile across clock skew and system sleep. A today-dated journal
-    # file containing "architect" is the signal we want.
+    # file is the signal we want.
     local recent_brief=""
     local today_journal="$ROOT/journal/${DATE_STAMP}.md"
-    if [ -f "$today_journal" ] && grep -qiE 'architect|arch-[0-9]{4}' "$today_journal"; then
+    if [ -f "$today_journal" ]; then
         recent_brief="$today_journal"
     fi
     if [ -z "$recent_brief" ]; then
-        prep_warnings="${prep_warnings}- Today's journal (${DATE_STAMP}.md) has no architect reference\n"
+        prep_warnings="${prep_warnings}- No today-dated journal (${DATE_STAMP}.md)\n"
     fi
 
     if [ -n "$prep_warnings" ]; then
@@ -167,10 +165,9 @@ cmd_open() {
 **Date:** ${DATE_STAMP}
 **Petitioner:** agent (Claude, Opus 4.7)
 **Principal:** VANTA
-**Trigger:** (fill in: MEDIUM-risk propose-and-wait / cross-arc / structural / etc.)
+**Trigger:** (fill in: MEDIUM-risk propose-and-wait / cross-cutting / structural / etc.)
 **Risk class:** (LOW / MEDIUM / HIGH)
 **Status:** OPEN
-**Architect brief ID:** (fill in the arch-YYYY-MM-DD-NNN suggestion ID that surfaced this move, or "n/a — structural" for cognitive-layer changes)
 
 ---
 
@@ -180,7 +177,7 @@ cmd_open() {
 
 ## II. Preparation
 
-- Architect brief: $( [ -n "$recent_brief" ] && echo "$(basename "$recent_brief")" || echo "(none recent)" )
+- Journal trace: $( [ -n "$recent_brief" ] && echo "$(basename "$recent_brief")" || echo "(none recent)" )
 - Proposal draft: $( [ -n "$proposal_match" ] && echo "$(basename "$proposal_match")" || echo "(none — structural change, see §II body)" )
 - Alignment audit: (link or describe; for structural changes, summarize the prior alignment work inline)
 - Blast radius (files touched if approved): (list)

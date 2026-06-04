@@ -2,16 +2,15 @@
 
 Polaris is a national identity token system reference implementation. The
 substrate is intentionally hardened: every constraint is enforced at the
-database level rather than at the policy layer, and the cognitive layer
-monitors itself via HYDRA + the Sanctum protocol.
+database level rather than at the policy layer, and the C1-C10 invariants
+are machine-checked by `polaris_checks`.
 
 This document covers vulnerability disclosure: how to report a finding,
 what's in scope, and what response timeline to expect.
 
 The threat model itself lives in `DEVNOTES/threat-model.md` (STRIDE
-categorization) and `DEVNOTES/threat-model-cognitive.md` (cognitive-
-substrate threats). The reference operator runbook for incident
-response is `docs/operator/OPERATIONS.md`.
+categorization). The reference operator runbook for incident response
+is `docs/operator/OPERATIONS.md`.
 
 ---
 
@@ -23,8 +22,8 @@ response is `docs/operator/OPERATIONS.md`.
 
 **Include in the report:**
 
-- Affected component (web app / SQL schema / migration / cognitive layer
-  script / launcher / Docker image / dependency)
+- Affected component (web app / SQL schema / migration / dev script /
+  launcher / Docker image / dependency)
 - Affected version (`/api/health` returns the running version; the
   canonical version is in `polaris_web/__version__.py`)
 - Reproduction steps
@@ -62,8 +61,7 @@ report, extended for Critical findings as the patch warrants.
 - The Flask application (`polaris_web/`)
 - The SQL schema, procedures, triggers, indexes (`polaris_sql/`)
 - The Rust ZK prover/verifier (`polaris_zk/`)
-- The HYDRA + Mycelium cognitive layer (`polaris_hydra/`, `polaris_swarm/`)
-- The foresight surface (`polaris_foresight/`)
+- The invariant-check layer (`polaris_checks/`)
 - The Sanctum protocol implementation (`scripts/ai-sanctum.sh`,
   `meta/sanctum-protocol.md`)
 - The operator scripts in `scripts/polaris-*.sh`
@@ -88,13 +86,12 @@ report, extended for Critical findings as the patch warrants.
 - **Third-party dependencies' upstream vulnerabilities** that have not
   yet been pinned in `polaris_web/requirements.txt`. File those upstream
   first; we'll pick them up at the next dependency-rotation pass.
-- **Issues with the cognitive layer's recommendations.** The Architect
-  + Anti-Architect protocol is explicitly designed to surface contested
-  positions; "Architect said X and Anti-Architect said Y" is the protocol
-  working as designed, not a vulnerability. A genuine cognitive-layer
-  vulnerability is one that allows an attacker to manipulate the
-  Sanctum / HYDRA / Mycelium state without authorization — see
-  `DEVNOTES/threat-model-cognitive.md`.
+- **Disagreement recorded in a Sanctum decision.** The Sanctum protocol
+  exists to surface contested positions before a decision is taken; a
+  recorded disagreement is the protocol working as designed, not a
+  vulnerability. A genuine finding here is one that lets an attacker
+  tamper with the Sanctum audit-of-record under `sanctum/` without
+  authorization.
 
 ---
 
@@ -138,5 +135,5 @@ referencing this policy.
 ---
 
 *Maintainer: VANTA / Egor Khaklin*
-*Last updated: 2026-05-15 (v9.23)*
+*Last updated: 2026-06-03 (v9.56)*
 *Per RFC 9116 / live `/security.txt` route shipped v9.13*

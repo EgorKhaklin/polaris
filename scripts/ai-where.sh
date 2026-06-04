@@ -2,14 +2,9 @@
 # =============================================================================
 # scripts/ai-where.sh FILE [FILE ...]
 #
-# Triggered associative recall. When you're about to edit a file, this script
-# surfaces the relevant DEVNOTES, patterns, and recent journal entries.
-#
-# Brain analog: priming. Seeing one cue activates related memories. When a
-# musician sees sheet music in B-flat, the related fingerings are already
-# loaded before they consciously think about them. Same idea here — when I
-# open atlas-globe.js, I want docs/reference/SCALING.md and visual-feature-on-atlas.md
-# already pre-loaded into context, not waiting for me to remember they exist.
+# When you're about to edit a file, this script surfaces the relevant DEVNOTES,
+# patterns, and recent journal entries so you load the context before you start
+# rather than rediscovering it via a bug.
 #
 # Usage:
 #     ai-where.sh polaris_web/app.py
@@ -151,13 +146,13 @@ emit_for_file() {
             printf "  ${BOLD}note:${NC}    'doctor' subcommand = read-only; 'nuke' = full wipe\n"
             ;;
 
-        scripts/ai-bootstrap.sh|scripts/ai-context-digest.sh|scripts/ai-*.sh)
-            printf "  ${BOLD}read:${NC}    meta/cognitive-loop.md\n"
-            printf "  ${BOLD}note:${NC}    These ARE the AI implants. Self-recursive: editing them needs to update meta/cognitive-loop.md\n"
+        scripts/ai-bootstrap.sh|scripts/ai-*.sh)
+            printf "  ${BOLD}read:${NC}    scripts/ai-help.sh (index of the dev tools)\n"
+            printf "  ${BOLD}note:${NC}    These are the ai-* developer helpers. Keep their help text in sync when you change behavior.\n"
             ;;
 
         DEVNOTES/*.md|patterns/*.md|meta/*.md|journal/*.md)
-            printf "  ${BOLD}note:${NC}    This is part of the AI metacognition layer. After editing, run:\n"
+            printf "  ${BOLD}note:${NC}    After editing, run:\n"
             printf "  ${BOLD}check:${NC}   ai-recall.sh QUERY for some likely queries to make sure findability still works\n"
             ;;
 
@@ -194,12 +189,10 @@ Usage:
     ai-where.sh polaris_sql/05_procedures.sql polaris_web/security.py
 
 Outputs the relevant DEVNOTES, patterns, and journal entries for each
-file. Use this BEFORE you start editing — it's cheaper to load the
-context now than to rediscover it via bug.
-
-Brain analog: priming. Walking into the kitchen reminds you you wanted
-a glass of water. Opening app.py should remind you about CSP, the
-route grouping convention, and the auth decorator stack.
+file. Use this BEFORE you start editing; it's cheaper to load the
+context now than to rediscover it via a bug. Opening app.py, for
+example, surfaces CSP, the route grouping convention, and the auth
+decorator stack.
 EOF
     exit 0
 fi

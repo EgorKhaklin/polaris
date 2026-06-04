@@ -148,30 +148,20 @@ if [ -n "$top_move" ]; then
 fi
 
 # -----------------------------------------------------------------------------
-# 7) Swarm + cognitive layer pointers (refreshed v9.06)
+# 7) Onboarding pointers.
 # -----------------------------------------------------------------------------
-printf "\n${DIM}── Swarm + cognitive layer pointers ──${NC}\n"
-printf "  ${DIM}HYDRA: 9 watchers in polaris_hydra/ — \`bash scripts/ai-hydra.sh --full\` (v9.04 hybrid)${NC}\n"
-printf "  ${DIM}Mycelium: 33 commanders + 9 soldier classes (8 workers + 1 priest) + 6 citizens — \`bash scripts/ai-swarm-bloom.sh\` for heatmap${NC}\n"
-printf "  ${DIM}Brain map: \`meta/brain-map/brain-map.html\` — \`bash scripts/ai-brain-map.sh --analyze\` for gap report${NC}\n"
+printf "\n${BOLD}── Onboarding ──${NC}\n"
+printf "  ${DIM}New session? Read \`CLAUDE.md\` (the agent runbook), then \`MISSION.md\`.${NC}\n"
+printf "  ${DIM}Invariants: C1-C10 in MISSION.md, checked by \`python3 -m polaris_checks.run\`.${NC}\n"
 
 # -----------------------------------------------------------------------------
-# 8) v9.06 / Wave 2 / J3 — 90-second onboarding primer pointer.
-# A fresh agent skims CLAUDE.md (605 lines); the operative 30 lines
-# live in meta/claude-90s.md. Surfacing it here so it gets read.
-# -----------------------------------------------------------------------------
-printf "\n${BOLD}── 90-second onboarding primer (v9.06) ──${NC}\n"
-printf "  ${DIM}New session? Read \`meta/claude-90s.md\` first (~30 lines).${NC}\n"
-printf "  ${DIM}Polaris's own self-roadmap: \`meta/polaris-self-roadmap-2026-05-14.md\`.${NC}\n"
-
-# -----------------------------------------------------------------------------
-# 9) v9.08 / Wave 4 / J2 — since-last-session delta.
+# 8) Since-last-session delta.
 # Surfaces what changed since the most-recent prior ai-prime.sh
-# invocation: ships landed, briefs archived, sanctums opened/closed.
+# invocation: ships landed, sanctums opened/closed, journal decisions.
 # Reads timestamp from /tmp/polaris-ai-prime.last; writes a new one
 # at exit. First-run prints a friendly initialization message.
 # -----------------------------------------------------------------------------
-printf "\n${BOLD}── Since last session (v9.08 / J2) ──${NC}\n"
+printf "\n${BOLD}── Since last session ──${NC}\n"
 LAST_RUN_FILE="/tmp/polaris-ai-prime.last"
 if [ -f "$LAST_RUN_FILE" ] && [ -s "$LAST_RUN_FILE" ]; then
     last_iso=$(cat "$LAST_RUN_FILE" 2>/dev/null | head -1)
@@ -209,16 +199,6 @@ if changelog.is_file():
     if new_ships:
         print(f"  Ships since: {', '.join(new_ships[:5])}")
 
-# HYDRA briefs since last
-hydra_dir = root / "journal" / "hydra"
-if hydra_dir.is_dir():
-    new_briefs = [p for p in hydra_dir.glob("*.md")
-                  if datetime.datetime.fromtimestamp(p.stat().st_mtime).timestamp()
-                  > last.timestamp()]
-    if new_briefs:
-        latest = max(new_briefs, key=lambda p: p.stat().st_mtime)
-        print(f"  HYDRA briefs since: {len(new_briefs)} (latest: {latest.name})")
-
 # Sanctums opened OR modified since last
 sanctum_dir = root / "sanctum"
 if sanctum_dir.is_dir():
@@ -251,8 +231,8 @@ PY
         fi
     fi
 else
-    printf "  ${DIM}First run — no prior session recorded.${NC}\n"
-    printf "  ${DIM}Future runs will surface ships + briefs + sanctums since last.${NC}\n"
+    printf "  ${DIM}First run, no prior session recorded.${NC}\n"
+    printf "  ${DIM}Future runs will surface ships + sanctums + journal decisions since last.${NC}\n"
 fi
 
 # Update the timestamp for next-run.

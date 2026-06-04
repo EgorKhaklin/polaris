@@ -3,11 +3,10 @@
 **Audience:** an engineer or auditor evaluating Polaris.
 **Goal:** understand what Polaris IS, what it is NOT, what the layers
 are, and how to navigate the codebase.
-**Length:** ~5000 words; ~20 minutes to read.
 
-This document is the architect-tier brief that pairs with
-`docs/QUICKSTART.md` (operator quickstart). Quickstart gets a stack
-running; this document explains why each piece looks the way it does.
+This document pairs with `docs/QUICKSTART.md` (operator quickstart).
+Quickstart gets a stack running; this document explains why each piece
+looks the way it does.
 
 ---
 
@@ -31,9 +30,9 @@ because the constraint is enforced before any application code runs.
 
 Polaris is built for SCS-230 (Database Management Systems) at Seton
 Hill University, by Egor Khaklin (VANTA). The version trajectory is
-v1 (course assignment: schema + Flask) through v9.x (current reference
-implementation with cognitive substrate). This document covers the
-v9.x architecture as of v9.23 (2026-05-15).
+v1 (course assignment: schema + Flask) through the current reference
+implementation: the product plus a flat invariant-check layer
+(`polaris_checks/`).
 
 ---
 
@@ -42,32 +41,27 @@ v9.x architecture as of v9.23 (2026-05-15).
 Equally important. Polaris does not:
 
 - **Hold money.** No transactions, no balances, no merchant codes.
-  C10 ("Identity is not money") is constitutional. A separate
-  swarm-currency ledger (Denarius) lives in `polaris_swarm/civitas/`
-  but is structurally segregated from identity tokens.
-- **Aggregate across individuals.** v9.19 ontology layer refused
+  C10 ("Identity is not money") is constitutional.
+- **Aggregate across individuals.** The ontology layer refuses
   cross-individual aggregation primitives with a structural
   regression guard. Object Cards are single-entity-focused.
-- **Provide notebook authoring or predictive scoring.** Refused
-  patterns documented in v9.19 ship.
-- **Run with multi-region failover.** v9.16 RESERVED-NOT-PLANNED for
-  Arc G (Empire / multi-region). Single-region only.
+- **Provide notebook authoring or predictive scoring.** These patterns
+  are refused.
+- **Run with multi-region failover.** Single-region only.
 - **Carry a state-level surveillance API.** The verification graph is
   structurally inaccessible at the ZERO_KNOWLEDGE disclosure level
   (C2 trigger enforces `token_id IS NULL`).
 
 Each of these is a deliberate constitutional decision, recorded in
-Sanctum files (`sanctum/` directory). The Architect + Anti-Architect
-protocol (v9.11) exists specifically to catch any drift toward these
-refused patterns; the Anti-Architect's 8-pattern catalog (AP1-AP8 in
-`meta/architect.md`) names the failure modes.
+Sanctum files (`sanctum/` directory). The Vocation (anti-coercion)
+sits above C1-C10 and refuses any drift toward these patterns on sight.
 
 ---
 
 ## §III. The vocation
 
-Above the ten hard constraints (C1-C10) sits the vocation, named in
-v9.11: **anti-coercion**. Every constraint serves this vocation:
+Above the ten hard constraints (C1-C10) sits the vocation:
+**anti-coercion**. Every constraint serves this vocation:
 
 - C1 (audit-of-record): a coerced operator's actions leave evidence
 - C2 (zero-knowledge): the verification graph is not a coercion
@@ -90,28 +84,27 @@ v9.11: **anti-coercion**. Every constraint serves this vocation:
 - C10 (identity is not money): a coerced operator cannot be used to
   forge financial state via the identity rail
 
-Anti-coercion is the deepest constraint — explicitly above C1-C10 in
-`MISSION.md §"Vocation"`. The Anti-Architect's AP5 (vocation drift)
-fires when any proposal moves the system away from this alignment.
+Anti-coercion is the deepest constraint, explicitly above C1-C10 in
+`MISSION.md §"Vocation"`. Any proposal that moves the system away from
+this alignment is refused.
 
 ---
 
 ## §IV. The layers
 
-Polaris has three concentric layers and a fourth perpendicular layer:
+Polaris has the product (three concentric layers) and a flat
+invariant-check layer that gates CI.
 
 ### Layer 1: Data substrate (`polaris_sql/`)
 
-PostgreSQL 16. 27 tables, 14 stored procedures, 20 triggers, 10
-audit-of-record instances (9 schema + 1 filesystem; v9.41
-reclassification dropped two derived caches), 33 schema-level
-guards (G-guards G1-G33). Migrations framework (v8.95) records
-SHA-256 hashes; append-only by trigger.
+PostgreSQL 16. 27 tables, stored procedures, triggers, append-only
+audit-of-record tables, and schema-level guards. Migrations framework
+records SHA-256 hashes; append-only by trigger.
 
 The schema is the constitution. The Flask application is a UI on top
 of the schema. The schema can be operated via raw SQL (the
 `/sql` route is an authenticated console) and the constraints still
-hold — they are not mediated by the application.
+hold; they are not mediated by the application.
 
 Key tables (27 total, partial list):
 - `IdentityToken` — the central object
@@ -129,8 +122,6 @@ Key tables (27 total, partial list):
 - `AuditAccessLog` — meta-audit (v9.20); append-only
 - `OperatorWebauthnCredential` — operator MFA substrate (v8.97)
 - `schema_version` — migration registry (v8.95)
-- `Pheromone` — Mycelium substrate (v8.62+)
-- `LifecyclePheromoneCheckpoint` — Pheromone rotation (v9.07)
 - ...
 
 ### Layer 2: Application (`polaris_web/`)
@@ -145,52 +136,29 @@ Application architecture is straightforward: routes map to UC stored
 procedures; the application does authentication, CSRF, rate-limiting,
 and rendering; the SQL layer enforces correctness.
 
-### Layer 3: Cognitive substrate (`polaris_hydra/`, `polaris_swarm/`, `polaris_foresight/`)
+### Layer 3: ZK crate + second witness (`polaris_zk/`)
 
-This is the unusual layer. Polaris has a cognitive substrate that
-monitors itself:
+The Plonky2 Merkle-inclusion ZK crate in Rust (`polaris_zk/src/lib.rs`)
+proves epoch membership without revealing which token. An independent
+Python second witness (`polaris_zk/witness2/`) re-derives the same
+result by a different code path, so a single implementation bug cannot
+silently pass both checks.
 
-- **HYDRA**: 9 watcher modules (schema, cognitive, security, mission,
-  adversary, performance, trajectory, ant_colony, civitas) + CM
-  (Constitutional Meta-constraint, the immortal 10th head). Each
-  watcher scans the running system and emits findings. The
-  CorrelationEngine aggregates findings across watchers. Brief is
-  the per-session synthesis output, archived to `journal/hydra/`.
+### The check layer (`polaris_checks/`)
 
-- **Mycelium**: 33 commander ants across 11 manifest legions + 1
-  reserved (twelfth-legion slot, RESERVED), 9 soldier classes (8
-  workers + 1 priest `soldier_swarm_witness` added v9.11), 6 citizens
-  (Plebs, Equites, Augures, Censores, Quaestores, Tribuni Plebis),
-  and a Treasury (Denarius ledger). High-cadence empirical
-  observation; writes Pheromone rows to the substrate.
+`polaris_checks/checks.py` is the flat invariant layer: one
+`check_*(repo_root)` function per constraint, with tested detection
+correctness in `polaris_checks/test_checks.py`. It gates CI via
+`python3 -m polaris_checks.run`, which fails on any FAIL. The checks
+are the machine-checkable enforcement of most of C1-C10 (the rest are
+enforced at the DB level via triggers, partial unique indexes, and
+CHECK constraints).
 
-- **Foresight surface** (v9.12): minimum-viable forward-looking
-  research surface. ForesightAgent emits Brief with 5 sections; §IV
-  (vocation-aligned-gaps) is STRUCTURALLY required at construction
-  time. FS-XXXXXXXX promotion module promotes candidates to ROADMAP
-  with vocation-alignment required. Empirical-graduation rule: 50%
-  acceptance over 6 distinct months; below threshold triggers SUNSET.
+### Operator scripts (`scripts/`)
 
-The cognitive substrate has three time-scales:
-- High-cadence (Mycelium): continuous; per-ant deposits at sub-second
-  cadence; writes to the substrate
-- Mid-cadence (HYDRA): per-session synthesis; reads the substrate;
-  writes briefs
-- Low-cadence (Sanctum / Architect / Anti-Architect): per-decision;
-  reads everything; writes constitutional records
-
-The substrate (Mycelium) → lens (HYDRA) → unified brief is the
-distinguishing v9.x architectural contribution.
-
-### Layer 4 (perpendicular): Operator scripts (`scripts/`)
-
-29 `ai-*.sh` scripts (the agent-facing cognitive layer) plus 17
-`polaris-*.sh` scripts (the operator-facing operational layer). The
-`ai-*` scripts mediate agent-operator collaboration; the `polaris-*`
-scripts mediate operator-system collaboration.
-
-The `polaris-*` scripts are documented one-per-file with full usage
-in the script header. Examples:
+The `polaris-*.sh` scripts mediate operator-system collaboration.
+They are documented one-per-file with full usage in the script header.
+Examples:
 - `polaris-deploy.sh` — bring up production stack
 - `polaris-backup.sh` — atomic full-system backup
 - `polaris-restore.sh` — recovery from backup
@@ -268,113 +236,69 @@ rotate, an operator updates the table; no schema migration required.
 
 ---
 
-## §VII. The cognitive layer in depth
+## §VII. The check layer in depth
 
-### HYDRA
+### `polaris_checks/`
 
-`polaris_hydra/host.py` orchestrates 9 watchers. Each watcher
-inherits from a base class, scans a designated surface, and emits
-findings into a SQLite cache. CorrelationEngine groups findings by
-node_id (with v9.10's additive shared-surface design: findings can
-have `additional_node_ids` for cross-watcher correlation). The
-synthesis output is a structured brief.
+`polaris_checks/checks.py` holds one `check_*(repo_root)` function per
+invariant. Each function scans the repository and returns a PASS/FAIL
+result. `python3 -m polaris_checks.run` runs them all and gates on any
+FAIL. `polaris_checks/test_checks.py` proves each check actually
+detects the violation it claims to (tested detection correctness), so
+a check that silently passes on a real violation is itself caught.
 
-Briefs are archived to `journal/hydra/<YYYY-MM-DD>-<HHMM>.md` via
-`ai-hydra.sh --full --save`.
-
-### Mycelium
-
-`polaris_swarm/` contains the swarm orchestrator + per-legion logic.
-Manifest legions (11):
-- Republican: schema, cognitive, security, mission, adversary,
-  performance, trajectory, substrate, docs (9)
-- Imperial: Praetorian, Engineer (2 added v8.71)
-
-Reserved (1): twelfth-legion slot, held in deliberate reserve
-(`meta/twelfth-legion.md`) until operational need surfaces.
-
-Soldier classes (9):
-- 8 worker classes: each maps to a specific scan
-- 1 priest class: `soldier_swarm_witness` (v9.11) gives the substrate
-  internal self-knowledge by reading recent Pheromone deposits and
-  emitting meta-pheromone under `witness:swarm:*`
-
-Citizens (6): Plebs, Equites, Augures, Censores, Quaestores, Tribuni
-Plebis. Each handles a different aspect of swarm governance.
-
-The brain-map (`scripts/ai-brain-map.sh` → `meta/brain-map/`)
-visualizes the full cross-tier system as a graph (383 nodes since
-v9.15). The swarm-map (`scripts/ai-swarm-map.sh` → `meta/swarm-map/`)
-visualizes the Mycelium tier specifically.
-
-### Foresight surface (v9.12)
-
-`polaris_foresight/` package. ForesightAgent emits Brief with 5
-sections (§I-§V). §IV (vocation-aligned-gaps) is STRUCTURALLY
-required at construction time via `Brief.__post_init__`. The agent
-does not call out to an LLM and does not fetch external data; it is
-deterministic over local state.
-
-FS-XXXXXXXX promotion module promotes candidates to ROADMAP.md as
-candidate items. Vocation-alignment is REQUIRED; non-anti-coercion
-candidates are silently skipped (`skipped_no_vocation` counter).
-Idempotent — re-promotion adds nothing.
-
-Empirical-graduation rule (Anti-Architect modification): the
-`_acceptance_log.json` tracker counts distinct calendar months
-(deduped per v9.13 fix); if 6 distinct months have elapsed and
-acceptance rate is < 50%, the surface fails the empirical-
-graduation test and the SUNSET clause fires.
+This flat layer is the machine-checkable enforcement of most of
+C1-C10. The remainder are enforced at the DB level: append-only
+triggers (C1), the ZERO_KNOWLEDGE `token_id IS NULL` trigger (C2), the
+partial unique index for one-identity-per-person (C3), the atomic
+failed-login counter (C4), and CHECK constraints. The checks verify
+that the codebase keeps the shape those guarantees depend on (for
+example, that CSP forbids inline scripts (C5) and that cryptographic
+algorithms flow through the `CryptographicAlgorithm` table (C7)).
 
 ### The Sanctum protocol
 
-For MEDIUM/HIGH-risk strategic decisions — opening a new arc,
-modifying the cognitive layer itself, changing what Polaris IS or IS
-NOT — the agent does NOT present an ad-hoc recommendation in chat.
-The agent enters the Sanctum (`scripts/ai-sanctum.sh`).
+For MEDIUM/HIGH-risk strategic decisions (opening a new arc, changing
+what Polaris IS or IS NOT) the agent does NOT present an ad-hoc
+recommendation in chat. The agent enters the Sanctum
+(`scripts/ai-sanctum.sh`).
 
 The Sanctum protocol is a 4-state lifecycle: OPEN → DECIDING →
-DECIDED → SHIPPED (CLOSED canonical synonym for SHIPPED). Optional
-intermediate states. The Sanctum file is itself an audit-of-record
-instance (constitutional record).
+DECIDED → SHIPPED (CLOSED is the canonical synonym for SHIPPED).
+Intermediate states are optional. The Sanctum file is itself an
+audit-of-record instance (a decision record), indexed at
+`meta/sanctum-index.md`.
 
-The Architect + Anti-Architect protocol (v9.11) is layered on top
-of Sanctum. The Architect generates a forecast / position from live
-repo state; the Anti-Architect contests it under the 8-pattern
-catalog; both converge or escalate to operator.
-
-Pattern #20 Constitutional Discipline (18 instances) records every
-Sanctum decision and its outcome.
+Decisions are classified LOW / MEDIUM / HIGH risk. LOW-risk changes
+ship directly; MEDIUM and HIGH risk go through Sanctum.
 
 ---
 
 ## §VIII. What the test suite covers
 
-- ~1063 Python tests across 165 TestCase classes
-- 19 Hypothesis property tests for C1, C2, C3
-- 62 schema-CHECK regression tests
-- 909 structural-invariant tests
-- 171 SQL self-tests in 08_tests.sql + section S in 08_tests.sql +
-  section T in 12_v7_constraints.sql
+- The `polaris_checks` layer: one `check_*` per invariant, plus the
+  detection-correctness tests in `polaris_checks/test_checks.py`,
+  gated by `python3 -m polaris_checks.run`.
+- DB-backed product suites: `polaris_web/test_check_constraints`,
+  `test_invariants_property`, `test_redaction_property`, `test_app`,
+  and `polaris_cli/test_cli`.
+- Hypothesis property tests for C1, C2, C3.
+- Schema-CHECK regression tests.
+- SQL self-tests in `08_tests.sql` and section T in
+  `12_v7_constraints.sql`.
 
-Run via `./scripts/ai-test.sh` (or `quick` mode that skips
-concurrency/property tests).
+Run the check layer via `python3 -m polaris_checks.run`; the DB-backed
+suites via `./scripts/ai-test.sh` (which wraps the env).
 
-The structural-invariant tests are unusual: they verify that the
-codebase IS A CERTAIN SHAPE, not just that it does the right thing
-on a given input. Examples:
+Some of these tests verify that the codebase IS A CERTAIN SHAPE, not
+just that it does the right thing on a given input. Examples:
 
 - `test_polaris_version_is_canonical`: app.py imports version from
   `__version__.py` rather than redefining
 - `test_dockerfile_covers_all_runtime_app_modules`: every
   top-level import in app.py is COPY'd by both Dockerfiles
-- `test_no_mythic_agents_in_foresight_package`: the v9.12 Anti-
-  Architect modification is structurally pinned
-- `test_ontology_refuses_cross_entity_aggregation`: v9.19 surveillance
-  pattern refusal pinned
-
-A new TestWaveNN_VNNN class is added per ship to pin the ship's
-specific invariants.
+- `test_ontology_refuses_cross_entity_aggregation`: the cross-entity
+  surveillance pattern refusal is pinned
 
 ---
 
@@ -385,8 +309,7 @@ Three deployment paths (see `docs/DEPLOYMENT.md`):
 1. **Single-host Docker (the reference path)**: Docker Compose
    orchestrates Caddy + Postgres + Redis + gunicorn. The
    `polaris-deploy.sh prod` script automates this end-to-end.
-2. **Kubernetes**: Helm chart deferred until Arc G triggers fire
-   (v9.16).
+2. **Kubernetes**: Helm chart deferred.
 3. **Bare-metal**: documented but not automated.
 
 For each path: TLS via Caddy + Let's Encrypt; secrets via
@@ -400,24 +323,21 @@ Production checklist:
 - Set up off-host backup replication
 - Configure quarterly DR drill (in crontab)
 - Subscribe to security advisories
-- Review threat models (`DEVNOTES/threat-model.md` + cognitive)
+- Review the threat model (`DEVNOTES/threat-model.md`)
 
 ---
 
-## §X. The structural-architecture insight
+## §X. The "by construction" insight
 
-`meta/structural-architecture.md` documents the philosophy: every
-claim Polaris makes is enforced by a structural primitive (trigger,
-constraint, index), not by a policy primitive (developer discipline,
-review process). The Removable Test asks: "if I remove this
-structural primitive, does the claim still hold?" If yes, the
-primitive is redundant; if no, the primitive is load-bearing.
+The governing philosophy: every claim Polaris makes is enforced by a
+structural primitive (trigger, constraint, index), not by a policy
+primitive (developer discipline, review process). The test to apply
+is: "if I remove this primitive, does the claim still hold?" If yes,
+the primitive is redundant; if no, the primitive is load-bearing.
 
-The structural primitives are documented in
-`meta/structural-constants.json`. The C1-C10 constraints map to a
-10-node lattice (`meta/constraint-lattice.md`). The 22-pattern
-catalog (`scripts/ai-pattern.sh`) documents recurring constructive
-shapes.
+The C1-C10 constraints map to a 10-node lattice
+(`meta/constraint-lattice.md`), and the `polaris_checks/` layer is the
+machine-checkable record of which primitives are load-bearing.
 
 ---
 
@@ -437,23 +357,20 @@ the operator may authorize new scope at any time.
 
 ---
 
-## §XII. What v9.x represents
+## §XII. Where the project stands
 
-The v9.x trajectory closed the gap between architectural sophistication
-(v8.x) and operational reality (Arc B production deployment +
-cognitive-layer self-monitoring + Sanctum protocol maturity). The
-distinguishing v9.x contribution is **substrate → lens → unified
-brief**: the cognitive layer can read its own observation substrate
-and produce coherent self-assessment.
+The current trajectory closed the gap between architectural
+sophistication and operational reality: production deployment, the
+Sanctum protocol for strategic decisions, and the flat
+`polaris_checks/` layer that gates CI.
 
-v9.11 named the vocation. v9.12 added foresight. v9.19 added the
-investigative surface. v9.20 added meta-audit primitives. v9.23 (this
-ship) adds operator-facing rollout + DR + cognitive threat model +
-top-level GitHub conventions.
+The vocation (anti-coercion) is named and sits above C1-C10. The
+ontology layer refuses cross-individual aggregation. Operator-facing
+rollout, DR, and GitHub conventions are in place.
 
-The next iteration's scope depends on which Arc B triggers fire (per
-v9.16): production-deployment incident, partner integration,
-federation requirement, or ≥10× verification volume.
+The next iteration's scope depends on which operational triggers fire:
+production-deployment incident, partner integration, federation
+requirement, or a large jump in verification volume.
 
 ---
 
@@ -461,14 +378,11 @@ federation requirement, or ≥10× verification volume.
 
 - `MISSION.md` — the constitution
 - `CLAUDE.md` — agent runbook (doubles as developer onboarding)
-- `meta/cognitive-loop.md` — cognitive layer in depth
+- `polaris_checks/checks.py` — the flat C1-C10 invariant layer
 - `meta/autonomy-architecture.md` — risk classes + agent autonomy
 - `meta/sanctum-protocol.md` — Sanctum protocol spec
-- `meta/architect.md` — Architect persona + 8-pattern catalog
 - `DEVNOTES/style.md` — VANTA's standing instructions
 - `DEVNOTES/threat-model.md` — schema/runtime STRIDE model
-- `DEVNOTES/threat-model-cognitive.md` (v9.23) — cognitive-substrate
-  threats
 - `docs/operator/OPERATIONS.md` — day-2 runbook
 - `docs/operator/DR-SINGLE-REGION.md` (v9.23) — disaster recovery
 - `docs/operator/WEBAUTHN-ROLLOUT.md` (v9.23) — WebAuthn rollout
@@ -476,4 +390,4 @@ federation requirement, or ≥10× verification volume.
 
 ---
 
-*Per BIG MISSION Sanctum, 2026-05-15. v9.23.*
+*Per BIG MISSION Sanctum.*

@@ -65,24 +65,24 @@ def reload_sample_data():
       - 10_auth.sql      (re-seeds the three AppUser accounts and clears the
                           AuthAuditLog so audit-trail tests start clean)
 
-    Platform handling: Linux servers usually run the cluster as the
-    `postgres` user, so we shell out via `su - postgres -c`. On macOS
-    (Homebrew Postgres) and dev boxes where the cluster runs as the
-    current user, plain `psql` works directly. POLARIS_TEST_RELOAD_VIA
-    overrides the auto-detection (values: 'su', 'direct').
+    Connection: psql is invoked with the POLARIS_DB_* connection settings
+    (host / port / user / password), so the same path works against a CI
+    service-container Postgres, a Homebrew Postgres owned by the current
+    user, and a Linux cluster reached over TCP. Set POLARIS_TEST_RELOAD_VIA=su
+    to force the legacy `su - postgres -c` path on a peer-auth dev box.
     """
-    import subprocess, platform
+    import subprocess
     db_name = os.environ.get('POLARIS_DB_NAME', 'polaris_test')
+    db_host = os.environ.get('POLARIS_DB_HOST', 'localhost')
+    db_port = os.environ.get('POLARIS_DB_PORT', '5432')
+    db_user = os.environ.get('POLARIS_DB_USER', 'postgres')
+    db_pass = os.environ.get('POLARIS_DB_PASSWORD', '')
     files_to_run = ['04_data.sql', '06_triggers.sql', '09_grants.sql', '10_auth.sql']
 
-    override = os.environ.get('POLARIS_TEST_RELOAD_VIA', '').lower()
-    if override in ('su', 'direct'):
-        use_su = (override == 'su')
-    else:
-        # Auto-detect: only use su when on Linux AND a postgres user exists.
-        use_su = (platform.system() == 'Linux' and
-                  subprocess.run(['id', 'postgres'],
-                                 capture_output=True).returncode == 0)
+    run_env = os.environ.copy()
+    if db_pass:
+        run_env['PGPASSWORD'] = db_pass
+    use_su = os.environ.get('POLARIS_TEST_RELOAD_VIA', '').lower() == 'su'
 
     for fname in files_to_run:
         fpath = os.path.join(SQL_DIR, fname)
@@ -92,8 +92,9 @@ def reload_sample_data():
         if use_su:
             cmd = ['su', '-', 'postgres', '-c', f'psql -d {db_name} -f {fpath}']
         else:
-            cmd = ['psql', '-d', db_name, '-f', fpath]
-        result = subprocess.run(cmd, capture_output=True, text=True)
+            cmd = ['psql', '-h', db_host, '-p', db_port, '-U', db_user,
+                   '-d', db_name, '-f', fpath]
+        result = subprocess.run(cmd, capture_output=True, text=True, env=run_env)
         if result.returncode != 0:
             raise RuntimeError(f"Failed to reload {fname}: {result.stderr}")
 
@@ -209,12 +210,12 @@ class UnauthenticatedTestCase(PolarisTestCase):
 class DashboardTests(PolarisTestCase):
 
     def test_dashboard_renders(self):
-        r = self.client.get('/')
+        r = self.client.get('/dashboard')
         self.assertEqual(r.status_code, 200)
         self.assertHTML(r, 'POLARIS', 'System Dashboard')
 
     def test_dashboard_shows_all_table_stats(self):
-        r = self.client.get('/')
+        r = self.client.get('/dashboard')
         self.assertHTML(r,
             'Individual', 'Agency', 'CryptographicAlgorithm',
             'VerificationContext', 'IdentityToken', 'TokenLifecycleEvent',
@@ -222,7 +223,7 @@ class DashboardTests(PolarisTestCase):
             'RevocationList', 'AgencyAlgorithmAuth', 'TokenPermission')
 
     def test_dashboard_shows_active_tokens(self):
-        r = self.client.get('/')
+        r = self.client.get('/dashboard')
         # 3 active tokens in pristine sample data: T2 Maria, T3 James, T4 Priya
         self.assertHTML(r, 'Maria Santos', 'James Chen', 'Priya Patel')
 
@@ -299,7 +300,7 @@ class DashboardAnalyticsTests(PolarisTestCase):
     and Recent Audit Events all live here after the Gotham reframe."""
 
     def test_dashboard_renders(self):
-        r = self.client.get('/')
+        r = self.client.get('/dashboard')
         self.assertEqual(r.status_code, 200)
         self.assertHTML(r, 'System Dashboard', 'Schema Statistics')
 
@@ -307,14 +308,14 @@ class DashboardAnalyticsTests(PolarisTestCase):
         """The status breakdown table is data-driven (GROUP BY status), so it
         only lists states that actually have tokens. In pristine sample data
         that's ACTIVE, RESERVE, and REVOKED."""
-        r = self.client.get('/')
+        r = self.client.get('/dashboard')
         body = r.get_data(as_text=True)
         for state in ['ACTIVE', 'RESERVE', 'REVOKED']:
             self.assertIn(state, body, f"Status breakdown missing {state}")
 
     def test_dashboard_shows_authorization_matrix(self):
         """Auth Matrix should include every agency name and algorithm."""
-        r = self.client.get('/')
+        r = self.client.get('/dashboard')
         body = r.get_data(as_text=True)
         for ag in ['US National Identity Service', 'Pennsylvania Identity Bureau',
                    'California Identity Office', 'First National Bank']:
@@ -323,24 +324,24 @@ class DashboardAnalyticsTests(PolarisTestCase):
             self.assertIn(alg, body, f"Auth matrix missing {alg}")
 
     def test_dashboard_shows_pq_migration(self):
-        r = self.client.get('/')
+        r = self.client.get('/dashboard')
         self.assertHTML(r, 'Post-Quantum Migration', 'PQ')
 
     def test_dashboard_shows_disclosure_breakdown(self):
-        r = self.client.get('/')
+        r = self.client.get('/dashboard')
         self.assertHTML(r, 'Disclosure Posture',
                         'ZERO_KNOWLEDGE', 'SELECTIVE', 'FULL')
 
     def test_dashboard_shows_recent_events(self):
-        r = self.client.get('/')
+        r = self.client.get('/dashboard')
         self.assertHTML(r, 'Recent Audit Events', 'ISSUED')
 
     def test_dashboard_shows_lineage(self):
-        r = self.client.get('/')
+        r = self.client.get('/dashboard')
         self.assertHTML(r, 'Token Succession Lineage')
 
     def test_dashboard_shows_context_activity(self):
-        r = self.client.get('/')
+        r = self.client.get('/dashboard')
         self.assertHTML(r, 'Verification Activity by Context')
 
 
@@ -2011,14 +2012,14 @@ class AnchorBatchTests(PolarisTestCase):
                 INSERT INTO BlockchainAnchor
                     (token_id, did, commitment_hash, ledger_network, anchor_tx_hash, anchored_date)
                 VALUES (3, 'did:polaris:test:rt',
-                        '0xroundtripcommit', 'ALGORAND_PQ',
+                        '0xc0ffeecafe01', 'ALGORAND_PQ',
                         '0xroundtriptx', CURRENT_TIMESTAMP)
                 RETURNING anchor_id
             """)
             aid = cur.fetchone()['anchor_id']
             conn.commit()
 
-            root, proofs = compute_batch([(aid, '0xroundtripcommit')], 'SHA3-256')
+            root, proofs = compute_batch([(aid, '0xc0ffeecafe01')], 'SHA3-256')
             cur.execute("CALL close_anchor_batch(%s, %s, %s)",
                         (2, root, Json(proofs)))
             conn.commit()
@@ -3292,7 +3293,7 @@ class F01_AuthenticationTests(UnauthenticatedTestCase):
     def test_logout_clears_session(self):
         """Logout must invalidate the session."""
         self._login('admin')
-        r = self._post('/logout', csrf_from='/')
+        r = self._post('/logout', csrf_from='/dashboard')
         self.assertEqual(r.status_code, 302)
         with self.client.session_transaction() as sess:
             self.assertFalse(sess.get('logged_in', False))
@@ -3569,7 +3570,7 @@ class RoleBasedAccessControlTests(PolarisTestCase):
 
     # Path → roles allowed (sets must match the @require_role decorators)
     ROLE_MATRIX = {
-        '/': ('admin', 'operator', 'auditor'),
+        '/dashboard': ('admin', 'operator', 'auditor'),
         '/atlas': ('admin', 'operator', 'auditor'),
         '/individuals/new': ('admin',),
         '/agencies/new': ('admin',),
@@ -3598,7 +3599,7 @@ class RoleBasedAccessControlTests(PolarisTestCase):
         """The nav bar is role-gated — operator shouldn't see SQL Console."""
         self._logout()
         self._login('operator')
-        r = self.client.get('/')
+        r = self.client.get('/dashboard')
         # Operator can't use SQL console, so the nav link shouldn't appear
         # (The role-based template hides it.)
         self.assertNotHTML(r, '>SQL Console<')
@@ -3614,7 +3615,7 @@ class RoleBasedAccessControlTests(PolarisTestCase):
 
         self._logout()
         self._login('auditor')
-        r = self.client.get('/')
+        r = self.client.get('/dashboard')
         # Auditor sees SQL but not UC-1/6/8/9 (only UC-7 in the dropdown)
         self.assertHTML(r, '>SQL Console<')
         self.assertNotHTML(r, '>UC-1<')
@@ -4372,7 +4373,7 @@ class ConcurrencyTests(PolarisTestCase):
                          anchor_tx_hash, anchored_date)
                     VALUES (3, %s, %s, 'ALGORAND_PQ', %s, CURRENT_TIMESTAMP)
                 """, (f'did:polaris:test:race{i}',
-                      f'0xrace{i}commit',
+                      f'0xc0ffee0{i}',
                       f'0xrace{i}tx'))
             conn.commit()
 
@@ -4430,9 +4431,9 @@ class ConcurrencyTests(PolarisTestCase):
                 INSERT INTO BlockchainAnchor
                     (token_id, did, commitment_hash, ledger_network,
                      anchor_tx_hash, anchored_date)
-                VALUES (3, 'did:polaris:test:xalg-2', '0xxalg2commit',
+                VALUES (3, 'did:polaris:test:xalg-2', '0xdec0de02',
                         'ALGORAND_PQ', '0xxalg2tx', CURRENT_TIMESTAMP),
-                       (4, 'did:polaris:test:xalg-3', '0xxalg3commit',
+                       (4, 'did:polaris:test:xalg-3', '0xdec0de03',
                         'ALGORAND_PQ', '0xxalg3tx', CURRENT_TIMESTAMP)
             """)
             conn.commit()
@@ -4964,7 +4965,7 @@ class HealthEndpointTests(PolarisTestCase):
         self.assertIn('status', data)
         self.assertIn(data['status'], ('healthy', 'degraded', 'unhealthy'))
         self.assertIn('checks', data)
-        self.assertIn('db', data['checks'])
+        self.assertIn('database', data['checks'])
         self.assertIn('atlas_cache', data['checks'])
 
     def test_health_does_not_require_login(self):
@@ -4984,12 +4985,12 @@ class HealthEndpointTests(PolarisTestCase):
         with polaris_app.test_client() as c:
             r = c.get('/api/health')
         data = r.get_json()
-        self.assertIn('rate_limiter', data['checks'])
-        rl = data['checks']['rate_limiter']
+        self.assertIn('redis', data['checks'])
+        rl = data['checks']['redis']
         self.assertIn('backend', rl)
         self.assertIn(rl['backend'], ('memory', 'redis'))
-        self.assertIn('ok', rl)
-        self.assertIsInstance(rl['ok'], bool)
+        self.assertIn('status', rl)
+        self.assertIn(rl['status'], ('healthy', 'degraded', 'unhealthy'))
 
     def test_stats_endpoint_returns_hud_signals(self):
         r = self.client.get('/api/atlas/stats?bbox=-89,-179,89,179')
@@ -6063,7 +6064,7 @@ class V2SubstrateUITests(PolarisTestCase):
     # ---------- dashboard tiles ----------
 
     def test_dashboard_renders_v2_substrate_section(self):
-        r = self.client.get('/')
+        r = self.client.get('/dashboard')
         self.assertEqual(r.status_code, 200)
         body = r.data.decode()
         self.assertIn('v2 Substrate', body)
@@ -6073,13 +6074,13 @@ class V2SubstrateUITests(PolarisTestCase):
         self.assertIn('Token Signatures', body)
 
     def test_dashboard_duress_tile_visible_for_admin(self):
-        r = self.client.get('/')
+        r = self.client.get('/dashboard')
         self.assertIn('Duress Signals', r.data.decode())
 
     def test_dashboard_duress_tile_hidden_for_operator(self):
         self._logout()
         self._login('operator')
-        r = self.client.get('/')
+        r = self.client.get('/dashboard')
         body = r.data.decode()
         self.assertNotIn('Duress Signals', body)
         # The other four substrate tiles should still be visible
@@ -6177,7 +6178,7 @@ class V2SubstrateUITests(PolarisTestCase):
     # ---------- nav menu ----------
 
     def test_substrate_menu_visible_for_admin(self):
-        r = self.client.get('/')
+        r = self.client.get('/dashboard')
         body = r.data.decode()
         self.assertIn('SUBSTRATE', body)
         self.assertIn('Anchor Batches', body)
@@ -6187,7 +6188,7 @@ class V2SubstrateUITests(PolarisTestCase):
     def test_substrate_menu_visible_for_operator(self):
         self._logout()
         self._login('operator')
-        r = self.client.get('/')
+        r = self.client.get('/dashboard')
         self.assertIn('SUBSTRATE', r.data.decode())
 
 

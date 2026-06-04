@@ -1,35 +1,35 @@
-# meta/ — the cognitive layer's architecture
+# meta/ — governance and decision records
 
-This directory holds the documents that govern how the AI agent
-(Claude) thinks about Polaris. It's the constitutional infrastructure
-beneath `MISSION.md` / `ROADMAP.md` / `CLAUDE.md` at the repo root.
+This directory holds the documents that govern how the agent and the
+developer reason about Polaris. It is the governance layer beneath
+`MISSION.md` / `ROADMAP.md` / `CLAUDE.md` at the repo root.
 
-If `MISSION.md` says **what** Polaris is, `meta/` says **how the
-agent reasons about it.**
+If `MISSION.md` says **what** Polaris is, `meta/` records **how
+decisions about it are made and audited.**
 
 ---
 
 ## What's here
 
-### Constitutional architecture
+### Governance and architecture
 
 | File | Purpose |
 |---|---|
-| [`cognitive-loop.md`](cognitive-loop.md) | The session-loop architecture: prime → status → propose → ship → reflect |
-| [`cognitive-architecture-v3.md`](cognitive-architecture-v3.md) | The current shape of the cognitive layer (v3; v8.6+) |
 | [`autonomy-architecture.md`](autonomy-architecture.md) | LOW / MEDIUM / HIGH risk classes; what the agent can do autonomously |
-| [`structural-architecture.md`](structural-architecture.md) | The Removable Test + structural-invariants discipline (v8.8+) |
-| [`structural-constants.json`](structural-constants.json) | Canonical structural numbers (constraint counts, pattern counts, etc.) |
+| [`structural-architecture.md`](structural-architecture.md) | The Removable Test discipline |
 | [`constraint-lattice.md`](constraint-lattice.md) | C1-C10 ↔ 10-node lattice mapping |
+| [`freeze-amendment-protocol.md`](freeze-amendment-protocol.md) | How frozen invariants may be amended |
 
-### Personas + protocols
+The live constitutional constants are the ten hard constraints C1-C10 in
+[`MISSION.md`](../MISSION.md), enforced at the database level and checked by
+[`polaris_checks/`](../polaris_checks/).
+
+### Protocols
 
 | File | Purpose |
 |---|---|
-| [`architect.md`](architect.md) | The Polaris Architect persona spec (HYDRA's synthesis voice) |
 | [`sanctum-protocol.md`](sanctum-protocol.md) | Strategic-consultation protocol (the Sanctum) |
-| [`sanctum-index.md`](sanctum-index.md) | Chronological index of all 64 Sanctum sessions |
-| [`claude-90s.md`](claude-90s.md) | 90-second onboarding primer (v9.06 / J3 — read this first in a new session) |
+| [`sanctum-index.md`](sanctum-index.md) | Chronological index of all Sanctum sessions |
 
 ### Per-arc strategic records
 
@@ -45,24 +45,18 @@ agent reasons about it.**
 | [`missions-considered.md`](missions-considered.md) | v2 strategic-arc analysis (A/B/C/D considered; D+A chosen) |
 | [`lineage.md`](lineage.md) | Etymology of structural insights |
 
-### Brain map (rendered)
-
-| Path | Purpose |
-|---|---|
-| [`brain-map/`](brain-map/) | Generated visualization of the project's cognitive structure |
-
-### Roadmaps + reviews
-
-| File | When |
-|---|---|
-| [`polaris-self-roadmap-2026-05-14.md`](polaris-self-roadmap-2026-05-14.md) | The 30-item macro-to-micro scan roadmap (Wave 1 → v9.05; Wave 2 → v9.06; Wave 3 → v9.07; Wave 4 → v9.08) |
+Dated history (read as records of their date, not as current docs):
+[`polaris-self-roadmap-2026-05-14.md`](polaris-self-roadmap-2026-05-14.md) and the
+follow-on roadmap scans, [`cognitive-architecture-v2.md`](cognitive-architecture-v2.md) /
+[`cognitive-architecture-v3.md`](cognitive-architecture-v3.md), and
+[`cold-read-walkthrough-v9.27.md`](cold-read-walkthrough-v9.27.md).
 
 ---
 
 ## How to navigate
 
-**Fresh agent session?** Start with [`claude-90s.md`](claude-90s.md)
-(~30-line operative primer), then [`cognitive-loop.md`](cognitive-loop.md).
+**Fresh agent session?** Start with [`CLAUDE.md`](../CLAUDE.md)
+(the canonical agent runbook).
 
 **Need to make a strategic decision?** Read
 [`sanctum-protocol.md`](sanctum-protocol.md), then `bash
@@ -70,9 +64,6 @@ scripts/ai-sanctum.sh open <topic>`.
 
 **Want to see what was decided when?** [`sanctum-index.md`](sanctum-index.md)
 chronological + sanctum/ for full session bodies.
-
-**Speak in the Architect's voice?** `bash scripts/ai-architect.sh
---voice` prints [`architect.md`](architect.md).
 
 ---
 
@@ -83,6 +74,6 @@ chronological + sanctum/ for full session bodies.
 - Not informal developer notes (that's in `DEVNOTES/`)
 - Not session logs (that's in `journal/`)
 
-`meta/` is **how the agent thinks**, named explicitly so the
-thinking can be audited, version-controlled, and updated when the
+`meta/` is the governance and decision record, named explicitly so the
+reasoning can be audited, version-controlled, and updated when the
 constitutional landscape shifts.

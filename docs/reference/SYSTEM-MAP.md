@@ -16,50 +16,46 @@ For the philosophical principles beneath the structure, see
 polaris/                          ← repo root
 │
 ├── README.md                     ← portfolio front-page
-├── MISSION.md                    ← constitution (C1-C10 + cognitive substrate)
+├── MISSION.md                    ← constitution (C1-C10 + Vocation)
 ├── ROADMAP.md                    ← prioritized backlog (R-* items)
-├── CHANGELOG.md                  ← audit-of-record (v9.24 curated last-10; full 136 entries in archive/CHANGELOG-FULL.md)
+├── CHANGELOG.md                  ← audit-of-record (curated last-10; full history in archive/CHANGELOG-FULL.md)
 ├── CLAUDE.md                     ← agent runbook
 ├── LICENSE / NOTICE              ← legal
 │
 ├── Polaris.command               ← double-click launcher (macOS)
 ├── polaris_mac_launch.sh         ← launcher logic
 │
-├── polaris_web/        ← Flask app (4K-line app.py + WebAuthn + ZK wrapper)
+├── polaris_web/        ← Flask app (app.py + WebAuthn + ZK wrapper)
 ├── polaris_sql/        ← schema, procedures, triggers, atlas, migrations
-├── polaris_hydra/      ← HYDRA centralized intelligence (v9.04 hybrid)
-├── polaris_swarm/      ← Mycelium decentralized intelligence
-├── polaris_foresight/  ← Foresight surface (v9.12)
-├── polaris_zk/         ← Plonky2 ZK-SNARK Rust crate
+├── polaris_zk/         ← Plonky2 ZK-SNARK Rust crate + witness2/ second witness
 ├── polaris_cli/        ← CLI utilities
+├── polaris_checks/     ← flat C1-C10 invariant layer
 │
 ├── docs/               ← all documentation (operator + reference + story + paper)
-├── meta/               ← cognitive-layer architecture
+├── meta/               ← governance records (sanctum protocol, risk classes)
 ├── DEVNOTES/           ← informal developer notes
-├── patterns/           ← 22-pattern catalog
+├── patterns/           ← software-work catalog
 ├── proposals/          ← long-form proposal drafts
 ├── sanctum/            ← strategic-consultation records (v8.20 AoR)
 ├── journal/            ← per-day session logs (v8.20 AoR)
-├── scripts/            ← cognitive (ai-*) + operator (polaris-*) scripts
-├── archive/            ← frozen history (CHANGELOG-FULL.md + non-ACTIVE sanctum/journal/brain-map snapshots)
-├── archives/           ← runtime output (v9.07 Pheromone archives — not committed)
+├── scripts/            ← operator (polaris-*) + workflow (ai-*) scripts
+├── archive/            ← frozen history (CHANGELOG-FULL.md + non-ACTIVE sanctum/journal snapshots)
 ├── assets/             ← branding (logo)
 │
-├── .git/               ← v9.07 (genesis 2026-05-15; first commit deferred to operator)
+├── .git/               ← genesis 2026-05-15
 ├── .github/workflows/  ← CI (Postgres-16 service container; full suite)
 ├── .gitignore          ← venv, caches, secrets, .DS_Store, .hypothesis
-└── .pre-commit-config.yaml  ← v9.06 — local hooks (link-check, meta, coherence, invariants)
+└── .pre-commit-config.yaml  ← local hooks (link-check, invariants)
 ```
 
-**17 top-level directories** (excl. caches/venv/.git); **45 subdirs total** (recursive). **Every load-bearing top-level directory has a README** (15 top-level + 4 docs/* subdirs + 4 polaris_swarm/* subdirs; v9.08 showroom invariant enforced by `test_every_top_level_dir_has_readme`).
+**Every load-bearing top-level directory has a README** (enforced by `test_every_top_level_dir_has_readme`).
 
 ---
 
-## The four layers
+## The three layers
 
-Polaris is built in **four concentric layers**, each with a distinct
-role. Understanding the layer-of-the-thing tells you 90% of what you
-need.
+Polaris is built in **three layers**, each with a distinct role.
+Understanding the layer-of-the-thing tells you 90% of what you need.
 
 ### Layer 1: Polaris itself (the identity-token system)
 
@@ -67,37 +63,30 @@ The actual product — the thing being built.
 
 | Layer-1 dir | What |
 |---|---|
-| [`polaris_web/`](../../polaris_web/) | Flask web app — 67 routes; 27 schema tables; ZK wrapper; WebAuthn |
+| [`polaris_web/`](../../polaris_web/) | Flask web app — routes; 27 schema tables; ZK wrapper; WebAuthn |
 | [`polaris_sql/`](../../polaris_sql/) | DDL + procedures + triggers + atlas functions + migrations |
-| [`polaris_zk/`](../../polaris_zk/) | Rust crate — Plonky2 ZK-SNARK prover/verifier |
+| [`polaris_zk/`](../../polaris_zk/) | Rust crate — Plonky2 ZK-SNARK prover/verifier + `witness2/` independent second witness |
 | [`polaris_cli/`](../../polaris_cli/) | CLI utilities |
 
-### Layer 2: Cognitive substrate (HYDRA + Mycelium)
+### Layer 2: Checks and governance
 
-The AI agent's working environment. Layer 2 *observes* Layer 1
-without modifying it.
+The flat invariant layer plus the development record.
 
 | Layer-2 dir | What |
 |---|---|
-
-### Layer 3: Cognitive layer (the agent's tools)
-
-How the agent thinks: scripts, meta-architecture, audit-of-record.
-
-| Layer-3 dir | What |
-|---|---|
-| [`scripts/`](../../scripts/) | 39 ai-* (cognitive) + 30 polaris-* (operator) scripts |
-| [`meta/`](../../meta/) | Cognitive architecture (cognitive-loop, autonomy, structural, sanctum-protocol, architect persona, per-arc records) |
-| [`sanctum/`](../../sanctum/) | 59 strategic-consultation sessions (v8.20 AoR) |
-| [`journal/`](../../journal/) | Per-day session logs + Architect briefs + HYDRA briefs (v8.20 AoR) |
-| [`patterns/`](../../patterns/) | 22-pattern software-work catalog |
+| [`polaris_checks/`](../../polaris_checks/) | Flat C1-C10 invariant layer — one `check_*(repo_root)` per constraint; gates CI via `python3 -m polaris_checks.run` |
+| [`scripts/`](../../scripts/) | operator (polaris-*) + workflow (ai-*) scripts |
+| [`meta/`](../../meta/) | Governance records (sanctum-protocol, autonomy/risk classes, per-arc records) |
+| [`sanctum/`](../../sanctum/) | Strategic-consultation sessions (v8.20 AoR) |
+| [`journal/`](../../journal/) | Per-day session logs (v8.20 AoR) |
+| [`patterns/`](../../patterns/) | Software-work catalog |
 | [`proposals/`](../../proposals/) | Long-form proposal drafts |
 
-### Layer 4: Documentation (for humans)
+### Layer 3: Documentation (for humans)
 
 What the operator + developer + auditor needs to read.
 
-| Layer-4 dir | What |
+| Layer-3 dir | What |
 |---|---|
 | [`docs/operator/`](../operator/) | Runbooks (INSTALL, DEPLOYMENT, OPERATIONS, DR, SOC2, PENTEST, SECRETS, SECURITY, PRIVACY) |
 | [`docs/reference/`](../reference/) | Technical reference (API, DATA-MODEL, GLOSSARY, SCALING, **this SYSTEM-MAP**) |
@@ -107,79 +96,26 @@ What the operator + developer + auditor needs to read.
 
 ---
 
-## The hybrid intelligence pipeline (v9.04+)
-
-The substrate-vs-lens architecture that makes Polaris's cognitive
-layer distinct:
-
-```
-       SUBSTRATE                              LENS
-       (decentralized; v8.62+)                (centralized; v8.37+)
-
-       polaris_swarm/                         polaris_hydra/
-       │                                      │
-       ├── ants/         (33 commanders)      ├── watchers/   (9 mortal heads)
-       ├── soldiers/     (8 classes)          │   ├── schema_watcher
-       ├── civitas/      (6 citizens)         │   ├── cognitive_watcher
-       ├── legions/      (11 groupings)       │   ├── security_watcher
-       └── colony.py     (orchestrator)       │   ├── mission_watcher
-            │                                 │   ├── adversary_watcher
-            │ deposits                        │   ├── performance_watcher
-            ▼                                 │   ├── trajectory_watcher
-       Pheromone table  ◄───── reads ──────── │   ├── ant_colony_watcher
-       (PostgreSQL; C1 append-only)           │   └── civitas_watcher
-       (~50K rows/day; v9.07 archive+purge)   │
-                                              ├── pheromone_reader.py  (v9.04 — reads substrate)
-                                              ├── correlation.py        (v9.04 — cross-watcher)
-                                              ├── action_queue.py       (v9.04 — ranked moves)
-                                              ├── brief_archive.py      (v9.04 — journal/hydra/)
-                                              └── host.py               (Hydra.speak_full)
-                                                  │
-                                                  │ writes
-                                                  ▼
-                                              journal/hydra/<date>-<HHMM>.md
-                                              (v8.20 filesystem AoR)
-                                                  │
-                                                  ▼
-                                              cognitive_watcher channel 6
-                                              (v9.06 — the lens watching itself)
-```
-
-**The flow:** ants + soldiers deposit Pheromones → HYDRA watchers
-read both Pheromones AND static state → CorrelationEngine finds
-cross-watcher signal → ActionQueue ranks → brief-archive saves →
-cognitive_watcher (v9.06) observes the brief-archive's freshness.
-The lens watching itself.
-
----
-
 ## The constitutional spine
 
 These documents are the load-bearing constitutional surfaces.
-Touching them requires Sanctum protocol (Pattern #20).
+Touching them requires the Sanctum protocol.
 
 ```
 MISSION.md (constitution)
-    ├── C1-C10 hard constraints
-    ├── Four cognitive-substrate principles
-    ├── G1-G33 G-guards (G27-G29 from v8.77; G30/G31 from v8.87; G32/G33 from v9.07)
+    ├── C1-C10 hard constraints (enforced at the DB level)
+    ├── The Vocation (anti-coercion)
     └── Mission v1 + v2 done-lists
 
-meta/architect.md (the agent's voice persona)
+polaris_checks/checks.py (machine-checkable enforcement of C1-C10)
 meta/sanctum-protocol.md (strategic-consultation protocol)
-meta/cognitive-loop.md (session-loop architecture)
 meta/autonomy-architecture.md (LOW/MEDIUM/HIGH risk classes)
 
-sanctum/<date>-<topic>.md (47+ DECIDED sessions; v8.20 AoR)
+sanctum/<date>-<topic>.md (DECIDED sessions; v8.20 AoR)
 meta/sanctum-index.md (chronological index)
 
-CHANGELOG.md (every ship; v8.20 AoR; ~737 KB; never edited
-              retroactively)
+CHANGELOG.md (every ship; v8.20 AoR; never edited retroactively)
 journal/<date>.md (per-day narrative; v8.20 AoR)
-journal/hydra/<date>-<HHMM>.md (HYDRA briefs; v9.04+)
-
-polaris_swarm/civitas/treasury-roll.json (Denarius ledger; G15)
-polaris_swarm/civitas/census-roll.json (Census Roll; G15)
 ```
 
 ---
@@ -194,13 +130,13 @@ here for self-contained navigation):
 | What is Polaris? What is it NOT? | [`MISSION.md`](../../MISSION.md) |
 | What's next? Backlog by risk class? | [`ROADMAP.md`](../../ROADMAP.md) / [`docs/BACKLOG.md`](../BACKLOG.md) |
 | What just shipped? | [`CHANGELOG.md`](../../CHANGELOG.md) (top entry = latest) |
-| 90-second onboarding | [`meta/claude-90s.md`](../../meta/claude-90s.md) |
+| Agent runbook / onboarding | [`CLAUDE.md`](../../CLAUDE.md) |
 | Why was a Decision made? | [`sanctum/<date>-<topic>.md`](../../sanctum/) — indexed at [`meta/sanctum-index.md`](../../meta/sanctum-index.md) |
-| Cross-cutting principle (AoR, concurrency, substrate, threat-model, style) | [`DEVNOTES/<name>.md`](../../DEVNOTES/) |
+| Cross-cutting principle (AoR, concurrency, threat-model, style) | [`DEVNOTES/<name>.md`](../../DEVNOTES/) |
 | How does ship X work? | [`DEVNOTES/ships/<short-name>.md`](../../DEVNOTES/ships/) |
 | Naming + structural conventions | [`docs/CONVENTIONS.md`](../CONVENTIONS.md) |
 | Architectural map (this doc) | [`docs/reference/SYSTEM-MAP.md`](SYSTEM-MAP.md) |
-| HYDRA brief output (v9.04+) | [`journal/hydra/<date>-<HHMM>.md`](../../journal/hydra/) |
+| The C1-C10 checks | [`polaris_checks/checks.py`](../../polaris_checks/checks.py) |
 | Day-by-day narrative | [`journal/<date>.md`](../../journal/) (indexed at [`journal/INDEX.md`](../../journal/INDEX.md)) |
 
 ---
@@ -209,7 +145,7 @@ here for self-contained navigation):
 
 | Audience | Primary reading order |
 |---|---|
-| **Agent (Claude) starting a fresh session** | [`meta/claude-90s.md`](../../meta/claude-90s.md) → `bash scripts/ai-prime.sh` → `bash scripts/ai-status.sh` |
+| **Agent (Claude) starting a fresh session** | [`CLAUDE.md`](../../CLAUDE.md) → [`MISSION.md`](../../MISSION.md) → `python3 -m polaris_checks.run` |
 | **Operator deploying Polaris** | [`docs/operator/INSTALL.md`](../operator/INSTALL.md) → [`docs/operator/DEPLOYMENT.md`](../operator/DEPLOYMENT.md) → [`docs/operator/OPERATIONS.md`](../operator/OPERATIONS.md) |
 | **Developer contributing** | [`README.md`](../../README.md) → [`docs/CONVENTIONS.md`](../CONVENTIONS.md) → [`DEVNOTES/style.md`](../../DEVNOTES/style.md) → relevant `polaris_*/README.md` |
 | **Compliance auditor** | [`docs/operator/SOC2.md`](../operator/SOC2.md) → [`docs/operator/SECURITY.md`](../operator/SECURITY.md) → [`docs/operator/PENTEST.md`](../operator/PENTEST.md) → [`docs/operator/DR.md`](../operator/DR.md) |

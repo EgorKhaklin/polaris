@@ -5,13 +5,11 @@
 # Arc B Phase 1 (v8.77). Produces a single timestamped tarball containing
 # every durable component, plus a manifest with SHA-256 hashes:
 #
-#   pg_dump (custom format, gzipped)        — the database
-#   sanctum/                                — filesystem audit-of-record
-#   journal/                                — episodic memory
-#   polaris_swarm/civitas/treasury-roll.json — denarii ledger (Arc F)
-#   polaris_swarm/civitas/census-roll.json   — citizen census (Arc E)
-#   meta/sanctum-index.md                   — index of the sanctum/ directory
-#   MANIFEST.json                           — timestamps + SHA-256 hashes
+#   pg_dump (custom format, gzipped)        the database
+#   sanctum/                                filesystem audit-of-record
+#   journal/                                episodic decision log
+#   meta/sanctum-index.md                   index of the sanctum/ directory
+#   MANIFEST.json                           timestamps + SHA-256 hashes
 #
 # Usage:
 #     ./scripts/polaris-backup.sh                       # writes /var/backups/polaris-<ts>.tar.gz
@@ -122,7 +120,7 @@ echo "  → Polaris backup ${TS}"
 echo "  → staging at ${STAGE}"
 
 # 1. pg_dump
-echo "  [1/6] pg_dump…"
+echo "  [1/5] pg_dump…"
 if docker compose -f "${COMPOSE_FILE}" ps --services 2>/dev/null | grep -q '^postgres$'; then
     # Production stack is up — dump via compose exec
     docker compose -f "${COMPOSE_FILE}" exec -T postgres \
@@ -140,7 +138,7 @@ else
 fi
 
 # 2. sanctum/
-echo "  [2/6] sanctum/…"
+echo "  [2/5] sanctum/…"
 if [[ -d "${POLARIS_ROOT}/sanctum" ]]; then
     tar -czf "${STAGE}/sanctum.tar.gz" -C "${POLARIS_ROOT}" sanctum
 else
@@ -148,35 +146,23 @@ else
 fi
 
 # 3. journal/
-echo "  [3/6] journal/…"
+echo "  [3/5] journal/…"
 if [[ -d "${POLARIS_ROOT}/journal" ]]; then
     tar -czf "${STAGE}/journal.tar.gz" -C "${POLARIS_ROOT}" journal
 else
     : > "${STAGE}/journal.tar.gz"
 fi
 
-# 4. Filesystem AoR (treasury + census rolls)
-echo "  [4/6] filesystem AoR rolls…"
-for roll in treasury-roll.json census-roll.json; do
-    src="${POLARIS_ROOT}/polaris_swarm/civitas/${roll}"
-    if [[ -f "${src}" ]]; then
-        cp "${src}" "${STAGE}/${roll}"
-    else
-        echo "  ! ${roll} missing — recording absence"
-        : > "${STAGE}/${roll}"
-    fi
-done
-
-# 5. meta/sanctum-index.md
-echo "  [5/6] meta/sanctum-index.md…"
+# 4. meta/sanctum-index.md
+echo "  [4/5] meta/sanctum-index.md…"
 if [[ -f "${POLARIS_ROOT}/meta/sanctum-index.md" ]]; then
     cp "${POLARIS_ROOT}/meta/sanctum-index.md" "${STAGE}/sanctum-index.md"
 else
     : > "${STAGE}/sanctum-index.md"
 fi
 
-# 6. Manifest with hashes
-echo "  [6/6] manifest…"
+# 5. Manifest with hashes
+echo "  [5/5] manifest…"
 python3 - "${STAGE}" "${TS}" <<'PY' > "${STAGE}/MANIFEST.json"
 import json, hashlib, os, sys, time
 stage = sys.argv[1]

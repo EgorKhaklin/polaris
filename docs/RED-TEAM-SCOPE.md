@@ -10,21 +10,16 @@ operator, not by the agent
 
 ## Why this is a scope document, not a report
 
-The cognitive layer can simulate adversarial walks (`ai-adversary.sh`,
-per-constraint game-theoretic walks, the Anti-Architect persona's
-8-pattern catalog). What it cannot do is commission a real human red
-team with budget, real-world out-of-band channels, and the willingness
-to break things in production.
+The repository cannot commission a real human red team with budget,
+real-world out-of-band channels, and the willingness to break things
+in production. An external red-team exercise cannot be "shipped" from
+inside an agent session. What the agent CAN do is produce a scope
+document specifying exactly what a real engagement should cover. The
+operator takes this document to a real firm, negotiates terms, and
+runs the engagement. The artifacts the firm produces are then
+integrated into the repository as a separate ship.
 
-The Anti-Architect refused, in the BIG MISSION Sanctum, to "ship" an
-external red-team exercise from inside an agent session — that would
-be AP8 (larping). What the agent CAN do is produce a scope document
-specifying exactly what a real engagement should cover. The operator
-takes this document to a real firm, negotiates terms, and runs the
-engagement. The artifacts the firm produces are then integrated into
-the repository as a separate ship.
-
-This document is therefore a TRANSACTION between the agent and the
+This document is therefore a transaction between the agent and the
 operator: agent ships the spec; operator runs the engagement; results
 flow back as a future composite ship.
 
@@ -67,15 +62,14 @@ identity record
 ### TA-3: State-level adversary
 **Capability:** sophisticated tradecraft; supply-chain reach; possible
 HSM access; persistence across patches
-**Goal:** mass-issuance of forged tokens; long-term persistence in
-the cognitive layer (poisoning HYDRA findings, planting Sanctum
-prompt-injection seeds for re-influence on future agent reads)
+**Goal:** mass-issuance of forged tokens; long-term undetected
+persistence in the deployed stack
 **Success criteria:** undetected presence for >7 days
 
 The grey-box phase shares this document and the threat model
-(`DEVNOTES/threat-model.md` + `DEVNOTES/threat-model-cognitive.md`)
-with the red team — they should specifically attempt to bypass the
-documented controls, not just probe broadly.
+(`DEVNOTES/threat-model.md`) with the red team. They should
+specifically attempt to bypass the documented controls, not just
+probe broadly.
 
 ---
 
@@ -101,16 +95,6 @@ documented controls, not just probe broadly.
   `AuditAccessLog`)
 - The migration framework (v8.95) — attempt to roll back to a
   pre-WebAuthn schema and bypass the v8.97 enforcement
-
-### Cognitive layer
-- The Sanctum protocol (`scripts/ai-sanctum.sh`) — attempt to plant
-  prompt-injection seeds that influence future agent reads
-- HYDRA watchers — attempt to write malicious findings to the
-  CorrelationEngine that affect the next brief
-- Mycelium substrate — attempt to write biased pheromones that skew
-  the swarm's emitted advisories
-- The Architect + Anti-Architect persona scripts — attempt to bypass
-  the dissent emission
 
 ### Operational layer
 - The launcher (`polaris_mac_launch.sh`)
@@ -165,41 +149,39 @@ The engagement is successful if:
 
 ---
 
-## Anti-pattern checklist for the engagement (Anti-Architect)
+## Failure modes for the engagement itself
 
-The Anti-Architect surfaces these failure modes for the engagement
-itself — operator should watch for them:
+The operator should watch for these failure modes in the engagement:
 
-- **AP8 (larping):** the engaging firm produces a glossy report with
-  no concrete findings. Refuse to pay the invoice for vibe-based
+- **Vibe-based reporting:** the engaging firm produces a glossy report
+  with no concrete findings. Refuse to pay the invoice for vibe-based
   reports; insist on per-finding evidence.
-- **AP3 (proposal-as-self-elaboration):** the firm proposes building
-  a "comprehensive security framework" as the deliverable. Refuse —
-  Polaris already has its frameworks (HYDRA, Sanctum, Anti-Architect).
-  The deliverable is findings, not frameworks.
-- **AP7 (premature abstraction):** the firm wants to "shift left" with
-  threat-modeling workshops. Polaris's threat models exist
-  (`DEVNOTES/threat-model*.md`). The engagement is RED-TEAM, not
+- **Framework-building as deliverable:** the firm proposes building a
+  "comprehensive security framework" instead of finding vulnerabilities.
+  Refuse. The deliverable is findings, not frameworks.
+- **Threat-modeling instead of red-teaming:** the firm wants to "shift
+  left" with threat-modeling workshops. Polaris's threat model already
+  exists (`DEVNOTES/threat-model.md`). The engagement is red-team, not
   threat-modeling-consulting.
-- **AP6 (proceed-without-reading):** the firm starts probing without
-  reading `MISSION.md` and the threat models. Insist on the grey-box
+- **Proceeding without reading:** the firm starts probing without
+  reading `MISSION.md` and the threat model. Insist on the grey-box
   phase including a confirmed-read of the constitutional documents.
 
 ---
 
 ## Vocation alignment
 
-ANTI-COERCION-INFRASTRUCTURE. External adversarial review hardens
-all 12 anti-coercion surfaces by surfacing weaknesses the internal
-cognitive layer cannot see (the system cannot fully audit itself —
-that is the operative argument for an external red team).
+ANTI-COERCION-INFRASTRUCTURE. External adversarial review hardens the
+anti-coercion surfaces by surfacing weaknesses the system cannot find
+by auditing itself. That a system cannot fully audit itself is the
+operative argument for an external red team.
 
 The engagement specifically should attempt to demonstrate a coercion
 pathway: TA-2 (coerced insider) is the threat actor most directly
 aligned with the vocation. Findings that show silent insider actions
 are precisely what the AuditAccessLog (v9.20) was built to make
-visible; the red team is the empirical test of whether the AoR is
-sufficient.
+visible; the red team is the empirical test of whether the
+audit-of-record is sufficient.
 
 ---
 
@@ -228,11 +210,11 @@ If/when the operator commissions an engagement against this scope and
 returns findings, the agent commits to:
 
 1. Open a Sanctum per Critical or High finding
-2. Architect + Anti-Architect debate each remediation
-3. Ship under the SECURITY.md severity timeline
-4. Document in `CHANGELOG.md` + `DEVNOTES/known-gotchas.md`
-5. Add structural invariants where applicable (regression coverage)
-6. Update the threat model documents to absorb the findings
+2. Ship under the SECURITY.md severity timeline
+3. Document in `CHANGELOG.md` + `DEVNOTES/known-gotchas.md`
+4. Add a `check_*` in `polaris_checks/` where applicable (regression
+   coverage)
+5. Update the threat model document to absorb the findings
 
 ---
 

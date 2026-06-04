@@ -108,9 +108,8 @@ Out-bound: the host must reach Let's Encrypt
 - [ ] Monitoring endpoint configured (a place to receive alerts —
       PagerDuty / OpsGenie / a simple cron-curl)
 - [ ] Admin operator email known (for the initial seeded account)
-- [ ] G27 (TLS), G28 (no secrets in env), G29 (structured /api/health)
-      verified by `pytest polaris_web/test_structural_invariants.py
-      -k "Arc_B"`
+- [ ] Production invariants (TLS, no secrets in env, structured
+      /api/health) verified by `python3 -m polaris_checks.run`
 - [ ] Read `SECURITY.md` once
 
 ---
@@ -255,29 +254,21 @@ password: (printed once during ./scripts/polaris-deploy.sh prod)
 | Audit-log archive | Yearly | `./scripts/polaris-archive.sh --cutoff-days=1825` (C1-preserving export at the 5y retention floor) |
 | Verify archive integrity | Quarterly | `./scripts/polaris-archive.sh --verify-latest --dest=DIR` |
 | Audit-log purge (Phase 2b) | Operator-driven, after archive verify | `./scripts/polaris-purge.sh --archive=TARBALL --actor-user-id=N` |
-| **Pheromone archive** (v9.07) | **Quarterly** | `./scripts/polaris-pheromone-archive.sh --cutoff='30 days ago'` — C1-preserving export of Pheromone rows older than cutoff; 30-day default per Sanctum §IV.1 |
-| **Verify Pheromone archive** (v9.07) | **Quarterly** | `./scripts/polaris-pheromone-archive.sh --verify-latest` |
-| **Pheromone purge** (v9.07 / D5-impl) | **Yearly**, after archive verify | `./scripts/polaris-pheromone-purge.sh --archive=TARBALL --cutoff=ISO --actor-user-id=N` — calls uc_pheromone_archive_purge() inside a transaction; G33 protected |
-| Run Mycelium **commanders** | **Every 6h (cron)** | `python3 -m polaris_swarm.colony --swarm` — deposits high-intensity pheromones (33 commanders); HYDRA ant_colony watcher ALERTs when 72h silent. v9.01 cadence change; v9.02 correction (was misnamed); v9.03 split into commander + soldier rows. |
-| Run Mycelium **soldiers** | **Every 30 min for 60s (cron)** | `python3 -m polaris_swarm.colony --soldiers --duration 60` — v9.03 hybrid-swarm soldier tier (8 lightweight classes); aggregated deposits (~10-20 per cycle batch); short half-life (1h). Sanctum 2026-05-14-hybrid-swarm-mirai-pattern. |
-| Read the bloom heatmap | Daily | `./scripts/ai-swarm-bloom.sh` — operator-facing drift surface (read-only) |
 | **Certificate transparency check** | **Daily (cron)** | `./scripts/polaris-ct-monitor.sh` — alerts on unexpected cert issuance for ${POLARIS_DOMAIN}; see [Certificate transparency monitoring](#certificate-transparency-monitoring-v901) below |
 | Audit-log rotation | Yearly (cron) | `./scripts/polaris-rotate-logs.sh --actor-user-id=N` — wraps archive + verify + purge in one cron-ready pipeline |
 | Operator onboarding | As needed | `./scripts/polaris-create-operator.sh --username NAME --role admin\|operator\|auditor --password-file PATH` — argon2id-hashed AppUser + AuthAuditLog entry |
-| Treasury health check | Weekly | `./scripts/ai-treasury-report.sh` — penalty:reward ratio + class distribution |
 | Scrape `/metrics` | Continuous (Prometheus) | `curl https://${POLARIS_DOMAIN}/metrics` — Prometheus text-format exposition |
 | Rotate `POLARIS_SECRET_KEY` | 180 days | `./scripts/polaris-rotate-secret.sh polaris_secret_key` |
 | Rotate DB password | 180 days | `./scripts/polaris-rotate-secret.sh polaris_db_password` |
 | OS security updates | Monthly | distro-specific (`apt upgrade` / `dnf update`) |
 | Docker image refresh | Monthly | `./scripts/polaris-deploy.sh prod` |
 | Review AuthAuditLog for anomalies | Weekly | see [Audit review](#audit-review) |
-| Review TrajectoryWatcher signals | Weekly | `./scripts/ai-hydra.sh` |
 
 ### Audit review
 
 Polaris's audit-of-record discipline (v8.20) records every
-state-changing event in 9 schema tables + 3 filesystem rolls. Review
-cadence:
+state-changing event in append-only schema tables plus the
+filesystem audit-of-record (sanctum/, journal/). Review cadence:
 
 ```bash
 # Weekly: failed-login surface
@@ -416,7 +407,7 @@ v8.18).
 Polaris ships a custom polaris-native migration framework
 (Position C of `sanctum/2026-05-14-schema-migration-framework.md`,
 DECIDED 2026-05-14). State lives in the `schema_version` table
-(13th audit-of-record instance) and migration files are
+(an append-only audit-of-record table) and migration files are
 hand-written SQL pairs under `polaris_sql/migrations/`.
 
 **What it is:**
@@ -588,72 +579,6 @@ operator's DNS.
 | 5    | **Anomaly** — UNKNOWN cert detected; investigate immediately |
 | 6    | Malformed allowlist file |
 
-### Mycelium swarm cron schedule (v9.01)
-
-The Mycelium swarm deposits pheromones (drift findings) into the
-`Pheromone` table. The HYDRA `ant_colony_watcher` ALERTs when no
-pheromones land in a 72-hour window — operationally that means
-"the swarm isn't running."
-
-Pre-v9.01 the swarm was operator-driven (manual `ai-swarm-bloom.sh`
-runs). v9.01 adds a cron schedule so the 72h ALERT never trips
-under normal operation:
-
-```cron
-# /etc/cron.d/polaris-swarm
-# v9.03 hybrid swarm cadence:
-#
-# Commanders (heavyweight, identity-bearing): every 6h.
-# ~30-90s per run; deposits 100-200 high-intensity pheromones.
-0 */6 * * * polaris cd /opt/polaris && \
-    POLARIS_DB_HOST=localhost POLARIS_DB_NAME=polaris POLARIS_DB_USER=polaris_app \
-    polaris_web/venv/bin/python3 -m polaris_swarm.colony --swarm \
-    >> /var/log/polaris/swarm.log 2>&1
-
-# Soldiers (lightweight, disposable, aggregated): every 30 min for 60s.
-# Closes the gap between commander runs; ensures HYDRA ant_colony
-# ALERT never trips. ~10-20 aggregated deposits per cycle batch
-# (low-intensity, short half-life). v9.03 / Sanctum 2026-05-14-hybrid-
-# swarm-mirai-pattern.
-*/30 * * * * polaris cd /opt/polaris && \
-    POLARIS_DB_HOST=localhost POLARIS_DB_NAME=polaris POLARIS_DB_USER=polaris_app \
-    polaris_web/venv/bin/python3 -m polaris_swarm.colony --soldiers --duration 60 \
-    >> /var/log/polaris/soldier-swarm.log 2>&1
-```
-
-**Operational notes:**
-
-- The cron user (`polaris` above) needs read access to the Polaris
-  source tree + write access to the database (the swarm INSERTs
-  into `Pheromone`)
-- 4 runs/day × ~150 pheromones/run = ~600 pheromones/day; the
-  table grows ~220K rows/year
-- Use `./scripts/polaris-rotate-logs.sh` to archive + purge old
-  pheromones quarterly (or extend the cutoff to keep more
-  history if the operator wants longitudinal swarm-behavior
-  analysis)
-- The swarm is NOT in the production hot path — it can fail
-  silently without affecting user-facing /api/* requests; the
-  HYDRA ALERT is the safety net that surfaces persistent failures
-
-**Verify the cron is healthy:**
-
-```bash
-# Should show pheromones deposited within the last 6 hours
-psql -d polaris -c "
-    SELECT
-        date_trunc('hour', deposited_at) AS hour,
-        count(*) AS pheromones
-    FROM Pheromone
-    WHERE deposited_at > now() - interval '24 hours'
-    GROUP BY 1
-    ORDER BY 1 DESC LIMIT 12;
-"
-
-# HYDRA should report 0 ALERT for ant_colony
-./scripts/ai-hydra.sh | grep -A1 ant_colony
-```
-
 ---
 
 ## Backup & restore
@@ -664,8 +589,6 @@ psql -d polaris -c "
 containing every durable component:
 
 - `pg_dump` of the Polaris database (custom format, gzipped)
-- `treasury-roll.json` (denarii ledger, Arc F)
-- `census-roll.json` (citizen census, Arc E)
 - `sanctum/` directory (full; filesystem audit-of-record)
 - `journal/` directory (full; episodic memory)
 - `meta/sanctum-index.md` (current computed index)
@@ -699,9 +622,8 @@ Retention policy:
 `scripts/polaris-restore.sh` (v8.81) is the scripted counterpart to
 `polaris-backup.sh`. It verifies every component's SHA-256 hash
 against the in-band `MANIFEST.json`, then restores PostgreSQL +
-filesystem audit-of-record (sanctum/, journal/, treasury-roll,
-census-roll). It refuses to clobber a non-empty target database
-without `--force`.
+filesystem audit-of-record (sanctum/, journal/). It refuses to
+clobber a non-empty target database without `--force`.
 
 ```bash
 # Standard path — restore into a fresh database
@@ -845,8 +767,8 @@ itself is audit-of-record).
 |---|---|---|
 | DELETE on protected audit tables | rejected (insufficient_privilege) | permitted |
 | UPDATE on protected audit tables | rejected | rejected |
-| DELETE on LifecycleArchiveCheckpoint | rejected (G30) | rejected (G30 — no carve-out at this layer) |
-| UPDATE on LifecycleArchiveCheckpoint | rejected (G30) | rejected (G30) |
+| DELETE on LifecycleArchiveCheckpoint | rejected | rejected (no carve-out at this layer) |
+| UPDATE on LifecycleArchiveCheckpoint | rejected | rejected |
 
 `SET LOCAL polaris.purge_in_progress` is transaction-scoped; if
 the procedure rolls back, the deletes and the checkpoint roll
@@ -859,73 +781,6 @@ v8.87 (deferred to Phase 2c if storage pressure justifies):
 `AnchorBatch` (FK from BlockchainAnchor); `AgencyTrustAttestation`
 + `DuressEvent` (separate immutability triggers; pattern can be
 extended to those when needed).
-
----
-
-### Pheromone archive + purge (v9.07 / D5-impl)
-
-**Source:** Sanctum
-[`sanctum/2026-05-15-pheromone-rotation.md`](../../sanctum/2026-05-15-pheromone-rotation.md)
-Position A — mirror v8.84+v8.87 framework for the Pheromone table
-(the v8.62 Mycelium swarm substrate; append-only AoR with operator-
-controlled archive+purge, outside the canonical-12 constitutional
-set). Polaris-self-roadmap-2026-05-14 item D5 surfaced the
-~50K rows/day growth projection.
-
-**Why a separate carve-out from audit-log:** Pheromone uses its
-**own GUC** (`polaris.pheromone_purge_in_progress`), distinct from
-the audit-log GUC (`polaris.purge_in_progress`). This prevents
-cross-contamination — opening the audit-log carve-out cannot
-accidentally allow Pheromone DELETEs.
-
-**G-guards:**
-- **G32** (parallel to G30) — `LifecyclePheromoneCheckpoint` is
-  strictly append-only. NO GUC carve-out at the checkpoint layer.
-- **G33** (parallel to G31) — `uc_pheromone_archive_purge()` is the
-  ONLY sanctioned DELETE path on Pheromone.
-
-**Operator workflow (two-step):**
-
-```bash
-# Step 1: archive — exports rows older than cutoff to a manifest-hashed
-#                   tarball. C1-preserving (SELECT only; never DELETE).
-./scripts/polaris-pheromone-archive.sh \
-    --cutoff='30 days ago' \
-    --out-dir=./archives/pheromone
-
-# (Optional) verify the latest archive's SHA-256
-./scripts/polaris-pheromone-archive.sh --verify-latest
-
-# Step 2: purge — calls uc_pheromone_archive_purge() inside a tx;
-#                  validates SHA-256 against manifest before issuing
-#                  DELETE; writes LifecyclePheromoneCheckpoint row;
-#                  carve-out GUC evaporates at COMMIT.
-./scripts/polaris-pheromone-purge.sh \
-    --archive=./archives/pheromone/polaris-pheromone-archive-<TS>-<N>rows.tar.gz \
-    --cutoff='2026-04-15 00:00:00+00' \
-    --actor-user-id=1
-```
-
-**Adversarial guarantees** (verified by D5-impl drill 2026-05-15):
-- Direct `DELETE FROM Pheromone` (raw, outside procedure) → REJECTED
-  with `insufficient_privilege`
-- Direct `UPDATE Pheromone` → REJECTED (no carve-out for UPDATE)
-- Direct `DELETE FROM LifecyclePheromoneCheckpoint` → REJECTED (G32:
-  no carve-out at checkpoint layer)
-- After `COMMIT` of a successful purge, raw `DELETE` immediately
-  rejected again — the GUC is `SET LOCAL`, evaporates at txn boundary
-- `uc_pheromone_archive_purge()` rejects: cutoff in future,
-  malformed SHA-256, non-existent actor, non-admin actor
-
-**Recommended cadence:** quarterly archive (3 months); yearly purge
-(operator-driven after archive verify). Default cutoff 30 days
-preserves live data for HYDRA's 6h/24h pheromone-context windows
-+ comfortable margin.
-
-**Non-repudiation chain:** the `LifecyclePheromoneCheckpoint` row +
-the offline archive tarball together reconstitute every purged row.
-If the operator loses the tarball, the checkpoint row still proves
-the purge happened + the SHA-256 of what should be in the tarball.
 
 ---
 
@@ -1146,8 +1001,8 @@ Overall status:
 - `unhealthy` — at least one critical check is unhealthy (db
   unreachable, disk full); HTTP 503
 
-This contract is structurally enforced by G29 in
-`test_structural_invariants.py`.
+This contract is enforced by the `/api/health` behavior test in
+`polaris_web/test_app.py`.
 
 ### Recommended alerts
 
@@ -1202,7 +1057,6 @@ scrape_configs:
 | `polaris_request_latency_seconds` | histogram | route | Per-route request latency |
 | `polaris_verifications_total` | counter | disclosure_level | VerificationEvent rows (incremented at insert time — Phase 2.5 wiring) |
 | `polaris_db_query_latency_seconds` | histogram | — | DB round-trip (sampled on `/api/health` probes) |
-| `polaris_pheromones_recent` | gauge | — | Pheromone deposits in last 72h (Mycelium liveness — pairs with HYDRA ant_colony watcher) |
 | `polaris_app_info` | gauge | version | App metadata; value always 1; the label carries the data |
 
 **Alert example** (Prometheus alerting rule):
@@ -1211,12 +1065,6 @@ scrape_configs:
 groups:
   - name: polaris
     rules:
-      - alert: PolarisSwarmDormant
-        expr: polaris_pheromones_recent == 0
-        for: 72h
-        annotations:
-          summary: "Mycelium swarm has not deposited in 72h"
-          runbook: "Check scripts/ai-swarm-bloom.sh cron + HYDRA ant_colony watcher"
       - alert: PolarisHigh5xx
         expr: |
           sum(rate(polaris_requests_total{status=~"5.."}[5m]))
@@ -1451,7 +1299,7 @@ sudo systemctl start polaris-app
 
    ```bash
    docker compose -f polaris_web/docker-compose.prod.yml run --rm \
-     app pytest test_structural_invariants.py -k "TestHardConstraints"
+     app python3 -m unittest test_check_constraints
    ```
 
    Each C1-C10 invariant should pass. Any failure ⇒ schema has
@@ -1702,14 +1550,12 @@ If you ever need to retire a Polaris instance:
 
 ## Pre-commit hooks (v9.06)
 
-**Source:** v9.06 / Wave 2 / G1 ships `.pre-commit-config.yaml` at
-the repo root.
+**Source:** `.pre-commit-config.yaml` at the repo root.
 
-The polaris-self-roadmap-2026-05-14 macro-to-micro scan caught
-multiple drift classes that would have been prevented by pre-commit
-hooks: venv-pollution in ant walkers, stale POLARIS_VERSION, the
-F5-soldier-exemption violation. v9.06 closes that gap with a
-local-hooks pre-commit configuration that runs before every push.
+A local-hooks pre-commit configuration runs a fast subset of the
+invariant checks before every push, catching the highest-impact
+drifts (broken links, secrets in the prod compose, stale version
+strings) before code leaves the local clone.
 
 ### Install (one-time per clone)
 
@@ -1726,9 +1572,7 @@ pre-commit install
 | Hook | Speed | What it catches |
 |------|-------|-----------------|
 | ai-link-check | ~2s | Broken Markdown / cross-ref links |
-| ai-meta | ~3s | Cognitive-layer self-monitoring drift (CM constraint) |
-| ai-coherence | ~5s | Structural ↔ codebase coherence (larping detector) |
-| structural-invariants | ~25s | Full TestStructural… suite (only on .py/.sh/.sql/.md/.yml/.yaml changes) |
+| polaris-checks | ~5s | C1-C10 invariant layer (`python3 -m polaris_checks.run`) |
 | g28-no-sensitive-env-in-prod-compose | <1s | POLARIS_SECRET_KEY: literal in production compose |
 | em-dash-warn | <1s | Em-dash in own-prose docs (informational) |
 
@@ -1747,10 +1591,9 @@ impact drifts before code leaves the local clone.
 
 ### Why local-hooks (not third-party repos)
 
-Polaris is currently in a "git-or-no-git" Sanctum-class decision
-(roadmap C2 / Wave 3). Local hooks work whether or not the repo is
-git-initialized. Once C2 is decided, this configuration may add
-upstream `repos:` entries (ruff, black, etc. — at operator discretion).
+Local hooks work whether or not the repo is git-initialized. The
+configuration may add upstream `repos:` entries (ruff, black, etc.)
+at operator discretion.
 
 ---
 

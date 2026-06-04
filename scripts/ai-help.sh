@@ -1,12 +1,10 @@
 #!/bin/bash
 # =============================================================================
-# scripts/ai-help.sh — index of every ai-* script with one-line purpose
-# (v8.6; v8.37 ai-hydra; v8.52 ai-brain-map; v8.62 ai-swarm-bloom — current count: 39 scripts)
+# scripts/ai-help.sh — index of every ai-* dev script with one-line purpose
 #
-# Discoverability tool. The cognitive layer accumulated 39 scripts; without
-# this, the agent has to grep or open each to figure out which one does
-# what. This script reads the doc-comment block at the top of each ai-*.sh
-# (or test_implants.sh) and emits a sorted single-screen index.
+# Discoverability tool. Without this, the developer has to grep or open each
+# ai-*.sh to figure out which one does what. This script reads the doc-comment
+# block at the top of each ai-*.sh and emits a sorted single-screen index.
 #
 # Usage:
 #     scripts/ai-help.sh           # full table
@@ -85,7 +83,7 @@ if [ -n "$QUERY" ]; then
     # substring. Before this, `ai-help test` returned `ai-test-counts.sh`
     # because alphabetical order placed it first in the substring scan.
     target=""
-    for f in "$HERE"/ai-*.sh "$HERE"/test_implants.sh; do
+    for f in "$HERE"/ai-*.sh; do
         base="$(basename "$f")"
         case "$base" in
             "ai-$QUERY.sh"|"$QUERY.sh") target="$f"; break ;;
@@ -93,7 +91,7 @@ if [ -n "$QUERY" ]; then
     done
     # Fallback: substring match (preserves prior behavior for partial queries).
     if [ -z "$target" ]; then
-        for f in "$HERE"/ai-*.sh "$HERE"/test_implants.sh; do
+        for f in "$HERE"/ai-*.sh; do
             base="$(basename "$f")"
             case "$base" in
                 *"$QUERY"*) target="$f"; break ;;
@@ -114,15 +112,14 @@ fi
 # -----------------------------------------------------------------------------
 # Index mode — table of every script with its one-liner.
 # -----------------------------------------------------------------------------
-printf "${BOLD}═══ Polaris cognitive-layer scripts ═══${NC}\n\n"
+printf "${BOLD}=== Polaris ai-* dev scripts ===${NC}\n\n"
 
-# Groups (v8.10 — reorganized after 11-script Memory & introspection became unwieldy):
-#   prime / mission / status / propose / bootstrap         → onboarding + planning
-#   test / done / link-check / cache-bust / impact         → working + shipping
-#   where / recall / journal / reflect                     → memory + journaling
-#   pattern / lattice / adversary                          → cognitive lenses
-#   loop-check / coherence / coverage / test-counts / meta → diagnostics
-#   snapshot / context-digest / help / test_implants       → snapshots + meta
+# Groups:
+#   prime / mission / status / propose / bootstrap  -> onboarding + planning
+#   test / done / link-check / cache-bust           -> working + shipping
+#   where / recall / journal                        -> memory + journaling
+#   coverage / test-counts / authz-audit            -> diagnostics
+#   sanctum / snapshot / help                       -> records + meta
 
 print_group() {
     local name="$1"; shift
@@ -149,23 +146,15 @@ print_group "Onboarding & planning" \
     ai-prime.sh ai-mission.sh ai-status.sh ai-propose.sh ai-bootstrap.sh
 
 print_group "Working & shipping" \
-    ai-test.sh ai-done.sh ai-cache-bust.sh ai-link-check.sh ai-impact.sh
+    ai-test.sh ai-done.sh ai-cache-bust.sh ai-link-check.sh
 
 print_group "Memory & journaling" \
-    ai-where.sh ai-recall.sh ai-journal.sh ai-reflect.sh
-
-print_group "Cognitive lenses" \
-    ai-pattern.sh ai-lattice.sh ai-adversary.sh
+    ai-where.sh ai-recall.sh ai-journal.sh
 
 print_group "Diagnostics" \
-    ai-loop-check.sh ai-coherence.sh ai-coverage.sh ai-test-counts.sh ai-meta.sh \
-    ai-authz-audit.sh ai-watcher-coverage.sh ai-swarm-health.sh ai-swarm-validate.sh
+    ai-coverage.sh ai-test-counts.sh ai-authz-audit.sh
 
-print_group "Synthesis & reporting" \
-    ai-architect.sh ai-anti-architect.sh ai-sanctum.sh ai-hydra.sh ai-foresight.sh \
-    ai-swarm-bloom.sh ai-brain-map.sh ai-swarm-map.sh ai-dashboard.sh ai-treasury-report.sh
-
-print_group "Snapshots & meta" \
-    ai-snapshot.sh ai-context-digest.sh ai-help.sh test_implants.sh
+print_group "Records & meta" \
+    ai-sanctum.sh ai-snapshot.sh ai-help.sh
 
 printf "${DIM}Run \`ai-help.sh <name>\` (e.g. \`ai-help.sh prime\`) for a single script's full doc.${NC}\n"

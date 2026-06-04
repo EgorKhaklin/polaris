@@ -38,13 +38,13 @@ planning, etc.).
 
 | TSC | In Polaris's scope | Justification |
 |---|---|---|
-| **Security (Common Criteria)** | ✅ Mandatory | Required for any SOC 2 attestation. Polaris's C1-C10 + G1-G31 + audit-of-record discipline directly satisfies most CC controls. |
+| **Security (Common Criteria)** | ✅ Mandatory | Required for any SOC 2 attestation. Polaris's C1-C10 + audit-of-record discipline directly satisfies most CC controls. |
 | **Availability (A1)** | ✅ In-scope | Polaris is a service infrastructure component; downtime affects holders' ability to verify identity. DR runbook + drill cadence + RPO/RTO targets satisfy. |
 | **Confidentiality (C1)** | ✅ In-scope | Holder PII + biometric templates + token-bind data require confidentiality. C2 (privacy-preserving disclosure) + ZK-NULL + scrypt password hashing + KMS-backed secrets satisfy. |
 | **Processing Integrity (PI1)** | ⬜ Out-of-scope | Polaris's processing integrity (UC-1 through UC-12 stored procedures, append-only audit, SERIALIZABLE concurrency) is internally enforced; Processing Integrity TSC is about "data processed completely, accurately, timely, and authorized" which maps to operator-level workflows that wrap Polaris (claim-handling pipelines, agency-onboarding flows). The operator scopes PI separately. |
 | **Privacy (P1)** | ⬜ Out-of-scope | GDPR/CCPA/HIPAA compliance is operator-layer responsibility. Polaris provides primitives (right-to-be-forgotten via uc8_revoke_token + uc_archive_purge; data-minimization via C2; consent-bound disclosure via TokenSignature) but doesn't ship a complete Privacy program. The operator scopes Privacy on top of Polaris primitives. |
 
-**The scope above is the architect's recommended default.** Operators
+**The scope above is the recommended default.** Operators
 with stricter compliance requirements (e.g. HIPAA-Privacy, FedRAMP-PI)
 extend the scope by adding their organizational controls; this
 document covers the Polaris contribution.
@@ -71,8 +71,8 @@ the operator's governance, but the governance itself is operator-side.
 
 | Control | Polaris contribution | Evidence query |
 |---|---|---|
-| CC2.1 — Information quality | Schema CHECK constraints (~74 in 01_schema.sql) + structural-invariant test suite (882 tests) + ai-coherence cross-layer correspondence checks | `python3 -m unittest polaris_web.test_structural_invariants` (must report 882/882 OK); `./scripts/ai-coherence.sh` (must report STRUCTURE INTACT) |
-| CC2.2 — Internal communication of objectives + responsibilities | MISSION.md (C1-C10 + G1-G31); ROADMAP.md deployability checklist; meta/architect.md persona spec | `cat MISSION.md ROADMAP.md` (the two are public-readable; auditor inspects directly) |
+| CC2.1 — Information quality | Schema CHECK constraints (~74 in 01_schema.sql) + the C1-C10 invariant check layer (`polaris_checks/`) + the DB-backed product test suites | `python3 -m polaris_checks.run` (must report no FAIL); `cd polaris_web && python3 -m unittest test_check_constraints test_invariants_property` |
+| CC2.2 — Internal communication of objectives + responsibilities | MISSION.md (C1-C10 + the Vocation); ROADMAP.md deployability checklist; CLAUDE.md operator runbook | `cat MISSION.md ROADMAP.md` (the two are public-readable; auditor inspects directly) |
 | CC2.3 — External communication (customers, regulators) | docs/STORY.md (project narrative); docs/reference/API.md (HTTP API surface); docs/operator/* (operator runbooks) | `ls docs/` (auditor inspects directly) |
 
 ---
@@ -82,8 +82,8 @@ the operator's governance, but the governance itself is operator-side.
 | Control | Polaris contribution | Evidence query |
 |---|---|---|
 | CC3.1 — Specifies suitable objectives | MISSION.md C1-C10 (the 10 hard constraints); each constraint has documented threat model | `cat MISSION.md DEVNOTES/threat-model.md` |
-| CC3.2 — Identifies + analyzes risk | DEVNOTES/threat-model.md (STRIDE-categorized); v8.97 added § T-S4 (stolen admin password); architect adversary walks via `./scripts/ai-adversary.sh` | `./scripts/ai-adversary.sh` (machine-readable) + `cat DEVNOTES/threat-model.md` |
-| CC3.3 — Considers fraud potential | Civitas + Mycelium swarm watch for behavioral anomalies; AnchorBatch + Merkle-tree provides tamper-evidence | `SELECT count(*) FROM AuthAuditLog WHERE event_type='WEBAUTHN_ASSERTION_FAILED' AND event_timestamp > now() - interval '30 days'` |
+| CC3.2 — Identifies + analyzes risk | DEVNOTES/threat-model.md (STRIDE-categorized); v8.97 added § T-S4 (stolen admin password) | `cat DEVNOTES/threat-model.md` |
+| CC3.3 — Considers fraud potential | AuthAuditLog records authentication anomalies (failed WebAuthn assertions, lockouts); AnchorBatch + Merkle-tree provides tamper-evidence | `SELECT count(*) FROM AuthAuditLog WHERE event_type='WEBAUTHN_ASSERTION_FAILED' AND event_timestamp > now() - interval '30 days'` |
 | CC3.4 — Identifies + assesses change | Schema migration framework (v8.95) provides per-change SHA-256 + actor-user-id + reversibility evidence | `SELECT name, event_type, occurred_at, actor_user_id, file_sha256 FROM schema_version ORDER BY occurred_at DESC LIMIT 50` |
 
 ---
@@ -92,7 +92,7 @@ the operator's governance, but the governance itself is operator-side.
 
 | Control | Polaris contribution | Evidence query |
 |---|---|---|
-| CC4.1 — Selects, develops, performs evaluations | HYDRA watcher synthesis (`./scripts/ai-hydra.sh`); Mycelium swarm bloom (`./scripts/ai-swarm-bloom.sh`); ai-coherence; ai-meta. Quarterly drill cadence (DR.md § 5). | `./scripts/ai-hydra.sh > evidence/hydra-Q$(date +%q)-$(date +%Y).log` |
+| CC4.1 — Selects, develops, performs evaluations | The C1-C10 invariant check layer (`python3 -m polaris_checks.run`) gates CI on any FAIL; pre-ship gate (`./scripts/ai-done.sh`); quarterly drill cadence (DR.md § 5). | `python3 -m polaris_checks.run > evidence/checks-Q$(date +%q)-$(date +%Y).log` |
 | CC4.2 — Communicates evaluation results | journal/<date>.md daily session log; meta/sanctum-index.md strategic decisions; CHANGELOG.md release log | `ls journal/ \| tail -30` (auditor samples 30 days of operator activity) |
 
 ---
@@ -101,8 +101,8 @@ the operator's governance, but the governance itself is operator-side.
 
 | Control | Polaris contribution | Evidence query |
 |---|---|---|
-| CC5.1 — Selects + develops control activities | C1-C10 are the load-bearing controls; each has structural-invariant test coverage (62 schema-CHECK tests + 909 structural tests + Hypothesis property tests) | `cat MISSION.md \| grep -E "^### C[0-9]"` |
-| CC5.2 — Selects + develops controls over technology | docker-compose.prod.yml + Caddyfile (TLS via Let's Encrypt, HSTS, security headers per G27); WebAuthn-MFA (v8.97); rate limiter (R8-2) | `docker compose -f polaris_web/docker-compose.prod.yml config` |
+| CC5.1 — Selects + develops control activities | C1-C10 are the load-bearing controls; each has a `check_*` in `polaris_checks/` with a detection test, plus schema-CHECK and Hypothesis property tests in `polaris_web/` | `cat MISSION.md \| grep -E "^### C[0-9]"` |
+| CC5.2 — Selects + develops controls over technology | docker-compose.prod.yml + Caddyfile (TLS via Let's Encrypt, HSTS, security headers); WebAuthn-MFA (v8.97); rate limiter (R8-2) | `docker compose -f polaris_web/docker-compose.prod.yml config` |
 | CC5.3 — Deploys via policies + procedures | scripts/polaris-deploy.sh (idempotent); scripts/polaris-migrate.sh (audited schema changes); scripts/polaris-create-operator.sh (audited account creation) | `ls scripts/polaris-*.sh \| wc -l` |
 
 ---
@@ -114,13 +114,13 @@ land. **The auditor will spend most of their time here.**
 
 | Control | Polaris contribution | Evidence query |
 |---|---|---|
-| CC6.1 — Logical access security software, infrastructure, architectures | Caddy TLS edge (G27) + Docker network isolation + polaris_app DB role with limited grants (09_grants.sql) + WebAuthn-MFA for admin (v8.97) | `docker compose -f polaris_web/docker-compose.prod.yml config \| grep -A2 networks` + `SELECT rolname, rolsuper, rolcreatedb FROM pg_roles WHERE rolname LIKE 'polaris%'` |
+| CC6.1 — Logical access security software, infrastructure, architectures | Caddy TLS edge + Docker network isolation + polaris_app DB role with limited grants (09_grants.sql) + WebAuthn-MFA for admin (v8.97) | `docker compose -f polaris_web/docker-compose.prod.yml config \| grep -A2 networks` + `SELECT rolname, rolsuper, rolcreatedb FROM pg_roles WHERE rolname LIKE 'polaris%'` |
 | CC6.2 — Logical access — authorization, registration | scripts/polaris-create-operator.sh + AuthAuditLog ACCOUNT_CREATED entry in same txn | `SELECT event_timestamp, username, detail FROM AuthAuditLog WHERE event_type='ACCOUNT_CREATED' ORDER BY event_timestamp` |
 | CC6.3 — Logical access — modification + removal | UPDATE AppUser SET is_active=FALSE (deactivation; preserves audit trail vs DELETE); WebAuthn credential deregister via `/auth/webauthn/credentials/<id>/delete` | `SELECT username, is_active FROM AppUser` + `SELECT event_timestamp, username, detail FROM AuthAuditLog WHERE event_type='WEBAUTHN_DEREGISTERED'` |
 | CC6.4 — Physical access controls | n/a Polaris (physical security is operator-side; cloud provider's data center handles for cloud deployments) | (operator provides) |
 | CC6.5 — Logical and physical protections — disposal | uc_archive_purge() with LifecycleArchiveCheckpoint (v8.87 carve-out) for audit-class data; pgbackrest backup retention policies for operational data | `SELECT * FROM LifecycleArchiveCheckpoint ORDER BY purged_at DESC LIMIT 10` |
-| CC6.6 — Logical access — boundary protections | Caddyfile rate limit (200 req/min/IP, G27) + per-IP token bucket (R8-2) + CSP `script-src 'self'` (C5) + CSRF (form + X-CSRFToken header) | `curl -sI https://${POLARIS_DOMAIN} \| grep -E "Strict-Transport-Security\|Content-Security-Policy\|X-Frame-Options"` |
-| CC6.7 — Restricted to authorized users | @login_required + @require_role decorators (51 + 25 occurrences in app.py); structural invariants enforce coverage | `grep -c "@login_required\|@require_role" polaris_web/app.py` |
+| CC6.6 — Logical access — boundary protections | Caddyfile rate limit (200 req/min/IP) + per-IP token bucket (R8-2) + CSP `script-src 'self'` (C5) + CSRF (form + X-CSRFToken header) | `curl -sI https://${POLARIS_DOMAIN} \| grep -E "Strict-Transport-Security\|Content-Security-Policy\|X-Frame-Options"` |
+| CC6.7 — Restricted to authorized users | @login_required + @require_role decorators (51 + 25 occurrences in app.py); `polaris_checks/` and the `polaris_web/` test suites enforce coverage | `grep -c "@login_required\|@require_role" polaris_web/app.py` |
 | CC6.8 — Information sensitivity classification | C2 (privacy-preserving disclosure: ZK-NULL / partial / full); chk_disclosure_token_consistency CHECK constraint enforces | `SELECT count(*), disclosure_level FROM VerificationEvent GROUP BY disclosure_level` |
 
 ---
@@ -129,9 +129,9 @@ land. **The auditor will spend most of their time here.**
 
 | Control | Polaris contribution | Evidence query |
 |---|---|---|
-| CC7.1 — Detection of vulnerabilities | Annual pen-test cycle (PENTEST.md); structural-invariant test suite catches drift; CT monitoring (v9.01 polaris-ct-monitor.sh) | `cat docs/operator/PENTEST.md` + `./scripts/polaris-ct-monitor.sh --check ${POLARIS_DOMAIN}` |
-| CC7.2 — Monitoring of system components | /api/health (G29 structured) + Prometheus /metrics (v8.93) + HYDRA watchers + Mycelium swarm | `curl -sf https://${POLARIS_DOMAIN}/api/health \| jq .checks` + `curl -sf https://${POLARIS_DOMAIN}/metrics \| head -20` |
-| CC7.3 — Detected anomalies are evaluated | HYDRA findings written to journal; SEV-1/SEV-2 trigger DR.md § 6 on-call playbook | `ls journal/ \| grep -i incident \| head -10` |
+| CC7.1 — Detection of vulnerabilities | Annual pen-test cycle (PENTEST.md); the C1-C10 check layer catches drift; CT monitoring (v9.01 polaris-ct-monitor.sh) | `cat docs/operator/PENTEST.md` + `./scripts/polaris-ct-monitor.sh --check ${POLARIS_DOMAIN}` |
+| CC7.2 — Monitoring of system components | /api/health (structured JSON) + Prometheus /metrics (v8.93) | `curl -sf https://${POLARIS_DOMAIN}/api/health \| jq .checks` + `curl -sf https://${POLARIS_DOMAIN}/metrics \| head -20` |
+| CC7.3 — Detected anomalies are evaluated | Findings written to journal; SEV-1/SEV-2 trigger DR.md § 6 on-call playbook | `ls journal/ \| grep -i incident \| head -10` |
 | CC7.4 — Incident response procedures | DR.md § 4 (procedures by failure class); § 6 on-call playbook; § 8 post-incident review template | `cat docs/operator/DR.md` (auditor inspects) |
 | CC7.5 — Recovery from incidents | DR.md § 4 procedures; quarterly drill cadence (§ 5); preventive-actions tracking (§ 7.4 template) | `ls journal/ \| grep dr-drill \| tail -8` (last 2 years of quarterly drills) |
 
@@ -158,7 +158,7 @@ land. **The auditor will spend most of their time here.**
 
 | Control | Polaris contribution | Evidence query |
 |---|---|---|
-| A1.1 — System availability monitored | /api/health + Prometheus /metrics + alerting rules (PolarisHigh5xx, PolarisSwarmDormant) | `curl -sf https://${POLARIS_DOMAIN}/metrics \| grep polaris_app_info` |
+| A1.1 — System availability monitored | /api/health + Prometheus /metrics + alerting rules (PolarisHigh5xx) | `curl -sf https://${POLARIS_DOMAIN}/metrics \| grep polaris_app_info` |
 | A1.2 — Backup + recovery procedures | DR.md § 4 (procedures); polaris-backup.sh + polaris-restore.sh; pgbackrest WAL archive | (see CC7 evidence + drill journal entries) |
 | A1.3 — Recovery testing | DR.md § 5 quarterly drill cadence; logged in `journal/<date>-dr-drill-<class>.md` | `ls journal/ \| grep dr-drill` |
 

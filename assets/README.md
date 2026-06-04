@@ -1,8 +1,7 @@
 # assets/ — branding + visual identity
 
 Logos, icons, and other visual artifacts that aren't code or
-documentation. Referenced from [`README.md`](../README.md) and
-the rendered brain map.
+documentation. Referenced from [`README.md`](../README.md).
 
 ---
 
@@ -26,8 +25,7 @@ the rendered brain map.
 
 ## What this directory is NOT
 
-- Not generated artifacts (e.g., the brain map renders to
-  [`../meta/brain-map/`](../meta/brain-map/))
+- Not generated or build artifacts
 - Not user-uploaded content (Polaris is server-side rendered;
   no user uploads)
 - Not the academic paper PDF (that's in [`../docs/paper/`](../docs/paper/))

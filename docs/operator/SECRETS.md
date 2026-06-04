@@ -227,7 +227,8 @@ If a secret was ever committed:
 The Polaris app code reads secrets from `/run/secrets/<name>`
 inside the container (Docker secrets file-mount), NOT from
 environment variables. This is enforced by `polaris_web/security.py`
-and verified by structural-invariant `test_no_secrets_in_compose_env`.
+and verified by the `polaris_checks/` invariant layer (no secret
+literals in the compose env).
 
 ### 4.3 What goes in logs
 
@@ -254,8 +255,7 @@ If you suspect a log line contains a secret:
 Backups created by `polaris-backup.sh` contain:
 
 - Postgres dump (includes hashed passwords for AppUser, but NOT
-  the `polaris_app` connection password — that's in `secrets/`)
-- `treasury-roll.json` + `census-roll.json` (no secrets)
+  the `polaris_app` connection password, which is in `secrets/`)
 - `sanctum/` + `journal/` (audit-of-record; review for any prose
   that named a secret)
 
@@ -290,18 +290,18 @@ If Polaris is deployed via CI/CD (GitHub Actions, GitLab CI, etc.):
 
 ## 5. Structural guarantees
 
-Polaris's security architecture provides several structural
-guarantees about secret handling. These are tested by the
-structural-invariant suite (`polaris_web/test_structural_invariants.py`):
+Polaris's security architecture provides several guarantees
+about secret handling. These are tested by the `polaris_checks/`
+invariant layer and the DB-backed suites in `polaris_web/`:
 
-### 5.1 G28 — No secrets in production env vars
+### 5.1 No secrets in production env vars
 
 `docker-compose.prod.yml` uses Docker secrets (file-mounted at
 `/run/secrets/<name>`) for all sensitive values. The compose
 file MUST NOT have `POLARIS_SECRET_KEY:` as an env-var literal.
 
-Enforced by: `test_no_secrets_in_compose_env` (added v8.77;
-G-guard G28).
+Enforced by: the `polaris_checks/` invariant layer (no secret
+literals in the compose env).
 
 ### 5.2 Session-secret rotation on every relaunch
 
@@ -317,20 +317,20 @@ unpredictably). Schedule rotations explicitly per §3.
 
 ### 5.3 No secret references in tests
 
-The structural-invariant suite scans test files for hardcoded
+The `polaris_checks/` invariant layer scans for hardcoded
 secrets (regex: `polaris_secret_key`, `polaris_dev_password`,
 etc.). Tests use ephemeral test-only credentials that never
 match production secret formats.
 
-### 5.4 Logged secrets are flagged by HYDRA
+### 5.4 Log scanning for leaked secrets
 
-The HYDRA SecurityWatcher (post-v8.39) scans recent log lines
-for patterns that look like leaked secrets (high-entropy 64+
-character hex strings outside of expected fields like
-`pheromone_id`). If found, fires `alert` severity.
+Operators should scan recent log lines for patterns that look
+like leaked secrets (high-entropy 64+ character hex strings
+outside of expected fields). If found, treat as an incident:
+rotate, audit, postmortem.
 
 This is detection, not prevention; the prevention is in the
-redaction logic. SecurityWatcher is the safety net.
+redaction logic (§4.3). The log scan is the safety net.
 
 ### 5.5 Audit-of-record never carries secrets
 
@@ -789,4 +789,4 @@ next SOC 2 audit cycle (CC8.1 — change management).
 - `DEVNOTES/threat-model.md` — STRIDE analysis
 - `MISSION.md` C-constraints — C1 (audit append-only), C5 (CSP), C7 (algorithm metadata) all touch secret-handling discipline
 - `sanctum/2026-05-13-launcher-fixes-v8-51-v8-56-v8-58.md` (if exists; or the relevant Sanctums) — historical record of session-secret rotation fixes
-- `meta/arc-b-production.md` — Arc B (production deployment) strategic record
+- `docs/operator/OPERATIONS.md` — production deployment runbook

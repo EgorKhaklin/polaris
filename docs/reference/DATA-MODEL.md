@@ -1,6 +1,6 @@
 # DATA-MODEL.md — schema reference
 
-The Polaris schema is **27 tables** organized into six functional groups:
+The Polaris schema is **26 tables** organized into six functional groups:
 
 - **Entities** (Individual, Agency, AppUser, CryptographicAlgorithm,
   VerificationContext) — the things that exist in the world
@@ -234,8 +234,7 @@ anchors carry both.
 
 Per-batch Merkle commitment of `BlockchainAnchor` leaves. One row per
 `close_anchor_batch` invocation. The Polaris schema is the off-chain
-audit-of-record (5th instance of the principle — see
-`DEVNOTES/audit-of-record.md`); append-only via
+audit-of-record (see `DEVNOTES/audit-of-record.md`); append-only via
 `trg_anchor_batch_append_only`. `committed_to_chain` /
 `external_chain` / `external_chain_tx` are operator-set future-fields
 for the eventual external-PQ-ledger integration. See
@@ -243,9 +242,8 @@ for the eventual external-PQ-ledger integration. See
 
 ### `DuressEvent` (M2-10 / R11-5, added v8.24)
 
-Compulsion-resistance audit-of-record (PDF §9.5). The **8th
-audit-of-record instance**. Each row is a detected duress signal —
-the holder typed their secondary duress code (a Werkzeug scrypt
+Compulsion-resistance audit-of-record (PDF §9.5). Each row is a
+detected duress signal: the holder typed their secondary duress code (a Werkzeug scrypt
 hash stored in `IdentityToken.duress_code_hash`) under coercion,
 and the verification flow silently fired this alert while the
 coercer-visible response page proceeded identically. Append-only
@@ -263,13 +261,12 @@ events. See `DEVNOTES/ships/duress-codes.md`.
 
 ### `TokenStateEpoch` (M2-1 / R10-1, added v8.23)
 
-Per-epoch Merkle commitment over the active-token set. The 7th
-audit-of-record instance. Append-only via
-`enforce_epoch_immutability` — once an epoch is closed, its
+Per-epoch Merkle commitment over the active-token set. Append-only via
+`enforce_epoch_immutability`: once an epoch is closed, its
 `merkle_root` cannot change because every ZK proof issued against it
 depends on its immutability. The `valid_until` field bounds proof
 validity; the verifier checks this before accepting a proof. The
-Merkle root is a Poseidon hash (not SHA3-256 — Poseidon is
+Merkle root is a Poseidon hash (not SHA3-256, because Poseidon is
 SNARK-friendly for the Plonky2 circuit). See `DEVNOTES/ships/zk-snark.md`.
 
 ### `TokenStateEpochLeaf` (M2-1 / R10-1, added v8.23)
@@ -290,7 +287,7 @@ verification is implicit and requires no row. NO transitive trust —
 the lookup is single-row, not transitive-closure (R1 audit
 refinement).
 
-The 6th audit-of-record instance — append-only via
+An audit-of-record: append-only via
 `enforce_attestation_immutability`, with bounded mutation limited to
 the `(revocation_date, revocation_reason)` pair (set together
 one-way, never un-set). Three CHECK constraints:
@@ -445,39 +442,7 @@ in v8.3 for server-side filter-chip support.
 
 ---
 
-## Mycelium substrate (Arc E / E1 / v8.62)
-
-An additional audit-of-record beyond the canonical 12 set (the
-canonical set is in `DEVNOTES/audit-of-record.md`). Cognitive-layer
-metadata; carries no identity-layer payloads.
-
-### `Pheromone`
-
-Mycelium's stigmergic substrate. Each row is one deposit by one ant
-onto one brain-map node. Append-only via `trg_pheromone_append_only`
-(rejects UPDATE and DELETE). Decay is computed at READ time via
-`effective_intensity = intensity * exp(-ln(2) * age_hours / half_life_hours)` —
-the table never stores decayed values, so the audit-of-record is
-preserved verbatim.
-
-Columns:
-
-- `pheromone_id` — SERIAL primary key
-- `deposited_at` — TIMESTAMP, default NOW()
-- `deposited_by` — ant module name (e.g. `ant_api_doc_coverage`)
-- `node_id` — brain-map node id (e.g. `route:/api/zk/verify`)
-- `intensity` — NUMERIC(6,3), `0 < x <= 10`, the raw deposit strength
-- `kind` — `drift` | `alert` | `info` | `curious`
-- `half_life_hours` — NUMERIC(6,2), default 24.0, max 720 (30 days)
-- `evidence` — JSONB, ant-specific payload (`{message, file, fix_hint, ...}`)
-- `seed` — BIGINT, ant's deterministic seed for replay
-
-Indexes: `idx_pheromone_recent` (deposited_at DESC),
-`idx_pheromone_by_node` (node_id, deposited_at DESC),
-`idx_pheromone_by_ant` (deposited_by, deposited_at DESC).
-
-Read it via `scripts/ai-swarm-bloom.sh`. Authorized by
-`sanctum/2026-05-13-arc-e-swarm-intelligence-opening.md`.
+## Archive audit tables
 
 ### `LifecycleArchiveCheckpoint` (Arc B Phase 2b / v8.87)
 
@@ -534,10 +499,8 @@ See `API.md` for the use case → procedure mapping.
 ## Operational support (not tables)
 
 Some operator concerns map to columns or views rather than
-dedicated tables. The structural invariant
-`test_no_phantom_tables_in_doc` catches doc-only mentions of
-tables that don't exist; this section names the affordances
-explicitly so operators don't go looking for the wrong shape.
+dedicated tables. This section names the affordances explicitly
+so operators don't go looking for the wrong shape.
 
 - **Biometric enrollment** is *not* a separate table. The
   binding *type* (FINGERPRINT, FACE, IRIS) lives as a column on
@@ -560,11 +523,11 @@ explicitly so operators don't go looking for the wrong shape.
 
 ---
 
-## Filesystem audit-of-record (Arc E / Arc F)
+## Filesystem audit-of-record
 
-Three filesystem-AoR instances complement the schema's 9. They
-live outside the database because they describe the cognitive
-layer's own state rather than the identity-system state.
+One filesystem-AoR instance complements the schema's. It lives
+outside the database because it records development-decision state
+rather than identity-system state.
 
 ### `sanctum/*.md` — Strategic-consultation sessions
 
@@ -579,18 +542,6 @@ PARKED`. Index: `meta/sanctum-index.md` (regenerated by
 **Audit invariant:** Sanctums are never deleted. A REJECTED or
 PARKED Sanctum stays on file as the record of the decision
 *not* to do something.
-
-### `polaris_swarm/civitas/treasury-roll.json` — Denarii ledger
-
-Arc F / v8.68. Every Treasury event (reward, penalty,
-multiplier-engagement) appended as a JSON record. The treasury
-in-memory state is reconstructed from this ledger on reload.
-
-### `polaris_swarm/civitas/census-roll.json` — Citizen registry
-
-Arc E / v8.66. Every citizen activation/recognition event
-appended as a JSON record. Records when ants/citizens come
-online; supports ant-churn surfacing.
 
 ---
 

@@ -10,7 +10,7 @@ principles that drive its design. Read this when you want to know
 
 | Doc | What it covers |
 |---|---|
-| [`STORY.md`](STORY.md) | The arc-by-arc narrative: v1 origin → v2 mission → Arc B production → Arc D HYDRA → Arc E Mycelium → Arc F Denarius → Arc G Empire → v9.x hybrid intelligence |
+| [`STORY.md`](STORY.md) | The arc-by-arc narrative: how Polaris grew from the v1 origin to the v2 mission, through production hardening, to the present product plus flat check layer |
 | [`PRINCIPLES.md`](PRINCIPLES.md) | The architectural principles beneath the constraints (audit-of-record discipline, constitutional decision-making, substrate-vs-lens, etc.) |
 
 ---

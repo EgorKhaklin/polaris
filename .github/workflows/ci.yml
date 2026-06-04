@@ -77,6 +77,14 @@ jobs:
           cd polaris_sql
           psql -h localhost -U postgres -d polaris_test -v ON_ERROR_STOP=1 -f 00_load_all.sql
 
+      - name: Apply migrations
+        run: |
+          cd polaris_sql
+          for f in $(ls migrations/*.up.sql | sort); do
+            echo "applying $f"
+            psql -h localhost -U postgres -d polaris_test -v ON_ERROR_STOP=1 -f "$f"
+          done
+
       - name: Bash syntax check
         run: for f in scripts/*.sh; do bash -n "$f" || exit 1; done
 

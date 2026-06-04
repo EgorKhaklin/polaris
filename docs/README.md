@@ -1,10 +1,10 @@
 # docs/ — Polaris reference docs
 
-Reference material organized by audience. Cognitive-layer documents
+Reference material organized by audience. The root governance documents
 (`CLAUDE.md`, `MISSION.md`, `ROADMAP.md`, `docs/BACKLOG.md`, `CHANGELOG.md`,
-`README.md`) live at the project root because every script in
-`scripts/` greps them; moving them would break the agent's status /
-propose / journal pipeline. Everything else that's "documentation
+`README.md`) live at the project root because scripts in
+`scripts/` greps them; moving them would break the journal pipeline.
+Everything else that's "documentation
 about Polaris, not its source of truth" lives here.
 
 ## Orientation (start here)
@@ -49,11 +49,11 @@ Three documents that together cover the why, the what, and the how. Added v8.59 
 - **Release log** → `CHANGELOG.md` at root.
 - **Agent semantic memory** (concurrency, atlas-scaling, known-gotchas, rate-limiter, threat-model, substrate) → `DEVNOTES/`.
 - **Procedural recipes** (add-flask-route, scaling-investigation, etc.) → `patterns/`.
-- **Cognitive-layer architecture itself** (autonomy, constraint lattice, structural constants, redaction proof, missions-considered) → `meta/`.
+- **Design and governance notes** (constraint lattice, redaction proof, missions-considered) → `meta/`.
 - **Per-day decision log** → `journal/`.
 - **Strategic option proposals** → `proposals/`.
-- **Sanctum strategic-consultation records** (v8.19+) → `sanctum/`, indexed at `meta/sanctum-index.md`. Each major decision (MEDIUM/HIGH risk, cross-arc, or cognitive-layer structural change) is recorded here. Protocol at `meta/sanctum-protocol.md`; entry script `scripts/ai-sanctum.sh`.
-- **Audit-of-record principle** (v8.20) → `DEVNOTES/audit-of-record.md`. Defines the cross-cutting pattern shared by TokenLifecycleEvent, VerificationEvent, EnrollmentStatusEvent, RecoveryRequest, TokenSignature, AnchorBatch (v8.21), AgencyTrustAttestation (v8.22), TokenStateEpoch (v8.23), DuressEvent (v8.24), and the Sanctum directory; **10 instances total (9 schema + 1 filesystem)** — v9.41 reclassification dropped two derived caches (`census-roll.json`, `treasury-roll.json`) that were incorrectly counted as AoR at v8.66/v8.68.
+- **Sanctum strategic-consultation records** (v8.19+) → `sanctum/`, indexed at `meta/sanctum-index.md`. Each major decision (MEDIUM/HIGH risk or cross-cutting structural change) is recorded here. Protocol at `meta/sanctum-protocol.md`; entry script `scripts/ai-sanctum.sh`.
+- **Audit-of-record principle** (v8.20) → `DEVNOTES/audit-of-record.md`. Defines the append-only, cross-cutting pattern shared by TokenLifecycleEvent, VerificationEvent, EnrollmentStatusEvent, RecoveryRequest, TokenSignature, AnchorBatch (v8.21), AgencyTrustAttestation (v8.22), TokenStateEpoch (v8.23), DuressEvent (v8.24), and the Sanctum directory.
 
 ## Re-evaluation triggers
 
@@ -63,5 +63,5 @@ This split should be revisited when:
   `docs/api/v1/`, `docs/api/v2/` if API versioning lands).
 - A new audience appears (e.g., compliance officer needing a dedicated
   doc set distinct from operator/architect/developer).
-- Cross-references between docs/ and the cognitive layer become so
+- Cross-references between docs/ and the root governance files become so
   numerous that consolidation is cleaner than separation.

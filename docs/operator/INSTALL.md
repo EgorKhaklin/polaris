@@ -126,8 +126,8 @@ Ran ~342 tests in ~70s
 OK
 ```
 
-Plus the structural-layer suite (`test_structural_invariants.py`, 882
-tests) and the optional property tests (`test_invariants_property.py`,
+Plus the C1-C10 invariant check layer (`python3 -m polaris_checks.run`)
+and the optional property tests (`test_invariants_property.py`,
 `test_redaction_property.py`, if Hypothesis is installed).
 
 The 171 SQL self-tests run automatically when the Postgres container

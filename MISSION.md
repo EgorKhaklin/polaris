@@ -112,9 +112,9 @@ feature is judged: does it advance anti-coercion, even by a margin?
 If yes, it earns its place. If no, it is elaboration of structure
 without service of purpose.
 
-The Anti-Architect persona ([`meta/anti-architect.md`](meta/anti-architect.md))
-references this section to detect AP5 (vocation drift) — proposals
-not traceable to this vocation surface as dissents.
+Any proposed change is held against this vocation: a feature that is
+not traceable to anti-coercion is elaboration of structure without
+service of purpose, and is refused on that ground.
 
 ---
 
@@ -329,7 +329,7 @@ separation, not just claim it.
 
 ---
 
-## The cognitive substrate (the agent contract)
+## The agent contract
 
 Polaris is built and maintained by an agent operating under a
 contract. This section names that contract.
@@ -728,9 +728,9 @@ rather than weakening it.
 ### Arc B — Production deployment (active multi-phase, opened 2026-05-14)
 
 Production-readiness arc. Polaris was, before v8.77,
-**architecturally rich but productionally thin** — cryptography,
-schema, audit-of-record, and cognitive substrate were
-production-grade, but the deployment story was the dev launcher.
+**architecturally rich but productionally thin**: cryptography,
+schema, and audit-of-record were production-grade, but the
+deployment story was the dev launcher.
 A reference implementation that no operator can deploy is not
 actually a reference. Arc B closes that gap.
 

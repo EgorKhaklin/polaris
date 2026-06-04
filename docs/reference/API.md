@@ -95,9 +95,8 @@ dashboards that were built against the v7.5 contract.
 - `503` — overall status is `unhealthy` (at least one critical
   check is unhealthy)
 
-**Enforced structurally by:** G29 /
-`test_g29_health_endpoint_contract` in
-`polaris_web/test_structural_invariants.py`.
+**Tested by:** the health-endpoint tests in
+`polaris_web/test_app.py`.
 
 **Operator guidance:** see
 [`docs/operator/OPERATIONS.md` § Monitoring](../operator/OPERATIONS.md#monitoring--alerting)
@@ -189,7 +188,7 @@ Histogram-strip bucket counts below the toolbar. Returns
 `{ts, n_total, n_anomaly}` points over a `?window=` range with
 `?buckets=N` slices (hard-capped at 240). Honors the same
 outcome/disclosure/context/event_types filters as
-`/api/atlas/clusters`. Added v8.50; covered by PerformanceWatcher.
+`/api/atlas/clusters`. Added v8.50.
 
 ### `GET /api/atlas/cache-stats`
 

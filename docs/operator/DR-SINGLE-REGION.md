@@ -12,13 +12,12 @@ this document scopes RPO/RTO + procedures explicitly to single-region
 
 ## Why this is single-region
 
-The BIG MISSION asked for multi-region DR. The Anti-Architect refused
-on the grounds that v9.16's `sanctum/2026-05-15-open-arcs-debate.md`
-resolved Arc G (Empire / multi-region) as RESERVED-NOT-PLANNED. The
-joint resolution: ship single-region DR with documented RPO/RTO
-targets; multi-region remains held in reserve until external triggers
-fire (≥10× verification volume / partner deployment / federation
-requirement).
+The BIG MISSION asked for multi-region DR. It was refused on the
+grounds that v9.16 resolved multi-region as RESERVED-NOT-PLANNED. The
+resolution: ship single-region DR with documented RPO/RTO targets;
+multi-region remains held in reserve until external triggers fire
+(at least 10x verification volume, a partner deployment, or a
+federation requirement).
 
 This document is the single-region DR runbook. The multi-region
 equivalent will be a future Sanctum when triggers fire.
@@ -123,8 +122,7 @@ The standard signals:
 
 - **`/api/health` returns non-200** for >5 minutes
 - **No `LIFECYCLE_EVENT` rows inserted** for >10 minutes during
-  business hours (anomalous quiet detected by HYDRA's
-  cognitive_watcher)
+  business hours (anomalous quiet)
 - **Manual operator report** (someone notices the system is down)
 
 Response: page the operator; open `polaris-doctor.sh` for diagnosis;
@@ -178,17 +176,13 @@ serving traffic.
 After every recovery, the operator runs:
 
 ```bash
-# Audit-of-record integrity
-./scripts/ai-meta.sh
+# Invariant integrity (C1-C10), including audit-of-record append-only triggers
+python3 -m polaris_checks.run
 
-# Verify all 10 audit-of-record instances are intact
-./scripts/ai-status.sh | grep audit-of-record
+# Audit-of-record chain intact on the restored DB
+psql -d polaris -c "SELECT count(*) FROM TokenLifecycleEvent"
 
-# Verify HYDRA + Mycelium can read post-restore state
-./scripts/ai-hydra.sh --full --save
-./scripts/ai-swarm-bloom.sh
-
-# Open Sanctum recording the recovery (constitutional record)
+# Open Sanctum recording the recovery (decision record)
 ./scripts/ai-sanctum.sh close dr-restore-... \
     --position recovered \
     --decision "restored from $(date -u -d '24 hours ago' +%Y%m%d) backup; \
@@ -196,8 +190,8 @@ After every recovery, the operator runs:
                 root cause: ..."
 ```
 
-The Sanctum is a filesystem audit-of-record instance. Every recovery
-adds a row to the constitutional record.
+The Sanctum is a filesystem decision record. Every recovery adds an
+entry to the record.
 
 ---
 
@@ -256,8 +250,8 @@ on drill failure means a silently-missed drill is detected.
 
 When external triggers fire (per v9.16):
 
-1. Open a Sanctum: `sanctum/YYYY-MM-DD-multi-region-arc-G-opening.md`
-2. Architect + Anti-Architect debate the specific scope
+1. Open a Sanctum: `sanctum/YYYY-MM-DD-multi-region-opening.md`
+2. Record the specific scope and the dissent against it
 3. Operator decides
 4. Multi-region implementation flows from there
 

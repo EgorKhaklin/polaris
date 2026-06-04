@@ -9,28 +9,20 @@ explicitly asked to scan the backlog.
 
 ---
 
-## Navigation: which subsystem owns what?
+## Navigation: which area owns what?
 
-The sections below are organized by topic (the historical
-convention). For subsystem-aligned navigation, items map roughly:
+The sections below are organized by topic. Items map roughly:
 
-| Subsystem | Look in sections |
+| Area | Look in sections |
 |---|---|
 | **Polaris Core** (identity tokens, web app, SQL, ZK proofs) | Schema / SQL · Application / API · Frontend / Atlas · Auth / Security · Performance / scale |
-| **HYDRA** (`polaris_hydra/`) — synthesis layer + 9 watchers | Cognitive layer extensions (HYDRA-tagged items) · Mission-adjacent (analytical-layer arc candidate) |
-| **Mycelium** (`polaris_swarm/`) — ants + legions + Civitas + Denarius | Cognitive layer extensions (swarm-tagged items) · Testing / Quality (swarm test gaps) |
-| **Cognitive layer** (`scripts/ai-*.sh` + `meta/`) | Cognitive layer extensions · Tooling · Documentation gaps |
-| **Future arcs** (parked vision items) | Mission-adjacent / speculative |
+| **Future** (parked vision items) | Mission-adjacent / speculative |
 | **Cross-cutting docs** | Documentation gaps |
 
-For subsystem-specific operational guides, see per-folder READMEs:
-`polaris_hydra/README.md`, `polaris_swarm/README.md`,
+For per-folder operational guides, see the package READMEs:
 `polaris_zk/README.md`, `polaris_cli/README.md`,
-`polaris_sql/README.md`, `polaris_web/README.md`.
-
-For per-arc strategic record:
-`meta/arc-d-hydra.md`, `meta/arc-e-mycelium.md`,
-`meta/arc-f-denarius.md`, `meta/arc-g-empire.md`.
+`polaris_sql/README.md`, `polaris_web/README.md`,
+`polaris_checks/README.md`.
 
 ---
 
@@ -38,43 +30,29 @@ For per-arc strategic record:
 
 ### **Soft doc-organization refactor (decided 2026-05-13; deferred — multi-hour LOW-risk)**
 
-VANTA in-chat after the v8.74 ship: constitution stays unified
-(MISSION + ROADMAP + CHANGELOG + BACKLOG remain central — the
-four cognitive-substrate principles + audit-of-record discipline
-require it), but central docs are getting weighty. Tribuni Plebis
-already fires on `CLAUDE.md` complexity. Architect recommended
-Option A (soft refactor); VANTA chose it.
+Constitution stays unified (MISSION + ROADMAP + CHANGELOG +
+BACKLOG remain central; the agent-contract principles +
+audit-of-record discipline require it), but central docs are
+getting weighty.
 
 **Planned scope (when shipped, opens its own Sanctum since it's
 MEDIUM-risk constitutional-document maintenance):**
 
-1. **Trim `CLAUDE.md`.** State-map rows (currently ~70 entries
-   accumulating since v1) are duplicative with `CHANGELOG.md`.
-   Keep CLAUDE.md as the agent runbook only — the "how to be
-   productive in 90 seconds" + gotchas + post-v2 posture +
+1. **Trim `CLAUDE.md`.** State-map rows (accumulating since v1)
+   are duplicative with `CHANGELOG.md`. Keep CLAUDE.md as the
+   agent runbook only: the productivity primer + gotchas +
    quick-ref tables. Move state-map rows to CHANGELOG-only
-   (already there). Target: CLAUDE.md ≤500 lines.
-2. **Lighten `MISSION.md`.** Move per-arc deep detail (E1-E10,
-   F1-F5, G1-G3) into per-arc files (`meta/arc-e-mycelium.md`,
-   `meta/arc-f-denarius.md` already exists as `meta/denarius.md`,
-   `meta/arc-g-empire.md`). MISSION.md retains the
-   constitutional core (C1-C10 + four principles + steady-state
-   contract + done-list rollups) and links to per-arc detail.
-   Target: MISSION.md ≤500 lines.
-3. **Reorganize `BACKLOG.md` rigorously by subsystem.** Current
-   sections are partly topic-based (Documentation gaps, Schema,
-   Auth, etc.); should be more clearly subsystem-aligned
-   (Polaris Core / HYDRA / Mycelium swarm / Denarius / Cognitive
-   layer / Future arcs). Items move to their subsystem section.
-4. **Add per-folder `README.md` where missing.**
-   `polaris_hydra/README.md` exists; check whether
-   `polaris_swarm/README.md`, `polaris_zk/README.md`,
-   `polaris_cli/README.md` exist; add the missing ones. Each
-   should explain "what is this subsystem, what depends on it,
+   (already there).
+2. **Lighten `MISSION.md`.** MISSION.md retains the
+   constitutional core (C1-C10 + Vocation + steady-state
+   contract + done-list rollups) and links to detail in `meta/`.
+3. **Reorganize `BACKLOG.md` by topic.** Items move to their
+   topic section.
+4. **Add per-folder `README.md` where missing.** Check whether
+   `polaris_zk/README.md`, `polaris_cli/README.md`,
+   `polaris_checks/README.md` exist; add the missing ones. Each
+   should explain "what is this package, what depends on it,
    what depends on what, and where to start."
-5. **Per-subsystem `meta/*.md` extension.** Pattern already
-   exists (`meta/civitas.md`, `meta/denarius.md`,
-   `meta/architect.md`); extend as new arcs open.
 
 **What does NOT change** (constitutional discipline preserved):
 
@@ -82,16 +60,13 @@ MEDIUM-risk constitutional-document maintenance):**
 - CHANGELOG.md remains the unified audit-of-record (per v8.20)
 - ROADMAP.md remains the unified ship-sequence (cross-system
   dependencies need single view)
-- The four cognitive-substrate principles + Sanctum protocol
-  apply across all subsystems
-- G-guards G1-G26 span everything
+- The agent-contract principles + Sanctum protocol apply across
+  all packages
 
-**Why deferred:** today is 7 ships in. Tribuni Plebis is firing
-on Sanctum-burst (8 indexed today). Strategic doc refactor isn't
-urgent; next session benefits from fresh perspective on what's
-actually painful vs what merely feels heavy at the end of a long
-day. When shipped, this opens its own Sanctum for the
-move-by-move design choices.
+**Why deferred:** strategic doc refactor isn't urgent; a later
+session benefits from fresh perspective on what's actually
+painful vs what merely feels heavy. When shipped, this opens its
+own Sanctum for the move-by-move design choices.
 
 ---
 
@@ -160,19 +135,11 @@ move-by-move design choices.
 
 ## Tooling
 
-- Pre-commit hook that runs ai-status.sh and refuses commit if mission
-  alignment drops.
-- CI integration: ai-loop-check.sh runs on PR; flags scope creep.
-- IDE plugin: surface ai-where.sh output in editor on file open.
-
-## Cognitive layer extensions
-
-- `ai-trace.sh BUG_ID` — given a recent bug, walk back through journal
-  to surface the decision that introduced it.
-- `ai-coverage.sh` — for each constraint C1-C10, report which test(s)
-  cover it.
-- `ai-dependencies.sh FILE` — show what other files reference this
-  file's exports / functions.
+- Pre-commit hook that runs `python3 -m polaris_checks.run` and refuses
+  commit on any FAIL.
+- CI integration: link-check (`scripts/ai-link-check.sh --ci`) runs on PR.
+- Constraint coverage report: for each constraint C1-C10, list which
+  test(s) and which `check_*` cover it.
 - Pattern: `patterns/security-fix.md` — recipe distilled from v4 audit.
 - Pattern: `patterns/schema-change.md` — recipe for adding a column
   with backfill.
@@ -190,21 +157,6 @@ move-by-move design choices.
 - ZK-SNARK implementation of context-scoped verification.
 - Decentralized issuer trust list (IPFS-anchored).
 - Privacy-preserving statistics (differential privacy on Atlas).
-- **Swarm-as-analytical-layer for Polaris Core (future Arc H candidate)** —
-  PARKED 2026-05-13 per VANTA: *"not now because its not ready but we
-  want to actively work and get it ready."* Five tracks from VANTA's
-  vision (anomaly + fraud detection, privacy-preserving aggregates,
-  behavioral drift, self-improving system, adversarial sim) +
-  twelve Architect additions covering cross-domain correlation,
-  operator-behavior, temporal/seasonal, cohort trust, regression
-  detection, crypto algorithm performance, ZK proof health,
-  federation trust-graph, recovery stress, auto-opened Sanctums,
-  cross-layer Mycelium↔HYDRA correlation, operator-friction
-  analytics. Phased H1–H4. Requires NEW constitutional principle
-  C11 (analytical pomerium) + G27+ guards. Pre-conditions: Arc B
-  open + ≥3mo operational data + F5 operational ≥30d + R2 decided
-  + recovery exercised + C11-Sanctum + audience-scope clarity.
-  Full proposal: `proposals/swarm-as-analytical-layer-for-polaris-core.md`.
 
 ### Reference material from Polygon / Chainlink ecosystem (2026-05-09)
 
@@ -287,13 +239,8 @@ pre-computed so future-me does not redo the OpenJarvis evaluation.
   that token" → revocation still requires the operator's explicit
   UC procedure with audit trail. The AI is an aid to decision-making,
   not an agent with token authority.
-- **CM (cognitive layer self-monitors)** — interesting recursion:
-  Polaris already has a cognitive layer that monitors *itself*
-  (ai-meta + ai-coherence). The operator-AI is a different layer
-  monitoring the *system* for the operator. The two should not be
-  confused.
 
-**Game-theoretic structure** (run ai-adversary against this when
+**Game-theoretic structure** (model the adversary against this when
 promoting):
 
 - **Game type:** Principal-agent (the AI agent delegates information
@@ -364,8 +311,8 @@ Adopt OpenJarvis as the runtime; build Polaris-specific bindings.
    - Every question OpenJarvis answers is logged; the
      `answer_used_in_action_id` is set if the operator subsequently
      performs an action that references the assistant's answer
-   - This is the surveillance-of-the-assistant layer (CM applied at
-     the assistant layer)
+   - This is the audit-of-record applied to the assistant itself:
+     every question the assistant answers is on the record.
 
 5. **Disable OpenJarvis's code-execution capability for Polaris
    workstations.** OpenJarvis ships a code-assistant agent that can

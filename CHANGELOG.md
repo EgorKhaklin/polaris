@@ -14,6 +14,47 @@ record, read [`meta/sanctum-index.md`](meta/sanctum-index.md).
 
 ---
 
+## v9.56 — 2026-06-03 (residual de-larp sweep + the full product suite goes green in CI)
+
+Two things close here: the residual apparatus references left in the documentation
+and dev scripts, and the CI regression that v9.55 introduced.
+
+**Residual de-larp sweep.** v9.55 cut the apparatus code; this sweep cuts its
+shadow in the docs and scripts. Deleted 15 more pure-apparatus files with no
+surviving purpose: `meta/architect.md`, `meta/anti-architect.md`,
+`meta/cognitive-loop.md`, `meta/watcher-predicates.md`,
+`meta/foresight-predicate-audit.md`, `meta/swarm-mttr.json`,
+`meta/swarm-scorecard.json`, `meta/sanctum-scorecard.json`,
+`meta/structural-constants.json`, `meta/claude-90s.md`, `meta/swarm-map/`,
+`meta/brain-map/`, plus `scripts/pre-commit-scope-check.sh` +
+`meta/scope-rule-baseline.json` (rule-b referenced the deleted `polaris_swarm/`)
+and `scripts/test_implants.sh` (smoke-tested the deleted scripts). De-larped the
+surviving active-reference surface in place: the active `meta/` docs, the `ai-*`
+and `polaris-*` dev/ops scripts, `ROADMAP.md`, and the `docs/` tree (the glossary,
+operations runbook, architecture overview, system map, the story, the data model,
+and the rest). The dated historical snapshots (the self-roadmaps,
+`cognitive-architecture-v2/v3`, the cold-read walkthrough) and the development
+record (`journal/`, `sanctum/`, `archive/`, prior `CHANGELOG` entries) are kept
+as history.
+
+**CI: the full product suite now runs green.** v9.55's rewritten `ci.yml` added an
+"Application + CLI suites" step that ran `test_app` + `test_cli` for the first time
+(v9.54's workflow never ran them), and they failed: `reload_sample_data()` shelled
+out via `su - postgres -c`, which cannot authenticate against a service-container
+Postgres. Fixed by reloading through the `POLARIS_DB_*` connection settings with
+`psql` directly (works in CI, on macOS, and on Linux; `POLARIS_TEST_RELOAD_VIA=su`
+still forces the legacy path). Added the missing "Apply migrations" CI step so
+`webauthn_required_after` exists at test time. Then fixed the long-standing stale
+tests the step surfaced: the dashboard / RBAC / substrate-UI tests that GET `/`
+while logged in (where `home()` correctly 302-redirects authenticated users to
+`/dashboard`), the health-check assertions that expected the old `db` /
+`rate_limiter` keys instead of `database` / `redis`, the logout test that pulled
+its CSRF token from a redirecting `/`, and the anchor-batch tests whose
+`commitment_hash` test data did not satisfy the hex CHECK constraint. `test_app`
+(329 tests) and `test_cli` (62 tests) now pass end to end.
+
+---
+
 ## v9.55 — 2026-06-03 (the swap · sever the whole apparatus web at once)
 
 scope: cognitive-rebuild · ship_marker: apparatus-swap · vocation: trustworthiness — the product is the thesis; the theater was never load-bearing · pattern20_instance: build-the-replacement-then-swap (v9.54 built the replacement; v9.55 severs the web)

@@ -21,7 +21,7 @@ _Cryptographically signed. Audit-of-record by construction. Compulsion-resistant
 [![WebAuthn MFA](https://img.shields.io/badge/auth-WebAuthn%20MFA-1f883d?logo=webauthn&logoColor=white&style=flat-square)](polaris_web/webauthn_auth.py)
 
 
-**Now shipping [v9.55](https://github.com/EgorKhaklin/polaris-id/releases/latest)** &nbsp;·&nbsp; post-quantum · zero-knowledge · compulsion-resistant &nbsp;·&nbsp; one double-click to launch
+**Now shipping [v9.56](https://github.com/EgorKhaklin/polaris-id/releases/latest)** &nbsp;·&nbsp; post-quantum · zero-knowledge · compulsion-resistant &nbsp;·&nbsp; one double-click to launch
 
 [**System map**](docs/reference/SYSTEM-MAP.md) · [**Conventions**](docs/CONVENTIONS.md) · [**Constitution (MISSION.md)**](MISSION.md) · [**Backlog (ROADMAP.md)**](ROADMAP.md) · [**Audit-of-record (CHANGELOG.md)**](CHANGELOG.md) · [**Agent runbook (CLAUDE.md)**](CLAUDE.md)
 
@@ -39,7 +39,7 @@ Americans currently carry six to eight credentials that do not talk to each othe
 
 Polaris consolidates them into **one physical token per person**, signed under post-quantum cryptography, with **context-scoped verification** (banking versus voting versus healthcare are different events with different disclosure rules) and **zero-knowledge defaults** (the typical verification stores no token identifier at all).
 
-This repository is a **working reference implementation**: 27 schema tables, 14 stored procedures, a Flask web application that exercises every use case, a Plonky2 ZK-SNARK prover in Rust, WebAuthn-MFA operator authentication, an operational atlas with a live globe, and a self-healing macOS launcher that gets all of it running from a single double-click.
+This repository is a **working reference implementation**: 26 schema tables, 14 stored procedures, a Flask web application that exercises every use case, a Plonky2 ZK-SNARK prover in Rust, WebAuthn-MFA operator authentication, an operational atlas with a live globe, and a self-healing macOS launcher that gets all of it running from a single double-click.
 
 It is not a slide deck. It runs.
 
@@ -98,7 +98,7 @@ The `CREATE TABLE` is in [`polaris_sql/01_schema.sql`](polaris_sql/01_schema.sql
 
 ## Architecture
 
-Four layers. The cognitive layer reads but never writes the operational layer. The ZK prover is a subprocess, not a service. WebAuthn FIDO2 is the only authentication path for human operators; passwords alone cannot reach the admin or auditor roles.
+Four layers. The check layer reads but never writes the operational layer. The ZK prover is a subprocess, not a service. WebAuthn FIDO2 is the only authentication path for human operators; passwords alone cannot reach the admin or auditor roles.
 
 ```
         ┌─────────────────────────────────────────────────────────────┐
@@ -117,7 +117,7 @@ Four layers. The cognitive layer reads but never writes the operational layer. T
                    │                          │
         ┌──────────▼─────────┐    ┌───────────▼──────────────────────┐
         │  SCHEMA (Pg 16)    │    │   ZK PROVER (Rust nightly)       │
-        │  27 tables         │    │   Plonky2 SNARK · Merkle-incl.   │
+        │  26 tables         │    │   Plonky2 SNARK · Merkle-incl.   │
         │  14 stored procs   │    │   /api/zk/epoch/close            │
         │  9 AoR by trigger  │    │   /api/zk/verify                 │
         └──────────┬─────────┘    └──────────────────────────────────┘
@@ -229,14 +229,14 @@ A full subcommand reference lives in [`docs/operator/INSTALL.md`](docs/operator/
 ```
                  ┌──────────────────────────────────────────────────┐
                  │              Polaris in numbers                  │
-                 │              (current as of v9.55)               │
+                 │              (current as of v9.56)               │
                  ├──────────────────────────────────────────────────┤
-                 │  27 schema tables                                │
+                 │  26 schema tables                                │
                  │  14 stored procedures (UC-1 .. UC-12)            │
                  │  67 HTTP routes (incl. /auth/webauthn/*)         │
                  │  C1-C10 invariants, machine-checked              │
                  │  Plonky2 ZK + an independent second witness      │
-                 │  4 constitutional principles + 1 vocation        │
+                 │  3 agent-contract principles + 1 vocation        │
                  │  1 double-click to launch                        │
                  └──────────────────────────────────────────────────┘
 ```
@@ -270,9 +270,9 @@ Start at the file that matches what you came here for.
 |   |   |   |
 |---|---|---|
 | **[The story](docs/story/STORY.md)** | **[The system map](docs/reference/SYSTEM-MAP.md)** | **[The principles](docs/story/PRINCIPLES.md)** |
-| How Polaris was built between April 30 and May 16, 2026. Nine major versions, 146 ships, two single-day rampages, 59 formal decisions. | A single page that names every meaningful artifact in the repository and what it is for. Use this when you do not know where to start. | The four constitutional principles distilled. Read this before you change anything load-bearing. |
+| How Polaris was built between April 30 and May 16, 2026. Nine major versions, 146 ships, two single-day rampages, 59 formal decisions. | A single page that names every meaningful artifact in the repository and what it is for. Use this when you do not know where to start. | The principles that hold the system together, distilled. Read this before you change anything load-bearing. |
 | **[The schema](polaris_sql/01_schema.sql)** | **[The constitution](MISSION.md)** | **[The agent runbook](CLAUDE.md)** |
-| 27 tables. Start with `IdentityToken` and follow the foreign keys. Append-only invariants enforced at trigger level on nine of them. | C1 through C10 plus CM. Ten hard constraints the system must never violate, one meta-constraint that guards the layer itself. | If you are an AI agent priming on this project, this is your entry point. |
+| 26 tables. Start with `IdentityToken` and follow the foreign keys. Append-only invariants enforced at trigger level on nine of them. | C1 through C10. Ten hard constraints the system must never violate, each enforced at the schema level rather than in application code. | If you are an AI agent priming on this project, this is your entry point. |
 | **[The Atlas](polaris_web/static/atlas-globe.js)** | **[The ZK prover](polaris_zk/src/lib.rs)** | **[The CHANGELOG](CHANGELOG.md)** |
 | The operational globe. 1,318 lines of D3 + custom projection logic. Pan, zoom, drag, hover, click-through, viewport-aware decimation. | Plonky2-backed Merkle-inclusion circuit in Rust. Subprocess CLI consumed by `polaris_web/zk.py`. | The full audit-of-record (108K words; pre-v9.24 archive). The curated last-10-ships index lives at `CHANGELOG.md` (~3.7K words). |
 

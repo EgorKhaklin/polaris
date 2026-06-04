@@ -14,15 +14,12 @@ Sections:
   audit-of-record, append-only, partial unique index, CHECK constraints
 - [Web app & operator concerns](#web-app--operator-concerns) — CSP,
   CSRF, rate limits, atlas, sessions
-- [Production deployment (Arc B)](#production-deployment-arc-b) —
+- [Production deployment](#production-deployment) —
   Caddy, TLS, Docker secrets, /api/health
-- [Cognitive substrate](#cognitive-substrate) — Sanctum, AoR, risk
-  classes, CM (the four principles in MISSION.md)
-- [HYDRA + Mycelium + Civitas](#hydra--mycelium--civitas) — watchers,
-  ants, legions, citizens, pheromones
-- [Arcs & versions](#arcs--versions) — Arc A/B/C/D/E/F/G + v1/v2
+- [Agent-contract principles](#agent-contract-principles) — Sanctum,
+  audit-of-record, risk classes
 - [Governance & meta](#governance--meta) — risk classes, larping,
-  patterns, override, parking-vs-deciding
+  override, parking-vs-deciding
 
 ---
 
@@ -223,17 +220,12 @@ modified or deleted. Enforced by trigger
 **Audit-of-record** — a schema element whose own state plus
 append-only or bounded-mutation invariants fully reconstructs the
 operation it records, without a separate event-log table.
-Canonicalized in `DEVNOTES/audit-of-record.md`. **Ten current
-instances** (post v9.41 reclassification): 9 schema instances —
+Canonicalized in `DEVNOTES/audit-of-record.md`. The schema instances:
 `TokenLifecycleEvent`, `VerificationEvent`, `EnrollmentStatusEvent`,
 `AnchorBatch`, `RecoveryRequest`, `TokenSignature`,
-`AgencyTrustAttestation`, `TokenStateEpoch`, `DuressEvent` — and 1
-filesystem instance: `sanctum/*.md` strategic-consultation sessions.
-(`polaris_swarm/civitas/treasury-roll.json` and `census-roll.json`
-were filesystem-AoR at v8.66 / v8.68 but reclassified at v9.41 as
-derived caches over `Pheromone`-table deposits + source-code ant
-presence; see `DEVNOTES/audit-of-record.md` §"v9.41 reclassification"
-for the criterion check.)
+`AgencyTrustAttestation`, `TokenStateEpoch`, `DuressEvent`. The
+`sanctum/*.md` strategic-consultation sessions are the filesystem
+instance.
 
 **CHECK constraint** — a row-level invariant declared in the
 schema. Polaris has 74 CHECK constraints across its 27 tables; they
@@ -295,7 +287,7 @@ between them. C4 prevents this in `failed_login_count` via
 
 ---
 
-## Production deployment (Arc B)
+## Production deployment
 
 **Caddy** — the reverse-proxy + TLS-terminator used in production.
 Caddy 2 in the `caddy:2-alpine` image. Auto-provisions Let's
@@ -319,23 +311,19 @@ logs.
 
 **G27 (TLS required)** — Production deployment requires TLS. The
 Caddyfile or equivalent reverse-proxy with TLS must be present in
-any production-targeted deploy. Enforced by
-`test_g27_caddyfile_declares_tls` in
-`polaris_web/test_structural_invariants.py`. Added v8.77 / Arc B
-Phase 1.
+any production-targeted deploy. The Caddyfile lives in
+`polaris_web/`. Added v8.77.
 
 **G28 (no env-secrets in prod)** — Sensitive secrets do not appear
 as environment-variable literals in `docker-compose.prod.yml`.
 Production uses file-mounted Docker secrets via the `*_FILE`
-env-var convention. Enforced by
-`test_g28_no_sensitive_env_in_prod_compose`. Added v8.77.
+env-var convention. Added v8.77.
 
 **G29 (structured /api/health)** — The `/api/health` endpoint
 returns structured JSON with `status` ∈ {`healthy`, `degraded`,
 `unhealthy`}, `version`, `uptime_seconds`, `checks` (database /
 redis / zk_binary / disk), and `timestamp`. HTTP 200 on
-healthy/degraded; 503 on unhealthy. Enforced by
-`test_g29_health_endpoint_contract`. Added v8.77.
+healthy/degraded; 503 on unhealthy. Added v8.77.
 
 **Let's Encrypt** — the certificate authority Caddy uses to
 auto-provision TLS certificates via the ACME HTTP-01 challenge.
@@ -359,19 +347,18 @@ upstream health check, load-balancer probes, and external uptime
 monitors. See `docs/operator/OPERATIONS.md` § Monitoring.
 
 **WebAuthn** — the W3C standard for hardware-bound authentication
-(security keys, platform authenticators, biometrics). Polaris does
-not currently use WebAuthn for operator auth — it's a deferred Arc
-B Phase 2 item. The architectural intent is that hardware-token
-operator auth replaces the password+session model for
-high-privilege roles.
+(security keys, platform authenticators, biometrics). The
+architectural intent is that hardware-token operator auth replaces
+the password+session model for high-privilege roles.
 
 ---
 
-## Cognitive substrate
+## Agent-contract principles
 
-The four-principle structure declared verbatim in MISSION.md.
-These are the cognitive layer that every other principle depends
-on. Their substitutability is preserved by the v8.30 clause.
+The three principles that govern how an agent works on Polaris.
+They sit alongside the C1-C10 constraints in MISSION.md; the
+constraints define what the system must be, these define how
+changes to it are made.
 
 **1. Sanctum** — the formal agent-operator strategic consultation
 protocol. Each session is a file in `sanctum/<date>-<topic>.md`
@@ -384,190 +371,10 @@ HIGH-risk decisions require a Sanctum. Spec:
 
 **3. Risk class** — see "Risk class" below.
 
-**4. CM (constitutional meta-constraint)** — the immortal 10th
-head. Distinct from C1-C10: CM is the meta-constraint that
-*evaluates the system against C1-C10*. Implemented as
-`scripts/ai-meta.sh`, which runs 6 self-checks on every session
-(C-mention coverage, script-vs-doc drift, meta-slot status,
-Sanctum integrity, audit-of-record discipline, Tribuni Plebis
-state). Self-monitoring is the part of the system that survives if
-every other layer fails.
-
-**Architect** — the agent's strategic-advisor persona. Voiced via
-`scripts/ai-architect.sh`. Specification: `meta/architect.md`.
-Conducts macro scans, surfaces drift, recommends moves. Distinct
-from the executor; the same agent may invoke either voice.
-
----
-
-## HYDRA + Mycelium + Civitas
-
-The three runtime-observation layers of the cognitive substrate.
-HYDRA is the synthesis layer; Mycelium is the autonomous-action
-layer; Civitas is the political layer.
-
-**HYDRA** — the 9-watcher runtime synthesis layer. Each watcher
-observes one constraint domain and reports findings. The canonical
-mortal-head count is **Hydra-9**: schema, cognitive, security,
-mission, adversary, performance, trajectory, ant_colony, civitas.
-**CM is the immortal 10th head.** Voiced via
-`scripts/ai-hydra.sh`. Code in `polaris_hydra/`. Read-only by
-construction (G3); deterministic (G2).
-
-**Watcher** — a HYDRA component implementing one constraint-domain
-observation. Reads runtime state; emits structured findings.
-Examples: `SchemaWatcher` (C1-C9 schema invariants),
-`SecurityWatcher` (CSP, CSRF, inline JS), `TrajectoryWatcher`
-(ship pacing, parking patterns, file churn).
-
-**Mycelium** — the autonomous-action swarm layer. 33 ants across
-11 legions (9 Republican + 2 Imperial). Each ant scans one
-specific drift surface and lays a pheromone in the `Pheromone`
-PostgreSQL table when it finds something. Code in
-`polaris_swarm/`. Read-only at the substrate level (G6); ant
-findings drive operator attention via the bloom heatmap.
-
-**Ant** — a single autonomous Mycelium scanner. Each ant has a
-narrow specialization: one drift surface, one finding shape.
-33 ants total as of v8.71. Steady-state ants are exempt from
-rewards/penalties (F5 / G26).
-
-**Legion** — a Mycelium grouping of related ants. **9 Republican
-legions** (schema, cognitive, security, mission, adversary,
-performance, trajectory, substrate, docs) + **2 Imperial legions**
-(Praetorian, Engineer; v8.71 / Arc G). Each legion uses one of 5
-Roman tactics (TESTUDO, TRIPLEX_ACIES, CUNEUS, VEXILLATIO,
-AUXILIA) to coordinate its ants.
-
-**Pheromone** — a structured drift signal laid by an ant. Recorded
-in the `Pheromone` PostgreSQL table with intensity, decay rate,
-provenance (which ant deposited it). Append-only via
-`trg_pheromone_append_only`; archive+purge framework via
-`uc_pheromone_archive_purge()` per v9.07. Read by the bloom-renderer
-to produce the operator-facing heatmap. An additional audit-of-record
-beyond the canonical 12 set in `DEVNOTES/audit-of-record.md` (the
-canonical set is bounded; Pheromone has the operator-controlled
-purge path that the canonical set forbids).
-
-**Civitas** — the citizen layer. 6 civilian classes parallel to the
-9 Republican legions: Plebs, Equites, Augures, Censores,
-Quaestores, Tribuni Plebis. Citizens aggregate ant findings into
-higher-level political signals (e.g., Plebs aggregate burst
-pheromones into a forum-imbalance signal). Code in
-`polaris_swarm/civitas/`.
-
-**Citizen** — a Civitas member. Implementation: each citizen class
-is a Python module that consumes ant findings and emits a synthesis
-finding. The 6 classes are below.
-
-**Plebs (Plebeians)** — Civitas citizens who aggregate burst-class
-ant findings into forum-imbalance signals. The default class.
-
-**Equites (Knights)** — Civitas citizens who pair complementary
-finding types (e.g., Mission + Trajectory) into integrated
-signals.
-
-**Augur** — Civitas citizen of the auspicious-pattern class.
-Detects uncovered namespaces (e.g., proposals/ without ant
-coverage) and emits `proposal_new_ant` findings. Closes the
-proposal-driven autogenesis loop (G13).
-
-**Censor** — Civitas citizen of the registry class. Maintains the
-`census-roll.json` filesystem audit-of-record. Tracks which
-ants/citizens are active; surfaces ant churn.
-
-**Quaestor (Treasurer)** — Civitas citizen of the financial class.
-Maintains the `treasury-roll.json` denarius ledger. Records
-reward/penalty events as Treasury rolls.
-
-**Tribuni Plebis** — Civitas citizen of the watchdog class
-(v8.71 / Arc G). The 6th citizen. Monitors the Sanctum protocol
-itself for drift, parking patterns, and override-pattern frequency.
-Voiced via `polaris_swarm/civitas/tribuni_plebis_watcher.py`.
-
-**Denarius** — the swarm currency. NOT Polaris currency (C10 /
-pomerium preserved). Earned by ants whose pheromones lead to drift
-resolution; lost by ants whose pheromones decay unread.
-Implementation: `polaris_swarm/civitas/treasury.py`. Ledger:
-`treasury-roll.json` (the 3rd filesystem AoR; Arc F / v8.68).
-
-**Treasury** — the denarius accounting layer. Two-form: in-memory
-state in `treasury.py` + persisted ledger in `treasury-roll.json`.
-Every reward/penalty event is recorded in both forms; reload
-reconstructs from the ledger.
-
-**Census** — the citizen-registry layer. `census-roll.json` is the
-4th filesystem AoR (Arc E / v8.66). Records each citizen's
-activation events.
-
-**Cursus Honorum** — Roman class advancement system applied to
-ants. Three classes: Plebs (0-100 denarii, 1.0× multiplier), Eques
-(101-10,000 denarii, 1.5× multiplier), Patrician (10,001+ denarii,
-2.0× multiplier; Sanctum-chair eligible). Implemented in
-`treasury.py` (F4 / v8.70). G19 monotonic; G20 strict-Civitas
-(eligibility derives only from balance, never Polaris identity).
-
-**Hydra-9** — the canonical 9-watcher count for the HYDRA
-synthesis layer. Established v8.72 by relocating the Hydra
-mythology from Mycelium legions (where it was a v8.65-era
-miscount) to HYDRA watchers (the etymological home). CM remains
-the immortal 10th head.
-
-**CM** — the constitutional meta-constraint. See [Cognitive
-substrate](#cognitive-substrate) above.
-
-**G-guards** — the lattice of structural enforcement guards
-preventing drift. G1-G29 as of v8.77. Each guard names one
-invariant that the test suite mechanically enforces. Examples: G3
-(watchers must be read-only), G13 (proposal-driven autogenesis),
-G26 (STEADY_STATE_ANTS allowlist requires Sanctum), G27 (TLS in
-prod), G28 (no env-secrets in prod), G29 (structured /api/health).
-
----
-
-## Arcs & versions
-
-Arcs are strategic-thematic groupings of related ships. They open
-via Sanctum, accumulate ships across many versions, and close when
-their done-list is complete. Each arc has its own
-`meta/arc-<letter>-*.md` strategic record.
-
-**Arc A** — open-problems arc (v2 / v11). The 5 cryptographic
-primitives M2-1..M2-12. Closed at 12/12 ✅ on 2026-05-12.
-
-**Arc B** — production-deployment arc (opened 2026-05-14). Phase 1
-shipped as v8.77 (10 deliverables: OPERATIONS.md, SECRETS.md,
-Dockerfile.prod, docker-compose.prod.yml, Caddyfile, structured
-/api/health, deploy script, backup script, generate/rotate-secret
-scripts, strategic record). G27-G29 introduced. Phase 2
-(WebAuthn / archive policy / multi-instance) and Phase 3
-(multi-region / DR / SOC 2) deferred. Strategic record:
-`meta/arc-b-production.md`.
-
-**Arc C** — the partner-consumer arc (banking ledger, OIDC
-integration). Considered for v2 but deferred 2026-05-09. See
-`memory/deferred_items.md`.
-
-**Arc D** — HYDRA arc (opened + closed 2026-05-12). 8 ships (H1-H8)
-delivered the 9-watcher synthesis layer. Strategic record:
-`meta/arc-d-hydra.md`.
-
-**Arc E** — Mycelium arc (opened 2026-05-13; cohort active). 10
-ships (E1-E10) delivered the 33-ant swarm + 6-citizen Civitas
-layer. Strategic record: `meta/arc-e-mycelium.md`.
-
-**Arc F** — Denarius arc (opened 2026-05-13). 5 ships (F1-F5)
-delivered the swarm-currency layer with Cursus Honorum + Sanctum-
-chair eligibility. Strategic record: `meta/arc-f-denarius.md`.
-
-**Arc G** — Roman Empire arc (opened 2026-05-13). G1 shipped the
-2 Imperial legions + Tribuni Plebis + Via Appia priority. G21-G25
-introduced. Strategic record: `meta/arc-g-empire.md`.
-
-**Arc H** — analytical-layer arc (parked). The
-swarm-as-analytical-layer for tokens/verification data. Parked per
-VANTA directive 2026-05-13: "not now because it's not ready but
-we want to actively work and get it ready."
+**G-guards** — structural enforcement guards in the test suite that
+prevent drift. G27-G29 cover production deployment (TLS in prod,
+no env-secrets in prod, structured /api/health). Each guard names
+one invariant that a test mechanically enforces.
 
 ---
 
@@ -588,32 +395,20 @@ ACCEPTED (a threat the system explicitly tolerates).
 2026-05-09; v2 closed 2026-05-12 at 12/12 ✅. Arc-specific
 done-lists live in `meta/arc-<letter>-*.md`.
 
-**Empirical-iteration cycle** — the pattern observation → finding
-→ fix → audit-of-record. Codified in `meta/architect.md`.
-Examples: v8.72 → 100yr-sim → F5; v8.75 macro-scan → v8.76
-parser fix.
-
-**Episodic memory** — in the cognitive layer, the journal entries
-in `journal/YYYY-MM-DD.md`. Captures what happened in each
-session.
-
-**Forward priming** — reading the relevant DEVNOTES, patterns,
-and journal entries BEFORE editing a file. Done via
-`scripts/ai-where.sh FILE`. Brain analog: walking into the
-kitchen reminds you that you wanted water.
+**Episodic memory** — the journal entries in
+`journal/YYYY-MM-DD.md`. Captures what happened in each session.
 
 **Heavy-production posture** — the operating mode adopted via
 `sanctum/2026-05-14-steady-state-revocation-heavy-production.md`.
 Replaces the v8.31 post-v2 steady-state decline-and-surface
 default with an active-production "ship the complete thing"
-default. The four cognitive-substrate principles, C1-C10, and
-G1-G26 are preserved verbatim; only the default response shape
-changes.
+default. The three agent-contract principles and C1-C10 are
+preserved verbatim; only the default response shape changes.
 
 **Larping** — a recurring failure mode VANTA flagged early on:
 substituting feelings of significance for actual output. Tracked
-in `DEVNOTES/style.md`. The cognitive layer has standing
-instructions to name this pattern when it appears.
+in `DEVNOTES/style.md`. Standing instruction: name this pattern
+when it appears.
 
 **Mission** — the constitution defined in `MISSION.md`. What
 Polaris is, what it isn't, and the 10 hard constraints. The agent
@@ -631,17 +426,9 @@ to do" (rejection). Parked items live in
 `memory/deferred_items.md`; rejected items live in
 `meta/rejected.md` (if/when populated).
 
-**Pattern** — a recurring cognitive shape recorded in
-`DEVNOTES/style.md`. Examples: #14 Workaround Risk, #19 Clarity,
-#21 Closure, #23 Empirical Iteration.
-
-**Procedural memory** — in the cognitive layer, the recipes in
-`patterns/*.md` and the executable scripts in `scripts/ai-*.sh`.
-Captures how to do recurring tasks.
-
-**Reflex / reflection** — the consolidation step where in-session
-journal learnings are promoted to durable DEVNOTES or patterns.
-Triggered by `scripts/ai-reflect.sh`.
+**Pattern** — a recurring shape recorded in `DEVNOTES/style.md`.
+Examples: #14 Workaround Risk, #19 Clarity, #21 Closure, #23
+Empirical Iteration.
 
 **Risk class** — see `meta/autonomy-architecture.md`. LOW
 (autonomous-eligible), MEDIUM (propose-and-wait, often Sanctum),
@@ -651,15 +438,9 @@ HIGH (explicit human approval, always Sanctum).
 `ROADMAP.md`. Items reference mission, risk class, effort, and
 acceptance.
 
-**Self-improving loop** — the cycle: status → propose → execute
-→ journal → reflect. Each iteration advances the mission and
-refines the cognitive layer. Documented in
-`meta/cognitive-loop.md`.
-
-**Semantic memory** — in the cognitive layer, the DEVNOTES files
-(`concurrency.md`, `atlas-scaling.md`, `known-gotchas.md`,
-`style.md`, `threat-model.md`). Captures stable facts about the
-system.
+**Semantic memory** — the DEVNOTES files (`concurrency.md`,
+`atlas-scaling.md`, `known-gotchas.md`, `style.md`,
+`threat-model.md`). Captures stable facts about the system.
 
 **Steady-state contract (v8.31)** — the post-v2 default posture
 adopted 2026-05-12 (Sanctum
@@ -672,11 +453,6 @@ preserved.
 Tampering, Repudiation, Information Disclosure, Denial of service,
 Elevation of privilege. `DEVNOTES/threat-model.md` enumerates
 Polaris's threats by STRIDE category.
-
-**Tribuni Plebis monitoring** — the Sanctum-protocol watchdog
-mechanism described in `meta/sanctum-protocol.md`. The Tribuni
-Plebis citizen fires on burst-Sanctum patterns, stale-OPEN
-Sanctums, and override-pattern frequency.
 
 ---
 

@@ -484,27 +484,13 @@ This manifest must be revisited when:
   anchoring) landed in v8.21 and is recorded above as
   "Merkle tree commitment (in-tree)".
 
-## Additional dependencies (added v8.65 per Legio Substrate scan)
+## Additional dependencies
 
-The Legio Substrate ants surfaced two primitives that were in use
-but unlisted in the prior manifest. Adding them now per the
-ant_substrate_catalog and ant_dependency_in_use signals:
-
-- **D3 v7** (`polaris_web/static/vendor/d3.v7.min.js` and
-  `meta/brain-map/assets/d3.v7.min.js`) — JavaScript visualization
-  library; vendored locally (no CDN). Powers the atlas globe and
-  the brain-map force-directed graph. **Required** for the v6
-  atlas operator UI and the v8.52 brain-map. Replacement = any
-  D3-API-compatible force-graph library; no equivalent in the
-  standard browser stack.
-
-- **Anthropic Python SDK** (`anthropic`) — Optional runtime
-  dependency. Used only by `polaris_hydra/host.py` when
-  `ANTHROPIC_API_KEY` is set; falls back to deterministic
-  structured output otherwise. **Optional** because the swarm
-  works LLM-free; HYDRA's host adds an LLM synthesis voice when
-  available. Polaris's deterministic core does not depend on
-  this primitive.
+- **D3 v7** (`polaris_web/static/vendor/d3.v7.min.js`) — JavaScript
+  visualization library; vendored locally (no CDN). Powers the atlas
+  globe. **Required** for the v6 atlas operator UI. Replacement = any
+  D3-API-compatible force-graph library; no equivalent in the standard
+  browser stack.
 
 ## Cross-references
 

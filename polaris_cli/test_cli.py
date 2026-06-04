@@ -34,17 +34,34 @@ DB_CONFIG = {
 
 def reload_sample_data():
     """Reset to pristine 73-row sample state plus a clean AuthAuditLog and
-    the three seed AppUser accounts."""
+    the three seed AppUser accounts.
+
+    psql is invoked with the POLARIS_DB_* connection settings, so the same
+    path works against a CI service-container Postgres and a dev box owned
+    by the current user. Set POLARIS_TEST_RELOAD_VIA=su to force the legacy
+    `su - postgres -c` path on a peer-auth box.
+    """
+    db_name = os.environ.get('POLARIS_DB_NAME', 'polaris_test')
+    db_host = os.environ.get('POLARIS_DB_HOST', 'localhost')
+    db_port = os.environ.get('POLARIS_DB_PORT', '5432')
+    db_user = os.environ.get('POLARIS_DB_USER', 'postgres')
+    db_pass = os.environ.get('POLARIS_DB_PASSWORD', '')
     files = ['04_data.sql', '05_procedures.sql', '06_triggers.sql',
              '09_grants.sql', '10_auth.sql']
+    run_env = os.environ.copy()
+    if db_pass:
+        run_env['PGPASSWORD'] = db_pass
+    use_su = os.environ.get('POLARIS_TEST_RELOAD_VIA', '').lower() == 'su'
     for fname in files:
         path = os.path.join(SQL_DIR, fname)
         if not os.path.exists(path):
             path = os.path.join('/tmp', fname)
-        result = subprocess.run(
-            ['su', '-', 'postgres', '-c', f'psql -d polaris_test -f {path}'],
-            capture_output=True, text=True
-        )
+        if use_su:
+            cmd = ['su', '-', 'postgres', '-c', f'psql -d {db_name} -f {path}']
+        else:
+            cmd = ['psql', '-h', db_host, '-p', db_port, '-U', db_user,
+                   '-d', db_name, '-f', path]
+        result = subprocess.run(cmd, capture_output=True, text=True, env=run_env)
         if result.returncode != 0:
             raise RuntimeError(f"Failed to reload {fname}: {result.stderr}")
 

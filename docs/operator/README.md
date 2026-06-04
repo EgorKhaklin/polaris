@@ -43,8 +43,8 @@ For developers contributing to Polaris, see
 3. [DR.md](DR.md) §"Failure-class procedures" (8 named classes)
 
 **Day-to-day:**
-- Cron rows: [OPERATIONS.md](OPERATIONS.md) §"Day-2 operations" (incl. v9.07 Pheromone archive cadence)
-- Health: `curl /api/health` (G29 structured JSON)
+- Cron rows: [OPERATIONS.md](OPERATIONS.md) §"Day-2 operations"
+- Health: `curl /api/health` (structured JSON)
 - Metrics: `curl /metrics` (Prometheus; v8.93)
 
 ---

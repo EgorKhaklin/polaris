@@ -1,212 +1,142 @@
-# Polaris — the agent-maintainable architecture experiment
+# Polaris — identity cannot outrun its primitives
 
-**Status:** HYPOTHESIS-NOT-VERIFIED (v9.27 / Tier 7 #9 Sanctum decision).
+**Status:** HYPOTHESIS-NOT-VERIFIED.
 **Author:** Egor Khaklin (VANTA)
-**Reading time:** 10 minutes.
+**Reading time:** 8 minutes.
 
-This page was originally titled "the agent-maintainable architecture
-pattern" (v9.24). At v9.27, the Anti-Architect's contest of the
-publish-or-kill decision concluded that **the strong claim cannot be
-honestly published on current evidence.** The page is reframed: from
-a thesis to a documented experiment with an open falsification test.
-
----
-
-## What changed at v9.27
-
-The v9.24 page made a falsifiable claim: "an engineer who has never
-seen Polaris should be able to identify 'what does this need' within
-one hour." That claim required an actual cold-read by an actual
-external engineer to be evidence. No such cold-read has been
-conducted. The agent (who built the system) cannot honestly perform
-its own cold-read — see `meta/cold-read-walkthrough-v9.27.md` for the
-self-evaluation that surfaced 10 intervention points where session
-context, not CLAUDE.md, closed the gap.
-
-**Per the BIG MISSION Tier 7 #9 Sanctum joint resolution:**
-- The strong claim ("the agent-maintainable pattern is novel + works")
-  is RETIRED until evidence supports it.
-- The system is preserved as good tooling for whoever attempts the
-  cold-read.
-- This page now states the hypothesis + the falsification test + the
-  invitation to replicate or refute.
-
-The reframing is itself the protocol working at its hardest: refusing
-to publish a claim the agent wants to publish, because the evidence
-isn't there.
+This page states the thesis behind Polaris, the test that would confirm
+or refute it, and an honest account of the evidence currently in hand.
+It is a documented experiment with an open falsification test, not a
+victory lap.
 
 ---
 
-## The experiment
+## The thesis
 
-Polaris is a reference implementation of a national identity token
-system. The schema does what identity-token schemas do: tokens,
-individuals, agencies, signatures, audit trails, revocations. **The
-schema is incidental to the experiment.**
+A national identity-token system is only as trustworthy as the
+primitives underneath it. Policy promises ("we will not aggregate," "we
+will not retain forever," "we will enforce one identity per person") are
+worthless if the only thing holding them up is policy. They have to be
+enforced where they cannot be talked around: in the schema, in the
+triggers, in the partial unique indexes, in the CHECK constraints.
 
-The experiment is: **can an LLM-driven cognitive layer maintain a
-non-trivial code substrate over months without architectural drift,
-when bounded by a documented protocol composed of five primitives?**
+Polaris is the claim made concrete. The ten constitutional invariants
+(C1-C10 in `MISSION.md`) are each enforced at the database level, not
+the policy level. The Vocation (anti-coercion) sits above them: changes
+toward surveillance, centralized aggregation, or unbounded retention are
+refused on sight. The schema does what identity-token schemas do
+(tokens, individuals, agencies, signatures, audit trails, revocations),
+but the security boundary is the database, and the invariants are
+machine-checked by `polaris_checks/` before any change ships.
 
-The five primitives:
-
-1. A `MISSION.md` **constitution** with 10 hard constraints (C1–C10),
-   each enforced at the database level (trigger / partial unique
-   index / CHECK constraint), not at the policy level.
-2. **Risk classes** (LOW / MEDIUM / HIGH) governing what the agent
-   can do autonomously vs what requires operator authorization.
-3. **Structured second-opinion review** — two agent personas: an
-   Architect that proposes, and an Anti-Architect that contests under
-   an 8-pattern anti-pattern catalog. Joint convergence is the input
-   to the operator's decision.
-4. A **consultation protocol** for HIGH-risk decisions (the directory
-   called `sanctum/` for historical reasons; structurally a
-   decision-record directory).
-5. **CI as the binding consequence layer.** Findings that the
-   cognitive layer raises block the ship; the operator can override
-   with a documented audit-trail line.
-
-These five primitives are not novel individually. The experiment asks
-whether their composition produces an LLM-maintainable substrate.
+The strong form of the thesis: **a reference implementation can make its
+own constraints legible enough that a stranger can read the repository
+and correctly infer what it needs.** If the primitives are honest, the
+system explains itself. That is the claim this page does not yet get to
+publish as proven.
 
 ---
 
 ## What would count as evidence
 
-The experiment's falsification test, restated mechanically:
+**The cold-read test.** An engineer who has never seen Polaris is given:
 
-**The cold-read test.** An engineer who has never seen Polaris is
-given:
 - The repository (read-only)
 - The prompt "what does this need to ship a small contained feature?"
 - No further guidance
 
 They have ONE HOUR. At the end of the hour:
-- If they correctly identify a coherent next-step that a current-
-  agent session would also have produced → the protocol is
-  legible enough for cold reads.
-- If they identify a step that violates a known invariant the agent
-  would have refused → the protocol is INCOMPLETE; CLAUDE.md needs
-  the rules the engineer needed but didn't find.
-- If they produce no coherent answer → the protocol is illegible to
-  cold readers; the strong claim is false.
 
-**The longitudinal test.** An LLM-driven cognitive layer maintains
-the substrate without operator-as-persistence over 6+ months,
-with measurable MTTR-decreasing trend on findings the layer raises
-(per `meta/swarm-mttr.json` + the v9.30 binding clause in
-`sanctum/2026-05-16-tier-5-swarm-must-earn-its-weight.md` §VI).
+- If they correctly identify a coherent next step that the maintainer
+  would also have produced, the repository is legible enough for cold
+  reads.
+- If they identify a step that violates a known invariant the maintainer
+  would have refused, the documentation is INCOMPLETE; `CLAUDE.md` and
+  `MISSION.md` need the rules the engineer needed but did not find.
+- If they produce no coherent answer, the repository is illegible to
+  cold readers and the strong claim is false.
+
+This is the falsification test. It requires an actual cold read by an
+actual external engineer to count as evidence. No such cold read has
+been conducted, which is why the status above is
+HYPOTHESIS-NOT-VERIFIED.
 
 ---
 
 ## What evidence currently exists
 
-**Honestly:**
+Honestly, the standing evidence is internal and limited:
 
-- **Two weeks of ship history (v9.10–v9.27).** The Architect +
-  Anti-Architect protocol caught real anti-patterns across this
-  window (catalogued in `meta/sanctum-index.md`). This is consistent
-  with the experiment working, but two weeks is not the
-  longitudinal-test horizon.
-- **A self-evaluation walkthrough** (`meta/cold-read-walkthrough-v9.27.md`)
-  found 10 intervention points where session-context filled gaps
-  CLAUDE.md did not. v9.27 converted those into 14 ship-sequence
-  steps in CLAUDE.md. The walkthrough is NOT a cold-read; it is
-  agent-self-evaluation by an agent that built the system.
-- **A kill test** (v9.25-v9.26) demonstrates the swarm catches 5/5
-  realistic defects in one pass. This is evidence the cognitive
-  layer has bite, NOT evidence the agent-maintainable claim holds.
-- **A scorecard** (`meta/swarm-scorecard.json` from v9.25) tracks
-  per-ship escape rate. Trailing-10-ships escape rate at v9.27 = 0.0.
-  This is evidence the swarm has not been silently failing, NOT
-  evidence the agent maintains the substrate autonomously.
+- **The invariants are enforced where it matters.** C1-C10 live in the
+  schema and triggers (`polaris_sql/`), and `polaris_checks/` gates CI
+  on them with tested detection correctness. This is evidence that the
+  primitives are real, not that a stranger can read them cold.
+- **A self-evaluation walkthrough** found intervention points where
+  session context filled gaps the docs did not. A walkthrough by the
+  person who built the system is not a cold read; it is self-evaluation
+  by someone who already has full context. It can only surface
+  candidate gaps, never prove legibility.
 
-**None of the above constitutes evidence for the strong claim.**
-The Anti-Architect's AP8 (larping) fires hard if we elevate
-"two weeks of internal evidence" to "the agent-maintainable pattern
-is novel and works."
+None of the above constitutes evidence for the strong claim. Elevating
+"internal review by the author" to "a stranger can read this cold and
+get it right" is exactly the inference this page refuses to make.
 
 ---
 
 ## How to replicate or refute
 
-The repository is the experiment's substrate. To attempt the
-cold-read test:
+The repository is the experiment's substrate. To attempt the cold-read
+test:
 
 ```bash
 git clone <polaris repo>
 cd polaris
-cat CLAUDE.md  # the only document you should read first
+cat CLAUDE.md  # the document you should read first
 # Then attempt: "ship a small contained feature, X"
-# Log every moment you needed knowledge that wasn't in CLAUDE.md
+# Log every moment you needed knowledge that wasn't in the docs
 # Compare your trajectory to journal/ + sanctum/
 ```
 
-If you conduct this experiment, send the results (publicly or
-privately to the maintainer). A positive result + your methodology
-moves the thesis from HYPOTHESIS-NOT-VERIFIED toward published
-claim. A negative result is equally valuable; it documents the
-specific failure mode for future work.
+If you conduct this experiment, send the results (publicly or privately
+to the maintainer). A positive result plus your methodology moves the
+thesis from HYPOTHESIS-NOT-VERIFIED toward a published claim. A negative
+result is equally valuable: it documents the specific failure mode for
+future work.
 
 ---
 
-## Why the strong claim is retired today
+## Why the strong claim is not published
 
-The Anti-Architect's argument, condensed:
+The argument against publishing "this works," condensed:
 
 1. Publishing "this works" requires evidence it works.
-2. The evidence required is an independent cold-read.
-3. No independent cold-read has been conducted.
-4. Self-evaluation by the agent that built the system is AP1
-   (self-observation without ground-touch) — structurally
-   compromised by full session context.
-5. Therefore the strong claim cannot be published today on the
-   evidence currently in hand.
+2. The evidence required is an independent cold read.
+3. No independent cold read has been conducted.
+4. Self-evaluation by the author is structurally compromised by full
+   context; it cannot stand in for the test.
+5. Therefore the strong claim cannot be published today on the evidence
+   currently in hand.
 
-The experiment is not refuted. The experiment is unverified. The
-distinction matters: an unverified hypothesis is publishable AS a
-hypothesis with the test specified; an unverified hypothesis
-published as a verified result is the failure mode this entire
-protocol exists to prevent.
-
----
-
-## The terminus (the v9.40 abandonment clause)
-
-Per the v9.27 Sanctum (§VI binding clause):
-
-> If no cold-read attempt occurs by v9.40, the experiment is
-> documented as inconclusive and the strong claim is retired
-> permanently. The system is kept as good tooling; the page becomes
-> "Polaris — an identity-token reference implementation built under
-> a documented agent-maintenance protocol that has not been
-> independently validated."
-
-This is the kill switch on the experiment itself. Not the kill
-switch on the system.
+The thesis is not refuted. It is unverified. The distinction matters: an
+unverified hypothesis is publishable AS a hypothesis with the test
+specified; an unverified hypothesis published as a verified result is
+the failure mode this whole project exists to avoid.
 
 ---
 
 ## What this page is NOT
 
-- A claim that the protocol is novel.
-- A claim that the protocol works.
-- A claim that LLMs should maintain critical infrastructure
-  unsupervised.
+- A claim that the system has been independently validated.
+- A claim that reading the repository cold is proven to work.
+- A claim that the schema is novel.
 
 What this page IS:
 
-- An honest record that a five-primitive composition was tried.
-- An invitation to test it against an explicit falsification
-  criterion.
-- A commitment to retire the strong claim if no test materializes
-  by v9.40.
+- An honest statement that identity has to be enforced at its
+  primitives, and that Polaris tries to do exactly that.
+- An invitation to test the repository's legibility against an explicit
+  falsification criterion.
+- A commitment to keep the status honest until a real cold read happens.
 
-That is the experiment. That is the evidence currently available.
-That is the decision.
-
----
-
-*Per BIG MISSION Tier 7 Sanctum 2026-05-16, item #9 — the publish-
-or-kill decision. The Anti-Architect's contest produced the
-HYPOTHESIS-NOT-VERIFIED position.*
+That is the thesis. That is the evidence currently available. That is
+the decision.
