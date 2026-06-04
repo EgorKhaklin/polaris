@@ -131,6 +131,12 @@ services:
       POSTGRES_PASSWORD_FILE: /run/secrets/polaris_db_root_password
       POSTGRES_HOST_AUTH_METHOD: scram-sha-256
       POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+      # docker-init.sh rotates the polaris_app role password to THIS secret —
+      # the same /run/secrets/polaris_db_password the app and pgbouncer
+      # authenticate with — so the role and its clients never diverge. Without
+      # this, polaris_app keeps the dev default from 09_grants.sql and prod auth
+      # fails. The secret is already mounted below.
+      POLARIS_APP_PASSWORD_FILE: /run/secrets/polaris_db_password
     secrets:
       - polaris_db_password
       - polaris_db_root_password

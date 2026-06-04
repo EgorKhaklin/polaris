@@ -5,6 +5,36 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.86 — 2026-06-04 (prod syncs the polaris_app role password to the generated secret)
+
+A deploy finding from the fifth review pass. In the production stack the app and
+pgbouncer both authenticate as `polaris_app` using the file-mounted secret
+`/run/secrets/polaris_db_password`. But `09_grants.sql` creates the role with the
+dev default `'polaris_dev_password'`, and the **postgres** service never set
+`POLARIS_APP_PASSWORD`, so `docker-init.sh` skipped its rotation block: the role
+kept the dev password while every client presented the generated one. The result
+is either a broken prod stack (authentication fails) or — if a deployer papered
+over it by reusing the dev string — the dev password live in production.
+
+`docker-init.sh` already had the ALTER-ROLE machinery; it was simply never fed
+the secret. Now:
+
+- **docker-compose.prod.yml** — the postgres service sets
+  `POLARIS_APP_PASSWORD_FILE: /run/secrets/polaris_db_password`, the SAME secret
+  the app reads. (The secret was already mounted into the service.)
+- **docker-init.sh** — reads `POLARIS_APP_PASSWORD_FILE` (the `*_FILE` convention
+  the rest of the stack uses, G28) and ALTERs `polaris_app` to it. `cat` strips
+  the trailing newline, matching the app's `_read_secret_file().read().strip()`,
+  so the role password and the clients' password compare byte-for-byte.
+- The complexity gate is now entropy-aware: the absolute floor is 16 chars; a
+  password under 24 chars must still mix digit + letter + symbol, but a 24+ char
+  secret passes on length alone — the generated secret is 48 hex chars
+  (`openssl rand -hex 24`, ~192 bits) and has no symbol by construction, so the
+  old blanket symbol rule would have rejected our own secret.
+- **polaris_checks** — `check_prod_app_password_synced` (26th check) asserts the
+  compose role-password secret matches the app's and that docker-init reads it
+  and ALTERs the role. `test_checks.py` discriminates across five failure modes.
+
 ## v9.85 — 2026-06-04 (C1 append-only becomes a privilege boundary, not only a trigger)
 
 The thesis finding from the fifth review pass. C1 — audit-of-record, enforced at

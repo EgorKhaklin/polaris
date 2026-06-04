@@ -61,31 +61,49 @@ SQL
     echo "Applied $count migration(s)."
 fi
 
-# If the deployer set a custom polaris_app password via env var, apply it.
-# 09_grants.sql created the role with the dev default; rotate to the prod value.
+# Sync the polaris_app role password to the prod secret. 09_grants.sql created
+# the role with the dev default ('polaris_dev_password'); the app and pgbouncer
+# both authenticate as polaris_app with the generated /run/secrets/polaris_db_password.
+# Without this rotation the role keeps the dev password while everything else
+# presents the generated one — authentication fails (or, worse, the dev password
+# is what is live in production).
+#
+# v9.85 — read the file-mounted secret first (the *_FILE convention the rest of
+# the prod stack uses, G28). docker-compose.prod.yml points
+# POLARIS_APP_PASSWORD_FILE at the SAME /run/secrets/polaris_db_password the app
+# and pgbouncer read, so the role's password ends up equal to theirs. `cat`
+# command substitution strips the trailing newline, matching the app's
+# _read_secret_file().read().strip(), so the two values compare byte-for-byte.
+if [ -n "$POLARIS_APP_PASSWORD_FILE" ] && [ -r "$POLARIS_APP_PASSWORD_FILE" ]; then
+    POLARIS_APP_PASSWORD="$(cat "$POLARIS_APP_PASSWORD_FILE")"
+fi
+
 if [ -n "$POLARIS_APP_PASSWORD" ] && [ "$POLARIS_APP_PASSWORD" != "polaris_dev_password" ]; then
-    # F-13: Basic password complexity gate. The polaris_app role can read all
-    # rows in the schema; a weak password here means the entire database is
-    # one credential-stuffing attempt away. We require:
-    #   - at least 16 characters
-    #   - at least one digit
-    #   - at least one letter
-    #   - at least one symbol
+    # F-13: password complexity gate. The polaris_app role can read every row in
+    # the schema, so a weak password is the whole database one guess away.
+    #   - absolute floor: 16 characters.
+    #   - under 24 chars (human-chosen territory): also require a digit, a
+    #     letter, and a symbol, to resist dictionary attacks.
+    #   - 24+ chars: length alone is the entropy. The generated secret is 48 hex
+    #     chars (openssl rand -hex 24, ~192 bits) and has NO symbol by
+    #     construction, so a blanket symbol rule would reject our own secret.
     if [ ${#POLARIS_APP_PASSWORD} -lt 16 ]; then
         echo "FATAL: POLARIS_APP_PASSWORD must be at least 16 characters." >&2
         exit 2
     fi
-    if ! echo "$POLARIS_APP_PASSWORD" | grep -q '[0-9]'; then
-        echo "FATAL: POLARIS_APP_PASSWORD must contain at least one digit." >&2
-        exit 2
-    fi
-    if ! echo "$POLARIS_APP_PASSWORD" | grep -q '[A-Za-z]'; then
-        echo "FATAL: POLARIS_APP_PASSWORD must contain at least one letter." >&2
-        exit 2
-    fi
-    if ! echo "$POLARIS_APP_PASSWORD" | grep -q '[^A-Za-z0-9]'; then
-        echo "FATAL: POLARIS_APP_PASSWORD must contain at least one symbol." >&2
-        exit 2
+    if [ ${#POLARIS_APP_PASSWORD} -lt 24 ]; then
+        if ! echo "$POLARIS_APP_PASSWORD" | grep -q '[0-9]'; then
+            echo "FATAL: POLARIS_APP_PASSWORD under 24 chars must contain a digit." >&2
+            exit 2
+        fi
+        if ! echo "$POLARIS_APP_PASSWORD" | grep -q '[A-Za-z]'; then
+            echo "FATAL: POLARIS_APP_PASSWORD under 24 chars must contain a letter." >&2
+            exit 2
+        fi
+        if ! echo "$POLARIS_APP_PASSWORD" | grep -q '[^A-Za-z0-9]'; then
+            echo "FATAL: POLARIS_APP_PASSWORD under 24 chars must contain a symbol." >&2
+            exit 2
+        fi
     fi
 
     echo "Rotating polaris_app password..."

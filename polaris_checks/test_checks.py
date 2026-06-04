@@ -269,5 +269,49 @@ def test_aor_privilege_boundary_check_discriminates(tmp_path):
         "must PASS when revoke + migration revoke + SECURITY DEFINER are all present"
 
 
+def test_prod_app_password_synced_check_discriminates(tmp_path):
+    web = tmp_path / "polaris_web"
+    web.mkdir()
+
+    GOOD_INIT = (
+        'if [ -n "$POLARIS_APP_PASSWORD_FILE" ]; then\n'
+        '  POLARIS_APP_PASSWORD="$(cat "$POLARIS_APP_PASSWORD_FILE")"\n'
+        'fi\n'
+        'psql -c "ALTER ROLE polaris_app WITH PASSWORD \'$POLARIS_APP_PASSWORD\'"\n')
+
+    def write(compose, init=GOOD_INIT):
+        (web / "docker-compose.prod.yml").write_text(compose)
+        (web / "docker-init.sh").write_text(init)
+
+    app_line = "      POLARIS_DB_PASSWORD_FILE: /run/secrets/polaris_db_password\n"
+    role_line = "      POLARIS_APP_PASSWORD_FILE: /run/secrets/polaris_db_password\n"
+
+    # 1. compose never wires the role password file -> FAIL.
+    write(app_line)
+    assert checks.check_prod_app_password_synced(tmp_path)[0].level == "FAIL", \
+        "must FAIL when POLARIS_APP_PASSWORD_FILE is absent"
+
+    # 2. role secret differs from the app's secret -> FAIL.
+    write(app_line + "      POLARIS_APP_PASSWORD_FILE: /run/secrets/something_else\n")
+    assert checks.check_prod_app_password_synced(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the role password secret differs from the app's"
+
+    # 3. compose fine, but docker-init.sh never reads the file -> FAIL.
+    write(app_line + role_line, init='echo "no rotation here"\n')
+    assert checks.check_prod_app_password_synced(tmp_path)[0].level == "FAIL", \
+        "must FAIL when docker-init.sh does not read POLARIS_APP_PASSWORD_FILE"
+
+    # 4. compose fine, init reads the file but never ALTERs the role -> FAIL.
+    write(app_line + role_line,
+          init='POLARIS_APP_PASSWORD="$(cat "$POLARIS_APP_PASSWORD_FILE")"\n')
+    assert checks.check_prod_app_password_synced(tmp_path)[0].level == "FAIL", \
+        "must FAIL when docker-init.sh does not ALTER ROLE polaris_app"
+
+    # 5. all wired and matching -> OK.
+    write(app_line + role_line)
+    assert checks.check_prod_app_password_synced(tmp_path)[0].level == "OK", \
+        "must PASS when the role password is synced to the app's secret and rotated at init"
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

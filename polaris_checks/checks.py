@@ -362,6 +362,43 @@ def check_cookie_secure_in_production(root: pathlib.Path) -> list[Finding]:
 
 
 # ---------------------------------------------------------------------------
+# Prod deploy — the polaris_app role password must be synced to the generated
+# secret, not left at the dev default from 09_grants.sql.
+#
+# The app and pgbouncer authenticate as polaris_app with the file-mounted
+# secret /run/secrets/polaris_db_password. 09_grants.sql creates the role with
+# 'polaris_dev_password'. If docker-init.sh never rotates the role to the
+# secret, the role keeps the dev password while its clients present the
+# generated one — prod auth breaks, or the dev password is what is live. The
+# postgres service must therefore point POLARIS_APP_PASSWORD_FILE at the SAME
+# secret the app reads, and docker-init.sh must read it and ALTER the role.
+# ---------------------------------------------------------------------------
+def check_prod_app_password_synced(root: pathlib.Path) -> list[Finding]:
+    compose = _read(root, "polaris_web/docker-compose.prod.yml")
+    init = _read(root, "polaris_web/docker-init.sh")
+    if not compose or not init:
+        return _fail("prod_pw_sync", "docker-compose.prod.yml or docker-init.sh missing")
+    app_secret = re.search(r"POLARIS_DB_PASSWORD_FILE:\s*(\S+)", compose)
+    role_secret = re.search(r"POLARIS_APP_PASSWORD_FILE:\s*(\S+)", compose)
+    if app_secret is None:
+        return _fail("prod_pw_sync", "compose does not set POLARIS_DB_PASSWORD_FILE for the app")
+    if role_secret is None:
+        return _fail("prod_pw_sync",
+                     "compose never sets POLARIS_APP_PASSWORD_FILE — the polaris_app role keeps the "
+                     "dev password while the app authenticates with the generated secret")
+    if app_secret.group(1) != role_secret.group(1):
+        return _fail("prod_pw_sync",
+                     f"role password secret ({role_secret.group(1)}) differs from the app's "
+                     f"({app_secret.group(1)}); they must be the same file")
+    if "POLARIS_APP_PASSWORD_FILE" not in init:
+        return _fail("prod_pw_sync", "docker-init.sh does not read POLARIS_APP_PASSWORD_FILE")
+    if not re.search(r"ALTER\s+ROLE\s+polaris_app", init, re.I):
+        return _fail("prod_pw_sync", "docker-init.sh does not ALTER ROLE polaris_app to the secret")
+    return _ok("prod_pw_sync",
+               f"prod syncs the polaris_app role password to the app's secret ({app_secret.group(1)})")
+
+
+# ---------------------------------------------------------------------------
 # Doc/schema drift — the headline architecture doc must state the real number
 # of tables. A reviewer reads this number; it must not contradict the schema.
 # ---------------------------------------------------------------------------
@@ -491,6 +528,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_c10_no_money_tables,
     check_open_redirect_guard,
     check_cookie_secure_in_production,
+    check_prod_app_password_synced,
     check_table_count_matches_doc,
     check_local_clock_convention,
     check_c6_atlas_redacts_zk_location,
