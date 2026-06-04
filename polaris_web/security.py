@@ -385,7 +385,7 @@ def _audit(get_conn, event_type, username=None, user_id=None, detail=None):
 # ----------------------------------------------------------------------------
 # v9.20 — record_audit_access: the audit's audit.
 #
-# Per Sanctum sanctum/2026-05-15-verification-purpose-and-audit-access.md
+# per a recorded decision
 # Position A. Records WHO queried the audit tables (TokenLifecycleEvent /
 # VerificationEvent / AuthAuditLog / DuressEvent). The helper is fail-open
 # (logging failure does not block the actual query — accountability data

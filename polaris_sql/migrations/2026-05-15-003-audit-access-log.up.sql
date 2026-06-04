@@ -2,7 +2,7 @@
 -- 2026-05-15-003-audit-access-log.up.sql
 --
 -- v9.20 / item 6 of the architecture-study joint recommendation.
--- Per Sanctum sanctum/2026-05-15-verification-purpose-and-audit-access.md
+-- per a recorded decision
 -- Position A.
 --
 -- Adds AuditAccessLog — the meta-audit table that records WHO QUERIED

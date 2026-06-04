@@ -3,7 +3,6 @@
 // Read before editing:
 //     ../../docs/reference/SCALING.md                       (architectural treatment)
 //     ../../DEVNOTES/atlas-scaling.md        (what NOT to change without measuring)
-//     ../../patterns/visual-feature-on-atlas.md (canonical recipe)
 // Key entry points:
 //     renderNodes()       — d3 enter/update/exit binding
 //     isVisibleByFilter() — clusters bypass; points sub-filter

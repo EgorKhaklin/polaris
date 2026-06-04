@@ -3,7 +3,7 @@
 # polaris-purge.sh — archive-then-delete operator wrapper
 #
 # v8.87 / Arc B Phase 2b — closes the deletion-from-hot constitutional
-# carve-out per sanctum/2026-05-14-audit-log-deletion-from-hot.md
+# carve-out per a recorded decision
 # (Position B, DECIDED).
 #
 # The ONLY legitimate path for DELETE against audit-class tables. This
@@ -208,6 +208,6 @@ cat <<DONE
   UPDATE — so the move is itself audit-of-record).
 
   Operator runbook: docs/operator/OPERATIONS.md § Backup & restore
-  Constitutional record: sanctum/2026-05-14-audit-log-deletion-from-hot.md
+  Constitutional record: a recorded decision
 DONE
 exit "${EXIT_OK}"

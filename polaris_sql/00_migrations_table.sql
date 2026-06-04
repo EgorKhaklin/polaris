@@ -3,7 +3,7 @@
 -- 00_migrations_table.sql : Schema migration registry (v8.95)
 -- ============================================================================
 --
--- Position C of sanctum/2026-05-14-schema-migration-framework.md selected by
+-- Position C of a recorded decision selected by
 -- VANTA in-chat 2026-05-14 ("C"). The migration framework Polaris ships is
 -- custom polaris-native, matching the existing operator-script style:
 --

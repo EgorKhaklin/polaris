@@ -7,7 +7,7 @@
 # is a backup, not a move). The "rotate-from-hot" half of an archive
 # policy is genuinely constitutional — it touches C1's append-only
 # invariant — and is on file as an OPEN Sanctum awaiting VANTA's
-# decision (sanctum/2026-05-14-audit-log-deletion-from-hot.md).
+# decision (a recorded decision).
 #
 # What this script does:
 #   - SELECTs every audit-class row older than --cutoff-days (default 365)
@@ -210,7 +210,7 @@ out = {
     "cutoff_days": int(cutoff_days),
     "cutoff_iso": cutoff_iso,
     "deletion_from_hot": False,
-    "deletion_sanctum": "sanctum/2026-05-14-audit-log-deletion-from-hot.md",
+    "deletion_sanctum": "a recorded decision",
     "sha256": {},
     "size_bytes": {},
     "row_counts": {},
@@ -251,7 +251,7 @@ cat <<DONE
 
   Verify:    $(basename "$0") --verify-latest --dest=${DEST}
   Constitutional question (deletion-from-hot):
-             sanctum/2026-05-14-audit-log-deletion-from-hot.md
+             a recorded decision
 
   Recommended retention chain:
     Daily   →  polaris-backup.sh  (whole-system)

@@ -563,8 +563,7 @@ class TestRevocationListChecks(_CheckBase):
     Exercising the reason_code CHECK in isolation requires bypassing
     these safety layers, which contradicts the defensive design they
     embody. The CHECK is structurally present in the schema (verified
-    via the pg_constraint catalog by ``test_named_check_constraint_count``
-    in test_structural_invariants.py); the operational path through
+    via the pg_constraint catalog ); the operational path through
     ``uc8_revoke_token`` is exercised by the existing UC test suite
     (see test_app.py). Leaving this class as a documentation anchor
     for the constraint without an isolated unit test.

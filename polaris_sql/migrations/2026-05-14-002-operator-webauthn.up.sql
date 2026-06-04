@@ -1,7 +1,7 @@
 -- ============================================================================
 -- 2026-05-14-002-operator-webauthn.up.sql
 --
--- v8.97 / Position B from sanctum/2026-05-14-webauthn-operator-auth.md
+-- v8.97 / Position B from a recorded decision
 -- (DECIDED by VANTA in-chat "B").
 --
 -- The FIRST non-example migration shipped under the v8.95 framework.
@@ -83,7 +83,7 @@ CREATE INDEX idx_webauthn_credential_last_used
 
 COMMENT ON TABLE OperatorWebauthnCredential IS
     'Per-AppUser WebAuthn credentials (v8.97 / Position B of '
-    'sanctum/2026-05-14-webauthn-operator-auth.md). One row per enrolled '
+    'a recorded decision). One row per enrolled '
     'authenticator. The webauthn library validates registration attestation '
     'before insert; the app does not manipulate public_key bytes directly.';
 

@@ -1,5 +1,5 @@
 /* v8.97 — WebAuthn enrollment (settings page).
-   Position B of sanctum/2026-05-14-webauthn-operator-auth.md.
+   Position B of a recorded decision.
 
    Required DOM:
        button#waEnrollBtn (data-csrf-token attribute)

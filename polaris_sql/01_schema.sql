@@ -1125,7 +1125,7 @@ COMMENT ON TABLE DuressEvent IS
 -- LifecycleArchiveCheckpoint — Arc B Phase 2b · audit-of-record for purges
 --
 -- v8.87 / closes the deletion-from-hot constitutional carve-out per
--- sanctum/2026-05-14-audit-log-deletion-from-hot.md (Position B, DECIDED).
+-- a recorded decision (Position B, DECIDED).
 --
 -- When `uc_archive_purge` runs, it appends one row here recording:
 --   - the cutoff timestamp (older-than threshold for the purge)
@@ -1175,4 +1175,4 @@ COMMENT ON TABLE LifecycleArchiveCheckpoint IS
     'Audit-of-record for Phase 2b archive-then-delete purges. Append-only. '
     'Each row records the cutoff + archive SHA-256 + operator. Combined with '
     'the offline archive tarball, preserves non-repudiation across the '
-    'deletion boundary. Constitutional carve-out: sanctum/2026-05-14-audit-log-deletion-from-hot.md.';
+    'deletion boundary. Constitutional carve-out: a recorded decision.';

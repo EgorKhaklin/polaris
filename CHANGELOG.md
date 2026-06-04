@@ -5,6 +5,32 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.63 — 2026-06-04 (reference-clean: no source comment points at a deleted file)
+
+The de-larp and the cleanups deleted a lot, but ~30 source-code comments still cited
+the deleted record by path: `sanctum/<date>.md` decision files, the `patterns/`
+how-to playbook, `ai-where.sh`, and `test_structural_invariants.py`. Those are dead
+references that a reviewer cloning the repo would find pointing at nothing.
+
+Scrubbed them across 27 source files (Python, SQL, JS, HTML, shell):
+
+- `sanctum/<date>-<name>.md` path citations in comments, docstrings, and the
+  backup-manifest field became "a recorded decision" (the substance stays; the dead
+  path is gone). These only ever appeared in comments and string literals, never in
+  executable logic.
+- The "Read before editing" / "canonical recipe" header blocks dropped their dead
+  `patterns/*.md` and `ai-where.sh` lines, keeping the surviving doc pointers
+  (`DEVNOTES/concurrency.md`, `docs/reference/SCALING.md`, `DEVNOTES/atlas-scaling.md`).
+- The one `test_structural_invariants.py` reference (in a `test_check_constraints`
+  docstring) was reworded to the surviving `pg_constraint` catalog check.
+
+Verified after the scrub: the schema loads (78/78 SQL self-tests), the app imports
+and `/dashboard` `/atlas` `/demo` render, `test_check_constraints` 62 OK,
+`polaris_checks` 17 ok READY, `ai-link-check` resolves all 222 references. No logic
+changed. The tree now references no deleted file anywhere, in docs or in source.
+
+---
+
 ## v9.62 — 2026-06-04 (ROADMAP: a forward roadmap, not a ship archive)
 
 `ROADMAP.md` had grown to 862 lines, but only the OPEN-NOW backlog and three gated

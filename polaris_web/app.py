@@ -4141,7 +4141,7 @@ def verifications_new():
                                          duress_input)
 
             # v9.20 verification-purpose lineage (Sanctum:
-            # sanctum/2026-05-15-verification-purpose-and-audit-access.md
+            # a recorded decision
             # Position A). Operator-supplied free-text reason for THIS
             # verification. NULL = no purpose supplied (legacy paths +
             # ZERO_KNOWLEDGE flows without operator-provided context).

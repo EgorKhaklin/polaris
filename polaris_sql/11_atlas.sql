@@ -3,9 +3,6 @@
 --   in it are NON-OBVIOUS. Read these before editing:
 --     ../docs/reference/SCALING.md                          ← architectural treatment
 --     ../DEVNOTES/atlas-scaling.md           ← what NOT to change without measuring
---     ../patterns/scaling-investigation.md   ← canonical recipe for perf work
---     ../patterns/visual-feature-on-atlas.md ← canonical recipe for atlas changes
---   Or, equivalently:  ../scripts/ai-where.sh polaris_sql/11_atlas.sql
 -- ============================================================================
 
 -- ============================================================================

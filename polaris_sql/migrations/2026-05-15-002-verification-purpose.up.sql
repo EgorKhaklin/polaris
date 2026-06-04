@@ -2,7 +2,7 @@
 -- 2026-05-15-002-verification-purpose.up.sql
 --
 -- v9.20 / item 3 of the architecture-study joint recommendation.
--- Per Sanctum sanctum/2026-05-15-verification-purpose-and-audit-access.md
+-- per a recorded decision
 -- Position A.
 --
 -- Adds VerificationEvent.requesting_purpose_text — operator-supplied

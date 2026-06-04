@@ -4,7 +4,7 @@ POLARIS — WebAuthn-MFA module (v8.97 / Position B)
 ============================================================================
 
 Implements WebAuthn registration + assertion for the admin operator role,
-per Position B of sanctum/2026-05-14-webauthn-operator-auth.md.
+per Position B of a recorded decision.
 
 Architecture:
   - Registration ceremony: user is already password-authenticated; the

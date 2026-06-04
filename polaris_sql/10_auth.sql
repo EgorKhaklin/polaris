@@ -24,7 +24,7 @@
 --   it NULL so dev tests are not time-dependent. Production admin accounts
 --   should be created via scripts/polaris-create-operator.sh which sets a
 --   30-day deadline by default (per Sanctum §IV.4 architect-recommended
---   resolution). See sanctum/2026-05-14-webauthn-operator-auth.md.
+--   resolution). See a recorded decision.
 -- ============================================================================
 
 -- TRUNCATE auth tables; CASCADE clears the v2 admin-mediated seed rows

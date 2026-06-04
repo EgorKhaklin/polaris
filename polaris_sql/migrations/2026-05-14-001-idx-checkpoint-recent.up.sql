@@ -2,7 +2,7 @@
 -- 2026-05-14-001-idx-checkpoint-recent.up.sql
 --
 -- First migration shipped under the v8.95 framework (Position C of
--- sanctum/2026-05-14-schema-migration-framework.md).
+-- a recorded decision).
 --
 -- ADD: index on LifecycleArchiveCheckpoint(purged_at DESC).
 --

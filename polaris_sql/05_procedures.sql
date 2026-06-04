@@ -1,9 +1,6 @@
 -- ============================================================================
 -- AI-context: stored procedures with concurrency hazards. Read before editing:
 --     ../DEVNOTES/concurrency.md             ← hazard inventory + protections
---     ../patterns/concurrency-fix.md         ← canonical recipe
---     ../patterns/new-uc-procedure.md        ← if adding a new use case
---   Or:  ../scripts/ai-where.sh polaris_sql/05_procedures.sql
 -- After editing, RELOAD: psql -d $DB -f polaris_sql/05_procedures.sql
 -- ============================================================================
 
@@ -1409,7 +1406,7 @@ COMMENT ON PROCEDURE uc12_record_duress(INTEGER, INTEGER, INTEGER, VARCHAR) IS
 --                    then-delete (v8.87)
 --
 -- Closes the deletion-from-hot question per the OPEN Sanctum at
--- sanctum/2026-05-14-audit-log-deletion-from-hot.md (Position B, DECIDED).
+-- a recorded decision (Position B, DECIDED).
 --
 -- This procedure is THE ONLY legitimate path through which DELETE may
 -- issue against the four audit tables (TokenLifecycleEvent,
@@ -1593,4 +1590,4 @@ COMMENT ON PROCEDURE uc_archive_purge IS
     'Arc B Phase 2b constitutional carve-out (v8.87). The ONLY legitimate '
     'path for DELETE against audit tables. Enforces: cutoff-in-past + '
     'SHA-256 format + admin-role actor. Writes LifecycleArchiveCheckpoint '
-    'in the same transaction. Reference: sanctum/2026-05-14-audit-log-deletion-from-hot.md.';
+    'in the same transaction. Reference: a recorded decision.';

@@ -8,7 +8,7 @@ or with Glass. It exists to two-witness the verifier's verdict: a proof you
 cannot independently check is just a promise.
 
 Provenance: this is the bounded, additive outcome of the 2026-06-03 Glass fit
-analysis (sanctum/2026-06-03-glass-bounded-integration.md). The Glass language's
+analysis (a recorded decision). The Glass language's
 Pentecost discipline ("the verdict itself must be two-witnessed") and its
 soundness-ledger honesty are the transferable assets; the production substrate
 stays Postgres + Flask + the audited Plonky2 Rust crate.

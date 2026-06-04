@@ -1,4 +1,4 @@
--- AI-context: append-only enforcement, audit trigger, lifecycle event auto-emission. Audit trigger reads polaris.{actor_agency_id, reason_code, event_lat, event_lon} GUCs. See DEVNOTES/concurrency.md. Run scripts/ai-where.sh polaris_sql/06_triggers.sql before editing.
+-- AI-context: append-only enforcement, audit trigger, lifecycle event auto-emission. Audit trigger reads polaris.{actor_agency_id, reason_code, event_lat, event_lon} GUCs. See DEVNOTES/concurrency.md.
 -- ============================================================================
 -- POLARIS — IDENTITY TOKEN SYSTEM
 -- 06_triggers.sql : State-machine enforcement triggers
@@ -90,7 +90,7 @@ DECLARE
     v_purge_in_progress TEXT;
 BEGIN
     -- Arc B Phase 2b (v8.87) constitutional carve-out (Position B,
-    -- DECIDED in sanctum/2026-05-14-audit-log-deletion-from-hot.md):
+    -- DECIDED in a recorded decision):
     -- the uc_archive_purge() procedure sets a transaction-scoped GUC
     -- before issuing DELETE; this function honors that single carve-out.
     --

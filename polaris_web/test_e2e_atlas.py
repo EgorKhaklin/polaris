@@ -2,7 +2,7 @@
 
 v9.33 / first post-freeze measurement ship per MISSION.md §"From v9.32
 forward, (b) Measurement". Closes the follow-up commitment from
-`sanctum/2026-05-17-plugin-installation-tier2.md` (Option A bundle).
+`a recorded decision` (Option A bundle).
 
 **Why E2E for the Atlas globe.** The Atlas (`/atlas`) is the operational
 investigation surface — a WebGL globe rendered by `atlas-globe.js` with

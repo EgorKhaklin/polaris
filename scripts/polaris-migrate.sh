@@ -2,7 +2,7 @@
 # ============================================================================
 # polaris-migrate.sh — Polaris schema migration runner
 #
-# v8.95 / Position C from sanctum/2026-05-14-schema-migration-framework.md.
+# v8.95 / Position C from a recorded decision.
 # Custom polaris-native: hand-written SQL files in pairs (.up + .down);
 # state in `schema_version` table (append-only per Sanctum §IV.3);
 # SHA-256-of-file recorded at apply time and verified at revert time.
@@ -38,7 +38,7 @@
 #      with the modified content — the recorded SHA is authoritative)
 #   7  invalid argument (e.g., --down 0)
 #
-# Reference: sanctum/2026-05-14-schema-migration-framework.md.
+# Reference: a recorded decision.
 # ============================================================================
 
 set -euo pipefail
