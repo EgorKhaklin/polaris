@@ -202,6 +202,20 @@ class QueryCommandTests(CLIBaseTestCase):
         # Should produce output without error
         self.assertEqual(r.returncode, 0)
 
+    def test_writable_cte_blocked_by_read_only(self):
+        # A data-modifying CTE passes the WITH prefix check, so the read-only
+        # transaction (not the prefix guard) must reject the embedded UPDATE.
+        r = run_cli('query',
+            "WITH x AS (UPDATE Individual SET legal_name='HACKED-BY-CTE' "
+            "WHERE individual_id=1 RETURNING individual_id) SELECT * FROM x",
+            expect_success=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('read-only', r.stderr.lower())
+        # The write must not have happened.
+        r2 = run_cli('query',
+            'SELECT legal_name FROM Individual WHERE individual_id=1')
+        self.assertNotIn('HACKED-BY-CTE', r2.stdout)
+
 
 # ============================================================================
 # issue (UC-1)
@@ -240,6 +254,25 @@ class IssueCommandTests(CLIBaseTestCase):
         )
         self.assertEqual(r.returncode, 3)
         self.assertIn('not authorized to issue', r.stderr)
+
+    def test_issue_invalid_contexts_exits_cleanly(self):
+        # A non-integer in --contexts must exit 1 with a usage message, not dump
+        # an uncaught ValueError traceback.
+        r = run_cli('issue',
+            '--legal-name', 'Bad Contexts',
+            '--dob', '1990-01-15',
+            '--jurisdiction', 'US-OH',
+            '--agency', '1',
+            '--algorithm', '1',
+            '--token-value', 'TKN-BADCTX',
+            '--serial', 'SN-BADCTX',
+            '--biometric', 'IRIS',
+            '--contexts', '1,abc,3',
+            expect_success=False,
+        )
+        self.assertEqual(r.returncode, 1)
+        self.assertIn('integer', r.stderr.lower())
+        self.assertNotIn('Traceback', r.stderr)
 
     def test_issue_produces_correct_audit_chain(self):
         """After UC-1 simplification, there should be exactly 2 lifecycle

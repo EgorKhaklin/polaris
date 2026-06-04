@@ -463,7 +463,19 @@ def cmd_query(args):
         sys.stderr.write(red(f"Query too long ({len(sql)} > 5000 chars).\n"))
         sys.exit(1)
 
-    conn = psycopg2.connect(**get_db_config())  # plain cursor for tuples
+    try:
+        conn = psycopg2.connect(**get_db_config())  # plain cursor for tuples
+    except psycopg2.Error as e:
+        sys.stderr.write(red(f"Database connection failed: {db_error_message(e)}\n"))
+        cfg = get_db_config()
+        sys.stderr.write(dim(f"  host={cfg['host']} db={cfg['database']} user={cfg['user']}\n"))
+        sys.exit(2)
+    # Enforce read-only at the ENGINE level. The SELECT/WITH prefix check above
+    # does NOT stop data-modifying CTEs — `WITH x AS (UPDATE ... RETURNING ...)
+    # SELECT * FROM x` passes the prefix guard and PostgreSQL runs the UPDATE.
+    # Today only the absence of a commit keeps that from persisting; a read-only
+    # transaction rejects any write outright, regardless of commit behavior.
+    conn.set_session(readonly=True)
     try:
         with conn.cursor() as cur:
             cur.execute("SET statement_timeout = 5000")
@@ -490,7 +502,12 @@ def cmd_query(args):
 # ----------------------------------------------------------------------------
 
 def cmd_issue(args):
-    contexts = [int(c.strip()) for c in args.contexts.split(',')]
+    try:
+        contexts = [int(c.strip()) for c in args.contexts.split(',')]
+    except ValueError:
+        sys.stderr.write(red(
+            "--contexts must be a comma-separated list of integers (e.g. 1,4,6).\n"))
+        sys.exit(1)
     conn = connect()
     try:
         with conn.cursor() as cur:

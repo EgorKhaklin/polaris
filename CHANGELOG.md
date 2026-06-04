@@ -5,6 +5,32 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.75 — 2026-06-04 (CLI: the read-only query is actually read-only, and bad args fail cleanly)
+
+Three CLI robustness/safety findings from the review's CLI pass.
+
+**The "read-only" `query` command was only read-only by accident.** Its sole
+enforcement was a prefix check (`first in ('SELECT','WITH')`), but PostgreSQL
+allows data-modifying CTEs, so `WITH x AS (UPDATE ... RETURNING ...) SELECT * FROM
+x` passed the guard and the UPDATE executed. Only the absence of a `commit()` in
+`cmd_query` kept it from persisting — a future edit adding a commit would silently
+turn it into an authenticated arbitrary-write hole (the CLI's `polaris_app` role
+has full DML). The command now runs in a `set_session(readonly=True)` transaction,
+so the engine rejects any write outright, regardless of commit behavior.
+
+**Two uncaught-traceback paths.** `cmd_query` connected with a bare
+`psycopg2.connect` outside any try block, so a connection failure dumped a full
+traceback instead of the documented exit-2 error; it now mirrors the `connect()`
+helper's clean message + exit 2. And `cmd_issue` parsed `--contexts` with
+`[int(c) for c in ...]` before its try block, so a non-integer value raised an
+uncaught `ValueError`; it now exits 1 with a usage message.
+
+- `polaris_cli/polaris.py` — `query` runs read-only; `query`/`issue` connection
+  and `--contexts` parsing fail cleanly.
+- `polaris_cli/test_cli.py` — a writable CTE is rejected by the read-only
+  transaction (and leaves no write); a non-integer `--contexts` exits 1 with no
+  traceback.
+
 ## v9.74 — 2026-06-04 (the lockout message is no longer a username oracle)
 
 `authenticate()` returned the generic "Invalid username or password." for an
