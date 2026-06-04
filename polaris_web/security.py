@@ -543,16 +543,31 @@ def authenticate(get_conn, username, password):
                        user_id=user['user_id'], detail='account inactive')
                 return None, GENERIC_ERROR
 
-            # Lockout check
+            # Verify the password BEFORE the lockout check. The lockout state is
+            # revealed only to a caller who already proved knowledge of the
+            # password; otherwise the distinct "temporarily locked" message is a
+            # username-enumeration oracle — an unknown user is never locked (it
+            # returns above before any counter bump), so a "locked" response
+            # would uniquely confirm the account exists. SECURITY.md promises
+            # enumeration is prevented.
+            password_ok = check_password_hash(user['password_hash'], password)
+
+            # Lockout check.
             now = datetime.now()
             if user['locked_until'] and user['locked_until'] > now:
                 _audit(get_conn, 'LOGIN_LOCKED', username=username,
                        user_id=user['user_id'],
                        detail=f"locked until {user['locked_until']}")
-                return None, "Account is temporarily locked. Try again later."
+                # The account stays locked either way (no login, no counter
+                # bump). Reveal the lockout only on a correct password; a
+                # wrong-password attacker enumerating accounts gets the generic
+                # error, identical to the unknown-user and wrong-password paths.
+                if password_ok:
+                    return None, "Account is temporarily locked. Try again later."
+                return None, GENERIC_ERROR
 
-            # Verify password
-            if not check_password_hash(user['password_hash'], password):
+            # Wrong password (account is not locked): count the failure.
+            if not password_ok:
                 # v9.31 freeze condition 6: operator-readable auth-failure
                 # counter + structured log. Fires once per bad-credential
                 # check regardless of subsequent lockout branch.

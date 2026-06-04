@@ -3383,6 +3383,48 @@ class F01_AuthenticationTests(UnauthenticatedTestCase):
         })
         self.assertEqual(r.status_code, 401)
 
+    def test_locked_account_is_not_an_enumeration_oracle(self):
+        """A locked account hit with a WRONG password must return the SAME
+        generic message as an unknown user. Otherwise the distinct 'temporarily
+        locked' string is a username-enumeration oracle: an unknown user is
+        never locked (it returns before any counter bump), so a 'locked'
+        response would uniquely confirm the account exists. The lockout is only
+        revealed to a CORRECT-password caller. SECURITY.md promises this."""
+        from app import security as sec
+        from werkzeug.security import generate_password_hash
+        get_db = lambda: psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        with psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG) as conn, conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO AppUser (username, password_hash, role, "
+                "failed_login_count, locked_until, is_active) "
+                "VALUES (%s, %s, 'auditor', 0, "
+                "        CURRENT_TIMESTAMP + INTERVAL '15 minutes', TRUE) "
+                "ON CONFLICT (username) DO UPDATE SET "
+                "  password_hash=EXCLUDED.password_hash, "
+                "  locked_until=CURRENT_TIMESTAMP + INTERVAL '15 minutes', "
+                "  is_active=TRUE",
+                ('locked_oracle_victim',
+                 generate_password_hash('CorrectPass!1', method='scrypt')))
+            conn.commit()
+
+        _, err_unknown = sec.authenticate(get_db, 'no-such-user-here', 'whatever')
+        _, err_locked_wrong = sec.authenticate(get_db, 'locked_oracle_victim', 'WRONGpass')
+        self.assertEqual(
+            err_locked_wrong, err_unknown,
+            'locked-account wrong-password response must equal the unknown-user response')
+        self.assertNotIn('lock', (err_locked_wrong or '').lower(),
+                         'must not reveal the lockout to a wrong-password caller')
+
+        # A correct-password caller (the legitimate locked-out user) still learns
+        # the account is locked.
+        _, err_locked_right = sec.authenticate(get_db, 'locked_oracle_victim', 'CorrectPass!1')
+        self.assertIn('lock', (err_locked_right or '').lower(),
+                      'a correct-password caller should still be told it is locked')
+
+        with psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG) as conn, conn.cursor() as cur:
+            cur.execute("DELETE FROM AppUser WHERE username='locked_oracle_victim'")
+            conn.commit()
+
     def test_logout_clears_session(self):
         """Logout must invalidate the session."""
         self._login('admin')

@@ -5,6 +5,32 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.74 — 2026-06-04 (the lockout message is no longer a username oracle)
+
+`authenticate()` returned the generic "Invalid username or password." for an
+unknown user, an inactive user, and a wrong password — but a distinct "Account is
+temporarily locked. Try again later." for a known user whose `locked_until` was in
+the future. Since an unknown user never enters the locked state (it returns before
+any failure counter is touched), an attacker could enumerate usernames: send a few
+wrong-password attempts to trip the lockout on a real account, and the distinct
+"locked" string on the next attempt confirmed the account exists. `SECURITY.md`
+affirmatively claims username enumeration is prevented, so this was an unmet
+documented invariant.
+
+Fix: verify the password *before* the lockout check, and reveal the lockout only
+to a caller who supplied the correct password. A wrong-password attacker — whether
+the account is unknown, wrong-password, or locked — now gets the identical generic
+string, so the response no longer distinguishes a real account. A legitimate user
+who types the right password still learns the account is temporarily locked. The
+account stays locked either way (no login, no counter bump), and every known user
+now runs one password hash, which also evens out the timing side channel.
+
+- `polaris_web/security.py` — password verified before the lockout branch; locked
+  response is generic unless the password is correct.
+- `polaris_web/test_app.py` — `test_locked_account_is_not_an_enumeration_oracle`:
+  the locked + wrong-password response equals the unknown-user response and never
+  says "lock"; the correct-password caller still sees the lockout.
+
 ## v9.73 — 2026-06-04 (uc4 / uc10: validate under the lock, not before it)
 
 Two validate-before-lock TOCTOU races from the concurrency review pass. Both
