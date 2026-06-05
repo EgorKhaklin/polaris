@@ -49,7 +49,7 @@ pycparser==3.0
 typing_extensions==4.15.0
 
 # ---- Runtime: Prometheus client (v8.93 /metrics) ----
-prometheus_client>=0.20,<1.0
+prometheus_client>=0.25.0,<1.0
 
 # ---- Runtime: Redis client for cross-worker rate limiting (v9.40) ----
 # Auto-selected by security.py when POLARIS_REDIS_URL is set + the URL
