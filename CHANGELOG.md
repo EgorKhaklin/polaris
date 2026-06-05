@@ -5,6 +5,30 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.106 — 2026-06-05 (production-readiness, wave 4: migrations bound their lock + statement time so one ALTER cannot stall the site)
+
+A schema migration that needs an ACCESS EXCLUSIVE lock — most `ALTER TABLE`
+forms — queues behind any open transaction and, once it acquires the lock,
+blocks every read and write on that table until it finishes. The runner set no
+timeouts, so the wait was unbounded: one slow background query in front of a
+migration could stall all traffic on the table indefinitely. This is one of the
+classic ways a routine deploy takes down a live database.
+
+- **`lock_timeout` + `statement_timeout`, SET LOCAL in the apply transaction.**
+  `polaris-migrate.sh` now sets both inside the `BEGIN; … COMMIT;` for every
+  apply and revert. `lock_timeout` (default `3s`) makes a blocking migration
+  ERROR fast and release the line instead of queueing in front of all other
+  traffic; `statement_timeout` (default `60s`) caps a runaway migration. Both
+  reset automatically at COMMIT (SET LOCAL) and are overridable for long,
+  legitimate work via `POLARIS_MIGRATE_LOCK_TIMEOUT` /
+  `POLARIS_MIGRATE_STATEMENT_TIMEOUT` (e.g. a big in-transaction index build).
+- **Validated, not interpolated blindly.** The two values are interpolated into
+  the SQL, so they are checked against `^[0-9]+(ms|s|min|h)?$` and the script
+  refuses anything else (a `3s; DROP TABLE …` attempt exits with a usage error).
+- **Pinned.** `check_migration_timeouts` (38th check) asserts the runner SET
+  LOCALs both timeouts. Ticks the migration-timeout box in
+  `docs/PRODUCTION-READINESS.md` Wave 4.
+
 ## v9.105 — 2026-06-05 (production-readiness, wave 4: no test frameworks in the prod image; dependency CVE scanning gates the build)
 
 The dependency surface was pinned but never audited, and a single

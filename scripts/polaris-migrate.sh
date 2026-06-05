@@ -105,6 +105,31 @@ if [[ "${ACTOR_USER_ID}" != "NULL" ]] && ! [[ "${ACTOR_USER_ID}" =~ ^[0-9]+$ ]];
     exit "${EXIT_USAGE}"
 fi
 
+# ---------------------------------------------------------------------------
+# Migration safety timeouts (production hazard: a migration that needs an
+# ACCESS EXCLUSIVE lock — most ALTER TABLE forms — queues behind any open
+# transaction and, once granted, blocks ALL reads and writes on that table.
+# An unbounded wait turns one slow query into a site-wide stall.
+#
+#   lock_timeout      — how long a statement waits for a lock before it ERRORS
+#                       (fail fast instead of queueing + holding up the line).
+#   statement_timeout — max wall-clock for any single migration statement.
+#
+# Both are SET LOCAL inside the apply/revert transaction (auto-reset at COMMIT)
+# and are overridable for long, legitimate work (e.g. a big in-transaction
+# index build: raise POLARIS_MIGRATE_STATEMENT_TIMEOUT, or 0 to disable).
+# Validated strictly because they are interpolated into the SQL.
+# ---------------------------------------------------------------------------
+MIGRATE_LOCK_TIMEOUT="${POLARIS_MIGRATE_LOCK_TIMEOUT:-3s}"
+MIGRATE_STATEMENT_TIMEOUT="${POLARIS_MIGRATE_STATEMENT_TIMEOUT:-60s}"
+TIMEOUT_PATTERN='^[0-9]+(ms|s|min|h)?$'
+for _pair in "lock_timeout=${MIGRATE_LOCK_TIMEOUT}" "statement_timeout=${MIGRATE_STATEMENT_TIMEOUT}"; do
+    if ! [[ "${_pair#*=}" =~ ${TIMEOUT_PATTERN} ]]; then
+        echo "error: ${_pair%%=*} must be a Postgres duration like 3s, 250ms, 5min, or 0 (got '${_pair#*=}')" >&2
+        exit "${EXIT_USAGE}"
+    fi
+done
+
 # Filename pattern (must match schema_version.name CHECK).
 NAME_PATTERN='^[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{3}-[a-z][a-z0-9_-]*$'
 
@@ -296,6 +321,8 @@ do_up() {
         sql_tmp=$(mktemp)
         cat > "${sql_tmp}" <<SQL
 BEGIN;
+SET LOCAL lock_timeout = '${MIGRATE_LOCK_TIMEOUT}';
+SET LOCAL statement_timeout = '${MIGRATE_STATEMENT_TIMEOUT}';
 \i ${up_file}
 INSERT INTO schema_version (name, event_type, actor_user_id, file_sha256)
 VALUES ('${name}', 'applied', ${ACTOR_USER_ID}, '${sha}');
@@ -385,6 +412,8 @@ do_down() {
         sql_tmp=$(mktemp)
         cat > "${sql_tmp}" <<SQL
 BEGIN;
+SET LOCAL lock_timeout = '${MIGRATE_LOCK_TIMEOUT}';
+SET LOCAL statement_timeout = '${MIGRATE_STATEMENT_TIMEOUT}';
 \i ${down_file}
 INSERT INTO schema_version (name, event_type, actor_user_id, file_sha256)
 VALUES ('${name}', 'reverted', ${ACTOR_USER_ID}, '${down_sha}');

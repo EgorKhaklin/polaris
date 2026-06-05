@@ -88,7 +88,11 @@ left a real foundation. Genuinely sound today:
   the S3/offsite store).
 
 ### Wave 4 — deploy/ops/reliability/observability (HIGH/MEDIUM)
-- [ ] Migration `lock_timeout`/`statement_timeout`; zero-downtime/rolling deploy.
+- [x] **Migration `lock_timeout`/`statement_timeout` (v9.106).**
+  `polaris-migrate.sh` SET LOCALs both inside the apply/revert transaction
+  (defaults `3s`/`60s`, overridable), so a blocking `ALTER` fails fast instead
+  of stalling all traffic on the table. Pinned by `check_migration_timeouts`.
+  (Zero-downtime/rolling deploy still open.)
 - [ ] `WEB_CONCURRENCY` is inert (workers hardcoded); container resource limits;
   pinned image digests; split liveness vs readiness in `/api/health`.
 - [ ] Prometheus multiprocess mode (metrics undercount across 4 workers);

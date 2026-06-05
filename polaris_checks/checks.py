@@ -438,6 +438,30 @@ def check_cve_scanning(root: pathlib.Path) -> list[Finding]:
 
 
 # ---------------------------------------------------------------------------
+# Schema migrations must bound their lock acquisition and statement time. An
+# ALTER TABLE that needs an ACCESS EXCLUSIVE lock queues behind any open
+# transaction and, once granted, blocks ALL traffic on that table — an
+# unbounded wait turns one slow query into a site-wide stall. The migration
+# runner must SET LOCAL lock_timeout (fail fast rather than queue) AND
+# statement_timeout (cap a runaway migration) inside the apply transaction.
+# ---------------------------------------------------------------------------
+def check_migration_timeouts(root: pathlib.Path) -> list[Finding]:
+    sh = _read(root, "scripts/polaris-migrate.sh")
+    if not sh:
+        return _fail("migration_timeouts", "scripts/polaris-migrate.sh is missing")
+    missing = [name for name in ("lock_timeout", "statement_timeout")
+               if not re.search(rf"SET\s+LOCAL\s+{name}\b", sh)]
+    if missing:
+        return _fail("migration_timeouts",
+                     "the migration runner must SET LOCAL " + " and ".join(missing) +
+                     " inside the apply transaction so a migration cannot queue on / hold a "
+                     "table lock unboundedly and stall all traffic")
+    return _ok("migration_timeouts",
+               "migrations SET LOCAL lock_timeout + statement_timeout (a blocking ALTER fails "
+               "fast instead of stalling the table)")
+
+
+# ---------------------------------------------------------------------------
 # Docker image completeness — every LOCAL module app.py imports must be COPYd
 # into both images, or the container ModuleNotFoundErrors at startup and crash-
 # loops. This has bitten twice: observability.py (v9.40) and pqc_signing.py
@@ -886,6 +910,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_sql_console_readonly,
     check_prod_image_no_test_deps,
     check_cve_scanning,
+    check_migration_timeouts,
     check_dockerfile_copies_app_modules,
     check_c2_zk_token_null,
     check_c4_atomic_failed_login,

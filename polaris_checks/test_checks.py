@@ -713,5 +713,34 @@ def test_cve_scanning_check_discriminates(tmp_path):
         "must PASS with a gating runtime audit and Dependabot configured"
 
 
+def test_migration_timeouts_check_discriminates(tmp_path):
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+
+    def write(sh):
+        (scripts / "polaris-migrate.sh").write_text(sh)
+
+    # 1. No timeouts at all -> FAIL.
+    write("BEGIN;\n\\i up.sql\nCOMMIT;\n")
+    assert checks.check_migration_timeouts(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the runner sets no migration timeouts"
+
+    # 2. lock_timeout only (statement_timeout missing) -> FAIL.
+    write("BEGIN;\nSET LOCAL lock_timeout = '3s';\n\\i up.sql\nCOMMIT;\n")
+    assert checks.check_migration_timeouts(tmp_path)[0].level == "FAIL", \
+        "must FAIL when statement_timeout is not also bounded"
+
+    # 3. Both SET LOCAL timeouts -> OK.
+    write("BEGIN;\nSET LOCAL lock_timeout = '3s';\n"
+          "SET LOCAL statement_timeout = '60s';\n\\i up.sql\nCOMMIT;\n")
+    assert checks.check_migration_timeouts(tmp_path)[0].level == "OK", \
+        "must PASS when both lock_timeout and statement_timeout are SET LOCAL"
+
+    # 4. Missing script -> FAIL.
+    (scripts / "polaris-migrate.sh").unlink()
+    assert checks.check_migration_timeouts(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the migrate script is absent"
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))
