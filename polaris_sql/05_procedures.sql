@@ -982,7 +982,8 @@ CREATE OR REPLACE PROCEDURE uc6_migrate_algorithm(
     p_token_id        INTEGER,
     p_new_algorithm   INTEGER,
     p_new_signature   BYTEA,
-    p_deprecate_old   BOOLEAN DEFAULT FALSE
+    p_deprecate_old   BOOLEAN DEFAULT FALSE,
+    p_signing_public_key_hex TEXT DEFAULT NULL
 )
 LANGUAGE plpgsql AS $$
 DECLARE
@@ -1017,10 +1018,12 @@ BEGIN
 
     -- Insert the new TokenSignature row. The UNIQUE constraint
     -- (token_id, algorithm_id) rejects duplicate-algorithm migrations.
+    -- v9.119: store the issuer public key with the migration signature, like
+    -- uc1, so verify-at-use is self-contained. NULL for the placeholder path.
     INSERT INTO TokenSignature
-        (token_id, algorithm_id, signature_bytes)
+        (token_id, algorithm_id, signature_bytes, signing_public_key_hex)
     VALUES
-        (p_token_id, p_new_algorithm, p_new_signature)
+        (p_token_id, p_new_algorithm, p_new_signature, p_signing_public_key_hex)
     RETURNING signature_id INTO v_new_sig_id;
 
     -- Optionally deprecate the OLD signatures (every active sig other
@@ -1045,7 +1048,7 @@ BEGIN
         p_token_id, v_new_sig_id, p_new_algorithm;
 END$$;
 
-COMMENT ON PROCEDURE uc6_migrate_algorithm(INTEGER, INTEGER, BYTEA, BOOLEAN) IS
+COMMENT ON PROCEDURE uc6_migrate_algorithm(INTEGER, INTEGER, BYTEA, BOOLEAN, TEXT) IS
   'UC-6 / R11-1 / M2-6: migrate a token to a new algorithm. Adds a new '
   'TokenSignature row; optionally deprecates the old signature(s). The '
   'old signature continues to verify until its deprecation_date passes — '

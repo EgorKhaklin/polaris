@@ -316,8 +316,14 @@ def check_pqc_signing_wired(root: pathlib.Path) -> list[Finding]:
                      "app.py does not call pqc_signing.signature_bytes_for_token / "
                      "signature_with_key_for_token; the issuance signature would bypass the "
                      "signing module")
+    # v9.119: uc6 algorithm-migration must also route through the signing module,
+    # not write a hardcoded operator string.
+    if "UC6_OPERATOR_MIGRATE" in app:
+        return _fail("pqc_wired",
+                     "uc6 still writes a hardcoded UC6_OPERATOR_MIGRATE signature; route the "
+                     "migration signature through pqc_signing like issuance")
     return _ok("pqc_wired",
-               "issuance signature routes through the pqc_signing module")
+               "issuance + uc6 migration signatures route through the pqc_signing module")
 
 
 # ---------------------------------------------------------------------------

@@ -1929,6 +1929,30 @@ class MultiSignatureTests(PolarisTestCase):
         self.assertEqual(row['deprecated'], 1,
             f'After deprecate_old=TRUE, exactly 1 deprecated sig: {row}')
 
+    def test_uc6_route_signature_routes_through_signing_module(self):
+        """v9.119: the /uc6/migrate route routes the migration signature through
+        pqc_signing (the placeholder path stores sha3(token_value)), not the old
+        hardcoded UC6_OPERATOR_MIGRATE string."""
+        import hashlib
+        tid = self._seed_token(label='uc6-route', algorithm_id=1)
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT token_value FROM IdentityToken WHERE token_id=%s", (tid,))
+            token_value = cur.fetchone()['token_value']
+        r = self._post('/uc6/migrate', data={
+            'token_id': str(tid),
+            'new_algorithm': '2',
+        }, follow_redirects=True)
+        self.assertEqual(r.status_code, 200)
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT signature_bytes FROM TokenSignature "
+                        "WHERE token_id=%s AND algorithm_id=2", (tid,))
+            row = cur.fetchone()
+        self.assertIsNotNone(row, "uc6 route did not add a signature for the new algorithm")
+        stored = bytes(row['signature_bytes'])
+        self.assertEqual(stored, hashlib.sha3_256(token_value.encode('utf-8')).digest(),
+            "uc6 migration signature is not the signing module's SHA3-256 output")
+        self.assertNotIn(b'UC6_OPERATOR_MIGRATE', stored)
+
     def test_migrate_rejects_nonexistent_token(self):
         with self.assertRaises(psycopg2.Error) as ctx:
             self._migrate(token_id=999_999, new_algorithm=2)

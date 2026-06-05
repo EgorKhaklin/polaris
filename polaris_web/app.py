@@ -3910,17 +3910,26 @@ def uc6_migrate():
             new_algorithm = int(request.form['new_algorithm'])
             deprecate_old = bool(request.form.get('deprecate_old'))
 
-            # Placeholder signature_bytes for the reference implementation.
-            # Production would derive these from a hardware-attested signing
-            # ceremony external to the database.
-            sig_bytes = f"UC6_OPERATOR_MIGRATE_{token_id}_{new_algorithm}".encode()
+            # v9.119: the migration signature now routes through the signing
+            # module (real ML-DSA-65 when POLARIS_USE_REAL_PQC=1 + liboqs, else
+            # the deterministic SHA3-256 placeholder) over the token's value, and
+            # carries the issuer public key — exactly like issuance — instead of a
+            # hardcoded operator string. The key is stored with the signature so
+            # verification at use is self-contained.
+            trow = query("SELECT token_value FROM IdentityToken WHERE token_id = %s",
+                         (token_id,), fetch='one')
+            if not trow:
+                raise ValueError(f"Token #{token_id} not found")
+            sig_bytes, _sig_alg, sig_pubkey = pqc_signing.signature_with_key_for_token(
+                trow['token_value'])
 
             conn = get_db()
             try:
                 with conn.cursor() as cur:
                     cur.execute("""
-                        CALL uc6_migrate_algorithm(%s, %s, %s, %s)
-                    """, (token_id, new_algorithm, sig_bytes, deprecate_old))
+                        CALL uc6_migrate_algorithm(%s, %s, %s, %s, %s)
+                    """, (token_id, new_algorithm, psycopg2.Binary(sig_bytes),
+                          deprecate_old, sig_pubkey))
                 conn.commit()
             finally:
                 conn.close()
@@ -3930,6 +3939,8 @@ def uc6_migrate():
                 + (' (old deprecated)' if deprecate_old else ''),
                 'success')
             return redirect(url_for('tokens_detail', tok_id=token_id))
+        except (pqc_signing.PQCUnavailableError, pqc_signing.SigningError) as e:
+            flash(f'Migration blocked: {e}', 'error')
         except (psycopg2.Error, ValueError) as e:
             flash(db_error_to_message(e), 'error')
 

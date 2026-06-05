@@ -5,6 +5,33 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.119 — 2026-06-05 (production-readiness, wave 2 COMPLETE: uc6 migration routes through the signing module)
+
+The last hardcoded signature. uc6 algorithm-migration wrote
+`f"UC6_OPERATOR_MIGRATE_{token_id}_{new_algorithm}"` directly into
+`TokenSignature.signature_bytes` — a non-signature that bypassed the signing
+module entirely, so a migrated token's new signature verified as neither real
+nor a valid placeholder.
+
+- **uc6 now signs like issuance.** The `/uc6/migrate` route fetches the token's
+  value, calls `pqc_signing.signature_with_key_for_token()` (real ML-DSA-65 when
+  enabled, else the deterministic SHA3-256 placeholder), and passes the bytes +
+  the issuer public key to `uc6_migrate_algorithm`, which now takes
+  `p_signing_public_key_hex` and stores it in `signing_public_key_hex` — so a
+  migrated signature is self-contained and verifies on the token-detail page
+  exactly like an issued one. Signing failures block the migration.
+- **No new migration needed.** The column already exists (v9.117); the procedure
+  change reaches upgraded DBs via the v9.118 `--sync-objects` re-sync.
+- **Tested + pinned.** `test_uc6_route_signature_routes_through_signing_module`
+  proves the route stores `sha3(token_value)`, not the old string;
+  `check_pqc_wired` now also fails if `UC6_OPERATOR_MIGRATE` reappears. All 17
+  multi-signature tests pass.
+
+**Wave 2 (the cryptographic core) is complete:** real ML-DSA-65 testable →
+persistent-key trust anchor → verification enforced → real PQC the production
+default → issuer key stored as a DB trust anchor, verification surfaced at use →
+every signing path (issuance and migration) routes through the module.
+
 ## v9.118 — 2026-06-05 (production-readiness: procedure/trigger changes reach an UPGRADED database, not just a fresh one)
 
 A latent deploy bug, surfaced while wiring uc6: `docker-init.sh` loads the full

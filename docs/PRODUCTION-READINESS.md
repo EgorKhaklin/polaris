@@ -82,8 +82,12 @@ left a real foundation. Genuinely sound today:
   signature (NULL = placeholder), so verification is self-contained and survives
   key rotation; the token-detail page verifies each signature and renders the
   result. Pinned by `check_signature_self_contained_verify`.
-- [ ] **uc6 through the signing module (Wave 2 cont.).** uc6 algorithm-migration
-  still writes a hardcoded non-signature instead of routing through `pqc_signing`.
+- [x] **uc6 through the signing module (v9.119).** The `/uc6/migrate` route signs
+  the token value via `pqc_signing.signature_with_key_for_token()` and stores the
+  issuer key, exactly like issuance — no more hardcoded `UC6_OPERATOR_MIGRATE`
+  string. Pinned by `check_pqc_wired` + `test_uc6_route_signature_routes_through_signing_module`.
+
+**Wave 2 (cryptographic core) is complete.**
 
 ### Wave 3 — data protection + DR (BLOCKER/HIGH)
 - [x] **Encrypt backups at rest (v9.102).** `polaris-backup.sh` encrypts the
