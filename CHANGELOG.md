@@ -5,6 +5,25 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.99 — 2026-06-05 (launcher: tear the stack down exactly once)
+
+The last of the launcher-audit robustness items. Watch mode has three teardown
+paths — the browser quit beacon, the stale-heartbeat timeout, and the
+INT/TERM/HUP trap — and the trap was not self-disabling, so a second signal
+during teardown (a double Ctrl+C) or a beacon racing the trap re-entered
+`stop_all`, printing a spurious banner and a misleading "Nothing running." A new
+`_teardown_once` guard runs the teardown once and disarms the trap as soon as it
+begins; all three paths route through it. Verified: a second call is a clean
+no-op.
+
+(The other audit item — `preflight_port` whitelisting any `python` listener — is
+left as is on purpose: the broad match is what lets the launcher recognise and
+restart its own prior gunicorn, and tightening it via PID matching would risk
+breaking that common relaunch path for a rare edge case.)
+
+- `polaris_mac_launch.sh` — `_teardown_once` guard; the trap and both watch-loop
+  teardown paths use it.
+
 ## v9.98 — 2026-06-05 (the production image could not be built — fixed and CI-validated)
 
 Investigating whether CI should validate the prod image surfaced that the prod

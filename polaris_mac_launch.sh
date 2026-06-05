@@ -827,6 +827,20 @@ stop_all() {
     fi
 }
 
+# Tear the stack down exactly once. watch_browser_presence has three teardown
+# paths — the quit beacon, the stale-heartbeat timeout, and the INT/TERM/HUP
+# trap — and the trap is not self-disabling, so a second signal mid-teardown
+# (a double Ctrl+C) or a beacon racing the trap would re-enter stop_all and
+# print a spurious banner + "Nothing running". This guard makes teardown
+# idempotent and disarms the trap once teardown has begun.
+_WATCH_TORN_DOWN=0
+_teardown_once() {
+    if (( _WATCH_TORN_DOWN )); then return 0; fi
+    _WATCH_TORN_DOWN=1
+    trap - INT TERM HUP
+    stop_all
+}
+
 
 # -----------------------------------------------------------------------------
 # Watch mode: foreground-block and tear down the stack when the browser closes
@@ -879,8 +893,8 @@ watch_browser_presence() {
     echo "   or press Ctrl+C in this terminal."
     echo
 
-    # Trap interactive interrupts to ensure clean teardown
-    trap 'echo; log "Interrupt received."; stop_all; exit 0' INT TERM HUP
+    # Trap interactive interrupts to ensure clean teardown (once).
+    trap 'echo; log "Interrupt received."; _teardown_once; exit 0' INT TERM HUP
 
     local started_at
     started_at=$(date +%s)
@@ -895,7 +909,7 @@ watch_browser_presence() {
             rm -f "$QUIT_FILE"
             echo
             log "Browser tab closed (quit beacon received)."
-            stop_all
+            _teardown_once
             exit 0
         fi
 
@@ -921,7 +935,7 @@ watch_browser_presence() {
         if (( hb_age > stale_threshold )); then
             echo
             log "No browser heartbeat for ${hb_age}s. Assuming tab closed."
-            stop_all
+            _teardown_once
             exit 0
         fi
     done
