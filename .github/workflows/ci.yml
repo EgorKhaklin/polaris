@@ -137,3 +137,61 @@ jobs:
           ROOT=$(echo "$LEAVES" | $BIN compute-root | python3 -c "import sys,json;print(json.load(sys.stdin)['epoch_root_hex'])")
           test -n "$ROOT" || { echo "compute-root empty"; exit 1; }
           python3 -m pytest polaris_zk/witness2/test_witness2.py polaris_web/test_zk_second_witness.py -v
+
+  # --------------------------------------------------------------------------
+  # The `test` job above exercises the app CODE against a native Postgres; it
+  # never builds or runs the Docker image. That blind spot let a broken image
+  # ship green for ~36 versions (observability.py v9.40, pqc_signing.py v9.58 —
+  # the COPY list lagged app.py's imports, so the container crash-looped with
+  # ModuleNotFoundError while CI stayed green). This job closes it: build the
+  # dev image, boot the full stack, and assert the app actually serves. Any
+  # image breakage (missing module, bad build step, runtime import error,
+  # broken entrypoint) fails here, not on a user's machine.
+  # --------------------------------------------------------------------------
+  docker-image:
+    name: Docker image build + boot smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Build the dev image and bring up the stack
+        working-directory: polaris_web
+        run: docker compose up -d --build
+
+      - name: Wait for the app to boot and serve /api/health
+        working-directory: polaris_web
+        run: |
+          ok=0
+          for i in $(seq 1 40); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:5000/api/health || true)
+            if [ "$code" = "200" ]; then echo "app healthy after check $i"; ok=1; break; fi
+            state=$(docker inspect -f '{{.State.Status}} restarts={{.RestartCount}}' polaris-app 2>/dev/null || echo missing)
+            echo "check $i: /api/health=$code container=$state"
+            sleep 3
+          done
+          if [ "$ok" != "1" ]; then
+            echo "::error::Docker app never became healthy — the image does not boot (e.g. the v9.94 pqc_signing crash class)"
+            echo "=== app logs ==="; docker compose logs --no-color app | tail -100
+            exit 1
+          fi
+
+      - name: Smoke-test key routes
+        working-directory: polaris_web
+        run: |
+          fail=0
+          for path in /login /api/health /metrics; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "http://localhost:5000${path}" || true)
+            echo "${path} -> ${code}"
+            [ "$code" = "200" ] || fail=1
+          done
+          if [ "$fail" = "1" ]; then
+            echo "::error::A key route did not return 200 from the running Docker image"
+            docker compose logs --no-color app | tail -100
+            exit 1
+          fi
+
+      - name: Tear down
+        if: always()
+        working-directory: polaris_web
+        run: docker compose down -v

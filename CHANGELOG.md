@@ -5,6 +5,25 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.95 — 2026-06-05 (CI now builds and boots the Docker image)
+
+v9.94 fixed the missing-module crash and added a static check that the COPY list
+covers `app.py`'s imports. But the deeper reason a broken image shipped green for
+~36 versions is that **CI never built or ran the image** — the `test` job
+exercises the app code against a native Postgres. A bad build step, a runtime
+import error from a transitive module, or a broken entrypoint would still pass.
+
+A new `docker-image` CI job builds the dev image, brings up the full stack
+(`docker compose up -d --build`), waits for the app to serve `/api/health`, and
+smoke-tests `/login`, `/api/health`, and `/metrics` (all 200), then tears down.
+It runs in parallel with the `test` job. The exact v9.94 failure
+(`ModuleNotFoundError` crash-loop) now fails this job with the container logs
+attached, instead of surfacing on a user's machine.
+
+- `.github/workflows/ci.yml` — new `docker-image` build + boot smoke-test job.
+- `polaris_web/docker-compose.yml` — drop the obsolete top-level `version: '3.9'`
+  key (Compose v2 ignores it and warns; it showed up in the crash logs).
+
 ## v9.94 — 2026-06-05 (the Docker image was missing pqc_signing.py — crash-loop fixed and guarded)
 
 The Docker path crash-looped on startup: `ModuleNotFoundError: No module named
