@@ -518,6 +518,39 @@ def check_health_liveness_readiness_split(root: pathlib.Path) -> list[Finding]:
 
 
 # ---------------------------------------------------------------------------
+# Every production-stack container must bound its blast radius: a memory/cpu
+# limit (so one runaway container cannot OOM the host) and a rotating log driver
+# (so logs cannot fill the disk). Both are per-service config in the prod
+# compose. Checked by text (the check layer runs on system python with no
+# PyYAML): every service has an image, and the count of deploy-limits + logging
+# blocks must cover every service.
+# ---------------------------------------------------------------------------
+def check_compose_resource_limits(root: pathlib.Path) -> list[Finding]:
+    text = _read(root, "polaris_web/docker-compose.prod.yml")
+    if not text:
+        return _fail("compose_limits", "polaris_web/docker-compose.prod.yml is missing")
+    services = len(re.findall(r"(?m)^\s+image:\s", text))
+    if services == 0:
+        return _fail("compose_limits", "could not find any services in the prod compose")
+    deploy_limits = len(re.findall(r"(?m)^\s+limits:\s*$", text))
+    logging_blocks = len(re.findall(r"(?m)^\s+logging:\s*$", text))
+    if deploy_limits < services:
+        return _fail("compose_limits",
+                     f"only {deploy_limits}/{services} prod-compose services set "
+                     "deploy.resources.limits — one unbounded container can OOM the host")
+    if logging_blocks < services:
+        return _fail("compose_limits",
+                     f"only {logging_blocks}/{services} prod-compose services configure log "
+                     "rotation (logging: json-file max-size/max-file) — logs can fill the disk")
+    if "max-size" not in text or "memory:" not in text:
+        return _fail("compose_limits",
+                     "resource limits need a memory bound and log rotation needs a max-size bound")
+    return _ok("compose_limits",
+               f"all {services} prod-compose services set memory/cpu limits + rotating json-file "
+               "logging (no host OOM, no unbounded logs)")
+
+
+# ---------------------------------------------------------------------------
 # Docker image completeness — every LOCAL module app.py imports must be COPYd
 # into both images, or the container ModuleNotFoundErrors at startup and crash-
 # loops. This has bitten twice: observability.py (v9.40) and pqc_signing.py
@@ -969,6 +1002,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_migration_timeouts,
     check_web_concurrency_honored,
     check_health_liveness_readiness_split,
+    check_compose_resource_limits,
     check_dockerfile_copies_app_modules,
     check_c2_zk_token_null,
     check_c4_atomic_failed_login,

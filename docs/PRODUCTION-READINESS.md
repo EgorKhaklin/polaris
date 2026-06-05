@@ -102,7 +102,12 @@ left a real foundation. Genuinely sound today:
   failure should stop routing) are distinct; the container HEALTHCHECK uses
   liveness so a transient outage does not restart the container. Pinned by
   `check_health_liveness_readiness_split` + `HealthEndpointTests`.
-- [ ] Container resource limits; pinned image digests.
+- [x] **Container resource limits + log rotation (v9.109).** All five
+  prod-compose services (caddy, app, pgbouncer, postgres, redis) set
+  `deploy.resources.limits` (memory + cpu, sized to role) and a `json-file`
+  log driver capped at `10m` x `5`, so one container cannot OOM the host and
+  logs cannot fill the disk. Pinned by `check_compose_resource_limits`.
+- [ ] Pinned image digests.
 - [ ] Prometheus multiprocess mode (metrics undercount across 4 workers);
   shipped alert rules; log rotation; request-correlation IDs; SLOs; runbooks.
 - [x] **Dependency CVE scanning gates the build (v9.105).** A `cve-scan` CI job

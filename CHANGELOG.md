@@ -5,6 +5,28 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.109 — 2026-06-05 (production-readiness, wave 4: every prod container bounds its memory, CPU, and logs)
+
+The production compose set no resource limits and no log rotation on any
+service. So one container with a memory leak could consume all host RAM and
+take the whole stack down with it (no cgroup ceiling), and the default
+json-file log driver grows without bound until it fills the disk — a slow
+outage that looks like nothing until `df` hits 100%.
+
+- **Resource limits on all five services.** caddy, app, pgbouncer, postgres,
+  and redis each get `deploy.resources.limits` (memory + cpu) and a memory
+  reservation, sized to role (postgres 1G, app 768M, redis 256M, caddy +
+  pgbouncer 128M). Compose v2 honors these for `docker compose up`, so a runaway
+  container is OOM-killed by its own cgroup instead of starving its neighbors.
+- **Log rotation on all five.** Each service uses the `json-file` driver capped
+  at `max-size: 10m` x `max-file: 5` (50 MB/container ceiling), so logs roll
+  over instead of filling the disk.
+- **Pinned.** `check_compose_resource_limits` (41st check) parses the compose by
+  text (the check layer runs on system python, no PyYAML) and fails unless every
+  service has both a limit block and a rotating log driver. `docker compose
+  config` resolves the file cleanly. Ticks the resource-limits box in
+  `docs/PRODUCTION-READINESS.md` Wave 4.
+
 ## v9.108 — 2026-06-05 (production-readiness, wave 4: liveness and readiness are separate probes)
 
 `/api/health` ran the full dependency roll-up (database, redis, ZK binary,

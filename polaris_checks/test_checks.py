@@ -808,5 +808,48 @@ def test_health_liveness_readiness_split_check_discriminates(tmp_path):
         "must FAIL when the container HEALTHCHECK does not use the liveness probe"
 
 
+def test_compose_resource_limits_check_discriminates(tmp_path):
+    web = tmp_path / "polaris_web"
+    web.mkdir()
+
+    def service(name, with_limits, with_logging):
+        s = f"  {name}:\n    image: {name}:latest\n"
+        if with_limits:
+            s += ("    deploy:\n      resources:\n        limits:\n"
+                  "          cpus: '0.5'\n          memory: 128M\n")
+        if with_logging:
+            s += ("    logging:\n      driver: json-file\n"
+                  "      options:\n        max-size: 10m\n        max-file: '5'\n")
+        return s
+
+    def write(*svcs):
+        (web / "docker-compose.prod.yml").write_text("services:\n" + "".join(svcs))
+
+    # 1. Two services, neither limited or rotated -> FAIL.
+    write(service("a", False, False), service("b", False, False))
+    assert checks.check_compose_resource_limits(tmp_path)[0].level == "FAIL", \
+        "must FAIL when services have no resource limits"
+
+    # 2. Limits on all, logging on only one -> FAIL (rotation not universal).
+    write(service("a", True, True), service("b", True, False))
+    assert checks.check_compose_resource_limits(tmp_path)[0].level == "FAIL", \
+        "must FAIL when not every service configures log rotation"
+
+    # 3. Logging on all, limits on only one -> FAIL.
+    write(service("a", True, True), service("b", False, True))
+    assert checks.check_compose_resource_limits(tmp_path)[0].level == "FAIL", \
+        "must FAIL when not every service sets resource limits"
+
+    # 4. Both on every service -> OK.
+    write(service("a", True, True), service("b", True, True))
+    assert checks.check_compose_resource_limits(tmp_path)[0].level == "OK", \
+        "must PASS when every service has limits + rotating logging"
+
+    # 5. Missing compose -> FAIL.
+    (web / "docker-compose.prod.yml").unlink()
+    assert checks.check_compose_resource_limits(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the prod compose is absent"
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

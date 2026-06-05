@@ -20,6 +20,18 @@ services:
 
   caddy:
     image: caddy:2-alpine
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 128M
+        reservations:
+          memory: 32M
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '5'
     container_name: polaris-caddy
     restart: unless-stopped
     ports:
@@ -41,6 +53,21 @@ services:
 
   app:
     image: polaris-app:prod
+    # Resource limits (one bad container must not OOM the host) + log rotation
+    # (json-file capped at max-size x max-file, so logs cannot fill the disk).
+    # Compose v2 honors deploy.resources.limits for `docker compose up`.
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 768M
+        reservations:
+          memory: 256M
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '5'
     build:
       # Repo root: the zk-builder stage COPYs polaris_zk/ (a sibling of
       # polaris_web/) and Docker COPY cannot escape the build context. All
@@ -103,6 +130,18 @@ services:
   # ----------------------------------------------------------------------
   pgbouncer:
     image: bitnami/pgbouncer:1.22
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 128M
+        reservations:
+          memory: 32M
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '5'
     container_name: polaris-pgbouncer
     restart: unless-stopped
     depends_on:
@@ -132,6 +171,18 @@ services:
 
   postgres:
     image: postgres:16-alpine
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 1024M
+        reservations:
+          memory: 512M
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '5'
     container_name: polaris-postgres
     restart: unless-stopped
     environment:
@@ -167,6 +218,18 @@ services:
 
   redis:
     image: redis:7-alpine
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 256M
+        reservations:
+          memory: 64M
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '5'
     container_name: polaris-redis
     restart: unless-stopped
     command: >
