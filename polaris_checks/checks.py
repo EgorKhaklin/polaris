@@ -635,6 +635,34 @@ def check_prod_images_digest_pinned(root: pathlib.Path) -> list[Finding]:
 
 
 # ---------------------------------------------------------------------------
+# Alerting rules must be a real, shipped, validated artifact the operator can
+# deploy — not a doc snippet. DR.md referenced "PolarisHigh5xx and related"
+# rules that lived only as an OPERATIONS.md example. They now ship at
+# deploy/observability/ (promtool-validated) with a scrape config; the alerting
+# backend (Alertmanager + pager) remains operator-provided.
+# ---------------------------------------------------------------------------
+def check_alert_rules(root: pathlib.Path) -> list[Finding]:
+    rules = _read(root, "deploy/observability/polaris-alerts.yml")
+    cfg = _read(root, "deploy/observability/prometheus.yml")
+    if not rules or not cfg:
+        return _fail("alert_rules",
+                     "deploy/observability/polaris-alerts.yml + prometheus.yml must ship (a real "
+                     "rules artifact, not just a doc example)")
+    if "groups:" not in rules:
+        return _fail("alert_rules", "polaris-alerts.yml must be a Prometheus rule-group file (groups:)")
+    for a in ("PolarisHigh5xx", "PolarisAppDown"):
+        if f"alert: {a}" not in rules:
+            return _fail("alert_rules", f"polaris-alerts.yml must define the {a} alert")
+    if "polaris-alerts.yml" not in cfg or "job_name: polaris" not in cfg:
+        return _fail("alert_rules",
+                     "prometheus.yml must scrape the polaris job and load polaris-alerts.yml "
+                     "(rule_files)")
+    return _ok("alert_rules",
+               "shipped Prometheus scrape config + promtool-validated alerting rules "
+               "(deploy/observability/); the Alertmanager backend stays operator-provided")
+
+
+# ---------------------------------------------------------------------------
 # The connection pooler must not depend on a third-party image that can vanish.
 # bitnami/pgbouncer:1.22 was removed from Docker Hub when Bitnami retired their
 # free catalogue (Aug 2025), leaving the prod stack unable to pull its pooler.
@@ -1136,6 +1164,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_health_liveness_readiness_split,
     check_compose_resource_limits,
     check_prod_images_digest_pinned,
+    check_alert_rules,
     check_pgbouncer_self_built,
     check_dockerfile_copies_app_modules,
     check_c2_zk_token_null,

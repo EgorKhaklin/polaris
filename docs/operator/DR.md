@@ -77,8 +77,8 @@ configured WAL archive later fails its check, treat as SEV-2.
 The Polaris alert layer (v8.93 Prometheus `/metrics` endpoint) emits
 metrics that map to severity: `polaris_app_info` absent → SEV-1;
 `polaris_db_query_latency_seconds` p99 > 5s → SEV-2; etc.
-PolarisHigh5xx and related Prometheus alerting rules
-(OPERATIONS.md) classify automatically.
+PolarisHigh5xx and related Prometheus alerting rules (shipped, validated, at
+`deploy/observability/polaris-alerts.yml`) classify automatically.
 
 ---
 

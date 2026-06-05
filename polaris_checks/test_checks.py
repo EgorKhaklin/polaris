@@ -1010,5 +1010,39 @@ def test_prod_images_digest_pinned_check_discriminates(tmp_path):
         "must FAIL when Dependabot does not track docker (pins would never update)"
 
 
+def test_alert_rules_check_discriminates(tmp_path):
+    obs = tmp_path / "deploy" / "observability"
+    obs.mkdir(parents=True)
+    GOOD_RULES = ("groups:\n  - name: polaris\n    rules:\n"
+                  "      - alert: PolarisAppDown\n        expr: up == 0\n"
+                  "      - alert: PolarisHigh5xx\n        expr: ratio > 0.01\n")
+    GOOD_CFG = ("scrape_configs:\n  - job_name: polaris\n    metrics_path: /metrics\n"
+                "rule_files:\n  - polaris-alerts.yml\n")
+
+    def write(rules=GOOD_RULES, cfg=GOOD_CFG):
+        (obs / "polaris-alerts.yml").write_text(rules)
+        (obs / "prometheus.yml").write_text(cfg)
+
+    # 1. Rules file missing a key alert -> FAIL.
+    write(rules="groups:\n  - name: polaris\n    rules:\n      - alert: SomethingElse\n        expr: x\n")
+    assert checks.check_alert_rules(tmp_path)[0].level == "FAIL", \
+        "must FAIL when PolarisHigh5xx/PolarisAppDown are absent"
+
+    # 2. Scrape config does not load the rules -> FAIL.
+    write(cfg="scrape_configs:\n  - job_name: polaris\n    metrics_path: /metrics\n")
+    assert checks.check_alert_rules(tmp_path)[0].level == "FAIL", \
+        "must FAIL when prometheus.yml does not load the rule file"
+
+    # 3. Both present + wired -> OK.
+    write()
+    assert checks.check_alert_rules(tmp_path)[0].level == "OK", \
+        "must PASS with shipped rules + a scrape config that loads them"
+
+    # 4. Missing files -> FAIL.
+    (obs / "polaris-alerts.yml").unlink()
+    assert checks.check_alert_rules(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the artifact does not ship"
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

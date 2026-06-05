@@ -1035,7 +1035,12 @@ scrape_configs:
 | `polaris_db_query_latency_seconds` | histogram | — | DB round-trip (sampled on `/api/health` probes) |
 | `polaris_app_info` | gauge | version | App metadata; value always 1; the label carries the data |
 
-**Alert example** (Prometheus alerting rule):
+**Alerting rules:** a ready-to-deploy, promtool-validated rules file ships at
+[`deploy/observability/polaris-alerts.yml`](../../deploy/observability/polaris-alerts.yml)
+(five rules, severity-labelled to the SEV ladder), alongside a
+[`prometheus.yml`](../../deploy/observability/prometheus.yml) scrape config and a
+[README](../../deploy/observability/README.md). Wire it to your Alertmanager
+(operator-provided). Example of one rule (`PolarisHigh5xx`):
 
 ```yaml
 groups:
@@ -1045,10 +1050,12 @@ groups:
         expr: |
           sum(rate(polaris_requests_total{status=~"5.."}[5m]))
             / sum(rate(polaris_requests_total[5m]))
-            > 0.001
+            > 0.01
         for: 10m
+        labels:
+          severity: sev2
         annotations:
-          summary: "5xx rate > 0.1% sustained"
+          summary: "5xx rate > 1% sustained"
 ```
 
 **Graceful fallback:** if `prometheus_client` is not installed

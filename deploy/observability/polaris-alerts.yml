@@ -1,0 +1,71 @@
+# Polaris — Prometheus alerting rules (v9.115)
+#
+# A real, validated rules file the operator drops into Prometheus
+# (rule_files in prometheus.yml), not just a doc snippet. Severity labels map
+# to docs/operator/DR.md's SEV ladder; route them to your Alertmanager /
+# pager (the alerting backend is operator-provided).
+#
+# Metric-aggregation note: the app's /metrics uses a per-worker registry, so
+# absolute counters are per-gunicorn-worker until multiprocess aggregation
+# lands. The alerts below are deliberately RATIOS and QUANTILES (5xx share,
+# latency percentiles), which stay valid per worker — they do not depend on
+# summing across workers. Validate with: promtool check rules polaris-alerts.yml
+groups:
+  - name: polaris
+    rules:
+      # SEV-1 — the app is unreachable to the scraper (target down) or the
+      # process is up but not reporting its info gauge.
+      - alert: PolarisAppDown
+        expr: up{job="polaris"} == 0
+        for: 2m
+        labels:
+          severity: sev1
+        annotations:
+          summary: "Polaris target is down (scrape failing for 2m)"
+          description: "Prometheus cannot scrape the polaris job; the app is unreachable or crashed."
+
+      - alert: PolarisAppInfoAbsent
+        expr: absent(polaris_app_info)
+        for: 5m
+        labels:
+          severity: sev1
+        annotations:
+          summary: "polaris_app_info absent for 5m"
+          description: "The app metadata gauge is missing — the process is not serving /metrics normally."
+
+      # SEV-2 — sustained 5xx share. A ratio: valid per worker.
+      - alert: PolarisHigh5xx
+        expr: |
+          sum(rate(polaris_requests_total{status=~"5.."}[5m]))
+            / sum(rate(polaris_requests_total[5m]))
+            > 0.01
+        for: 10m
+        labels:
+          severity: sev2
+        annotations:
+          summary: "5xx rate > 1% sustained for 10m"
+          description: "The server-error share of requests has exceeded 1% for 10 minutes."
+
+      # SEV-2 — DB round-trip p99 over 5s (matches DR.md's SEV-2 threshold).
+      - alert: PolarisHighDBLatency
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(polaris_db_query_latency_seconds_bucket[5m])) by (le)) > 5
+        for: 5m
+        labels:
+          severity: sev2
+        annotations:
+          summary: "DB query p99 latency > 5s"
+          description: "The /api/health DB round-trip p99 has exceeded 5 seconds — the database is slow or saturated."
+
+      # SEV-3 — request latency p99 elevated (degraded, not down).
+      - alert: PolarisHighRequestLatency
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(polaris_request_latency_seconds_bucket[5m])) by (le)) > 2
+        for: 10m
+        labels:
+          severity: sev3
+        annotations:
+          summary: "Request p99 latency > 2s"
+          description: "Per-route request p99 latency has exceeded 2 seconds for 10 minutes."

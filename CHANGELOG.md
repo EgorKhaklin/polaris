@@ -5,6 +5,30 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.115 — 2026-06-05 (production-readiness, wave 4: alerting rules are a shipped, validated artifact)
+
+`DR.md` told operators that "PolarisHigh5xx and related Prometheus alerting
+rules" classify incidents automatically — but those rules existed only as a
+snippet inside `OPERATIONS.md`. There was nothing an operator could actually
+deploy: a doc-overclaim with no shipped artifact behind it.
+
+- **A real, promtool-validated bundle.** `deploy/observability/` now ships
+  `polaris-alerts.yml` (five rules: `PolarisAppDown`, `PolarisAppInfoAbsent`,
+  `PolarisHigh5xx`, `PolarisHighDBLatency`, `PolarisHighRequestLatency`,
+  severity-labelled to the DR.md SEV ladder), a `prometheus.yml` scrape config
+  that loads them, and a README. Both pass `promtool check`.
+- **Honest about the metric limitation.** The app's `/metrics` uses a per-worker
+  registry, so absolute counters are per-gunicorn-worker until multiprocess
+  aggregation lands. The shipped alerts are deliberately **ratios** (5xx share)
+  and **quantiles** (latency percentiles), which stay valid per worker — the
+  README warns against absolute-count thresholds until aggregation exists.
+- **Docs reconciled.** `DR.md` and `OPERATIONS.md` now point at the shipped file
+  instead of implying rules that did not exist. The alerting backend
+  (Alertmanager + pager) stays operator-provided.
+- **Pinned** by `check_alert_rules` (the 45th check): the rules + scrape config
+  must ship and be wired. Ticks the alert-rules box in
+  `docs/PRODUCTION-READINESS.md` Wave 4.
+
 ## v9.114 — 2026-06-05 (production-readiness, wave 4: prod images are pinned by digest, not a mutable tag)
 
 The prod compose pulled `caddy:2-alpine`, `postgres:16-alpine`, and

@@ -121,6 +121,10 @@ left a real foundation. Genuinely sound today:
   (caddy, postgres, redis) are pinned `tag@sha256:<digest>` so a mutated or
   deleted upstream tag cannot change what runs; the `docker` Dependabot
   ecosystem keeps the pins current. Pinned by `check_prod_images_digest_pinned`.
+- [x] **Shipped alert rules (v9.115).** `deploy/observability/` ships a
+  promtool-validated `polaris-alerts.yml` (5 rules) + `prometheus.yml` scrape
+  config + README; ratios/quantiles stay valid per worker. Pinned by
+  `check_alert_rules`. (Alertmanager backend operator-gated.)
 - [ ] Prometheus multiprocess mode (metrics undercount across 4 workers);
   shipped alert rules; log rotation; request-correlation IDs; SLOs; runbooks.
 - [x] **Dependency CVE scanning gates the build (v9.105).** A `cve-scan` CI job
