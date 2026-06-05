@@ -469,6 +469,39 @@ def check_table_count_matches_doc(root: pathlib.Path) -> list[Finding]:
 
 
 # ---------------------------------------------------------------------------
+# Launcher currency — the macOS launcher (the SCS-230 deliverable surface) must
+# track the real stack, not drift. Pin the three properties that went stale: it
+# installs native deps from requirements.txt (not a hardcoded list that misses
+# prometheus_client/redis/hypothesis/pytest), its `test` command runs the
+# canonical suite (not just test_app), and it builds/points at the ZK binary so
+# /api/zk/* is not silently dead on a native launch.
+# ---------------------------------------------------------------------------
+def check_launcher_current(root: pathlib.Path) -> list[Finding]:
+    sh = _read(root, "polaris_mac_launch.sh")
+    if not sh:
+        return _fail("launcher_current", "polaris_mac_launch.sh is missing")
+    # Installs via `pip install ... -r <…>` AND the file it points at is
+    # requirements.txt (referenced directly or through a variable).
+    if not (re.search(r"pip install[^\n]*\s-r\b", sh) and "requirements.txt" in sh):
+        return _fail("launcher_current",
+                     "the launcher must install native deps from requirements.txt, not a hardcoded list")
+    if re.search(r"pip install[^\n]*\bflask\b[^\n]*\bpsycopg2-binary\b[^\n]*\bgunicorn\b", sh):
+        return _fail("launcher_current",
+                     "the launcher still pip-installs a hardcoded package list; use requirements.txt")
+    missing = [s for s in ("polaris_checks", "test_check_constraints",
+                           "test_invariants_property", "test_redaction_property")
+               if s not in sh]
+    if missing:
+        return _fail("launcher_current",
+                     "the launcher's test command omits canonical suite(s): " + ", ".join(missing))
+    if "polaris-zk" not in sh and "POLARIS_ZK_BINARY" not in sh:
+        return _fail("launcher_current",
+                     "the launcher never builds or references the ZK binary; /api/zk/* would be dead natively")
+    return _ok("launcher_current",
+               "launcher installs from requirements.txt, runs the canonical suite, and builds the ZK binary")
+
+
+# ---------------------------------------------------------------------------
 # Local-wall-clock convention — the DB stores TIMESTAMP-without-zone and app+DB
 # are co-located, so every Python boundary compares against datetime.now().
 # A datetime.utcnow() would silently shift the boundary by the server's UTC
@@ -651,6 +684,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_cookie_secure_in_production,
     check_prod_app_password_synced,
     check_table_count_matches_doc,
+    check_launcher_current,
     check_local_clock_convention,
     check_c6_atlas_redacts_zk_location,
     check_coercion_evidence_retained,

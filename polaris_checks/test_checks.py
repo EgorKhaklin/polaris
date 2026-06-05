@@ -442,5 +442,39 @@ def test_thesis_terminus_check_discriminates(tmp_path):
         "past v9.40 the retired/inconclusive framing must pass"
 
 
+def test_launcher_current_check_discriminates(tmp_path):
+    GOOD = (
+        'req="$WEB_DIR/requirements.txt"\n'
+        'pip install --quiet -r "$req"\n'
+        'build_zk_binary() { cargo build --release --bin polaris-zk; export POLARIS_ZK_BINARY; }\n'
+        'run_tests() { python -m polaris_checks.run; python -m unittest '
+        'test_check_constraints test_invariants_property test_redaction_property test_app; }\n')
+
+    def write(sh):
+        (tmp_path / "polaris_mac_launch.sh").write_text(sh)
+
+    # 1. Hardcoded pip list, no requirements.txt -> FAIL.
+    write("pip install flask psycopg2-binary gunicorn werkzeug webauthn\n"
+          "polaris_checks test_check_constraints test_invariants_property test_redaction_property polaris-zk\n")
+    assert checks.check_launcher_current(tmp_path)[0].level == "FAIL", \
+        "must FAIL on a hardcoded pip list"
+
+    # 2. Installs from requirements.txt but the test command omits canonical suites -> FAIL.
+    write('pip install -r requirements.txt\nrun_tests() { python test_app.py; }\npolaris-zk\n')
+    assert checks.check_launcher_current(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the test command omits the canonical suites"
+
+    # 3. Deps + suites fine but no ZK binary reference -> FAIL.
+    write('pip install -r requirements.txt\n'
+          'run_tests(){ polaris_checks.run test_check_constraints test_invariants_property test_redaction_property; }\n')
+    assert checks.check_launcher_current(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the launcher never builds/references the ZK binary"
+
+    # 4. All three present -> OK.
+    write(GOOD)
+    assert checks.check_launcher_current(tmp_path)[0].level == "OK", \
+        "must PASS when deps come from requirements.txt, the suite is canonical, and ZK is built"
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

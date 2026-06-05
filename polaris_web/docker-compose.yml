@@ -74,8 +74,8 @@ services:
       # POLARIS_SECRET_KEY in your shell env before running the launcher.
       POLARIS_SECRET_KEY:  ${POLARIS_SECRET_KEY:-dev-secret-rotate-in-production}
       # v9.39: cross-worker rate-limiter backend. If empty (default),
-      # security.py's auto-selector uses in-memory (each worker holds
-      # its own bucket; soldier_log_tail warns under POLARIS_WORKERS>1).
+      # security.py's auto-selector uses in-memory (each gunicorn worker holds
+      # its own bucket, so per-IP limits fragment under POLARIS_WORKERS>1).
       # For accurate per-IP limits, set POLARIS_REDIS_URL in the host
       # shell — e.g. `redis://host.docker.internal:6379/0` for a
       # host-running Redis (brew services start redis), or wire a redis

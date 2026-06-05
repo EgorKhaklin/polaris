@@ -1,8 +1,8 @@
 #!/bin/bash
-# AI-context: macOS double-click launcher with self-heal. Subcommands: doctor, nuke, watch. file_mtime() is OS-aware (BSD vs GNU stat). docker_compose_up_with_heal auto-wipes volume on stale-password detection. See DEVNOTES/known-gotchas.md.
+# AI-context: macOS double-click launcher with self-heal. Native path installs from polaris_web/requirements.txt (hash-guarded), builds the polaris-zk Rust binary (mtime-cached) and sets POLARIS_ZK_BINARY, and skips the schema reload when the DB is already loaded. `test` runs the canonical suite (polaris_checks + 4 DB suites + CLI + ZK pytest + cargo). file_mtime() is OS-aware (BSD vs GNU stat). docker_compose_up_with_heal auto-wipes volume on stale-password detection. See DEVNOTES/known-gotchas.md.
 # =============================================================================
 #  POLARIS / macOS Launch Controller
-#  Version: 2.5  /  2026-05-08
+#  Version: 2.6  /  2026-06-05
 #
 #  Single entry point for everything: bring-up, tear-down, logs, tests, reset.
 #  Auto-routes to Docker (preferred) or native Homebrew + venv.
@@ -133,6 +133,8 @@ POLARIS_ROOT="$SCRIPT_DIR"
 WEB_DIR="$POLARIS_ROOT/polaris_web"
 SQL_DIR="$POLARIS_ROOT/polaris_sql"
 CLI_DIR="$POLARIS_ROOT/polaris_cli"
+ZK_DIR="$POLARIS_ROOT/polaris_zk"
+ZK_BINARY="$ZK_DIR/target/release/polaris-zk"   # zk.py honours POLARIS_ZK_BINARY
 
 # Anchor working directory to the script's folder. Every path the script
 # touches is derived from $SCRIPT_DIR, so the script works no matter where
@@ -522,6 +524,48 @@ docker_compose_up_with_heal() {
 # -----------------------------------------------------------------------------
 # Native path
 # -----------------------------------------------------------------------------
+# Build the Rust ZK prover so /api/zk/* works on the native path. zk.py shells
+# into POLARIS_ZK_BINARY (or polaris_zk/target/release/polaris-zk); without it the
+# epoch-close and proof-verify routes raise RuntimeError and the headline
+# zero-knowledge feature is silently off. cargo's own incremental cache makes a
+# no-change rebuild cheap, but we still skip it entirely when the binary is newer
+# than every source file (the ~mtime pattern docker_image_stale uses) so warm
+# relaunches pay nothing. Degrades cleanly (warn, continue) when Rust is absent —
+# the app serves every page without it; only the ZK routes go quiet.
+#
+# Exports POLARIS_ZK_BINARY when a usable binary exists so the caller's gunicorn
+# inherits it.
+build_zk_binary() {
+    if [[ ! -d "$ZK_DIR" ]]; then
+        return 0
+    fi
+    # Already current? Skip the build. -nt is true when no source is newer.
+    if [[ -x "$ZK_BINARY" ]]; then
+        local newer
+        newer="$(find "$ZK_DIR/src" "$ZK_DIR/Cargo.toml" "$ZK_DIR/Cargo.lock" \
+                    -newer "$ZK_BINARY" 2>/dev/null | head -n1)"
+        if [[ -z "$newer" ]]; then
+            export POLARIS_ZK_BINARY="$ZK_BINARY"
+            ok "ZK prover up-to-date (polaris-zk) — /api/zk/* enabled"
+            return 0
+        fi
+    fi
+    if ! command -v cargo >/dev/null 2>&1; then
+        warn "Rust/cargo not found — ZK proofs (/api/zk/*) will be unavailable."
+        warn "  The app still serves every page. To enable ZK: install rustup"
+        warn "  (https://rustup.rs), then relaunch — the crate pins its own toolchain."
+        return 0
+    fi
+    log "Building the ZK prover (cargo build --release --bin polaris-zk; first build is slow)"
+    if (cd "$ZK_DIR" && cargo build --release --bin polaris-zk >/dev/null 2>&1); then
+        export POLARIS_ZK_BINARY="$ZK_BINARY"
+        ok "ZK prover built — /api/zk/* enabled"
+    else
+        warn "ZK prover build failed — /api/zk/* will be unavailable (app otherwise runs)."
+        warn "  Inspect: (cd $ZK_DIR && cargo build --release --bin polaris-zk)"
+    fi
+}
+
 launch_native() {
     require_layout
 
@@ -553,8 +597,22 @@ launch_native() {
         exit 1
     fi
 
-    log "Installing prereqs via Homebrew (postgresql@16, python@3.12)"
-    brew install postgresql@16 python@3.12
+    # Only install what is missing. `brew install` on an already-installed
+    # formula still hits the network to check for updates (several seconds on a
+    # warm machine); skip it when both are present. (No bash arrays — macOS ships
+    # bash 3.2, where empty-array expansion under `set -u` aborts.)
+    local brew_missing=""
+    brew list --formula postgresql@16 >/dev/null 2>&1 || brew_missing="postgresql@16"
+    if ! brew list --formula python@3.12 >/dev/null 2>&1; then
+        brew_missing="${brew_missing:+$brew_missing }python@3.12"
+    fi
+    if [[ -n "$brew_missing" ]]; then
+        log "Installing Homebrew prereqs: $brew_missing"
+        # shellcheck disable=SC2086
+        brew install $brew_missing
+    else
+        ok "Homebrew prereqs present (postgresql@16, python@3.12)"
+    fi
 
     # v9.02: Homebrew installs postgresql@16 keg-only — its bin/ dir
     # is NOT in PATH after `brew install` because it would conflict
@@ -580,18 +638,31 @@ launch_native() {
         createdb polaris_test
     fi
 
-    log "Loading Polaris schema, sample data, procedures, triggers, grants"
-    (cd "$SQL_DIR" && psql -d polaris_test -v ON_ERROR_STOP=1 -f 00_load_all.sql >/dev/null) || {
-        err "Schema load failed. Inspect: psql -d polaris_test -f $SQL_DIR/00_load_all.sql"
-        exit 1
-    }
-    ok "Database ready (schema + sample data + grants)"
+    # Only load the schema on a fresh DB. 00_load_all.sql begins with a
+    # TRUNCATE ... CASCADE that wipes every table, so re-running it on every
+    # launch both costs seconds and destroys any data entered in a prior session.
+    # Skip it when the core schema is already present; `reset` forces a reload.
+    local core_present
+    core_present="$(psql -d polaris_test -tAc \
+        "SELECT to_regclass('public.identitytoken') IS NOT NULL" 2>/dev/null | tr -d '[:space:]')"
+    if [[ "$core_present" == "t" ]]; then
+        ok "Database already loaded — skipping reload (use './polaris_mac_launch.sh reset' to reload)"
+    else
+        log "Loading Polaris schema, sample data, procedures, triggers, grants"
+        (cd "$SQL_DIR" && psql -d polaris_test -v ON_ERROR_STOP=1 -f 00_load_all.sql >/dev/null) || {
+            err "Schema load failed. Inspect: psql -d polaris_test -f $SQL_DIR/00_load_all.sql"
+            exit 1
+        }
+        ok "Database ready (schema + sample data + grants)"
+    fi
 
-    # v8.99: apply v8.95+v8.97 schema migrations on top of the v0 baseline.
-    # 00_load_all.sql creates the schema_version registry but does not
-    # apply migrations; without this step OperatorWebauthnCredential
-    # doesn't exist and the v8.97 WebAuthn surface 500s on first use.
-    log "Applying schema migrations (v8.95 framework)"
+    # Apply schema migrations. 00_load_all.sql creates the schema_version registry
+    # but applies no migrations; this step is idempotent (already-applied
+    # migrations are skipped) so it is safe — and necessary — on every launch,
+    # warm or cold: it picks up any migration added since the DB was last loaded.
+    # As of v9.89 there are six (operator-webauthn, recovery-code-hash,
+    # verification-purpose, audit-access-log, zk-verification-nonce, ...).
+    log "Applying schema migrations (idempotent)"
     POLARIS_DB_NAME=polaris_test POLARIS_DB_USER="$USER" POLARIS_DB_HOST=localhost \
         "$SCRIPT_DIR/scripts/polaris-migrate.sh" --up >/dev/null || {
         err "Migration apply failed. Inspect: $SCRIPT_DIR/scripts/polaris-migrate.sh --status"
@@ -600,17 +671,51 @@ launch_native() {
     ok "Migrations applied"
 
     cd "$WEB_DIR"
-    if [[ ! -d venv ]]; then
-        log "Creating Python virtual environment"
+    # Require a Python 3.12 venv. requirements.txt pins versions (cryptography,
+    # Flask 3.1, etc.) that an older interpreter cannot install — and an existing
+    # venv may be a stale 3.9 from before the 3.12 cutover. Recreate when missing
+    # or wrong-version so the dep install below can't fail on a too-old Python.
+    local need_venv=0
+    if [[ ! -x venv/bin/python ]]; then
+        need_venv=1
+    elif ! venv/bin/python -c 'import sys; sys.exit(0 if sys.version_info[:2]==(3,12) else 1)' 2>/dev/null; then
+        warn "Existing venv is $(venv/bin/python --version 2>&1), not 3.12 — recreating"
+        rm -rf venv
+        need_venv=1
+    fi
+    if [[ "$need_venv" == "1" ]]; then
+        if ! command -v python3.12 >/dev/null 2>&1; then
+            err "python3.12 not found. Install it: brew install python@3.12"
+            exit 1
+        fi
+        log "Creating Python 3.12 virtual environment"
         python3.12 -m venv venv
+        rm -f venv/.requirements.sha256   # force a fresh dependency install
     fi
     # shellcheck disable=SC1091
     source venv/bin/activate
 
-    log "Installing Python dependencies"
-    # v8.99: webauthn pulled in for the Position B MFA surface (sanctum/
-    # 2026-05-14-webauthn-operator-auth.md). Pure-Python; ~6MB; one direct dep.
-    pip install --quiet --disable-pip-version-check flask psycopg2-binary gunicorn werkzeug webauthn
+    # Install the canonical PINNED set (matches CI and the Docker image), not a
+    # hand-typed list. requirements.txt carries prometheus_client (/metrics),
+    # redis (cross-worker rate limiting — this path runs 2 workers), and
+    # hypothesis + pytest (the property and ZK two-witness suites), none of which
+    # arrive transitively. Skip the install when requirements.txt is unchanged
+    # since the last successful run — pip's resolve pass costs seconds even when
+    # everything is already satisfied.
+    local req="$WEB_DIR/requirements.txt" stamp="venv/.requirements.sha256"
+    local want have=""
+    want="$(shasum -a 256 "$req" 2>/dev/null | cut -d' ' -f1)"
+    [[ -f "$stamp" ]] && have="$(cat "$stamp" 2>/dev/null || true)"
+    if [[ -n "$want" && "$want" == "$have" ]]; then
+        ok "Python dependencies up-to-date (requirements.txt unchanged)"
+    else
+        log "Installing Python dependencies (requirements.txt)"
+        pip install --quiet --disable-pip-version-check -r "$req"
+        echo "$want" > "$stamp"
+    fi
+
+    # Build the Rust ZK prover so /api/zk/* works natively (sets POLARIS_ZK_BINARY).
+    build_zk_binary
 
     # v8.99: macOS fork-safety opt-out for hashlib.scrypt in forked workers.
     # Without this, password verification crashes the worker with
@@ -618,6 +723,16 @@ launch_native() {
     # another thread when fork() was called". Dev-only; production docker
     # path doesn't fork from a macOS objc-loaded parent.
     export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES
+
+    # Connect as the unprivileged polaris_app role, NOT $USER. $USER is a Postgres
+    # superuser and would bypass the v9.85 grant-level append-only boundary (the
+    # audit tables revoke UPDATE/DELETE from polaris_app); connecting as the app
+    # role makes the native run exercise the same boundary as production. The role
+    # + password come from 09_grants.sql; set them explicitly rather than leaning
+    # on localhost trust auth (which a hardened pg_hba.conf would refuse).
+    export POLARIS_DB_NAME=polaris_test
+    export POLARIS_DB_USER=polaris_app
+    export POLARIS_DB_PASSWORD=polaris_dev_password
 
     rotate_session_secret_if_unset
     log "Starting gunicorn on :$PORT (logs: $LOG_FILE)"
@@ -867,6 +982,31 @@ doctor() {
     fi
     echo
 
+    # 3b. Native-path readiness (venv deps, ZK prover, Rust toolchain)
+    printf "%sNative readiness%s\n" "$BOLD" "$NC"
+    if [[ -x "$WEB_DIR/venv/bin/python" ]]; then
+        local want_req have_req=""
+        want_req="$(shasum -a 256 "$WEB_DIR/requirements.txt" 2>/dev/null | cut -d' ' -f1)"
+        [[ -f "$WEB_DIR/venv/.requirements.sha256" ]] && \
+            have_req="$(cat "$WEB_DIR/venv/.requirements.sha256" 2>/dev/null || true)"
+        if [[ -n "$want_req" && "$want_req" == "$have_req" ]]; then
+            printf "  ${GREEN}OK${NC}    venv present; dependencies match requirements.txt\n"
+        else
+            printf "  ${YELLOW}WARN${NC}  venv present but deps may be stale — 'up' reinstalls from requirements.txt\n"
+        fi
+    else
+        printf "  ${YELLOW}WARN${NC}  no Python venv yet (created on first './polaris_mac_launch.sh up')\n"
+    fi
+    if [[ -x "$ZK_BINARY" ]]; then
+        printf "  ${GREEN}OK${NC}    ZK prover built (polaris-zk) — /api/zk/* available natively\n"
+    elif command -v cargo >/dev/null 2>&1; then
+        printf "  ${YELLOW}WARN${NC}  ZK prover not built yet — 'up' builds it (cargo present)\n"
+    else
+        printf "  ${YELLOW}WARN${NC}  ZK prover absent and no Rust/cargo — /api/zk/* will be unavailable\n"
+        printf "        (the app still serves every page; install rustup to enable ZK)\n"
+    fi
+    echo
+
     # 4. Docker subsystem
     printf "%sDocker subsystem%s\n" "$BOLD" "$NC"
     if docker_cli_present; then
@@ -1005,6 +1145,15 @@ reset_all() {
         kill "$(cat "$PID_FILE")" 2>/dev/null || true
         rm -f "$PID_FILE"
     fi
+    # Drop the native dev database so the next `up` reloads a fresh schema +
+    # sample data (the warm-launch guard otherwise preserves an existing DB).
+    [ -d /opt/homebrew/opt/postgresql@16/bin ] && export PATH="/opt/homebrew/opt/postgresql@16/bin:$PATH"
+    [ -d /usr/local/opt/postgresql@16/bin ]   && export PATH="/usr/local/opt/postgresql@16/bin:$PATH"
+    if command -v dropdb >/dev/null 2>&1 && \
+       psql -U "$USER" -lqt 2>/dev/null | cut -d'|' -f1 | grep -qw polaris_test; then
+        log "Dropping native polaris_test database"
+        dropdb polaris_test 2>/dev/null || warn "Could not drop polaris_test (is something connected?)"
+    fi
     rm -f "$LOG_FILE"
     clear_stale_pid
     ok "Reset complete. Run './polaris_mac_launch.sh up' to start fresh."
@@ -1013,23 +1162,76 @@ reset_all() {
 run_tests() {
     banner
     require_layout
-    if docker_app_running; then
-        log "Running web tests inside Docker container"
-        (cd "$WEB_DIR" && docker compose exec -T app python3 test_app.py)
-        echo
-        log "Running CLI tests on host (CLI is not in the container build context)"
-        (cd "$CLI_DIR" && python3 test_cli.py) || warn "CLI tests reported failures"
-        ok "Test run complete"
-    elif native_running; then
-        log "Running web tests against native instance"
-        (cd "$WEB_DIR" && source venv/bin/activate && python3 test_app.py)
-        echo
-        log "Running CLI tests"
-        (cd "$CLI_DIR" && python3 test_cli.py) || warn "CLI tests reported failures"
-        ok "Test run complete"
-    else
-        err "No running Polaris instance. Start with: ./polaris_mac_launch.sh up"
+
+    # The canonical suite (CLAUDE.md / ci.yml) runs against a loaded polaris_test
+    # DB + the native venv, connecting DIRECTLY — it does NOT need a live app.
+    # `up` (native path) provides both; this command targets that setup.
+    if [[ ! -x "$WEB_DIR/venv/bin/python" ]]; then
+        err "No Python venv yet. Run './polaris_mac_launch.sh up' once to create it,"
+        err "or './polaris_mac_launch.sh up --native' if you have been on the Docker path."
         exit 1
+    fi
+    local PY="$WEB_DIR/venv/bin/python"
+
+    # psql (keg-only postgresql@16) must be on PATH for the suites' reload helper.
+    [ -d /opt/homebrew/opt/postgresql@16/bin ] && export PATH="/opt/homebrew/opt/postgresql@16/bin:$PATH"
+    [ -d /usr/local/opt/postgresql@16/bin ]   && export PATH="/usr/local/opt/postgresql@16/bin:$PATH"
+
+    if ! psql -U "$USER" -d polaris_test -tAc "SELECT 1" >/dev/null 2>&1; then
+        err "polaris_test is not reachable. Run './polaris_mac_launch.sh up' first"
+        err "(it starts Postgres and loads the schema)."
+        exit 1
+    fi
+
+    # Connect as the schema owner ($USER, a superuser) so the suites' between-test
+    # sample-data reload (TRUNCATE) is permitted; the privilege-boundary test opens
+    # its OWN polaris_app connection. Point the ZK tests at the built binary so
+    # ZKSnarkTests run instead of skipping.
+    export POLARIS_DB_NAME=polaris_test POLARIS_DB_USER="$USER" POLARIS_DB_HOST=localhost
+    export POLARIS_STATE_DIR=/tmp/polaris-state POLARIS_TEST_RELOAD_VIA=direct
+    export OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES
+    export POLARIS_SECRET_KEY="test-secret-$$"
+    [[ -x "$ZK_BINARY" ]] && export POLARIS_ZK_BINARY="$ZK_BINARY"
+
+    # Unlock the admin in case a prior auth test left it locked.
+    psql -U "$USER" -d polaris_test -c \
+        "UPDATE AppUser SET locked_until=NULL, failed_login_count=0" >/dev/null 2>&1 || true
+
+    local fails=0
+
+    log "C1-C10 invariant layer (polaris_checks)"
+    (cd "$POLARIS_ROOT" && "$PY" -m polaris_checks.run) || { warn "polaris_checks FAILED"; fails=$((fails+1)); }
+    echo
+
+    log "Database-backed web suites (constraints, invariants, redaction, app)"
+    (cd "$WEB_DIR" && "$PY" -m unittest \
+        test_check_constraints test_invariants_property test_redaction_property test_app) \
+        || { warn "web suites FAILED"; fails=$((fails+1)); }
+    echo
+
+    log "CLI suite"
+    (cd "$CLI_DIR" && "$PY" -m unittest test_cli) || { warn "CLI suite FAILED"; fails=$((fails+1)); }
+    echo
+
+    log "ZK two-witness differential (pytest)"
+    (cd "$POLARIS_ROOT" && "$PY" -m pytest -q \
+        polaris_zk/witness2/test_witness2.py polaris_web/test_zk_second_witness.py) \
+        || { warn "ZK two-witness suite FAILED"; fails=$((fails+1)); }
+    echo
+
+    if command -v cargo >/dev/null 2>&1; then
+        log "ZK circuit tests (cargo)"
+        (cd "$ZK_DIR" && cargo test --release --quiet) || { warn "cargo tests FAILED"; fails=$((fails+1)); }
+        echo
+    else
+        warn "cargo not found — skipping the Rust ZK circuit tests"
+    fi
+
+    if [[ "$fails" -eq 0 ]]; then
+        ok "All test suites passed"
+    else
+        err "$fails test group(s) reported failures (see above)"
+        return 1
     fi
 }
 

@@ -5,6 +5,53 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.93 — 2026-06-05 (the macOS launcher: current, faster, and pinned)
+
+The launcher (`polaris_mac_launch.sh`, header was v2.5 / 2026-05-08) had drifted
+~37 ships behind the stack. A six-dimension audit (deps, ZK binary, test runner,
+startup speed, stack parity, robustness) surfaced the gaps; the load-bearing ones
+are fixed and pinned with a check.
+
+**Native dependencies (HIGH).** The native path hard-coded `pip install flask
+psycopg2-binary gunicorn werkzeug webauthn` — 5 unpinned packages — while the
+Docker image and CI both install from `requirements.txt` (23 pinned). It missed
+`prometheus_client` (so `/metrics` was dead), `redis` (so cross-worker rate
+limiting fell back to per-worker in-memory under the 2 workers it runs), and
+`hypothesis` + `pytest` (so the property and ZK two-witness suites ImportError'd).
+The native path now installs from `requirements.txt`, skipping the install when
+the file is unchanged (sha256 marker). The venv is recreated when it is not
+Python 3.12 (an older interpreter cannot install the pinned set).
+
+**ZK prover (HIGH).** Neither launch path built the Rust `polaris-zk` binary, so
+`/api/zk/*` was silently dead on a fresh extraction — the headline
+zero-knowledge feature off with no warning. A new `build_zk_binary()` builds it
+when cargo is present (mtime-cached so warm relaunches pay nothing), exports
+`POLARIS_ZK_BINARY`, and degrades cleanly with a clear message when Rust is
+absent. (The dev Docker image still omits it by design — a macOS host binary
+cannot run in the Linux container; `doctor` says so.)
+
+**Test runner (HIGH).** `test` ran only `test_app.py` + `test_cli.py`. It now runs
+the canonical suite from CLAUDE.md/CI: `polaris_checks.run`, the four DB web
+suites (constraints, invariants, redaction, app), the CLI suite, the ZK
+two-witness pytest suites, and the cargo circuit tests — in the venv, via
+`-m unittest`, against the loaded DB (no live app needed).
+
+**Startup speed + safety (MEDIUM).** `brew install` runs only for missing
+formulae; the schema reload is skipped when the DB is already loaded (the old
+code re-ran `00_load_all.sql` on every launch, which TRUNCATEs every table and
+wiped user data); native gunicorn now connects as the unprivileged `polaris_app`
+role (explicit creds), so the native run exercises the same v9.85 append-only
+boundary as production instead of leaning on localhost trust as a superuser.
+
+- `polaris_mac_launch.sh` — all of the above + `doctor` now reports venv-vs-
+  requirements, the ZK binary, and the Rust toolchain; `reset` drops the native
+  DB so the next `up` reloads; header bumped to v2.6.
+- `polaris_web/docker-compose.yml` — drop a stale `soldier_log_tail` comment
+  (removed v9.55 apparatus).
+- `polaris_checks/checks.py` — `check_launcher_current` (30th check) pins the
+  three properties that drifted: deps from requirements.txt, the canonical test
+  suite, and the ZK build. `test_checks.py` discriminates across four cases.
+
 ## v9.92 — 2026-06-04 (un-stale the README table count, and guard it)
 
 The honesty pass turned up one more drift: `README.md` said "26 schema tables"
