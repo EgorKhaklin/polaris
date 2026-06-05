@@ -586,6 +586,35 @@ def check_migration_timeouts(root: pathlib.Path) -> list[Finding]:
 
 
 # ---------------------------------------------------------------------------
+# A persistent-volume UPGRADE does NOT re-run docker-init.sh (postgres init
+# scripts only fire on an empty data dir), so the deploy must itself apply
+# pending migrations AND re-sync the idempotent DB objects (procedures, triggers,
+# views, grants). Without this a changed procedure — e.g. v9.117's
+# uc1_issue_and_activate signature — never reaches the upgraded DB and issuance
+# breaks. polaris-migrate.sh provides --sync-objects; polaris-deploy.sh runs both
+# against the running stack.
+# ---------------------------------------------------------------------------
+def check_deploy_syncs_db_objects(root: pathlib.Path) -> list[Finding]:
+    mig = _read(root, "scripts/polaris-migrate.sh")
+    dep = _read(root, "scripts/polaris-deploy.sh")
+    if not mig or not dep:
+        return _fail("deploy_db_sync", "scripts/polaris-migrate.sh or polaris-deploy.sh is missing")
+    if "--sync-objects" not in mig or "sync-objects)" not in mig:
+        return _fail("deploy_db_sync",
+                     "polaris-migrate.sh must provide a --sync-objects mode that re-applies the "
+                     "procedure/trigger/view/grant files (else a changed object never reaches an "
+                     "upgraded DB)")
+    if "--sync-objects" not in dep or "--up --target=docker-stack" not in dep:
+        return _fail("deploy_db_sync",
+                     "polaris-deploy.sh must apply migrations + --sync-objects against the running "
+                     "stack on deploy — an upgrade does not re-run docker-init, so a changed "
+                     "procedure would otherwise never reach the live DB")
+    return _ok("deploy_db_sync",
+               "the deploy applies migrations and re-syncs DB objects on upgrade (procedure / "
+               "trigger / view / grant changes reach an upgraded DB, not just a fresh one)")
+
+
+# ---------------------------------------------------------------------------
 # The worker-count knob must actually work. Dockerfile.prod and the prod compose
 # advertise WEB_CONCURRENCY (gunicorn's own convention), but gunicorn.conf.py
 # read only POLARIS_WORKERS — so setting WEB_CONCURRENCY did nothing and an
@@ -1235,6 +1264,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_cve_scanning,
     check_sast_scanning,
     check_migration_timeouts,
+    check_deploy_syncs_db_objects,
     check_web_concurrency_honored,
     check_health_liveness_readiness_split,
     check_compose_resource_limits,

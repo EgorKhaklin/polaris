@@ -24,6 +24,9 @@
 #   ./scripts/polaris-migrate.sh --up               # apply all pending
 #   ./scripts/polaris-migrate.sh --up N             # apply N pending
 #   ./scripts/polaris-migrate.sh --down N           # revert N most-recent applied
+#   ./scripts/polaris-migrate.sh --sync-objects     # re-apply idempotent objects
+#                                                   # (procedures/triggers/views/grants)
+#                                                   # so changed objects reach an upgraded DB
 #   ./scripts/polaris-migrate.sh --dry-run --up     # list pending; no INSERT
 #   ./scripts/polaris-migrate.sh --target=docker-stack ...   # use prod stack
 #   ./scripts/polaris-migrate.sh --actor-user-id N --up      # record actor
@@ -85,6 +88,7 @@ while [[ $# -gt 0 ]]; do
                 exit "${EXIT_ARG}"
             fi
             ;;
+        --sync-objects)        MODE="sync-objects" ;;
         --dry-run)             DRY_RUN=1 ;;
         --target=docker-stack) USE_DOCKER_STACK=1 ;;
         --actor-user-id=*)     ACTOR_USER_ID="${1#--actor-user-id=}" ;;
@@ -316,18 +320,22 @@ do_up() {
             continue
         fi
 
-        # Apply the migration + INSERT schema_version in one transaction.
+        # Apply the migration + INSERT schema_version in one transaction. The
+        # migration body is INLINED (cat) rather than `\i ${up_file}` so this
+        # works against a containerized postgres too: --target=docker-stack pipes
+        # the SQL over stdin, and a host-path `\i` would not resolve inside the
+        # container. cat preserves the file verbatim, including $$-quoting.
         local sql_tmp
         sql_tmp=$(mktemp)
-        cat > "${sql_tmp}" <<SQL
-BEGIN;
-SET LOCAL lock_timeout = '${MIGRATE_LOCK_TIMEOUT}';
-SET LOCAL statement_timeout = '${MIGRATE_STATEMENT_TIMEOUT}';
-\i ${up_file}
-INSERT INTO schema_version (name, event_type, actor_user_id, file_sha256)
-VALUES ('${name}', 'applied', ${ACTOR_USER_ID}, '${sha}');
-COMMIT;
-SQL
+        {
+            printf 'BEGIN;\n'
+            printf "SET LOCAL lock_timeout = '%s';\n" "${MIGRATE_LOCK_TIMEOUT}"
+            printf "SET LOCAL statement_timeout = '%s';\n" "${MIGRATE_STATEMENT_TIMEOUT}"
+            cat "${up_file}"
+            printf '\nINSERT INTO schema_version (name, event_type, actor_user_id, file_sha256)\n'
+            printf "VALUES ('%s', 'applied', %s, '%s');\n" "${name}" "${ACTOR_USER_ID}" "${sha}"
+            printf 'COMMIT;\n'
+        } > "${sql_tmp}"
         if ! run_psql_file "${sql_tmp}" >/dev/null 2>&1; then
             local out
             out=$(run_psql_file "${sql_tmp}" 2>&1 || true)
@@ -408,17 +416,18 @@ do_down() {
             continue
         fi
 
+        # Inline the down body (see do_up) so revert works over docker-stack too.
         local sql_tmp
         sql_tmp=$(mktemp)
-        cat > "${sql_tmp}" <<SQL
-BEGIN;
-SET LOCAL lock_timeout = '${MIGRATE_LOCK_TIMEOUT}';
-SET LOCAL statement_timeout = '${MIGRATE_STATEMENT_TIMEOUT}';
-\i ${down_file}
-INSERT INTO schema_version (name, event_type, actor_user_id, file_sha256)
-VALUES ('${name}', 'reverted', ${ACTOR_USER_ID}, '${down_sha}');
-COMMIT;
-SQL
+        {
+            printf 'BEGIN;\n'
+            printf "SET LOCAL lock_timeout = '%s';\n" "${MIGRATE_LOCK_TIMEOUT}"
+            printf "SET LOCAL statement_timeout = '%s';\n" "${MIGRATE_STATEMENT_TIMEOUT}"
+            cat "${down_file}"
+            printf '\nINSERT INTO schema_version (name, event_type, actor_user_id, file_sha256)\n'
+            printf "VALUES ('%s', 'reverted', %s, '%s');\n" "${name}" "${ACTOR_USER_ID}" "${down_sha}"
+            printf 'COMMIT;\n'
+        } > "${sql_tmp}"
         if ! run_psql_file "${sql_tmp}" >/dev/null 2>&1; then
             local out
             out=$(run_psql_file "${sql_tmp}" 2>&1 || true)
@@ -434,12 +443,61 @@ SQL
 }
 
 # ---------------------------------------------------------------------------
+# MODE: sync-objects — re-apply the idempotent DB object definitions (views,
+# procedures, triggers, queries, atlas/foresight/ontology helpers, grants).
+#
+# These live in CREATE OR REPLACE / GRANT files that 00_load_all.sql loads on a
+# FRESH database. A persistent-volume UPGRADE never re-runs 00_load_all.sql, so
+# without this a changed procedure or trigger never reaches an upgraded DB — e.g.
+# v9.117's uc1_issue_and_activate signature change would be absent and issuance
+# would fail. All listed files are pure CREATE OR REPLACE / GRANT and verified
+# safe to re-apply to a populated DB. The deploy runs this after --up.
+# ---------------------------------------------------------------------------
+SQL_DIR="${POLARIS_ROOT}/polaris_sql"
+OBJECT_FILES=(
+    03_view.sql
+    05_procedures.sql
+    06_triggers.sql
+    07_queries.sql
+    11_atlas.sql
+    14_foresight_helpers.sql
+    15_ontology.sql
+    09_grants.sql
+)
+
+do_sync_objects() {
+    echo "Syncing idempotent DB objects (views, procedures, triggers, grants)…"
+    local f path out
+    for f in "${OBJECT_FILES[@]}"; do
+        path="${SQL_DIR}/${f}"
+        if [[ ! -f "${path}" ]]; then
+            echo "  ! skip ${f} (not found)"
+            continue
+        fi
+        if [[ "${DRY_RUN}" -eq 1 ]]; then
+            echo "  [dry-run] would re-apply ${f}"
+            continue
+        fi
+        if run_psql_file "${path}" > /dev/null 2>&1; then
+            echo "  ✓ ${f}"
+        else
+            out=$(run_psql_file "${path}" 2>&1 || true)
+            echo "  ✗ ${f}" >&2
+            echo "${out}" | tail -3 >&2
+            exit "${EXIT_DB}"
+        fi
+    done
+    echo "  Objects synced — procedure/trigger/view/grant definitions match the source."
+}
+
+# ---------------------------------------------------------------------------
 # Dispatch
 # ---------------------------------------------------------------------------
 case "${MODE}" in
-    status) do_status ;;
-    up)     do_up ;;
-    down)   do_down ;;
+    status)       do_status ;;
+    up)           do_up ;;
+    down)         do_down ;;
+    sync-objects) do_sync_objects ;;
     *)
         echo "error: unknown mode ${MODE}" >&2
         exit "${EXIT_USAGE}"

@@ -1122,5 +1122,32 @@ def test_signature_self_contained_verify_check_discriminates(tmp_path):
     assert checks.check_signature_self_contained_verify(tmp_path)[0].level == "OK"
 
 
+def test_deploy_syncs_db_objects_check_discriminates(tmp_path):
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    GOOD_MIG = "case x in\n  --sync-objects) MODE=sync ;;\nesac\nsync-objects) do_sync_objects ;;\n"
+    GOOD_DEP = ('polaris-migrate.sh --up --target=docker-stack\n'
+                'polaris-migrate.sh --sync-objects --target=docker-stack\n')
+
+    def write(mig=GOOD_MIG, dep=GOOD_DEP):
+        (scripts / "polaris-migrate.sh").write_text(mig)
+        (scripts / "polaris-deploy.sh").write_text(dep)
+
+    # 1. migrate script lacks --sync-objects -> FAIL.
+    write(mig="case x in\n  --up) MODE=up ;;\nesac\n")
+    assert checks.check_deploy_syncs_db_objects(tmp_path)[0].level == "FAIL", \
+        "must FAIL when polaris-migrate.sh has no --sync-objects mode"
+
+    # 2. deploy does not run sync-objects/migrate against the stack -> FAIL.
+    write(dep="docker compose up -d\n")
+    assert checks.check_deploy_syncs_db_objects(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the deploy does not apply migrations + sync objects"
+
+    # 3. both present -> OK.
+    write()
+    assert checks.check_deploy_syncs_db_objects(tmp_path)[0].level == "OK", \
+        "must PASS when migrate has --sync-objects and the deploy runs migrate + sync on the stack"
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

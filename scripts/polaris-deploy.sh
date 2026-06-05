@@ -126,6 +126,26 @@ echo "  [5/7] Bringing stack up…"
 (cd "${POLARIS_ROOT}/polaris_web" && docker compose -f docker-compose.prod.yml up -d --remove-orphans)
 
 # ---------------------------------------------------------------------------
+# 5b. Apply migrations + sync DB objects against the RUNNING stack.
+#     On a fresh volume docker-init.sh applied the schema + migrations during
+#     postgres init; on an UPGRADE it did NOT (postgres init scripts only run on
+#     an empty data dir), so without this a pending migration OR a changed
+#     procedure/trigger (e.g. v9.117's uc1_issue_and_activate signature) never
+#     reaches the running DB and issuance breaks. Both commands pipe SQL over
+#     stdin into the postgres container, so they work regardless of host paths;
+#     they are idempotent, so this is a harmless no-op on a fresh deploy.
+# ---------------------------------------------------------------------------
+echo "  [5b]  Applying migrations + syncing DB objects (procedures/triggers/views/grants)…"
+for _i in $(seq 1 30); do
+    if docker compose -f "${COMPOSE_FILE}" exec -T postgres pg_isready -U postgres >/dev/null 2>&1; then
+        break
+    fi
+    sleep 2
+done
+"${SCRIPT_DIR}/polaris-migrate.sh" --up --target=docker-stack
+"${SCRIPT_DIR}/polaris-migrate.sh" --sync-objects --target=docker-stack
+
+# ---------------------------------------------------------------------------
 # 6. Smoke test
 # ---------------------------------------------------------------------------
 echo "  [6/7] Smoke test (/api/health)…"

@@ -5,6 +5,32 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.118 — 2026-06-05 (production-readiness: procedure/trigger changes reach an UPGRADED database, not just a fresh one)
+
+A latent deploy bug, surfaced while wiring uc6: `docker-init.sh` loads the full
+schema + all procedures/triggers/grants and applies migrations — but only on a
+**fresh** data volume (postgres init scripts never re-run on an existing one).
+On an **upgrade**, `polaris-deploy.sh` brought the stack up and did nothing
+else: no migrations, no procedure re-sync. So a changed stored procedure never
+reached the running DB — concretely, **v9.117's `uc1_issue_and_activate`
+signature change would be absent on an upgraded prod DB and issuance would fail**
+(the app passes one more argument than the stale procedure accepts). It is
+systemic: it applies to every procedure/trigger/view/grant change.
+
+- **`polaris-migrate.sh --sync-objects`** re-applies the idempotent object files
+  (views, procedures, triggers, queries, atlas/foresight/ontology helpers,
+  grants) — all verified safe to re-apply to a populated DB. A dropped-then-
+  synced procedure round-trip proves it restores the current definition.
+- **Migrations now apply over the containerized stack.** `--up`/`--down` inline
+  the migration body (via `cat`) instead of `\i <host-path>`, which a psql
+  running *inside* the postgres container cannot resolve — so
+  `--target=docker-stack` works by piping the SQL over stdin (verified the
+  `$$`-quoted trigger migration survives the inlining; up/down round-trips).
+- **The deploy now updates the DB.** `polaris-deploy.sh` runs `--up` +
+  `--sync-objects` against the running stack after bring-up — idempotent on a
+  fresh deploy, the fix on an upgrade.
+- **Pinned** by `check_deploy_syncs_db_objects` (the 49th check).
+
 ## v9.117 — 2026-06-05 (production-readiness, wave 2: the issuer public key is a DB trust anchor, verification is surfaced at use)
 
 v9.113 enforced verification but left it dependent on the live
