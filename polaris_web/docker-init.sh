@@ -22,6 +22,29 @@ psql -v ON_ERROR_STOP=1 \
      --dbname "$POSTGRES_DB" \
      -f /docker-entrypoint-initdb.d/sql/00_load_all.sql
 
+# v9.121 — enable TLS so the app<->DB hop is encrypted. The self-signed server
+# cert is mounted read-only at /etc/polaris-pg-certs (postgres:16-alpine has no
+# openssl, so the cert is generated on the host by polaris-generate-secrets.sh).
+# Copy it into the data dir (owned by this postgres user, key 0600) and turn ssl
+# on. ALTER SYSTEM persists to postgresql.auto.conf, so the real server start
+# after init comes up with TLS. Idempotent / optional: no cert -> no TLS.
+PG_CERT_SRC=/etc/polaris-pg-certs
+PG_DATA_DIR="${PGDATA:-/var/lib/postgresql/data}"
+if [ -f "$PG_CERT_SRC/server.crt" ] && [ -f "$PG_CERT_SRC/server.key" ]; then
+    echo "Enabling Postgres TLS from the mounted cert..."
+    cp "$PG_CERT_SRC/server.crt" "$PG_DATA_DIR/server.crt"
+    cp "$PG_CERT_SRC/server.key" "$PG_DATA_DIR/server.key"
+    chmod 0600 "$PG_DATA_DIR/server.key"
+    chmod 0644 "$PG_DATA_DIR/server.crt"
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
+        -c "ALTER SYSTEM SET ssl = on;" \
+        -c "ALTER SYSTEM SET ssl_cert_file = 'server.crt';" \
+        -c "ALTER SYSTEM SET ssl_key_file = 'server.key';"
+    echo "Postgres TLS enabled (ssl=on; the app<->DB hop will be encrypted)."
+else
+    echo "No TLS cert at $PG_CERT_SRC — Postgres runs WITHOUT TLS (POLARIS_DB_SSLMODE must be 'prefer')."
+fi
+
 # v9.18 — apply all pending migrations after the baseline schema loads.
 # Without this, columns added post-v8.95 (e.g., AppUser.webauthn_required_after
 # from the 2026-05-14-002-operator-webauthn migration) are missing from

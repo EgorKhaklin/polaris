@@ -849,6 +849,44 @@ def check_pgbouncer_self_built(root: pathlib.Path) -> list[Finding]:
 
 
 # ---------------------------------------------------------------------------
+# The app<->DB path must be TLS-encrypted, not silently plaintext. psycopg2's
+# default sslmode is 'prefer' (encrypt if offered, else cleartext, no warning).
+# The prod path encrypts BOTH hops: app -> pgbouncer (pgbouncer client_tls,
+# self-signed cert) and pgbouncer -> postgres (server_tls), with postgres TLS
+# enabled at init from a host-generated cert. sslmode stays configurable so
+# dev/CI (no TLS) keep 'prefer'.
+# ---------------------------------------------------------------------------
+def check_app_db_tls(root: pathlib.Path) -> list[Finding]:
+    app = _read(root, "polaris_web/app.py")
+    compose = _read(root, "polaris_web/docker-compose.prod.yml")
+    init = _read(root, "polaris_web/docker-init.sh")
+    entry = _read(root, "polaris_web/pgbouncer-entrypoint.sh")
+    if not (app and compose and init and entry):
+        return _fail("app_db_tls", "an app<->DB TLS wiring file is missing")
+    if "POLARIS_DB_SSLMODE" not in app or "sslmode" not in app:
+        return _fail("app_db_tls",
+                     "DB_CONFIG must set a configurable sslmode (POLARIS_DB_SSLMODE) — psycopg2's "
+                     "'prefer' default silently falls back to plaintext")
+    if not re.search(r"POLARIS_DB_SSLMODE:\s*require", compose):
+        return _fail("app_db_tls",
+                     "the prod compose must set POLARIS_DB_SSLMODE=require (encrypt app<->pgbouncer)")
+    if "PGBOUNCER_SERVER_TLS_SSLMODE" not in compose or "PGBOUNCER_CLIENT_TLS_SSLMODE" not in compose:
+        return _fail("app_db_tls",
+                     "the prod compose must enable pgbouncer server_tls + client_tls (both DB hops "
+                     "encrypted)")
+    if "ALTER SYSTEM SET ssl" not in init:
+        return _fail("app_db_tls",
+                     "docker-init.sh must enable Postgres TLS (ALTER SYSTEM SET ssl = on) from the "
+                     "mounted cert")
+    if "server_tls_sslmode" not in entry or "client_tls_sslmode" not in entry:
+        return _fail("app_db_tls",
+                     "pgbouncer-entrypoint.sh must wire server_tls + client_tls")
+    return _ok("app_db_tls",
+               "the app<->DB path is TLS-encrypted on both hops (app<->pgbouncer client_tls + "
+               "pgbouncer<->postgres server_tls); sslmode configurable, 'prefer' for dev")
+
+
+# ---------------------------------------------------------------------------
 # Docker image completeness — every LOCAL module app.py imports must be COPYd
 # into both images, or the container ModuleNotFoundErrors at startup and crash-
 # loops. This has bitten twice: observability.py (v9.40) and pqc_signing.py
@@ -1310,6 +1348,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_prod_images_digest_pinned,
     check_alert_rules,
     check_pgbouncer_self_built,
+    check_app_db_tls,
     check_dockerfile_copies_app_modules,
     check_c2_zk_token_null,
     check_c4_atomic_failed_login,

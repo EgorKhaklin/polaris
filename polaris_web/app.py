@@ -251,6 +251,12 @@ DB_CONFIG = {
         fallback_env_name='POLARIS_DB_PASSWORD',
         default='polaris_dev_password',
     ),
+    # v9.121 — TLS on the app<->DB hop. psycopg2's own default is 'prefer',
+    # which SILENTLY falls back to plaintext if the server lacks TLS — so we make
+    # it explicit + configurable. Production sets 'require' (encrypt; the prod
+    # stack's pgbouncer + postgres present self-signed certs) or, with an
+    # operator-supplied CA, 'verify-full'. Dev/CI keep 'prefer'.
+    'sslmode': os.environ.get('POLARIS_DB_SSLMODE', 'prefer'),
 }
 
 

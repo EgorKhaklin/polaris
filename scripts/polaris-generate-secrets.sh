@@ -96,6 +96,31 @@ write_signing_key_if_missing() {
     echo "  ✓ ${name}  (ML-DSA-65 keypair generated; mode 0600)"
 }
 
+# v9.121 — a self-signed TLS server cert for Postgres, so the app<->DB hop is
+# encrypted (sslmode=require). The cert is mounted into the postgres container,
+# which copies it into its data dir and enables ssl at init (docker-init.sh).
+# CN=postgres (the in-network service name) so it is verify-full-ready if the
+# operator later supplies a real CA; until then 'require' encrypts without cert
+# verification. Operators with a managed-Postgres CA replace this cert.
+write_postgres_cert_if_missing() {
+    local crt="${SECRETS_DIR}/postgres_server.crt"
+    local key="${SECRETS_DIR}/postgres_server.key"
+    if [[ -f "${crt}" && -f "${key}" ]]; then
+        echo "  ✓ postgres_server.crt/.key  (exist; not overwriting)"
+        return 0
+    fi
+    if ! command -v openssl >/dev/null 2>&1; then
+        echo "  ! postgres_server.{crt,key}  (NOT generated — needs openssl; set" >&2
+        echo "      POLARIS_DB_SSLMODE=prefer to run without TLS, or supply your own cert)" >&2
+        return 0
+    fi
+    ( umask 0077 && openssl req -new -x509 -days 825 -nodes \
+        -subj "/CN=postgres" -out "${crt}" -keyout "${key}" >/dev/null 2>&1 )
+    chmod 0644 "${crt}"
+    chmod 0600 "${key}"
+    echo "  ✓ postgres_server.crt/.key  (self-signed TLS cert generated; key 0600)"
+}
+
 cat <<'BANNER'
 
   Polaris — secret material generator
@@ -109,6 +134,7 @@ write_secret_if_missing polaris_secret_key       32
 write_secret_if_missing polaris_db_password      24
 write_secret_if_missing polaris_db_root_password 24
 write_signing_key_if_missing
+write_postgres_cert_if_missing
 
 cat <<BANNER
 

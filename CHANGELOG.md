@@ -5,6 +5,37 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.121 — 2026-06-05 (production-readiness, wave 3: the app<->DB path is encrypted on both hops)
+
+The prod stack routes the app through pgbouncer to Postgres, and both hops moved
+plaintext: a tap on the pod network (or a compromised sidecar) could read every
+query and the SCRAM exchange in the clear. Wave 3 turns on TLS end to end.
+
+- **Postgres hop.** `docker-init.sh` copies a server cert mounted at
+  `/etc/polaris-pg-certs/` into `PGDATA` (key 0600, cert 0644) and runs
+  `ALTER SYSTEM SET ssl = on` with `ssl_cert_file`/`ssl_key_file`, then reloads
+  (`ssl` is SIGHUP-reloadable). `scripts/polaris-generate-secrets.sh` mints the
+  self-signed cert (`/CN=postgres`, 825 days) at deploy time if absent, alongside
+  the signing key — it never enters the repo (secrets/ is gitignored).
+- **Both pgbouncer hops.** The self-built pooler now reads
+  `PGBOUNCER_SERVER_TLS_SSLMODE` (pgbouncer -> postgres) and
+  `PGBOUNCER_CLIENT_TLS_SSLMODE` (app -> pgbouncer); for the client hop the
+  entrypoint mints its own `/CN=pgbouncer` cert with openssl (added to
+  `Dockerfile.pgbouncer`). Both sslmodes are validated against the pgbouncer
+  enum before they reach `pgbouncer.ini`. The prod compose sets both to
+  `require`; both default OFF so dev and the existing CI round-trip stay plaintext.
+- **App hop.** `DB_CONFIG` gains `sslmode` from `POLARIS_DB_SSLMODE` (default
+  `prefer` for dev; the prod compose sets `require`), so the psycopg2 connection
+  negotiates TLS to the pooler. `require` encrypts without pinning a CA, which a
+  self-signed cert satisfies; `verify-full` against a real CA stays an
+  operator-gated step (documented, not claimed).
+- **Proven + pinned.** A local docker stack brought all three containers up with
+  TLS and confirmed `SSL established: TLSv1.3` on both hops (backend_ssl=t). CI
+  gains a `client_tls` round-trip: a pooler with `CLIENT_TLS=require` must mint
+  its cert and serve an `sslmode=require` client. `check_app_db_tls` (51st check)
+  asserts the wiring across app.py, the prod compose, docker-init, and the
+  pgbouncer entrypoint so a hop cannot silently revert to plaintext.
+
 ## v9.120 — 2026-06-05 (production-readiness, wave 4: Prometheus metrics aggregate across workers)
 
 The `/metrics` endpoint used a per-worker Prometheus registry, so a scrape

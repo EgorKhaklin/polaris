@@ -1182,5 +1182,48 @@ def test_prometheus_multiprocess_check_discriminates(tmp_path):
         "must PASS with multiprocess collector + child_exit reaping + the dir set"
 
 
+def test_app_db_tls_check_discriminates(tmp_path):
+    web = tmp_path / "polaris_web"
+    web.mkdir()
+    GOOD_APP = "DB_CONFIG = {'sslmode': os.environ.get('POLARIS_DB_SSLMODE', 'prefer')}\n"
+    GOOD_COMPOSE = ("services:\n  app:\n    environment:\n      POLARIS_DB_SSLMODE: require\n"
+                    "  pgbouncer:\n    environment:\n"
+                    "      PGBOUNCER_SERVER_TLS_SSLMODE: require\n"
+                    "      PGBOUNCER_CLIENT_TLS_SSLMODE: require\n")
+    GOOD_INIT = "psql -c \"ALTER SYSTEM SET ssl = on;\"\n"
+    GOOD_ENTRY = "server_tls_sslmode = $X\nclient_tls_sslmode = $Y\n"
+
+    def write(app=GOOD_APP, compose=GOOD_COMPOSE, init=GOOD_INIT, entry=GOOD_ENTRY):
+        (web / "app.py").write_text(app)
+        (web / "docker-compose.prod.yml").write_text(compose)
+        (web / "docker-init.sh").write_text(init)
+        (web / "pgbouncer-entrypoint.sh").write_text(entry)
+
+    # 1. app does not set a configurable sslmode -> FAIL.
+    write(app="DB_CONFIG = {'host': 'x'}\n")
+    assert checks.check_app_db_tls(tmp_path)[0].level == "FAIL", \
+        "must FAIL when DB_CONFIG has no configurable sslmode"
+
+    # 2. prod compose does not require TLS on the app hop -> FAIL.
+    write(compose="services:\n  app:\n    environment:\n      POLARIS_ENV: production\n")
+    assert checks.check_app_db_tls(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the prod compose does not set POLARIS_DB_SSLMODE=require"
+
+    # 3. pgbouncer TLS not enabled in compose -> FAIL.
+    write(compose="services:\n  app:\n    environment:\n      POLARIS_DB_SSLMODE: require\n")
+    assert checks.check_app_db_tls(tmp_path)[0].level == "FAIL", \
+        "must FAIL without pgbouncer server_tls + client_tls in the compose"
+
+    # 4. docker-init does not enable Postgres TLS -> FAIL.
+    write(init="echo no tls\n")
+    assert checks.check_app_db_tls(tmp_path)[0].level == "FAIL", \
+        "must FAIL when docker-init does not enable Postgres ssl"
+
+    # 5. all wired -> OK.
+    write()
+    assert checks.check_app_db_tls(tmp_path)[0].level == "OK", \
+        "must PASS with sslmode + compose TLS + postgres ssl + pgbouncer TLS"
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

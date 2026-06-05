@@ -339,7 +339,26 @@ jobs:
           if docker run --rm --network pbci -e POLARIS_DB_HOST=pbci-pg polaris-pgbouncer:ci 2>/dev/null; then
             echo "::error::pgbouncer started WITHOUT the mounted secret"; exit 1
           fi
-          docker rm -f pbci-pg pbci-pb >/dev/null 2>&1 || true
+          # v9.121 — client_tls (app -> pgbouncer hop). A pooler with
+          # CLIENT_TLS=require must mint its self-signed cert and refuse a
+          # plaintext client, so an sslmode=require connection succeeds. (server_tls
+          # to a non-TLS pbci-pg is intentionally left off here; the full both-hops
+          # path is validated by the local stack and pinned by check_app_db_tls.)
+          docker run -d --name pbci-tls --network pbci \
+            -e POLARIS_DB_HOST=pbci-pg -e POLARIS_DB_USER=polaris_app -e POLARIS_DB_NAME=polaris \
+            -e PGBOUNCER_CLIENT_TLS_SSLMODE=require \
+            -v /tmp/pbsecret:/run/secrets/polaris_db_password:ro polaris-pgbouncer:ci
+          tlsgot=""
+          for i in $(seq 1 15); do
+            tlsgot=$(docker run --rm --network pbci -e PGPASSWORD="$APPPW" postgres:16-alpine \
+              psql "host=pbci-tls port=6432 user=polaris_app dbname=polaris sslmode=require" -tAc "SELECT 'TLS-OK'" 2>&1 | tr -d '[:space:]')
+            [ "$tlsgot" = "TLS-OK" ] && break
+            sleep 1
+          done
+          docker logs pbci-tls | tail -5
+          echo "pgbouncer client_tls round-trip result: $tlsgot"
+          [ "$tlsgot" = "TLS-OK" ] || { echo "::error::pgbouncer client_tls (sslmode=require) round-trip failed"; exit 1; }
+          docker rm -f pbci-pg pbci-pb pbci-tls >/dev/null 2>&1 || true
           docker network rm pbci >/dev/null 2>&1 || true
           echo "self-built pgbouncer image OK (round-trip + fail-closed)"
 

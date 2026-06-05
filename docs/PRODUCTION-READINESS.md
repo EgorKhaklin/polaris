@@ -98,8 +98,14 @@ left a real foundation. Genuinely sound today:
 - [x] **Reconciled `DR.md` (v9.102):** it no longer claims a wired ≤1-min RPO;
   the real RPO is the encrypted-`pg_dump` interval (~24h), and pgbackrest/WAL/S3
   is documented as the not-yet-configured target.
-- [ ] **App<->DB TLS** (`sslmode`), and field-level / at-rest encryption posture
-  for PII and the plaintext ZK `proof_path`.
+- [x] **App<->DB TLS (v9.121).** Both hops of the prod path are encrypted:
+  `POLARIS_DB_SSLMODE=require` on the app->pgbouncer connection, `client_tls`
+  and `server_tls` on the pooler, and `ALTER SYSTEM SET ssl=on` on Postgres with
+  a self-signed cert minted at deploy time. `require` encrypts without CA
+  pinning; `verify-full` against a real CA stays operator-gated. CI runs a
+  `client_tls` round-trip; pinned by `check_app_db_tls`.
+- [ ] Field-level / at-rest encryption posture for PII and the plaintext ZK
+  `proof_path` (encryption-at-rest host + key custodian is operator-gated).
 - [ ] Offsite backup target + WAL archiving for the ≤1-min RPO (operator-gated:
   the S3/offsite store).
 

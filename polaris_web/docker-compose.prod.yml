@@ -95,6 +95,10 @@ services:
       POLARIS_DB_NAME: polaris
       POLARIS_DB_USER: polaris_app
       POLARIS_DB_PASSWORD_FILE: /run/secrets/polaris_db_password
+      # v9.121 — encrypt the app<->pgbouncer hop. pgbouncer presents a self-signed
+      # cert (client_tls below), so 'require' encrypts without cert verification;
+      # an operator with a CA can raise this to 'verify-full'.
+      POLARIS_DB_SSLMODE: require
       POLARIS_SECRET_KEY_FILE: /run/secrets/polaris_secret_key
       POLARIS_REDIS_HOST: redis
       POLARIS_REDIS_PORT: '6379'
@@ -189,6 +193,10 @@ services:
       PGBOUNCER_RESERVE_POOL_SIZE: '5'
       PGBOUNCER_MAX_CLIENT_CONN: '500'
       PGBOUNCER_MAX_DB_CONNECTIONS: '50'
+      # v9.121 — TLS on both hops: encrypt pgbouncer -> postgres (server_tls) and
+      # app -> pgbouncer (client_tls; the entrypoint mints a self-signed cert).
+      PGBOUNCER_SERVER_TLS_SSLMODE: require
+      PGBOUNCER_CLIENT_TLS_SSLMODE: require
     secrets:
       - polaris_db_password
     healthcheck:
@@ -241,6 +249,10 @@ services:
       - pg_data:/var/lib/postgresql/data
       - ../polaris_sql:/docker-entrypoint-initdb.d/sql:ro
       - ./docker-init.sh:/docker-entrypoint-initdb.d/00-init.sh:ro
+      # v9.121 — TLS server cert (from polaris-generate-secrets.sh). docker-init
+      # copies it into the data dir and turns ssl on so the app<->DB hop is encrypted.
+      - ./secrets/postgres_server.crt:/etc/polaris-pg-certs/server.crt:ro
+      - ./secrets/postgres_server.key:/etc/polaris-pg-certs/server.key:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d polaris"]
       interval: 10s
