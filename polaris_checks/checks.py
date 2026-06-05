@@ -449,15 +449,23 @@ def check_prod_app_password_synced(root: pathlib.Path) -> list[Finding]:
 def check_table_count_matches_doc(root: pathlib.Path) -> list[Finding]:
     schema = _read(root, "polaris_sql/01_schema.sql")
     n = len(re.findall(r"^CREATE TABLE ", schema, re.M))
-    doc = _read(root, "docs/ARCHITECTURE-OVERVIEW.md")
-    m = re.search(r"(\d+)\s+tables", doc)
-    if not m:
-        return _fail("table_count", "ARCHITECTURE-OVERVIEW.md states no table count")
-    stated = int(m.group(1))
-    if stated != n:
-        return _fail("table_count",
-                     f"ARCHITECTURE-OVERVIEW.md says {stated} tables but the schema defines {n}")
-    return _ok("table_count", f"ARCHITECTURE-OVERVIEW.md table count matches the schema ({n})")
+    # Every doc that states a schema-table count must match the real schema. Both
+    # ARCHITECTURE-OVERVIEW.md ("N tables") and README.md ("N schema tables")
+    # carry one; the README's drifted to 26 while the schema reached 27 (v9.89)
+    # because only the architecture doc was guarded. Guard both.
+    docs = [
+        ("docs/ARCHITECTURE-OVERVIEW.md", r"(\d+)\s+tables"),
+        ("README.md", r"(\d+)\s+schema tables"),
+    ]
+    for rel, pat in docs:
+        m = re.search(pat, _read(root, rel))
+        if not m:
+            return _fail("table_count", f"{rel} states no schema-table count")
+        stated = int(m.group(1))
+        if stated != n:
+            return _fail("table_count",
+                         f"{rel} says {stated} tables but the schema defines {n}")
+    return _ok("table_count", f"doc table counts match the schema ({n})")
 
 
 # ---------------------------------------------------------------------------

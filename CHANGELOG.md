@@ -5,6 +5,21 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.92 — 2026-06-04 (un-stale the README table count, and guard it)
+
+The honesty pass turned up one more drift: `README.md` said "26 schema tables"
+while the schema reached 27 in v9.89 (the `ZkVerificationNonce` anti-replay
+store). `check_table_count_matches_doc` only guarded
+`docs/ARCHITECTURE-OVERVIEW.md`, so the README count drifted unchecked — the
+same class of stale-doc defect this honesty pass exists to close.
+
+- `README.md` — "26 schema tables" → "27 schema tables".
+- `polaris_checks/checks.py` — `check_table_count_matches_doc` now guards BOTH
+  the architecture doc ("N tables") and the README ("N schema tables") against
+  the real `CREATE TABLE` count, so neither can drift unnoticed again.
+  `test_checks.py` covers the new README path (architecture-doc-correct-but-
+  README-drifts now FAILs).
+
 ## v9.91 — 2026-06-04 (honesty: the thesis terminus passed, so the docs now say so)
 
 With the forward roadmap's actionable items shipped, a multi-agent honesty audit

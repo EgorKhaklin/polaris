@@ -170,13 +170,28 @@ def test_cookie_secure_check_fails_when_opt_in_only(tmp_path):
 def test_table_count_check_fails_on_doc_drift(tmp_path):
     (tmp_path / "polaris_sql").mkdir()
     (tmp_path / "docs").mkdir()
-    # Schema with 2 tables; doc claims 27 -> drift -> FAIL.
+    # Schema with 2 tables.
     (tmp_path / "polaris_sql" / "01_schema.sql").write_text(
         "CREATE TABLE A (id SERIAL);\nCREATE TABLE B (id SERIAL);\n")
-    (tmp_path / "docs" / "ARCHITECTURE-OVERVIEW.md").write_text(
-        "PostgreSQL 16. 27 tables, stored procedures.\n")
-    out = checks.check_table_count_matches_doc(tmp_path)
-    assert out[0].level == "FAIL", "must FAIL when the doc table count contradicts the schema"
+    arch = tmp_path / "docs" / "ARCHITECTURE-OVERVIEW.md"
+    readme = tmp_path / "README.md"
+
+    # 1. ARCHITECTURE-OVERVIEW drift -> FAIL.
+    arch.write_text("PostgreSQL 16. 27 tables, stored procedures.\n")
+    readme.write_text("a working reference implementation: 2 schema tables.\n")
+    assert checks.check_table_count_matches_doc(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the architecture-doc table count contradicts the schema"
+
+    # 2. Architecture doc correct, but the README count drifts -> FAIL (now guarded).
+    arch.write_text("PostgreSQL 16. 2 tables, stored procedures.\n")
+    readme.write_text("a working reference implementation: 26 schema tables.\n")
+    assert checks.check_table_count_matches_doc(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the README schema-table count drifts from the schema"
+
+    # 3. Both match the schema -> OK.
+    readme.write_text("a working reference implementation: 2 schema tables.\n")
+    assert checks.check_table_count_matches_doc(tmp_path)[0].level == "OK", \
+        "must PASS when both docs match the schema"
 
 
 def test_local_clock_check_fails_on_utcnow(tmp_path):
