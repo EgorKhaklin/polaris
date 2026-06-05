@@ -1,0 +1,39 @@
+# Dependabot — automated dependency-update PRs for new security advisories.
+#
+# v9.105 (production-readiness, Wave 4). Pairs with the pip-audit `cve-scan`
+# job in ci.yml: pip-audit GATES the build on a known CVE in the runtime
+# surface; Dependabot proactively opens PRs to bump packages when a new
+# advisory lands, so the fix is one review away rather than a manual sweep.
+version: 2
+updates:
+  # Python runtime + dev dependencies (both requirements files live here).
+  - package-ecosystem: pip
+    directory: /polaris_web
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    commit-message:
+      prefix: deps
+
+  # The Rust ZK crate.
+  - package-ecosystem: cargo
+    directory: /polaris_zk
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    commit-message:
+      prefix: deps
+
+  # GitHub Actions used by the CI workflow.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
+    commit-message:
+      prefix: ci

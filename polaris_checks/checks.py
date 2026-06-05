@@ -371,6 +371,73 @@ def check_sql_console_readonly(root: pathlib.Path) -> list[Finding]:
 
 
 # ---------------------------------------------------------------------------
+# The production image must not carry test frameworks. v9.105 split the single
+# requirements.txt into a runtime surface (what the Docker images install) and a
+# requirements-dev.txt (pytest, hypothesis, playwright). Test tooling in prod is
+# dead weight and extra CVE surface — a pytest CVE (CVE-2025-71176) was riding
+# into the image via the shared file. This check keeps the two apart.
+# ---------------------------------------------------------------------------
+_TEST_ONLY_PKGS = ("pytest", "hypothesis", "playwright")
+
+
+def check_prod_image_no_test_deps(root: pathlib.Path) -> list[Finding]:
+    req = _read(root, "polaris_web/requirements.txt")
+    dev = _read(root, "polaris_web/requirements-dev.txt")
+    if not req:
+        return _fail("prod_no_test_deps", "polaris_web/requirements.txt is missing")
+    if not dev:
+        return _fail("prod_no_test_deps",
+                     "polaris_web/requirements-dev.txt is missing — test tooling must live in a "
+                     "separate file so the production image does not install it")
+    leaked = [pkg for pkg in _TEST_ONLY_PKGS
+              if re.search(rf"(?im)^\s*{re.escape(pkg)}\s*(?:[<>=!~;\[]|$)", req)]
+    if leaked:
+        return _fail("prod_no_test_deps",
+                     "polaris_web/requirements.txt (the prod image surface) lists test-only "
+                     "package(s): " + ", ".join(leaked) + " — move them to requirements-dev.txt")
+    if not re.search(r"(?m)^\s*-r\s+requirements\.txt", dev):
+        return _fail("prod_no_test_deps",
+                     "requirements-dev.txt must include the runtime surface via "
+                     "`-r requirements.txt` so one install covers run + test")
+    for rel in ("polaris_web/Dockerfile", "polaris_web/Dockerfile.prod"):
+        df = _read(root, rel)
+        if df and "requirements-dev.txt" in df:
+            return _fail("prod_no_test_deps",
+                         f"{rel} installs requirements-dev.txt — the image must install the "
+                         "runtime requirements.txt only (no test frameworks in the image)")
+    return _ok("prod_no_test_deps",
+               "test tooling is isolated in requirements-dev.txt; the Docker images install the "
+               "runtime requirements.txt only (pytest/hypothesis/playwright never ship to prod)")
+
+
+# ---------------------------------------------------------------------------
+# The dependency surface must be CVE-scanned, and the scan must GATE on the
+# runtime surface (requirements.txt) — a known CVE in a package the production
+# image installs has to fail the build, not ship silently. pip-audit on the dev
+# tooling is informational (a test-tool CVE never reaches prod). Dependabot
+# opens update PRs for new advisories.
+# ---------------------------------------------------------------------------
+def check_cve_scanning(root: pathlib.Path) -> list[Finding]:
+    ci = _read(root, ".github/workflows/ci.yml")
+    if not ci:
+        return _fail("cve_scanning", ".github/workflows/ci.yml is missing")
+    if "pip-audit" not in ci:
+        return _fail("cve_scanning",
+                     "CI must run pip-audit to scan dependencies for known CVEs")
+    if not re.search(r"pip-audit\s+-r\s+\S*requirements\.txt[^\n]*--strict", ci):
+        return _fail("cve_scanning",
+                     "the pip-audit run on requirements.txt must be gating (--strict) so a known "
+                     "CVE in the production dependency surface fails the build")
+    if not (root / ".github" / "dependabot.yml").is_file():
+        return _fail("cve_scanning",
+                     ".github/dependabot.yml is missing — add Dependabot so new advisories open "
+                     "update PRs automatically")
+    return _ok("cve_scanning",
+               "CI gates on pip-audit of the runtime surface (--strict); Dependabot tracks new "
+               "advisories")
+
+
+# ---------------------------------------------------------------------------
 # Docker image completeness — every LOCAL module app.py imports must be COPYd
 # into both images, or the container ModuleNotFoundErrors at startup and crash-
 # loops. This has bitten twice: observability.py (v9.40) and pqc_signing.py
@@ -817,6 +884,8 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_pqc_signing_wired,
     check_pqc_real_signing,
     check_sql_console_readonly,
+    check_prod_image_no_test_deps,
+    check_cve_scanning,
     check_dockerfile_copies_app_modules,
     check_c2_zk_token_null,
     check_c4_atomic_failed_login,

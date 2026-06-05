@@ -725,13 +725,14 @@ launch_native() {
     # shellcheck disable=SC1091
     source venv/bin/activate
 
-    # Install the canonical PINNED set (matches CI and the Docker image), not a
-    # hand-typed list. requirements.txt carries prometheus_client (/metrics),
-    # redis (cross-worker rate limiting — this path runs 2 workers), and
-    # hypothesis + pytest (the property and ZK two-witness suites), none of which
-    # arrive transitively. Skip the install when requirements.txt is unchanged
-    # since the last successful run — pip's resolve pass costs seconds even when
-    # everything is already satisfied.
+    # Install the canonical PINNED runtime set (matches the Docker images), not
+    # a hand-typed list. requirements.txt carries prometheus_client (/metrics)
+    # and redis (cross-worker rate limiting — this path runs 2 workers), which
+    # do not arrive transitively. The test tooling (pytest, hypothesis) lives in
+    # requirements-dev.txt as of v9.105 and is installed by `test`, not here —
+    # running the app does not need it. Skip the install when requirements.txt
+    # is unchanged since the last successful run — pip's resolve pass costs
+    # seconds even when everything is already satisfied.
     local req="$WEB_DIR/requirements.txt" stamp="venv/.requirements.sha256"
     local want have=""
     want="$(shasum -a 256 "$req" 2>/dev/null | cut -d' ' -f1)"
@@ -1220,6 +1221,16 @@ run_tests() {
         exit 1
     fi
     local PY="$WEB_DIR/venv/bin/python"
+
+    # The `up` native path installs the lean RUNTIME requirements.txt. The
+    # suites additionally need the test tooling (pytest, hypothesis), which
+    # v9.105 split into requirements-dev.txt so the production image carries no
+    # test frameworks. Ensure it is present here (idempotent; fast once satisfied).
+    if [[ -f "$WEB_DIR/requirements-dev.txt" ]]; then
+        log "Ensuring test tooling (requirements-dev.txt)"
+        "$PY" -m pip install --quiet --disable-pip-version-check \
+            -r "$WEB_DIR/requirements-dev.txt" || warn "dev-deps install reported an issue"
+    fi
 
     # psql (keg-only postgresql@16) must be on PATH for the suites' reload helper.
     [ -d /opt/homebrew/opt/postgresql@16/bin ] && export PATH="/opt/homebrew/opt/postgresql@16/bin:$PATH"

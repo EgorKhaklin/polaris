@@ -636,5 +636,82 @@ def test_sql_console_readonly_check_discriminates(tmp_path):
         "must FAIL when app.py is absent"
 
 
+def test_prod_image_no_test_deps_check_discriminates(tmp_path):
+    web = tmp_path / "polaris_web"
+    web.mkdir()
+    RUNTIME = "Flask==3.1.3\npsycopg2-binary==2.9.12\nredis>=5.0,<6.0\n"
+    DEV = "-r requirements.txt\nhypothesis>=6.0,<7.0\npytest>=7.0,<9.0\nplaywright>=1.40,<2.0\n"
+    DF = "FROM python:3.12-slim\nCOPY requirements.txt /tmp/\nRUN pip install -r /tmp/requirements.txt\n"
+
+    def write(runtime, dev=DEV, df=DF, dfp=DF):
+        (web / "requirements.txt").write_text(runtime)
+        if dev is not None:
+            (web / "requirements-dev.txt").write_text(dev)
+        elif (web / "requirements-dev.txt").exists():
+            (web / "requirements-dev.txt").unlink()
+        (web / "Dockerfile").write_text(df)
+        (web / "Dockerfile.prod").write_text(dfp)
+
+    # 1. A test framework in the runtime surface -> FAIL.
+    write(RUNTIME + "pytest>=7.0,<9.0\n")
+    assert checks.check_prod_image_no_test_deps(tmp_path)[0].level == "FAIL", \
+        "must FAIL when requirements.txt lists a test-only package"
+
+    # 2. Clean runtime but no requirements-dev.txt -> FAIL.
+    write(RUNTIME, dev=None)
+    assert checks.check_prod_image_no_test_deps(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the dev requirements file is absent"
+
+    # 3. Dev file does not pull in the runtime surface -> FAIL.
+    write(RUNTIME, dev="pytest>=7.0,<9.0\n")
+    assert checks.check_prod_image_no_test_deps(tmp_path)[0].level == "FAIL", \
+        "must FAIL when requirements-dev.txt omits `-r requirements.txt`"
+
+    # 4. A Dockerfile installs the dev file -> FAIL.
+    write(RUNTIME, dfp="FROM x\nCOPY requirements-dev.txt /tmp/\nRUN pip install -r /tmp/requirements-dev.txt\n")
+    assert checks.check_prod_image_no_test_deps(tmp_path)[0].level == "FAIL", \
+        "must FAIL when an image installs the dev requirements"
+
+    # 5. Clean runtime, dev file with -r, images install runtime only -> OK.
+    write(RUNTIME)
+    assert checks.check_prod_image_no_test_deps(tmp_path)[0].level == "OK", \
+        "must PASS when test tooling is isolated and the images install runtime only"
+
+
+def test_cve_scanning_check_discriminates(tmp_path):
+    gh = tmp_path / ".github" / "workflows"
+    gh.mkdir(parents=True)
+    GATING = "      run: pip-audit -r polaris_web/requirements.txt --progress-spinner off --strict\n"
+
+    def write_ci(text):
+        (gh / "ci.yml").write_text(text)
+
+    def write_dependabot():
+        (tmp_path / ".github" / "dependabot.yml").write_text("version: 2\nupdates: []\n")
+
+    # 1. No pip-audit in CI -> FAIL.
+    write_ci("jobs:\n  test:\n    steps: []\n")
+    write_dependabot()
+    assert checks.check_cve_scanning(tmp_path)[0].level == "FAIL", \
+        "must FAIL when CI does not run pip-audit"
+
+    # 2. pip-audit present but not gating (--strict) on requirements.txt -> FAIL.
+    write_ci("jobs:\n  scan:\n    steps:\n      run: pip-audit -r polaris_web/requirements.txt\n")
+    assert checks.check_cve_scanning(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the runtime audit is not --strict (non-gating)"
+
+    # 3. Gating audit but no dependabot.yml -> FAIL.
+    write_ci("jobs:\n  scan:\n    steps:\n" + GATING)
+    (tmp_path / ".github" / "dependabot.yml").unlink()
+    assert checks.check_cve_scanning(tmp_path)[0].level == "FAIL", \
+        "must FAIL when Dependabot is not configured"
+
+    # 4. Gating audit + dependabot -> OK.
+    write_ci("jobs:\n  scan:\n    steps:\n" + GATING)
+    write_dependabot()
+    assert checks.check_cve_scanning(tmp_path)[0].level == "OK", \
+        "must PASS with a gating runtime audit and Dependabot configured"
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

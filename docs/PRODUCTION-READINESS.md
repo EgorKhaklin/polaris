@@ -93,7 +93,13 @@ left a real foundation. Genuinely sound today:
   pinned image digests; split liveness vs readiness in `/api/health`.
 - [ ] Prometheus multiprocess mode (metrics undercount across 4 workers);
   shipped alert rules; log rotation; request-correlation IDs; SLOs; runbooks.
-- [ ] CVE scanning (pip-audit/Dependabot) + SAST in CI.
+- [x] **Dependency CVE scanning gates the build (v9.105).** A `cve-scan` CI job
+  runs `pip-audit --strict` on the runtime `requirements.txt`, so a known CVE in
+  a package the production image installs fails the build. v9.105 split test
+  tooling (pytest/hypothesis/playwright) into `requirements-dev.txt` so the prod
+  image no longer ships a test framework (or its CVEs); the dev surface is
+  audited informationally. Dependabot opens weekly update PRs. Pinned by
+  `check_prod_image_no_test_deps` + `check_cve_scanning`. (SAST still open.)
 - [x] **SQL console is READ ONLY at the engine (v9.104).** `sql_query` calls
   `conn.set_session(readonly=True)` before any statement, so a data-modifying
   CTE that slips past the `SELECT`/`WITH` keyword whitelist is refused by

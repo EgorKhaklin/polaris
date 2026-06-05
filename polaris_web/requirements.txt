@@ -1,22 +1,26 @@
-# polaris_web/requirements.txt — pinned runtime + dev dependencies
+# polaris_web/requirements.txt — pinned RUNTIME dependencies only
 #
-# v9.05 / Wave 1 / C3 (Sanctum: meta/polaris-self-roadmap-2026-05-14.md).
-# Pre-v9.05 the project had no requirements file; CI inlined a `pip
-# install` step + Dockerfile inlined another set + ai-bootstrap.sh
-# expected packages without naming them. Reproducibility hinged on
-# whatever pip resolved that day. v9.05 closes the gap.
+# v9.05 / Wave 1 / C3 introduced a single pinned file. v9.105 split it:
+# this file is the production runtime surface (what ships in the Docker
+# images), and the test-only tools (Hypothesis, pytest, Playwright) moved
+# to requirements-dev.txt. The production image must not carry test
+# frameworks — they are dead weight and extra CVE surface in prod (a
+# pytest CVE, CVE-2025-71176, is exactly why this split happened).
 #
-# Versions captured from the working dev venv on 2026-05-14
-# (Polaris v9.05 ship). Bump intentionally; Hypothesis (test-only)
-# and pytest (test-only) are listed at the bottom.
+# Versions captured from the working dev venv on 2026-05-14 (Polaris
+# v9.05 ship); bump intentionally.
 #
-# Usage:
+# Usage (run the app):
 #   python3 -m venv polaris_web/venv
 #   source polaris_web/venv/bin/activate
 #   pip install -r polaris_web/requirements.txt
 #
-# CI uses this file (.github/workflows/ci.yml). Dockerfile.prod
-# uses it. ai-bootstrap.sh checks the venv against it.
+# To also get the test tooling, install requirements-dev.txt (which
+# pulls this file in via `-r requirements.txt`).
+#
+# CI installs requirements-dev.txt (it runs the suites); the Dockerfiles
+# install THIS file only; pip-audit gates on THIS file (the runtime
+# surface) in .github/workflows/ci.yml.
 
 # ---- Runtime: Flask web stack ----
 Flask==3.1.3
@@ -44,26 +48,12 @@ cffi==2.0.0
 pycparser==3.0
 typing_extensions==4.15.0
 
-# ---- Test-only: property testing (10 Hypothesis tests) ----
-hypothesis>=6.0,<7.0
-
-# ---- Test-only: pytest (ZK two-witness suites, v9.44/v9.46) ----
-# polaris_zk/witness2/test_witness2.py and polaris_web/test_zk_second_witness.py
-# are pytest-style (functions + pytest.mark); they ImportError without this.
-pytest>=7.0,<9.0
-
-# ---- Optional but recommended: Prometheus client (v8.93 /metrics) ----
+# ---- Runtime: Prometheus client (v8.93 /metrics) ----
 prometheus_client>=0.20,<1.0
 
-# ---- Optional: Redis client for cross-worker rate limiting (v9.40) ----
+# ---- Runtime: Redis client for cross-worker rate limiting (v9.40) ----
 # Auto-selected by security.py when POLARIS_REDIS_URL is set + the URL
 # is reachable. Without this package, security.py falls back to the
 # in-memory backend (each gunicorn worker holds its own bucket).
 # Required for accurate per-IP rate limits under POLARIS_WORKERS>1.
 redis>=5.0,<6.0
-
-# ---- Optional test-only: Playwright (v9.33 Atlas-globe E2E) ----
-# After installing this package, run `playwright install chromium` once
-# to download the browser binary (~250MB). polaris_web/test_e2e_atlas.py
-# gracefully skips if either the package OR the browser is unavailable.
-playwright>=1.40,<2.0

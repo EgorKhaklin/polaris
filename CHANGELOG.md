@@ -5,6 +5,34 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.105 — 2026-06-05 (production-readiness, wave 4: no test frameworks in the prod image; dependency CVE scanning gates the build)
+
+The dependency surface was pinned but never audited, and a single
+`requirements.txt` mixed runtime packages with test tooling (pytest,
+hypothesis, playwright). Both Docker images installed the whole file, so the
+production image shipped a test framework that carried a CVE — `pip-audit`
+flags pytest 8.4.2 (CVE-2025-71176). Test frameworks in a production image are
+dead weight and pure extra attack surface.
+
+- **Runtime / dev split.** `requirements.txt` is now the runtime surface only
+  (what the images install); pytest, hypothesis, and playwright moved to a new
+  `requirements-dev.txt` that pulls the runtime in via `-r requirements.txt`.
+  The Docker images install `requirements.txt` — the production image no longer
+  carries any test framework. CI and the macOS launcher's `test` path install
+  the dev file (they run the suites); the launcher's run path stays lean.
+- **CVE scanning, gating on what ships.** A new `cve-scan` CI job runs
+  `pip-audit --strict` against `requirements.txt` — a known CVE in the
+  production dependency surface now **fails the build**. The dev tooling is
+  audited informationally (a test-tool CVE is surfaced but does not gate or
+  ship). With pytest out of the runtime file, the gating audit is clean today.
+- **Dependabot.** `.github/dependabot.yml` opens weekly update PRs for pip, the
+  Rust ZK crate, and the GitHub Actions, so a new advisory is one review away.
+- **Pinned.** `check_prod_image_no_test_deps` (asserts no test packages in the
+  runtime file and that the images install it, not the dev file) and
+  `check_cve_scanning` (asserts the gating `--strict` audit + Dependabot) are
+  the 36th and 37th checks. Ticks the CVE-scanning box in
+  `docs/PRODUCTION-READINESS.md` Wave 4.
+
 ## v9.104 — 2026-06-05 (production-readiness, wave 4: the /sql console is read-only at the engine, not just the keyword gate)
 
 The operator SQL console refused writes with a first-keyword whitelist: only
