@@ -97,8 +97,12 @@ left a real foundation. Genuinely sound today:
   `POLARIS_WORKERS` > `WEB_CONCURRENCY` > 4 (the deploy surface advertised
   `WEB_CONCURRENCY` but the config ignored it). Pinned by
   `check_web_concurrency_honored` + `GunicornConfigTests`.
-- [ ] Container resource limits; pinned image digests; split liveness vs
-  readiness in `/api/health`.
+- [x] **Liveness vs readiness split (v9.108).** `/api/health/live` (cheap, no
+  deps — failure should restart) and `/api/health/ready` (dependency roll-up —
+  failure should stop routing) are distinct; the container HEALTHCHECK uses
+  liveness so a transient outage does not restart the container. Pinned by
+  `check_health_liveness_readiness_split` + `HealthEndpointTests`.
+- [ ] Container resource limits; pinned image digests.
 - [ ] Prometheus multiprocess mode (metrics undercount across 4 workers);
   shipped alert rules; log rotation; request-correlation IDs; SLOs; runbooks.
 - [x] **Dependency CVE scanning gates the build (v9.105).** A `cve-scan` CI job

@@ -484,6 +484,40 @@ def check_web_concurrency_honored(root: pathlib.Path) -> list[Finding]:
 
 
 # ---------------------------------------------------------------------------
+# Liveness and readiness are distinct production probes and must not be
+# conflated. Liveness ("is the process alive?") must be CHEAP and dependency-
+# free: an orchestrator RESTARTS on liveness failure, so checking the DB there
+# turns a transient outage into a restart storm. Readiness ("can I serve?") runs
+# the dependency checks; its failure STOPS traffic without a restart. The app
+# must expose both, the liveness handler must not run the dependency roll-up,
+# and the container HEALTHCHECK must use liveness.
+# ---------------------------------------------------------------------------
+def check_health_liveness_readiness_split(root: pathlib.Path) -> list[Finding]:
+    app = _read(root, "polaris_web/app.py")
+    if not app:
+        return _fail("health_probes", "polaris_web/app.py is missing")
+    for route in ("/api/health/live", "/api/health/ready"):
+        if route not in app:
+            return _fail("health_probes",
+                         f"app.py must expose {route} — liveness (cheap, no deps) and readiness "
+                         "(dependency roll-up) are distinct production probes")
+    m = re.search(r"def api_health_live\(.*?\n(?=@app\.route|def [a-z])", app, re.S)
+    live_body = m.group(0) if m else ""
+    if live_body and "_compute_readiness" in live_body:
+        return _fail("health_probes",
+                     "the liveness probe must not run the dependency checks (a DB blip would then "
+                     "restart the container); keep /api/health/live cheap")
+    df = _read(root, "polaris_web/Dockerfile.prod")
+    if df and "/api/health/live" not in df:
+        return _fail("health_probes",
+                     "the prod HEALTHCHECK should use the liveness probe (/api/health/live), not "
+                     "the dependency roll-up, so a transient outage does not restart the container")
+    return _ok("health_probes",
+               "liveness (/api/health/live, cheap) and readiness (/api/health/ready, deps) are "
+               "split; the container HEALTHCHECK uses liveness")
+
+
+# ---------------------------------------------------------------------------
 # Docker image completeness — every LOCAL module app.py imports must be COPYd
 # into both images, or the container ModuleNotFoundErrors at startup and crash-
 # loops. This has bitten twice: observability.py (v9.40) and pqc_signing.py
@@ -934,6 +968,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_cve_scanning,
     check_migration_timeouts,
     check_web_concurrency_honored,
+    check_health_liveness_readiness_split,
     check_dockerfile_copies_app_modules,
     check_c2_zk_token_null,
     check_c4_atomic_failed_login,

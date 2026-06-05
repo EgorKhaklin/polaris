@@ -5352,6 +5352,33 @@ class HealthEndpointTests(PolarisTestCase):
         self.assertIn('database', data['checks'])
         self.assertIn('atlas_cache', data['checks'])
 
+    def test_liveness_probe_is_cheap_and_alive(self):
+        """v9.108: /api/health/live is the liveness probe — it must answer 200
+        with status 'alive' and must NOT run the dependency roll-up (no 'checks'
+        key), so a DB/redis outage cannot make it fail and restart the container."""
+        from app import app as polaris_app
+        with polaris_app.test_client() as c:
+            r = c.get('/api/health/live')
+        self.assertEqual(r.status_code, 200,
+            "liveness must be 200 whenever the process answers")
+        data = r.get_json()
+        self.assertEqual(data['status'], 'alive')
+        self.assertNotIn('checks', data,
+            "liveness must be cheap — it must not run the dependency checks")
+
+    def test_readiness_probe_runs_dependency_checks(self):
+        """v9.108: /api/health/ready is the readiness probe — it runs the
+        dependency roll-up (200 when serviceable, 503 when a critical dependency
+        is down) so an orchestrator can stop routing without restarting."""
+        from app import app as polaris_app
+        with polaris_app.test_client() as c:
+            r = c.get('/api/health/ready')
+        self.assertIn(r.status_code, (200, 503))
+        data = r.get_json()
+        self.assertIn('checks', data)
+        self.assertIn('database', data['checks'])
+        self.assertIn(data['status'], ('healthy', 'degraded', 'unhealthy'))
+
     def test_health_does_not_require_login(self):
         from app import app as polaris_app
         with polaris_app.test_client() as c:

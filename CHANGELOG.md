@@ -5,6 +5,35 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.108 — 2026-06-05 (production-readiness, wave 4: liveness and readiness are separate probes)
+
+`/api/health` ran the full dependency roll-up (database, redis, ZK binary,
+disk) and the container HEALTHCHECK keyed on it returning `"status":"healthy"`.
+That conflates two different production signals. A liveness probe answers "is
+this process alive?" and its failure should RESTART the container; a readiness
+probe answers "can this instance serve traffic?" and its failure should STOP
+routing without a restart. Keying the container HEALTHCHECK on the dependency
+roll-up means a transient DB or redis blip marks the container unhealthy and can
+trigger a restart that cannot bring the dependency back — a restart storm.
+
+- **Two probes, split by cost.** `/api/health/live` is the liveness probe:
+  deliberately cheap, it touches no external dependency and returns 200
+  `{"status":"alive"}` whenever the worker can answer. `/api/health/ready` is
+  the readiness probe: it runs the dependency checks and returns 503 when a
+  critical dependency is down. `/api/health` is unchanged (the readiness
+  payload) for backwards compatibility; the shared roll-up moved into
+  `_compute_readiness()`.
+- **The container HEALTHCHECK now uses liveness.** `Dockerfile.prod` probes
+  `/api/health/live`, so a dependency outage no longer marks the container
+  unhealthy; readiness is left for the reverse proxy / orchestrator to gate
+  traffic on.
+- **Pinned + tested.** `check_health_liveness_readiness_split` (40th check)
+  asserts both routes exist, the liveness handler does not run the dependency
+  roll-up, and the prod HEALTHCHECK uses liveness. Two new `HealthEndpointTests`
+  prove liveness is cheap (no `checks` key, always 200) and readiness carries
+  the dependency checks. Ticks the liveness/readiness box in
+  `docs/PRODUCTION-READINESS.md` Wave 4.
+
 ## v9.107 — 2026-06-05 (production-readiness, wave 4: WEB_CONCURRENCY is no longer an inert knob)
 
 `Dockerfile.prod` and `docker-compose.prod.yml` both advertise

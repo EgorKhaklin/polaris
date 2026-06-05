@@ -766,5 +766,47 @@ def test_web_concurrency_honored_check_discriminates(tmp_path):
         "must FAIL when gunicorn.conf.py is absent"
 
 
+def test_health_liveness_readiness_split_check_discriminates(tmp_path):
+    web = tmp_path / "polaris_web"
+    web.mkdir()
+    GOOD_LIVE = (
+        "@app.route('/api/health/ready')\n"
+        "def api_health_ready():\n    body, code = _compute_readiness()\n    return body, code\n\n"
+        "@app.route('/api/health/live')\n"
+        "def api_health_live():\n    return {'status': 'alive'}, 200\n\n"
+        "def next_route():\n    pass\n"
+    )
+    GOOD_DF = "HEALTHCHECK CMD curl http://localhost:8000/api/health/live | grep alive\n"
+
+    def write(app_py, df=GOOD_DF):
+        (web / "app.py").write_text(app_py)
+        (web / "Dockerfile.prod").write_text(df)
+
+    # 1. Only the old /api/health (no split) -> FAIL.
+    write("@app.route('/api/health')\ndef api_health():\n    return {}, 200\n")
+    assert checks.check_health_liveness_readiness_split(tmp_path)[0].level == "FAIL", \
+        "must FAIL when liveness/readiness are not split"
+
+    # 2. Both routes, liveness cheap, HEALTHCHECK uses liveness -> OK.
+    write(GOOD_LIVE)
+    assert checks.check_health_liveness_readiness_split(tmp_path)[0].level == "OK", \
+        "must PASS with both probes split and a cheap liveness handler"
+
+    # 3. Liveness handler runs the dependency roll-up -> FAIL (not cheap).
+    write(
+        "@app.route('/api/health/ready')\ndef api_health_ready():\n    return _compute_readiness()\n\n"
+        "@app.route('/api/health/live')\n"
+        "def api_health_live():\n    body, code = _compute_readiness()\n    return body, code\n\n"
+        "def next_route():\n    pass\n"
+    )
+    assert checks.check_health_liveness_readiness_split(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the liveness probe runs the dependency checks"
+
+    # 4. Both routes but the prod HEALTHCHECK still uses the dependency roll-up -> FAIL.
+    write(GOOD_LIVE, df="HEALTHCHECK CMD curl http://localhost:8000/api/health | grep healthy\n")
+    assert checks.check_health_liveness_readiness_split(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the container HEALTHCHECK does not use the liveness probe"
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

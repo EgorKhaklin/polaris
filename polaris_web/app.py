@@ -1926,34 +1926,14 @@ def _sanitize_health_checks(checks):
 _HEALTH_SEVERITY = {'healthy': 0, 'degraded': 1, 'unhealthy': 2}
 
 
-@app.route('/api/health')
-def api_health():
-    """Structured health endpoint (G29 / v8.77).
+def _compute_readiness():
+    """Run the dependency health checks and roll them up to an overall status.
 
-    No auth required (used by load balancers, Caddy upstream probes, and
-    uptime monitors). Returns JSON:
-
-        {
-          "status": "healthy" | "degraded" | "unhealthy",
-          "version": "8.77",
-          "uptime_seconds": 3600,
-          "checks": {
-            "database":  {...},
-            "redis":     {...},
-            "zk_binary": {...},
-            "disk":      {...}
-          },
-          "timestamp": "2026-05-14T12:34:56.789Z"
-        }
-
-    Status codes:
-        200 — healthy or degraded
-        503 — unhealthy (at least one critical check failed)
-
-    Each per-component check carries its own ``status`` field. The overall
-    status is the worst per-component status. atlas_cache observability is
-    preserved for backwards compatibility but does not contribute to the
-    overall status.
+    Returns ``(body, code)``. This is the READINESS signal: can the app serve
+    traffic right now? Shared by /api/health (kept for backwards compatibility)
+    and /api/health/ready. Strips operator-only detail (raw error text, absolute
+    paths) from the unauthenticated payload (CWE-209); the status tokens convey
+    health. atlas_cache is informational and does not affect the overall status.
     """
     checks = {
         'database':  _health_check_database(),
@@ -1982,13 +1962,59 @@ def api_health():
         'status': overall,
         'version': POLARIS_VERSION,
         'uptime_seconds': int(_time.time() - _APP_STARTED_AT),
-        # Strip operator-only detail (raw error text, absolute paths) from the
-        # unauthenticated response; the status tokens above already convey health.
         'checks': _sanitize_health_checks(checks),
         'timestamp': datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z'),
     }
     code = 503 if overall == 'unhealthy' else 200
+    return body, code
+
+
+@app.route('/api/health')
+def api_health():
+    """Structured health endpoint (G29 / v8.77) — the dependency roll-up.
+
+    No auth required (load balancers, Caddy upstream probes, uptime monitors).
+    Kept unchanged for backwards compatibility. Semantically this is the
+    READINESS probe; /api/health/ready is its canonical alias and
+    /api/health/live is the cheap liveness counterpart (v9.108).
+
+    Status codes:
+        200 — healthy or degraded
+        503 — unhealthy (at least one critical dependency failed)
+    """
+    body, code = _compute_readiness()
     return jsonify(body), code
+
+
+@app.route('/api/health/ready')
+def api_health_ready():
+    """Readiness probe (v9.108): can THIS instance serve traffic right now?
+
+    Runs the dependency checks (database, redis, zk binary, disk). Returns 503
+    if a critical dependency is down, so an orchestrator stops routing traffic
+    to this instance WITHOUT restarting it (a restart would not bring the
+    dependency back). Same payload as /api/health.
+    """
+    body, code = _compute_readiness()
+    return jsonify(body), code
+
+
+@app.route('/api/health/live')
+def api_health_live():
+    """Liveness probe (v9.108): is the process alive and answering requests?
+
+    Deliberately CHEAP — it touches NO external dependency. A liveness probe
+    that checked the database would restart the container every time the DB
+    blipped, a restart storm that cannot help; dependency health belongs in
+    readiness. Always 200 unless the worker is wedged (in which case it cannot
+    answer at all, which is exactly what an orchestrator should act on).
+    """
+    return jsonify({
+        'status': 'alive',
+        'version': POLARIS_VERSION,
+        'uptime_seconds': int(_time.time() - _APP_STARTED_AT),
+        'timestamp': datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z'),
+    }), 200
 
 
 @app.route('/api/metrics')
