@@ -5,6 +5,31 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.96 — 2026-06-05 (the launcher tells you WHY it failed)
+
+When the v9.94 Docker crash happened, the launcher printed "Web app failed to
+start. View logs: ./polaris_mac_launch.sh logs app" and stopped there. The actual
+cause (`ModuleNotFoundError: No module named 'pqc_signing'`) was one `logs app`
+command away, but the launcher made you go find it. A launch tool should hand you
+the error, not a place to look for it.
+
+The docker bring-up failure path now prints the diagnosis inline: the app
+container state (including restart count, the crash-loop tell), and the last 30
+lines of the app log — which is exactly where the real startup error lives. It
+also distinguishes the two failure modes that used to collapse into one opaque
+message: it no longer proceeds to wait for the web app when the database never
+became healthy (the app cannot start without it), and it shows the db logs in
+that case. The native path got the same treatment — on a gunicorn boot failure it
+prints the last 30 log lines instead of just telling you to tail them.
+
+Verified end-to-end: a fresh `up --docker` still brings the stack up clean
+(database healthy → LIVE → 200), and the diagnostic dump surfaces the container
+state + recent logs.
+
+- `polaris_mac_launch.sh` — `_wait_db_healthy` + `_report_docker_bringup_failure`
+  helpers; the heal path gates the app wait on real DB health; native failure
+  dumps the log tail.
+
 ## v9.95 — 2026-06-05 (CI now builds and boots the Docker image)
 
 v9.94 fixed the missing-module crash and added a static check that the COPY list

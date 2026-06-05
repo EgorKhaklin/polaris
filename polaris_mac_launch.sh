@@ -477,20 +477,56 @@ db_auth_broken() {
 # Bring the stack up. If the app fails to come healthy AND the db logs show
 # auth failure, wipe the volume and retry once. This makes stale-volume drift
 # self-correcting instead of producing an opaque 500 on the first login.
+# Wait for the db container to report healthy. Returns 0 if it did, 1 if it
+# timed out — the caller must not proceed to the app wait on a 1 (the app cannot
+# start without the database, and a silent fall-through produces an opaque
+# "web app failed" when the real fault is the DB).
+_wait_db_healthy() {
+    local label="${1:-}"
+    local deadline=$(( $(date +%s) + HEALTH_TIMEOUT ))
+    while (( $(date +%s) < deadline )); do
+        if docker compose exec -T db pg_isready -U postgres -d polaris_test >/dev/null 2>&1; then
+            ok "Database healthy${label:+ $label}"; return 0
+        fi
+        sleep 3
+    done
+    return 1
+}
+
+# When the stack does not come up, show the user the ACTUAL reason instead of an
+# opaque "web app failed to start." The common cause is the app container
+# crash-looping on a startup error (e.g. a missing module), which is invisible
+# unless you go read `logs app` by hand — so we surface it right here.
+_report_docker_bringup_failure() {
+    local db_ok="$1"
+    echo
+    err "The Docker stack did not come up. Diagnosis:"
+    local app_state
+    app_state="$(docker inspect -f '{{.State.Status}} (restarts: {{.RestartCount}})' polaris-app 2>/dev/null || echo unknown)"
+    err "  app container: $app_state"
+    if [[ "$db_ok" != "1" ]]; then
+        err "  database:      never became healthy within ${HEALTH_TIMEOUT}s — the app cannot start without it"
+        printf "%s  ---- last 20 db log lines ----%s\n" "$DIM" "$NC"
+        docker compose logs --tail 20 --no-color db 2>&1 | sed 's/^/    /'
+    fi
+    printf "%s  ---- last 30 app log lines (the actual startup error) ----%s\n" "$DIM" "$NC"
+    docker compose logs --tail 30 --no-color app 2>&1 | sed 's/^/    /'
+    echo
+    err "Full logs:   ./polaris_mac_launch.sh logs app"
+    err "Clean reset: ./polaris_mac_launch.sh nuke   then   ./polaris_mac_launch.sh up"
+}
+
 docker_compose_up_with_heal() {
     log "Bringing up Docker stack (Postgres 16 + Flask)"
     POLARIS_HOST_PORT="$PORT" docker compose up -d --build
 
     log "Waiting for database health"
-    local deadline=$(( $(date +%s) + HEALTH_TIMEOUT ))
-    while (( $(date +%s) < deadline )); do
-        if docker compose exec -T db pg_isready -U postgres -d polaris_test >/dev/null 2>&1; then
-            ok "Database healthy"; break
-        fi
-        sleep 3
-    done
+    local db_ok=0
+    if _wait_db_healthy; then db_ok=1; else
+        warn "Database did not become healthy within ${HEALTH_TIMEOUT}s"
+    fi
 
-    if wait_for_url "http://localhost:$PORT/login" "web app on :$PORT"; then
+    if (( db_ok == 1 )) && wait_for_url "http://localhost:$PORT/login" "web app on :$PORT"; then
         return 0
     fi
 
@@ -502,22 +538,16 @@ docker_compose_up_with_heal() {
         POLARIS_HOST_PORT="$PORT" docker compose up -d --build
 
         log "Waiting for database health (retry)"
-        deadline=$(( $(date +%s) + HEALTH_TIMEOUT ))
-        while (( $(date +%s) < deadline )); do
-            if docker compose exec -T db pg_isready -U postgres -d polaris_test >/dev/null 2>&1; then
-                ok "Database healthy"; break
-            fi
-            sleep 3
-        done
+        db_ok=0
+        if _wait_db_healthy "(retry)"; then db_ok=1; fi
 
-        if wait_for_url "http://localhost:$PORT/login" "web app on :$PORT (retry)"; then
+        if (( db_ok == 1 )) && wait_for_url "http://localhost:$PORT/login" "web app on :$PORT (retry)"; then
             ok "Auto-heal succeeded — fresh database volume in place."
             return 0
         fi
     fi
 
-    err "Web app failed to start. View logs: ./polaris_mac_launch.sh logs app"
-    err "Or wipe everything and start over: ./polaris_mac_launch.sh nuke"
+    _report_docker_bringup_failure "$db_ok"
     exit 1
 }
 
@@ -746,7 +776,11 @@ launch_native() {
     disown 2>/dev/null || true
 
     if ! wait_for_url "http://localhost:$PORT/login" "gunicorn on :$PORT"; then
-        err "App failed to start. Tail logs: tail -f $LOG_FILE"
+        err "Native app (gunicorn) failed to start. The actual error:"
+        printf "%s  ---- last 30 lines of %s ----%s\n" "$DIM" "$LOG_FILE" "$NC"
+        tail -n 30 "$LOG_FILE" 2>/dev/null | sed 's/^/    /'
+        echo
+        err "Full log: tail -f $LOG_FILE"
         exit 1
     fi
 
