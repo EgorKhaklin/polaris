@@ -138,6 +138,31 @@ jobs:
           test -n "$ROOT" || { echo "compute-root empty"; exit 1; }
           python3 -m pytest polaris_zk/witness2/test_witness2.py polaris_web/test_zk_second_witness.py -v
 
+      # The disaster-recovery path (backup -> restore) is operator-critical and,
+      # like the Docker images, was never exercised in CI — a broken restore is
+      # only discovered during an actual disaster. v9.100 fixed the restore
+      # reporting a benign pg_restore warning as a hard failure; this round-trip
+      # keeps the whole path honest: dump the loaded DB, restore it into a fresh
+      # database, and confirm the data came back.
+      - name: Backup + restore round-trip (DR path)
+        env:
+          PGHOST: localhost
+          PGPASSWORD: ci_password
+        run: |
+          mkdir -p /tmp/polaris-backups
+          POLARIS_DB_NAME=polaris_test POLARIS_DB_USER=postgres POLARIS_DB_HOST=localhost \
+            bash scripts/polaris-backup.sh --dest=/tmp/polaris-backups
+          TARBALL=$(ls -1t /tmp/polaris-backups/polaris-*.tar.gz | head -1)
+          test -n "$TARBALL" || { echo "::error::backup produced no tarball"; exit 1; }
+          psql -h localhost -U postgres -c "DROP DATABASE IF EXISTS polaris_restore_ci"
+          psql -h localhost -U postgres -c "CREATE DATABASE polaris_restore_ci"
+          PGUSER=postgres bash scripts/polaris-restore.sh "$TARBALL" --target=polaris_restore_ci
+          rows=$(psql -h localhost -U postgres -d polaris_restore_ci -tAc \
+            "SELECT count(*) FROM IdentityToken" | tr -dc '0-9')
+          echo "restored IdentityToken rows: ${rows:-0}"
+          [ "${rows:-0}" -ge 1 ] || { echo "::error::restore did not reproduce the data"; exit 1; }
+          echo "DR round-trip OK"
+
   # --------------------------------------------------------------------------
   # The `test` job above exercises the app CODE against a native Postgres; it
   # never builds or runs the Docker image. That blind spot let a broken image

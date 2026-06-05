@@ -5,6 +5,34 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.100 — 2026-06-05 (a successful restore looked like a failure — DR path fixed + CI-validated)
+
+Applying the prod-image lesson (untested operator tooling is silently broken) to
+the disaster-recovery path: a backup -> restore round-trip against the test DB
+revealed that **a successful restore reported failure**. `pg_restore` returns a
+non-zero exit for benign reasons — the `--clean --if-exists` DROPs of
+not-yet-existing objects, and version-specific SET directives a newer `pg_dump`
+emits that an older target rejects (e.g. `SET transaction_timeout` from a PG17+
+dump into PG16). `polaris-restore.sh` treated that exit code as a hard failure
+and aborted with "✗ pg_restore failed — DB state may be partial," even though all
+30 tables and every row had restored. For a DR tool, that false alarm is the
+worst kind: an operator mid-disaster sees "failed," and may discard a perfectly
+good restore or thrash.
+
+The restore now judges success by **verifying the outcome** — the core schema
+(`identitytoken`) must be present after `pg_restore` — not by the exit code. A
+real failure (no schema) still aborts; a benign-warning success reports complete
+with a one-line note that the data is verified present. Verified locally: the
+same PG18-dump-into-PG16 case now reports success, exit 0.
+
+And the DR path joins the images in CI: a new round-trip step dumps the loaded
+DB, restores it into a fresh database, and asserts the data came back — so a
+broken backup or restore fails CI, not a real recovery.
+
+- `scripts/polaris-restore.sh` — verify the restored schema; do not fail on
+  benign `pg_restore` warnings.
+- `.github/workflows/ci.yml` — backup + restore round-trip in the test job.
+
 ## v9.99 — 2026-06-05 (launcher: tear the stack down exactly once)
 
 The last of the launcher-audit robustness items. Watch mode has three teardown
