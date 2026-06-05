@@ -23,7 +23,7 @@ hypothesis>=6.0,<7.0
 # ---- Test-only: pytest (ZK two-witness suites, v9.44/v9.46) ----
 # polaris_zk/witness2/test_witness2.py and polaris_web/test_zk_second_witness.py
 # are pytest-style (functions + pytest.mark); they ImportError without this.
-pytest>=7.0,<9.0
+pytest>=9.0.3,<10.0
 
 # ---- Test-only: Playwright (v9.33 Atlas-globe E2E) ----
 # After installing this package, run `playwright install chromium` once
