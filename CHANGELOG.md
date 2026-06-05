@@ -5,6 +5,34 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.98 — 2026-06-05 (the production image could not be built — fixed and CI-validated)
+
+Investigating whether CI should validate the prod image surfaced that the prod
+image **could not be built at all**. `Dockerfile.prod`'s Rust stage COPYs
+`polaris_zk/` (a sibling of `polaris_web/`, so it needs the repo root as the
+build context), while its app stages COPY bare `app.py` / `static/` / `templates/`
+(which only resolve from a `polaris_web/` context). Docker COPY cannot escape its
+context, so no single context satisfies both — and `polaris-deploy.sh prod`
+(which runs `docker compose -f docker-compose.prod.yml build`, context
+`polaris_web/`) failed at the Rust stage. The deploy artifact was broken.
+
+The fix: build from the repo root, with repo-root-relative app paths.
+`docker-compose.prod.yml` now sets `context: ..` + `dockerfile:
+polaris_web/Dockerfile.prod`, and every app-file COPY in `Dockerfile.prod` is
+prefixed `polaris_web/`. Verified: the prod image now builds (multi-stage Rust +
+Python) and boots — gunicorn brings up all four workers with no import crash.
+
+To keep it that way, the `docker-image` CI job now also builds the prod image
+(buildx + gha cache, so the Rust layer stays warm) and smoke-boots it (asserts
+the gunicorn workers come up and the logs carry no `ModuleNotFoundError` /
+`ImportError` / `Traceback`). Both Polaris images — dev (built + booted + route-
+smoked) and prod (built + boot-smoked) — are now validated on every push.
+
+- `polaris_web/Dockerfile.prod` — repo-root-relative app COPY paths + a context note.
+- `polaris_web/docker-compose.prod.yml` — `context: ..`, `dockerfile: polaris_web/Dockerfile.prod`.
+- `.github/workflows/ci.yml` — build + boot-smoke the prod image (buildx@v4,
+  build-push@v7, current majors).
+
 ## v9.97 — 2026-06-05 (the launcher is honest about the Docker ZK degradation)
 
 The Docker dev image ships without the Rust ZK prover by design (README: "the

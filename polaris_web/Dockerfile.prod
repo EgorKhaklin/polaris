@@ -9,9 +9,13 @@
 #   - Strict `PYTHONDONTWRITEBYTECODE` + `PYTHONUNBUFFERED`
 #   - Healthcheck via /api/health (structured JSON; v8.77)
 #
-# Build:
-#     docker build -f Dockerfile.prod -t polaris-app:prod .
-#     docker build -f Dockerfile.prod --build-arg POLARIS_ZK_BUILD=0 -t polaris-app:prod-noverify .
+# Build (CONTEXT IS THE REPO ROOT — the zk-builder stage COPYs polaris_zk/, a
+# sibling of polaris_web/, and Docker COPY cannot escape the build context, so a
+# polaris_web/ context cannot reach it. All app-file COPYs below are therefore
+# repo-root-relative, e.g. polaris_web/app.py. docker-compose.prod.yml sets
+# `context: ..`):
+#     docker build -f polaris_web/Dockerfile.prod -t polaris-app:prod .
+#     docker build -f polaris_web/Dockerfile.prod --build-arg POLARIS_ZK_BUILD=0 -t polaris-app:prod-noverify .
 #
 # G-guard alignment:
 #   G3  (read-only watchers)     — n/a at image layer
@@ -56,7 +60,7 @@ ENV PATH="/opt/venv/bin:$PATH"
 
 # v9.05 / Wave 1 / C3: pinned via requirements.txt for reproducibility.
 # (Pre-v9.05 listed 5 packages with loose version specs inline.)
-COPY requirements.txt /tmp/requirements.txt
+COPY polaris_web/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt \
     && pip install --no-cache-dir 'redis==5.0.*'
 
@@ -100,10 +104,10 @@ RUN chmod 0755 /opt/polaris/zk
 #                    fix — was missed because the regression-guard regex
 #                    didn't tolerate trailing comments on the import line)
 WORKDIR /app
-COPY --chown=polaris:polaris app.py security.py gunicorn.conf.py ./
-COPY --chown=polaris:polaris anchoring.py zk.py webauthn_auth.py __version__.py observability.py pqc_signing.py ./
-COPY --chown=polaris:polaris templates/ ./templates/
-COPY --chown=polaris:polaris static/   ./static/
+COPY --chown=polaris:polaris polaris_web/app.py polaris_web/security.py polaris_web/gunicorn.conf.py ./
+COPY --chown=polaris:polaris polaris_web/anchoring.py polaris_web/zk.py polaris_web/webauthn_auth.py polaris_web/__version__.py polaris_web/observability.py polaris_web/pqc_signing.py ./
+COPY --chown=polaris:polaris polaris_web/templates/ ./templates/
+COPY --chown=polaris:polaris polaris_web/static/   ./static/
 
 # Non-sensitive runtime env (G28: nothing here is sensitive)
 ENV PATH="/opt/venv/bin:$PATH" \

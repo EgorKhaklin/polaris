@@ -191,7 +191,43 @@ jobs:
             exit 1
           fi
 
-      - name: Tear down
+      - name: Tear down the dev stack
         if: always()
         working-directory: polaris_web
         run: docker compose down -v
+
+      # The prod image (Dockerfile.prod, the deploy artifact) is multi-stage with
+      # a Rust ZK builder. It shares the failure class the dev image had — and it
+      # was in fact UNBUILDABLE (v9.98): its Rust stage COPYs polaris_zk/ (repo
+      # root) while its app stages COPY app.py/static/ (polaris_web/), and no
+      # single build context satisfies both. Build it here so that regression and
+      # any other prod-build breakage fails CI, not a deploy. Buildx + gha cache
+      # keep the Rust layer warm across runs.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build the prod image (deploy artifact)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: polaris_web/Dockerfile.prod
+          tags: polaris-app:prod-ci
+          load: true
+          cache-from: type=gha,scope=prod
+          cache-to: type=gha,mode=max,scope=prod
+
+      - name: Smoke-boot the prod image (gunicorn workers up, no import crash)
+        run: |
+          docker run --rm -d --name prodtest \
+            -e POLARIS_DB_HOST=127.0.0.1 \
+            -e POLARIS_SECRET_KEY=ci-prod-smoke-secret-not-real-32bytes \
+            -e POLARIS_STATE_DIR=/tmp/pstate \
+            polaris-app:prod-ci
+          sleep 8
+          logs=$(docker logs prodtest 2>&1 || true)
+          docker rm -f prodtest >/dev/null 2>&1 || true
+          echo "$logs" | tail -25
+          echo "$logs" | grep -q "Booting worker" || { echo "::error::prod gunicorn workers did not boot"; exit 1; }
+          if echo "$logs" | grep -qiE "ModuleNotFoundError|ImportError|Traceback"; then
+            echo "::error::prod image crashed on startup"; exit 1
+          fi

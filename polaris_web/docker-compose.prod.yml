@@ -42,8 +42,11 @@ services:
   app:
     image: polaris-app:prod
     build:
-      context: .
-      dockerfile: Dockerfile.prod
+      # Repo root: the zk-builder stage COPYs polaris_zk/ (a sibling of
+      # polaris_web/) and Docker COPY cannot escape the build context. All
+      # app-file COPYs in Dockerfile.prod are repo-root-relative to match.
+      context: ..
+      dockerfile: polaris_web/Dockerfile.prod
     container_name: polaris-app
     restart: unless-stopped
     depends_on:
