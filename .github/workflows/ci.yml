@@ -287,7 +287,14 @@ jobs:
           docker run -d --name pbci-pg --network pbci \
             -e POSTGRES_PASSWORD=rootpw -e POSTGRES_DB=polaris \
             postgres:16-alpine -c password_encryption=scram-sha-256
-          for i in $(seq 1 30); do docker exec pbci-pg pg_isready -U postgres >/dev/null 2>&1 && break; sleep 1; done
+          # Wait until the 'polaris' DB is actually queryable, NOT just until
+          # pg_isready — pg_isready reports ready against the temporary init
+          # server before POSTGRES_DB is created, which raced "database polaris
+          # does not exist" onto the CREATE ROLE below.
+          for i in $(seq 1 60); do
+            docker exec -e PGPASSWORD=rootpw pbci-pg psql -U postgres -d polaris -tAc 'SELECT 1' >/dev/null 2>&1 && break
+            sleep 1
+          done
           APPPW='ci-App@Pw#42'
           docker exec -e PGPASSWORD=rootpw -e APPPW="$APPPW" pbci-pg sh -c \
             'psql -U postgres -d polaris -q -c "CREATE ROLE polaris_app LOGIN PASSWORD '"'"'$APPPW'"'"'; GRANT ALL ON DATABASE polaris TO polaris_app;"'
@@ -295,10 +302,14 @@ jobs:
           docker run -d --name pbci-pb --network pbci \
             -e POLARIS_DB_HOST=pbci-pg -e POLARIS_DB_USER=polaris_app -e POLARIS_DB_NAME=polaris \
             -v /tmp/pbsecret:/run/secrets/polaris_db_password:ro polaris-pgbouncer:ci
-          sleep 6
+          got=""
+          for i in $(seq 1 15); do
+            got=$(docker run --rm --network pbci -e PGPASSWORD="$APPPW" postgres:16-alpine \
+              psql "host=pbci-pb port=6432 user=polaris_app dbname=polaris" -tAc "SELECT 'PB-OK'" 2>&1 | tr -d '[:space:]')
+            [ "$got" = "PB-OK" ] && break
+            sleep 1
+          done
           docker logs pbci-pb | tail -10
-          got=$(docker run --rm --network pbci -e PGPASSWORD="$APPPW" postgres:16-alpine \
-            psql "host=pbci-pb port=6432 user=polaris_app dbname=polaris" -tAc "SELECT 'PB-OK'" 2>&1 | tr -d '[:space:]')
           echo "pgbouncer round-trip result: $got"
           [ "$got" = "PB-OK" ] || { echo "::error::pgbouncer round-trip (scram on both hops) failed"; exit 1; }
           if docker run --rm --network pbci -e POLARIS_DB_HOST=pbci-pg polaris-pgbouncer:ci 2>/dev/null; then
