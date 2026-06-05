@@ -477,6 +477,37 @@ def check_prod_app_password_synced(root: pathlib.Path) -> list[Finding]:
 
 
 # ---------------------------------------------------------------------------
+# Production hardening — two BLOCKER-class defaults must not survive into prod:
+#   1. The SQL seed loads demo accounts with publicly-known passwords
+#      (admin/Admin@123! ...) and a demo duress code. docker-init.sh must
+#      neutralize them when POLARIS_ENV=production (disable + scramble).
+#   2. The rate limiter silently falls back to per-worker in-memory unless
+#      POLARIS_REDIS_URL is set; prod runs 4 workers, so per-IP limits would
+#      fragment 4x. The prod compose must wire POLARIS_REDIS_URL.
+# (Part of the v9.101+ production-readiness arc; see docs/PRODUCTION-READINESS.md.)
+# ---------------------------------------------------------------------------
+def check_prod_hardening(root: pathlib.Path) -> list[Finding]:
+    init = _read(root, "polaris_web/docker-init.sh")
+    compose = _read(root, "polaris_web/docker-compose.prod.yml")
+    if not init:
+        return _fail("prod_hardening", "polaris_web/docker-init.sh is missing")
+    # 1. Demo accounts neutralized in production.
+    prod_block = re.search(r'POLARIS_ENV.*?production.*?(?=\nfi\b|\Z)', init, re.S)
+    if not (prod_block and "is_active" in prod_block.group(0)
+            and re.search(r"'admin',\s*'operator',\s*'auditor'", prod_block.group(0))):
+        return _fail("prod_hardening",
+                     "docker-init.sh must disable the demo accounts (admin/operator/auditor) when "
+                     "POLARIS_ENV=production — they ship with publicly-known passwords")
+    # 2. Prod rate limiter uses Redis, not the per-worker in-memory fallback.
+    if not re.search(r"POLARIS_REDIS_URL:\s*\S+", compose):
+        return _fail("prod_hardening",
+                     "docker-compose.prod.yml must set POLARIS_REDIS_URL so the rate limiter uses the "
+                     "cross-worker Redis backend (else per-IP limits fragment across the 4 workers)")
+    return _ok("prod_hardening",
+               "prod neutralizes demo accounts and wires the Redis rate limiter")
+
+
+# ---------------------------------------------------------------------------
 # Doc/schema drift — the headline architecture doc must state the real number
 # of tables. A reviewer reads this number; it must not contradict the schema.
 # ---------------------------------------------------------------------------
@@ -718,6 +749,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_open_redirect_guard,
     check_cookie_secure_in_production,
     check_prod_app_password_synced,
+    check_prod_hardening,
     check_table_count_matches_doc,
     check_launcher_current,
     check_local_clock_convention,

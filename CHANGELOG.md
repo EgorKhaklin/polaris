@@ -5,6 +5,38 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.101 — 2026-06-05 (production-readiness, wave 1: no default credentials, real rate limiting, honest roadmap)
+
+The maintainer asked to make Polaris production-ready. A six-dimension assessment
+found 49 properties already production-grade (the seven review passes built a real
+base), 45 engineering gaps an agent can close, and 10 that need operator/legal
+decisions. The honest gap ledger is now `docs/PRODUCTION-READINESS.md` — nothing
+here flips the project to "production-ready"; that claim only becomes true as the
+boxes are checked. Wave 1 closes the two BLOCKERs that are pure default-hygiene:
+
+**Demo credentials no longer reach a production database.** The SQL seed loads
+`admin/Admin@123!`, `operator/Operator@123!`, `auditor/Auditor@123!` and a demo
+duress code — fine for dev, an instant full compromise in production. In
+`POLARIS_ENV=production`, `docker-init.sh` now disables those accounts
+(is_active=FALSE), scrambles their passwords (so re-enabling can't restore the
+known password), locks them, and clears the demo duress enrollment. Rows are
+disabled, not deleted, because the append-only audit tables FK to AppUser. The
+operator bootstraps the first real admin with `scripts/polaris-create-operator.sh`;
+no default credentials ship and `/login` refuses everyone until then.
+
+**The rate limiter actually uses Redis in production.** The prod compose ran a
+Redis service but never set `POLARIS_REDIS_URL`, so `security.py` silently fell
+back to per-worker in-memory buckets — and prod runs 4 gunicorn workers, so per-IP
+brute-force limits fragmented 4x. Now wired to `redis://redis:6379/0`, so the
+atomic cross-worker Redis limiter is used.
+
+- `polaris_web/docker-init.sh` — neutralize demo accounts + demo duress code in
+  production.
+- `polaris_web/docker-compose.prod.yml` — `POLARIS_REDIS_URL`; `POLARIS_ENV` to
+  the postgres init container.
+- `polaris_checks/checks.py` — `check_prod_hardening` (32nd check) pins both.
+- `docs/PRODUCTION-READINESS.md` — the honest roadmap; linked from ROADMAP.
+
 ## v9.100 — 2026-06-05 (a successful restore looked like a failure — DR path fixed + CI-validated)
 
 Applying the prod-image lesson (untested operator tooling is silently broken) to

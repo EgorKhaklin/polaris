@@ -68,6 +68,12 @@ services:
       POLARIS_SECRET_KEY_FILE: /run/secrets/polaris_secret_key
       POLARIS_REDIS_HOST: redis
       POLARIS_REDIS_PORT: '6379'
+      # security.py's rate-limiter auto-selector keys on POLARIS_REDIS_URL, not
+      # HOST/PORT. Without it the limiter silently falls back to per-worker
+      # in-memory buckets — and prod runs 4 gunicorn workers, so per-IP limits
+      # fragment 4x (a real brute-force weakening). Point it at the redis service
+      # so the atomic cross-worker Redis limiter is actually used.
+      POLARIS_REDIS_URL: redis://redis:6379/0
       POLARIS_PORT: '8000'
       POLARIS_STATE_DIR: /var/lib/polaris/state
       POLARIS_ENV: production
@@ -134,6 +140,9 @@ services:
       POSTGRES_PASSWORD_FILE: /run/secrets/polaris_db_root_password
       POSTGRES_HOST_AUTH_METHOD: scram-sha-256
       POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+      # Signals docker-init.sh to neutralize the demo accounts (admin/Admin@123!
+      # etc.) the SQL seed loads — fine for dev, catastrophic in production.
+      POLARIS_ENV: production
       # docker-init.sh rotates the polaris_app role password to THIS secret —
       # the same /run/secrets/polaris_db_password the app and pgbouncer
       # authenticate with — so the role and its clients never diverge. Without

@@ -509,5 +509,36 @@ def test_dockerfile_copies_app_modules_check_discriminates(tmp_path):
         "must PASS when both Dockerfiles COPY every local app module"
 
 
+def test_prod_hardening_check_discriminates(tmp_path):
+    web = tmp_path / "polaris_web"
+    web.mkdir()
+    GOOD_INIT = (
+        'if [ "${POLARIS_ENV:-}" = "production" ]; then\n'
+        "  psql <<'SQL'\n"
+        "  UPDATE AppUser SET is_active = FALSE WHERE username IN ('admin', 'operator', 'auditor');\n"
+        "SQL\n"
+        "fi\n")
+    GOOD_COMPOSE = "services:\n  app:\n    environment:\n      POLARIS_REDIS_URL: redis://redis:6379/0\n"
+
+    def write(init, compose):
+        (web / "docker-init.sh").write_text(init)
+        (web / "docker-compose.prod.yml").write_text(compose)
+
+    # 1. docker-init does not neutralize demo accounts in prod -> FAIL.
+    write('echo "no prod hardening"\n', GOOD_COMPOSE)
+    assert checks.check_prod_hardening(tmp_path)[0].level == "FAIL", \
+        "must FAIL when demo accounts are not disabled in production"
+
+    # 2. Demo accounts handled, but no Redis URL in prod compose -> FAIL.
+    write(GOOD_INIT, "services:\n  app:\n    environment:\n      POLARIS_PORT: '8000'\n")
+    assert checks.check_prod_hardening(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the prod rate limiter is not wired to Redis"
+
+    # 3. Both present -> OK.
+    write(GOOD_INIT, GOOD_COMPOSE)
+    assert checks.check_prod_hardening(tmp_path)[0].level == "OK", \
+        "must PASS when demo accounts are neutralized and Redis is wired"
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

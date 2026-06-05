@@ -5,6 +5,12 @@ here. Tagging: `effort(XS/S/M/L) · value · risk · category`. The live invaria
 layer is [`polaris_checks/`](polaris_checks/), which gates CI via
 `python3 -m polaris_checks.run`.
 
+**Production-readiness:** the path from reference implementation to a system that
+can run real identity data is tracked honestly in
+[`docs/PRODUCTION-READINESS.md`](docs/PRODUCTION-READINESS.md) — what is already
+production-grade, the engineering waves, and the operator/legal decisions that are
+not an agent's to make. Wave 1 shipped in v9.101.
+
 ---
 
 ## Flagged for the maintainer (decision required)

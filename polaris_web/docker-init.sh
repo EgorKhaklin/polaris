@@ -115,4 +115,32 @@ if [ -n "$POLARIS_APP_PASSWORD" ] && [ "$POLARIS_APP_PASSWORD" != "polaris_dev_p
          > /dev/null  # suppress any echo of the SQL
 fi
 
+# Production hardening (BLOCKER): the SQL seed (10_auth.sql) loads three demo
+# accounts with PUBLICLY-KNOWN passwords (admin/Admin@123!, operator/Operator@123!,
+# auditor/Auditor@123!) — and 04_data.sql enrolls a demo duress code. Fine for
+# dev; in production that is an instant full compromise. In production mode we
+# neutralize them: disable login (is_active=FALSE), scramble the password to a
+# random unusable value (so re-enabling does not restore the known password), and
+# lock the account. We do NOT delete the rows — append-only audit tables FK to
+# AppUser (ON DELETE NO ACTION) and audit history must survive. The operator then
+# bootstraps the real first admin with scripts/polaris-create-operator.sh. No
+# default credentials ship; /login refuses everyone until a real admin exists.
+if [ "${POLARIS_ENV:-}" = "production" ]; then
+    echo "Production mode: neutralizing demo accounts (disable + scramble password)..."
+    psql -v ON_ERROR_STOP=1 \
+         --username "$POSTGRES_USER" \
+         --dbname "$POSTGRES_DB" >/dev/null <<'SQL'
+    UPDATE AppUser
+       SET is_active     = FALSE,
+           password_hash = 'DISABLED:' || gen_random_uuid()::text,
+           locked_until  = 'infinity'::timestamptz
+     WHERE username IN ('admin', 'operator', 'auditor');
+    -- Retire any demo duress-code enrollment so a publicly-known duress code does
+    -- not silently flag real verifications. IdentityToken holds the duress hash.
+    UPDATE IdentityToken SET duress_code_hash = NULL WHERE duress_code_hash IS NOT NULL;
+SQL
+    echo "  Demo accounts disabled. Create the first real admin before use:"
+    echo "    scripts/polaris-create-operator.sh --role admin --username <name>"
+fi
+
 echo "Polaris init complete."
