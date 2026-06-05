@@ -279,7 +279,7 @@ jobs:
       # A broken liboqs copy would only surface here, not at deploy.
       - name: Verify real ML-DSA-65 signing inside the prod image
         run: |
-          out=$(docker run --rm -e POLARIS_USE_REAL_PQC=1 polaris-app:prod-ci python - <<'PY'
+          out=$(docker run --rm -i -e POLARIS_USE_REAL_PQC=1 polaris-app:prod-ci python - <<'PY'
           import os, json, tempfile
           import pqc_signing as p
           assert p.is_available(), "liboqs not importable in the prod image"
