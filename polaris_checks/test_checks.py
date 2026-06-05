@@ -388,5 +388,44 @@ def test_zk_anti_replay_check_discriminates(tmp_path):
         "must PASS when the nonce is consumed and replays are rejected"
 
 
+def test_thesis_terminus_check_discriminates(tmp_path):
+    web = tmp_path / "polaris_web"
+    docs = tmp_path / "docs"
+    web.mkdir(); docs.mkdir()
+
+    RETIRED = ("**Status:** INCONCLUSIVE — retired.\nThe v9.40 terminus passed; "
+               "the strong claim is retired permanently.\n")
+    OPEN = "**Status:** HYPOTHESIS-NOT-VERIFIED.\nawaiting a cold read.\n"
+
+    def write(version, thesis):
+        (web / "__version__.py").write_text(f'__version__: str = "{version}"\n')
+        (docs / "THESIS.md").write_text(thesis)
+
+    # 1. Before the v9.40 terminus: an open THESIS is fine -> OK.
+    write("9.39", OPEN)
+    assert checks.check_thesis_terminus_honest(tmp_path)[0].level == "OK", \
+        "before v9.40 the thesis may remain open"
+
+    # 2. Past v9.40 but status still the open 'HYPOTHESIS-NOT-VERIFIED' -> FAIL.
+    write("9.90", OPEN)
+    assert checks.check_thesis_terminus_honest(tmp_path)[0].level == "FAIL", \
+        "past v9.40 the open status must fail"
+
+    # 3. Past v9.40, retired language but the 'until a real cold read happens' softener remains -> FAIL.
+    write("9.90", RETIRED + "we keep the status honest until a real cold read happens.\n")
+    assert checks.check_thesis_terminus_honest(tmp_path)[0].level == "FAIL", \
+        "the open 'until a real cold read happens' softener must fail past v9.40"
+
+    # 4. Past v9.40 but no terminus / retirement language at all -> FAIL.
+    write("9.90", "**Status:** an experiment.\nstill thinking about it.\n")
+    assert checks.check_thesis_terminus_honest(tmp_path)[0].level == "FAIL", \
+        "past v9.40, missing the terminus + retirement language must fail"
+
+    # 5. Past v9.40 with proper retired/inconclusive framing -> OK.
+    write("9.90", RETIRED)
+    assert checks.check_thesis_terminus_honest(tmp_path)[0].level == "OK", \
+        "past v9.40 the retired/inconclusive framing must pass"
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

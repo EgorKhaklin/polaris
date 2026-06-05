@@ -9,15 +9,14 @@ layer is [`polaris_checks/`](polaris_checks/), which gates CI via
 
 ## Flagged for the maintainer (decision required)
 
-- **[VANTA] THESIS v9.40 terminus has passed unactioned.** `MISSION.md` says the
-  strong "agent-maintainable production identity system" claim *retires permanently*
-  if no external cold-read occurs by v9.40. We are past v9.40 with only the system's
-  own walkthrough, never an external one, yet `docs/THESIS.md` still uses the softer
-  conditional "RETIRED *until* evidence supports it." Leaving the softer wording past
-  the deadline is itself the dishonesty the project's discipline forbids. Two honest
-  moves, both VANTA's call: (a) reflect the permanent terminus ("has not been
-  independently validated") and pin it with a check, or (b) amend the deadline through
-  an explicit, recorded decision. `S · high · MEDIUM · cold-read-evidence`
+- _(resolved v9.91)_ **THESIS v9.40 terminus.** Move (a) was taken: it is the
+  constitution's own mechanical outcome (past v9.40, no external cold read →
+  retired permanently), not a discretionary choice, so it needed no new maintainer
+  authority to action. `docs/THESIS.md` now reads INCONCLUSIVE with the strong
+  claim retired, the v9.40 terminus stated, and `check_thesis_terminus_honest`
+  pinning it against drift. Move (b) — amending the deadline through a recorded
+  decision to reopen — remains genuinely VANTA's, if you ever want it: that one
+  does require maintainer authority, and the docs now say so.
 
 ---
 

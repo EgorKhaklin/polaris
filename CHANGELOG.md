@@ -5,6 +5,47 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.91 — 2026-06-04 (honesty: the thesis terminus passed, so the docs now say so)
+
+With the forward roadmap's actionable items shipped, a multi-agent honesty audit
+swept every headline claim (thesis, post-quantum, zero-knowledge, compulsion-
+resistance, general "production/validated/proven" language) against what the code
+actually does. The verified finding is the one the ROADMAP already flagged as an
+**active dishonesty**: the thesis terminus.
+
+`MISSION.md`'s freeze line carries a mechanical abandonment clause: "if no
+cold-read attempt occurs by v9.40 ... the thesis is documented as inconclusive
+and the strong claim is retired permanently." No external cold read ever happened
+(only the author's own walkthrough, which `docs/THESIS.md` itself admits is not a
+cold read), and the repository is now far past v9.40. So the outcome was already
+decided by the constitution. But `docs/THESIS.md` still read as an *open*
+experiment: status `HYPOTHESIS-NOT-VERIFIED`, "the thesis is not refuted, it is
+unverified," "keep the status honest until a real cold read happens." Leaving the
+softer wording past the deadline is itself the dishonesty the project forbids.
+`THESIS.md` also never actually stated the v9.40 terminus that `MISSION.md` cites
+it for.
+
+`docs/THESIS.md` now reflects the terminal state the constitution mandates: status
+**INCONCLUSIVE**, the strong legibility claim **retired permanently**, the v9.40
+terminus stated explicitly, and the disposition closed by default (a future cold
+read could reopen it only through an explicit, recorded maintainer decision, never
+an automatic flip). The falsification test stays documented for anyone who later
+runs it. `MISSION.md`'s freeze line is untouched (it is un-amendable here); this
+only makes `THESIS.md` honor it.
+
+Two README accuracy fixes rode along: a hardcoded "Now shipping v9.63" that had
+gone 28 versions stale is now a non-versioned "the latest release" link, and the
+"the operational default is already post-quantum" line is scoped to the algorithm
+of record (the real ML-DSA-65 signature bytes need `POLARIS_USE_REAL_PQC=1`; the
+default build records a deterministic placeholder, as the crypto section already
+disclosed six lines down).
+
+- `docs/THESIS.md` — status + terminus + retirement, reconciled throughout.
+- `README.md` — un-stale the version link; scope the post-quantum-default claim.
+- `polaris_checks/checks.py` — `check_thesis_terminus_honest` (29th check):
+  past v9.40, `THESIS.md` must read as retired/inconclusive, never the open
+  framing. Version-aware; `test_checks.py` discriminates across five cases.
+
 ## v9.90 — 2026-06-04 (CI: bump the deprecated Node 20 actions ahead of the deadline)
 
 CI was annotating every run: `actions/checkout@v4` and `actions/setup-python@v5`

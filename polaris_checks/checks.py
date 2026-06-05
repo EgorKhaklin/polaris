@@ -196,6 +196,50 @@ def check_changelog_matches_version(root: pathlib.Path) -> list[Finding]:
 
 
 # ---------------------------------------------------------------------------
+# Thesis honesty — past the v9.40 terminus, the strong claim must read as RETIRED.
+#
+# MISSION.md's abandonment clause is mechanical: "if no cold-read attempt occurs
+# by v9.40 ... the thesis is documented as inconclusive and the strong claim is
+# retired permanently." No external cold read occurred and the repo is past v9.40,
+# so docs/THESIS.md must reflect that terminal state — not leave the thesis framed
+# as an open, still-pending hypothesis. Leaving the softer wording past the
+# deadline is itself the dishonesty the project's discipline forbids. This check
+# enforces the constitution's own rule against drift back to the open framing.
+# (It does NOT touch MISSION.md's freeze line, which is un-amendable here.)
+# ---------------------------------------------------------------------------
+def check_thesis_terminus_honest(root: pathlib.Path) -> list[Finding]:
+    ver = _read(root, "polaris_web/__version__.py")
+    m = re.search(r'__version__[^"\'\n]*["\'](\d+)\.(\d+)["\']', ver)
+    if not m:
+        return _fail("thesis_terminus", "could not read __version__ for the v9.40 terminus check")
+    major, minor = int(m.group(1)), int(m.group(2))
+    thesis = _read(root, "docs/THESIS.md")
+    if not thesis:
+        return _fail("thesis_terminus", "docs/THESIS.md is missing")
+    if (major, minor) < (9, 40):
+        return _ok("thesis_terminus",
+                   f"v{major}.{minor} is before the v9.40 thesis terminus; THESIS.md may remain open")
+    # Past v9.40: THESIS.md must state the terminus and the permanent retirement.
+    low = thesis.lower()
+    missing = [s for s in ("v9.40", "retired") if s.lower() not in low]
+    if missing:
+        return _fail("thesis_terminus",
+                     "past the v9.40 terminus, THESIS.md must document the strong claim as retired "
+                     f"(missing term(s): {', '.join(missing)}); the abandonment clause has fired")
+    # The stale open-framing must be gone.
+    if "until a real cold read happens" in thesis:
+        return _fail("thesis_terminus",
+                     "THESIS.md still holds the status open 'until a real cold read happens'; the v9.40 "
+                     "terminus closed that window (retired by default, reopenable only by recorded decision)")
+    if re.search(r"\*\*Status:\*\*\s*HYPOTHESIS-NOT-VERIFIED", thesis):
+        return _fail("thesis_terminus",
+                     "THESIS.md status is still the open 'HYPOTHESIS-NOT-VERIFIED'; past v9.40 it must "
+                     "read as retired / inconclusive")
+    return _ok("thesis_terminus",
+               "past the v9.40 terminus, THESIS.md documents the strong claim as retired/inconclusive")
+
+
+# ---------------------------------------------------------------------------
 # Secrets hygiene — operator-secrets file is gitignored (no trailing-comment trap).
 # ---------------------------------------------------------------------------
 def check_secrets_file_ignored(root: pathlib.Path) -> list[Finding]:
@@ -584,6 +628,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_no_fk_cascade,
     check_version_is_canonical,
     check_changelog_matches_version,
+    check_thesis_terminus_honest,
     check_secrets_file_ignored,
     check_gitignore_no_trailing_comments,
     check_zk_two_witness_present,

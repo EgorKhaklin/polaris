@@ -1,13 +1,15 @@
 # Polaris — identity cannot outrun its primitives
 
-**Status:** HYPOTHESIS-NOT-VERIFIED.
+**Status:** INCONCLUSIVE — the strong claim is permanently retired (the
+v9.40 terminus passed with no external cold read).
 **Author:** Egor Khaklin (VANTA)
 **Reading time:** 8 minutes.
 
-This page states the thesis behind Polaris, the test that would confirm
-or refute it, and an honest account of the evidence currently in hand.
-It is a documented experiment with an open falsification test, not a
-victory lap.
+This page states the thesis behind Polaris, the test that would have
+confirmed or refuted it, and an honest account of the evidence in hand.
+It is a documented experiment whose falsification window has closed
+unactioned, not a victory lap. The test below remains specified for
+anyone who later chooses to run it.
 
 ---
 
@@ -32,8 +34,11 @@ machine-checked by `polaris_checks/` before any change ships.
 The strong form of the thesis: **a reference implementation can make its
 own constraints legible enough that a stranger can read the repository
 and correctly infer what it needs.** If the primitives are honest, the
-system explains itself. That is the claim this page does not yet get to
-publish as proven.
+system explains itself. That is the claim this page retired unproven: the
+window to test it (the v9.40 terminus set in `MISSION.md`) passed with no
+external cold read, so under the constitution the strong claim is retired
+as inconclusive. It was not refuted. It was never independently tested,
+and the deadline to test it lapsed.
 
 ---
 
@@ -57,9 +62,16 @@ They have ONE HOUR. At the end of the hour:
   cold readers and the strong claim is false.
 
 This is the falsification test. It requires an actual cold read by an
-actual external engineer to count as evidence. No such cold read has
-been conducted, which is why the status above is
-HYPOTHESIS-NOT-VERIFIED.
+actual external engineer to count as evidence.
+
+**The terminus.** `MISSION.md`'s abandonment clause set v9.40 as the
+deadline: if no cold-read attempt occurred by then, the thesis is
+documented inconclusive and the strong claim is retired permanently, with
+the system kept as good tooling. That clause is mechanical, not
+aspirational. No such cold read was conducted, and the repository is now
+many minor versions past the v9.40 deadline. The window therefore closed
+unactioned, which is why the status above is INCONCLUSIVE and the strong
+claim is retired rather than left open.
 
 ---
 
@@ -98,29 +110,33 @@ cat CLAUDE.md  # the document you should read first
 ```
 
 If you conduct this experiment, send the results (publicly or privately
-to the maintainer). A positive result plus your methodology moves the
-thesis from HYPOTHESIS-NOT-VERIFIED toward a published claim. A negative
-result is equally valuable: it documents the specific failure mode for
-future work.
+to the maintainer). The strong claim is retired by default, so a positive
+result plus your methodology would not flip it automatically: it would be
+the evidence a maintainer needs to reopen the claim through an explicit,
+recorded decision. A negative result is equally valuable: it documents
+the specific failure mode for future work.
 
 ---
 
-## Why the strong claim is not published
+## Why the strong claim is retired
 
-The argument against publishing "this works," condensed:
+The argument, condensed:
 
 1. Publishing "this works" requires evidence it works.
 2. The evidence required is an independent cold read.
-3. No independent cold read has been conducted.
+3. No independent cold read was conducted before the v9.40 terminus.
 4. Self-evaluation by the author is structurally compromised by full
    context; it cannot stand in for the test.
-5. Therefore the strong claim cannot be published today on the evidence
-   currently in hand.
+5. Therefore, per `MISSION.md`'s abandonment clause, the strong claim is
+   retired as inconclusive and the system is kept as good tooling.
 
-The thesis is not refuted. It is unverified. The distinction matters: an
-unverified hypothesis is publishable AS a hypothesis with the test
-specified; an unverified hypothesis published as a verified result is
-the failure mode this whole project exists to avoid.
+The thesis was not refuted; it was never independently tested, and the
+deadline to test it lapsed. The distinction still matters: "retired as
+inconclusive" is an honest terminal state, whereas an untested hypothesis
+published as a verified result is the failure mode this whole project
+exists to avoid. The disposition is closed by default — a later cold read
+could reopen it only through an explicit, recorded maintainer decision
+(see `ROADMAP.md`), never by an automatic flip when evidence appears.
 
 ---
 
@@ -136,7 +152,10 @@ What this page IS:
   primitives, and that Polaris tries to do exactly that.
 - An invitation to test the repository's legibility against an explicit
   falsification criterion.
-- A commitment to keep the status honest until a real cold read happens.
+- A commitment to keep the status honest: the cold-read window closed
+  unactioned at the v9.40 terminus, so the strong claim is retired as
+  inconclusive rather than held open. A future cold read could reopen it
+  only through an explicit, recorded maintainer decision (`ROADMAP.md`).
 
-That is the thesis. That is the evidence currently available. That is
-the decision.
+That is the thesis. That is the evidence that was available. That is the
+terminal disposition the constitution mandates.

@@ -21,7 +21,7 @@ _Cryptographically signed. Audit-of-record by construction. Compulsion-resistant
 [![WebAuthn MFA](https://img.shields.io/badge/auth-WebAuthn%20MFA-1f883d?logo=webauthn&logoColor=white&style=flat-square)](polaris_web/webauthn_auth.py)
 
 
-**Now shipping [v9.63](https://github.com/EgorKhaklin/polaris-id/releases/latest)** &nbsp;·&nbsp; post-quantum · zero-knowledge · compulsion-resistant &nbsp;·&nbsp; one double-click to launch
+**Now shipping [the latest release](https://github.com/EgorKhaklin/polaris-id/releases/latest)** &nbsp;·&nbsp; post-quantum · zero-knowledge · compulsion-resistant &nbsp;·&nbsp; one double-click to launch
 
 [**System map**](docs/reference/SYSTEM-MAP.md) · [**Conventions**](docs/CONVENTIONS.md) · [**Constitution (MISSION.md)**](MISSION.md) · [**Backlog (ROADMAP.md)**](ROADMAP.md) · [**Audit-of-record (CHANGELOG.md)**](CHANGELOG.md) · [**Agent runbook (CLAUDE.md)**](CLAUDE.md)
 
@@ -153,7 +153,7 @@ ECDSA-P256       ECDSA            FIPS 186-4     128        64 B          72 B  
 
 Three things are worth noting about this list:
 
-- **The operational default is already post-quantum.** ML-DSA-65 is what new tokens sign with on day one. There is no "we will migrate when quantum arrives" deferral; the migration target is the current default. ECDSA-P256 is retained only because pre-PQ audit queries need to resolve the algorithm by foreign key.
+- **The default algorithm is already post-quantum.** ML-DSA-65 is the algorithm new tokens are issued under on day one. There is no "we will migrate when quantum arrives" deferral; the migration target is the current default. (The real ML-DSA-65 *signature bytes* are produced with `POLARIS_USE_REAL_PQC=1`; with the flag off the default build records a deterministic placeholder, see the liboqs note below.) ECDSA-P256 is retained only because pre-PQ audit queries need to resolve the algorithm by foreign key.
 - **SLH-DSA is a diversity hedge.** Both ML-DSA and SLH-DSA are NIST-standardized post-quantum signature schemes, but they rest on entirely different cryptographic assumptions: ML-DSA on lattice problems, SLH-DSA on hash function security alone. If one family is broken, the other is independent. The cost of the hedge is signature size (29.8 KB for SLH-DSA-256s vs 3.3 KB for ML-DSA-65).
 - **The cost of post-quantum is the signature size.** A 3,309-byte ML-DSA-65 signature is roughly 46× larger than a 72-byte ECDSA signature. Polaris treats that cost as a property of the artifact, not as a problem to optimize away.
 
