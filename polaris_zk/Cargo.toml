@@ -21,7 +21,7 @@ name = "polaris-zk"
 path = "src/main.rs"
 
 [dependencies]
-plonky2 = "0.2"
+plonky2 = "1.1"
 plonky2_field = "0.2"
 anyhow = "1"
 serde = { version = "1", features = ["derive"] }
