@@ -17,6 +17,7 @@ For developers contributing to Polaris, see
 | [`SECURITY.md`](SECURITY.md) | Cybersecurity posture + audit + controls |
 | [`PRIVACY.md`](PRIVACY.md) | Data minimization + operational privacy posture |
 | [`DR.md`](DR.md) | Disaster recovery procedures (RPO ≤1min / RTO ≤30min) |
+| [`ENCRYPTION-AT-REST.md`](ENCRYPTION-AT-REST.md) | At-rest posture: what is plaintext on disk, what is already encrypted, and the operator-gated host volume encryption path |
 | [`SLOS.md`](SLOS.md) | Reference SLO targets (availability / request-latency / DB-latency) + error budget, grounded in exposed metrics; backend operator-gated |
 | [`RUNBOOKS.md`](RUNBOOKS.md) | One alert-response runbook per shipped Prometheus alert (Trigger / Diagnosis / Remediation) |
 

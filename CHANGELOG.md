@@ -5,6 +5,33 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.124 — 2026-06-05 (production-readiness, wave 3: the at-rest posture, documented and pinned)
+
+The last agent-buildable Wave 3 item. Polaris encrypts backups (v9.102) and the
+app<->DB path (v9.121), but the live database files are not encrypted by Polaris,
+and `TokenStateEpochLeaf.proof_path` is plaintext JSONB the schema itself flags
+("v1 stores proof_path in plaintext"). This ships the honest posture, not a false
+claim that the live DB is encrypted.
+
+- **`docs/operator/ENCRYPTION-AT-REST.md`.** Enumerates the plaintext-sensitive
+  surfaces (`Individual.legal_name`, `Individual.date_of_birth`,
+  `TokenStateEpochLeaf.proof_path`); records what is already protected (encrypted
+  backups, in-transit TLS) and what is not (the live data files + WAL); and
+  explains why the right control is host volume encryption (LUKS / dm-crypt /
+  fscrypt), not field-level: encrypting `legal_name` / `date_of_birth` breaks the
+  C3 one-identity partial unique index, and encrypting `proof_path` breaks the ZK
+  second witness that recomputes the Merkle path. Data minimization is named as
+  the strongest control: biometric / genomic plaintext never enters the DB.
+- **`check_encryption_at_rest_posture` (54th check).** Grounds the doc in the
+  schema: it must name `proof_path` / `legal_name` / `date_of_birth`, must say
+  `plaintext` while the schema still stores `proof_path` that way (drift guard),
+  must name the host-level path, and must NOT claim the live DB is encrypted at
+  rest (honesty guard). Detection test covers each branch.
+- **The agent-buildable arc converges here.** With this ticked, every remaining
+  item in `docs/PRODUCTION-READINESS.md` is operator-gated (the host encryption
+  layer + key custodian, the offsite/WAL store, and the legal/HA/HSM/pen-test
+  decisions) — organizational calls, not code.
+
 ## v9.123 — 2026-06-05 (production-readiness, wave 4: SLOs + alert runbooks, grounded and honest)
 
 Wave 4 shipped the alert rules (v9.115) but left the SLO targets and the

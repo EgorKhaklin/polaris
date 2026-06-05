@@ -104,8 +104,14 @@ left a real foundation. Genuinely sound today:
   a self-signed cert minted at deploy time. `require` encrypts without CA
   pinning; `verify-full` against a real CA stays operator-gated. CI runs a
   `client_tls` round-trip; pinned by `check_app_db_tls`.
-- [ ] Field-level / at-rest encryption posture for PII and the plaintext ZK
-  `proof_path` (encryption-at-rest host + key custodian is operator-gated).
+- [x] **At-rest encryption posture (v9.124).** `docs/operator/ENCRYPTION-AT-REST.md`
+  enumerates the plaintext-sensitive surfaces (`Individual.legal_name` /
+  `date_of_birth`, `TokenStateEpochLeaf.proof_path` — the one the schema itself
+  flags as v1-plaintext), records that backups (v9.102) and transit (v9.121) are
+  encrypted while the live DB is not, and explains why host volume encryption is
+  the right control over field-level (which would break C3's unique index and the
+  ZK second witness). Pinned by `check_encryption_at_rest_posture`. The host
+  encryption layer + key custodian remain operator-gated.
 - [ ] Offsite backup target + WAL archiving for the ≤1-min RPO (operator-gated:
   the S3/offsite store).
 

@@ -842,6 +842,64 @@ def check_alert_runbooks(root: pathlib.Path) -> list[Finding]:
 
 
 # ---------------------------------------------------------------------------
+# At-rest data-protection posture. Polaris does not encrypt the live database at
+# the app layer (host volume encryption + key custody is operator-gated). The
+# risk is not that gap (it is documented and deliberate) but that the POSTURE doc
+# silently drifts from the schema reality, or quietly starts overclaiming. This
+# pins both: the doc must name the actual sensitive surfaces the schema holds in
+# plaintext (Individual.legal_name / date_of_birth, TokenStateEpochLeaf.proof_path
+# — the schema's own "v1 stores proof_path in plaintext" note), must point at the
+# host-level operator path, and must NOT claim the live DB is encrypted at rest.
+# ---------------------------------------------------------------------------
+def check_encryption_at_rest_posture(root: pathlib.Path) -> list[Finding]:
+    doc = _read(root, "docs/operator/ENCRYPTION-AT-REST.md")
+    schema = _read(root, "polaris_sql/01_schema.sql")
+    if not doc:
+        return _fail("at_rest_posture",
+                     "docs/operator/ENCRYPTION-AT-REST.md is missing — the at-rest posture must be "
+                     "documented, not implicit")
+    # Normalize markdown emphasis out so a bolded "does **not** encrypt" still
+    # matches the honesty substring below.
+    low = doc.lower().replace("*", "")
+    # The plaintext-sensitive surfaces the doc must enumerate, so it cannot drift
+    # from the schema. proof_path is load-bearing: the schema itself flags it.
+    for needed, why in (
+        ("proof_path", "the plaintext ZK Merkle path the schema flags as v1-plaintext"),
+        ("legal_name", "the direct PII column on Individual"),
+        ("date_of_birth", "the direct PII column on Individual"),
+    ):
+        if needed not in doc:
+            return _fail("at_rest_posture",
+                         f"ENCRYPTION-AT-REST.md must name {needed} ({why}) — it is plaintext at rest")
+    # Schema-drift guard: while the schema still stores proof_path in plaintext,
+    # the doc must say so (not quietly claim it is encrypted).
+    if "proof_path" in schema and re.search(r"plaintext", schema, re.I):
+        if "plaintext" not in low:
+            return _fail("at_rest_posture",
+                         "the schema still stores proof_path in plaintext but ENCRYPTION-AT-REST.md "
+                         "does not say 'plaintext' — the posture has drifted from the schema")
+    # The operator path must be named (host volume encryption), not hand-waved.
+    if not re.search(r"luks|dm-crypt|fscrypt", low):
+        return _fail("at_rest_posture",
+                     "ENCRYPTION-AT-REST.md must name the host-level encryption path (LUKS/dm-crypt/"
+                     "fscrypt) — the operator-gated control that actually closes the gap")
+    if "operator-gated" not in low:
+        return _fail("at_rest_posture",
+                     "ENCRYPTION-AT-REST.md must mark the live-DB at-rest control operator-gated")
+    # Honesty guard: the doc must NOT claim the live database is encrypted at rest.
+    # Any sentence asserting at-rest encryption of the live DB must be negated
+    # ('does not', 'not') — we require the explicit honest disclaimer to be present.
+    if not re.search(r"does not encrypt|not encrypt the live", low):
+        return _fail("at_rest_posture",
+                     "ENCRYPTION-AT-REST.md must state plainly that Polaris does NOT encrypt the live "
+                     "database at rest (honesty discipline — no overclaiming)")
+    return _ok("at_rest_posture",
+               "the at-rest posture is documented and honest: names the plaintext-sensitive surfaces "
+               "(legal_name/date_of_birth/proof_path), points at the operator-gated host volume "
+               "encryption, and does not claim the live DB is encrypted at rest")
+
+
+# ---------------------------------------------------------------------------
 # The connection pooler must not depend on a third-party image that can vanish.
 # bitnami/pgbouncer:1.22 was removed from Docker Hub when Bitnami retired their
 # free catalogue (Aug 2025), leaving the prod stack unable to pull its pooler.
@@ -1471,6 +1529,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_prod_images_digest_pinned,
     check_alert_rules,
     check_alert_runbooks,
+    check_encryption_at_rest_posture,
     check_pgbouncer_self_built,
     check_app_db_tls,
     check_correlation_id,

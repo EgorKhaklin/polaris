@@ -1084,6 +1084,61 @@ def test_alert_runbooks_check_discriminates(tmp_path):
         "must FAIL when RUNBOOKS.md does not exist"
 
 
+def test_encryption_at_rest_posture_check_discriminates(tmp_path):
+    op = tmp_path / "docs" / "operator"
+    sql = tmp_path / "polaris_sql"
+    op.mkdir(parents=True)
+    sql.mkdir(parents=True)
+    GOOD_SCHEMA = "proof_path JSONB NOT NULL,\n-- v1 stores proof_path in plaintext\n"
+    GOOD_DOC = (
+        "# at-rest posture\n"
+        "Polaris does **not** encrypt the live database at rest.\n"
+        "Sensitive at rest: Individual.legal_name, Individual.date_of_birth, and\n"
+        "TokenStateEpochLeaf.proof_path (stored in plaintext, schema-acknowledged).\n"
+        "The operator-gated control is host volume encryption (LUKS / fscrypt).\n"
+    )
+
+    def write(doc=GOOD_DOC, schema=GOOD_SCHEMA):
+        (op / "ENCRYPTION-AT-REST.md").write_text(doc)
+        (sql / "01_schema.sql").write_text(schema)
+
+    # 1. all present and honest -> OK.
+    write()
+    assert checks.check_encryption_at_rest_posture(tmp_path)[0].level == "OK", \
+        "must PASS an honest, schema-grounded posture doc"
+
+    # 2. doc does not name proof_path -> FAIL.
+    write(doc=GOOD_DOC.replace("proof_path", "the merkle leaves"))
+    assert checks.check_encryption_at_rest_posture(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the plaintext proof_path surface is not named"
+
+    # 3. doc does not name the PII columns -> FAIL.
+    write(doc=GOOD_DOC.replace("legal_name", "the name"))
+    assert checks.check_encryption_at_rest_posture(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the PII columns are not named"
+
+    # 4. schema still plaintext but doc never says 'plaintext' -> FAIL (drift).
+    write(doc=GOOD_DOC.replace("plaintext", "stored"))
+    assert checks.check_encryption_at_rest_posture(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the doc drifts from the schema's plaintext reality"
+
+    # 5. no host-level encryption path named -> FAIL.
+    write(doc=GOOD_DOC.replace("(LUKS / fscrypt)", "(somehow)"))
+    assert checks.check_encryption_at_rest_posture(tmp_path)[0].level == "FAIL", \
+        "must FAIL without the host-level LUKS/fscrypt path"
+
+    # 6. overclaiming: drops the honest 'does not encrypt' disclaimer -> FAIL.
+    write(doc=GOOD_DOC.replace("does **not** encrypt the live database at rest",
+                               "encrypts the live database at rest"))
+    assert checks.check_encryption_at_rest_posture(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the doc overclaims that the live DB is encrypted"
+
+    # 7. doc missing entirely -> FAIL.
+    (op / "ENCRYPTION-AT-REST.md").unlink()
+    assert checks.check_encryption_at_rest_posture(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the posture doc is absent"
+
+
 def test_prod_real_pqc_check_discriminates(tmp_path):
     web = tmp_path / "polaris_web"
     gh = tmp_path / ".github" / "workflows"
