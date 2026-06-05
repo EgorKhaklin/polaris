@@ -373,6 +373,41 @@ def check_verify_enforced(root: pathlib.Path) -> list[Finding]:
 
 
 # ---------------------------------------------------------------------------
+# Real PQC must be the PRODUCTION DEFAULT, not merely testable. That needs three
+# things together: liboqs in the prod image (so oqs imports at runtime), the
+# flag on in the prod compose (POLARIS_USE_REAL_PQC=1), and the signing-key
+# secret mounted (the stable trust anchor verify-at-use checks against). CI
+# verifies real ML-DSA-65 actually works inside the prod image. The real key
+# CUSTODY (HSM/KMS) stays operator-gated; the compose ships a generated key.
+# ---------------------------------------------------------------------------
+def check_prod_real_pqc(root: pathlib.Path) -> list[Finding]:
+    df = _read(root, "polaris_web/Dockerfile.prod")
+    compose = _read(root, "polaris_web/docker-compose.prod.yml")
+    if not df or not compose:
+        return _fail("prod_real_pqc", "Dockerfile.prod / docker-compose.prod.yml missing")
+    if "liboqs-python" not in df:
+        return _fail("prod_real_pqc",
+                     "Dockerfile.prod must install liboqs-python so real ML-DSA-65 signing is "
+                     "available in the prod image (not just testable in a CI job)")
+    if not re.search(r"POLARIS_USE_REAL_PQC:\s*['\"]?1", compose):
+        return _fail("prod_real_pqc",
+                     "the prod compose must set POLARIS_USE_REAL_PQC=1 so issuance uses real PQC, "
+                     "not the SHA3-256 placeholder")
+    if "POLARIS_PQC_SIGNING_KEY_FILE" not in compose or "polaris_signing_key" not in compose:
+        return _fail("prod_real_pqc",
+                     "the prod compose must mount the signing keypair secret (polaris_signing_key) "
+                     "and point POLARIS_PQC_SIGNING_KEY_FILE at it (the stable trust anchor)")
+    ci = _read(root, ".github/workflows/ci.yml")
+    if not ci or "real ML-DSA-65 signing inside the prod image" not in ci:
+        return _fail("prod_real_pqc",
+                     "CI must verify real ML-DSA-65 signing works INSIDE the built prod image "
+                     "(a broken liboqs copy would otherwise only surface at deploy)")
+    return _ok("prod_real_pqc",
+               "real ML-DSA-65 is the production default: liboqs in the prod image, the flag on, "
+               "the signing-key secret mounted as the trust anchor, verified in CI")
+
+
+# ---------------------------------------------------------------------------
 # The /sql operator console must be read-only at the DATABASE level, not just
 # by a first-keyword whitelist. The whitelist accepts WITH, and a data-modifying
 # CTE (`WITH t AS (DELETE ... RETURNING *) SELECT * FROM t`) starts with WITH and
@@ -1155,6 +1190,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_pqc_signing_wired,
     check_pqc_real_signing,
     check_verify_enforced,
+    check_prod_real_pqc,
     check_sql_console_readonly,
     check_prod_image_no_test_deps,
     check_cve_scanning,

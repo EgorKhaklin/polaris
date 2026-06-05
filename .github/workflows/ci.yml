@@ -274,6 +274,29 @@ jobs:
             echo "::error::prod image crashed on startup"; exit 1
           fi
 
+      # Real PQC must actually work IN the prod image (v9.116): liboqs ships in
+      # the image, so issuance signs with real ML-DSA-65, not the placeholder.
+      # A broken liboqs copy would only surface here, not at deploy.
+      - name: Verify real ML-DSA-65 signing inside the prod image
+        run: |
+          out=$(docker run --rm -e POLARIS_USE_REAL_PQC=1 polaris-app:prod-ci python - <<'PY'
+          import os, json, tempfile
+          import pqc_signing as p
+          assert p.is_available(), "liboqs not importable in the prod image"
+          assert p.is_enabled(), "POLARIS_USE_REAL_PQC=1 but real PQC not enabled"
+          kp = p.generate_keypair()
+          f = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False)
+          json.dump(kp, f); f.close()
+          os.environ["POLARIS_PQC_SIGNING_KEY_FILE"] = f.name
+          sig, alg = p.signature_bytes_for_token("TKN-PROD-IMAGE")
+          assert alg == "ML-DSA-65" and len(sig) == 3309, f"bad signature: {alg} {len(sig)}"
+          assert p.verify_token_signature("TKN-PROD-IMAGE", sig, alg), "verify-at-use failed in the prod image"
+          print("prod image real ML-DSA-65 OK")
+          PY
+          )
+          echo "$out"
+          echo "$out" | grep -q "prod image real ML-DSA-65 OK" || { echo "::error::real PQC does not work in the prod image"; exit 1; }
+
       # The self-built pgbouncer (v9.110) replaced bitnami/pgbouncer:1.22 after
       # Bitnami removed it from Docker Hub — a broken pooler image means the whole
       # stack cannot reach the database, but nothing built/ran it in CI. This

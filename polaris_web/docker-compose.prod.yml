@@ -109,9 +109,17 @@ services:
       POLARIS_ENV: production
       POLARIS_ZK_BINARY: /opt/polaris/zk
       WEB_CONCURRENCY: ${WEB_CONCURRENCY:-4}
+      # v9.116: real ML-DSA-65 signing is the production default (liboqs ships in
+      # the prod image). The signing keypair is the file-mounted secret below; its
+      # public key is the stable trust anchor verify_token_signature checks
+      # against. Operators custodying key material in an HSM/KMS replace the
+      # generated secret with their loader (that custody is operator-gated).
+      POLARIS_USE_REAL_PQC: '1'
+      POLARIS_PQC_SIGNING_KEY_FILE: /run/secrets/polaris_signing_key
     secrets:
       - polaris_secret_key
       - polaris_db_password
+      - polaris_signing_key
     volumes:
       - polaris_state:/var/lib/polaris/state
       - ./logs:/var/log/polaris
@@ -282,6 +290,10 @@ secrets:
     file: ./secrets/polaris_db_password
   polaris_db_root_password:
     file: ./secrets/polaris_db_root_password
+  # ML-DSA-65 signing keypair (JSON: algorithm + secret_key_hex + public_key_hex),
+  # minted by polaris-generate-secrets.sh. The public key is the trust anchor.
+  polaris_signing_key:
+    file: ./secrets/polaris_signing_key
 
 # ----------------------------------------------------------------------------
 # Volumes (named; survive `down`, destroyed by `down -v`)

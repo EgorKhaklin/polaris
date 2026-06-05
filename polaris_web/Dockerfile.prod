@@ -51,6 +51,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
         libpq-dev \
         curl \
+        cmake \
+        ninja-build \
+        git \
+        libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
@@ -63,6 +67,14 @@ ENV PATH="/opt/venv/bin:$PATH"
 COPY polaris_web/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt \
     && pip install --no-cache-dir 'redis==5.0.*'
+
+# v9.116 — Real post-quantum signing in production. liboqs-python builds the
+# liboqs C library from source (to /root/_oqs) on first import; we trigger that
+# here so the runtime stage can copy the prebuilt library and never needs a
+# compiler. With this present + POLARIS_USE_REAL_PQC=1 (set in the prod compose),
+# issuance signs with real ML-DSA-65 instead of the SHA3-256 placeholder.
+RUN pip install --no-cache-dir liboqs-python \
+    && python -c "import oqs; print('liboqs', oqs.oqs_version(), 'built into the image')"
 
 # ---------------------------------------------------------------------------
 # Stage 3: Runtime (minimal Debian-slim, non-root)
@@ -80,6 +92,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
         ca-certificates \
         tini \
+        libssl3 \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
 
 # Non-root user
@@ -89,6 +102,11 @@ RUN useradd --uid 1000 --create-home --shell /usr/sbin/nologin polaris && \
 
 # Copy Python venv from py-builder
 COPY --from=py-builder /opt/venv /opt/venv
+
+# Copy the prebuilt liboqs C library (v9.116). liboqs-python looks for it under
+# the running user's HOME (~/_oqs), so it lands in the polaris user's home. No
+# compiler or build tools ship in the runtime; the library is already built.
+COPY --from=py-builder --chown=polaris:polaris /root/_oqs /home/polaris/_oqs
 
 # Copy ZK binary from zk-builder
 COPY --from=zk-builder /build/polaris-zk /opt/polaris/zk

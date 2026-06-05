@@ -71,12 +71,16 @@ left a real foundation. Genuinely sound today:
   `verify_token_signature()` checks a stored signature against the published trust
   anchor (`trust_anchor_public_key_hex()`). Exercised in the `pqc-real` CI job;
   pinned by `check_verify_enforced`.
+- [x] **Real PQC is the production default (v9.116).** liboqs ships in the prod
+  image (built in the Python builder, copied to the runtime), the prod compose
+  sets `POLARIS_USE_REAL_PQC=1` and mounts the `polaris_signing_key` secret (the
+  trust anchor), and `polaris-generate-secrets.sh` mints the keypair. CI verifies
+  real ML-DSA-65 sign + verify-at-use inside the built image. Pinned by
+  `check_prod_real_pqc`. *(HSM/KMS key custody remains operator-gated.)*
 - [ ] **Wire it the rest of the way (Wave 2 cont.).** Store the issuer public key
   as a DB trust anchor (a `SigningKey`/Agency key) and surface verification at a
-  use point (token detail / a verify endpoint); make real PQC the production
-  default (`POLARIS_USE_REAL_PQC=1` in prod, with liboqs in the prod image); route
-  uc6 migration through the signing module (it writes a hardcoded non-signature).
-  *(Real key material / HSM custody remains operator-gated.)*
+  use point (token detail / a verify endpoint); route uc6 migration through the
+  signing module (it writes a hardcoded non-signature).
 
 ### Wave 3 — data protection + DR (BLOCKER/HIGH)
 - [x] **Encrypt backups at rest (v9.102).** `polaris-backup.sh` encrypts the

@@ -67,6 +67,35 @@ write_secret_if_missing() {
     echo "  ✓ ${name}  (generated; mode 0600)"
 }
 
+# v9.116 — the ML-DSA-65 signing keypair. Unlike the hex secrets, this needs
+# liboqs (oqs) to mint. Prefer a local oqs; otherwise mint inside the built
+# polaris-app:prod image (which ships liboqs). If neither is available, skip with
+# a clear message — operators custodying key material in an HSM/KMS supply their
+# own loader instead (that custody is operator-gated).
+write_signing_key_if_missing() {
+    local name="polaris_signing_key"
+    local target="${SECRETS_DIR}/${name}"
+    if [[ -e "${target}" ]]; then
+        echo "  ✓ ${name}  (exists; not overwriting — use polaris-rotate-secret.sh to rotate)"
+        return 0
+    fi
+    local json=""
+    if python3 -c "import oqs" >/dev/null 2>&1; then
+        json=$(python3 -c "import sys; sys.path.insert(0, '${POLARIS_ROOT}/polaris_web'); import pqc_signing, json; print(json.dumps(pqc_signing.generate_keypair()))" 2>/dev/null || true)
+    elif command -v docker >/dev/null 2>&1 && docker image inspect polaris-app:prod >/dev/null 2>&1; then
+        json=$(docker run --rm polaris-app:prod python -c "import pqc_signing, json; print(json.dumps(pqc_signing.generate_keypair()))" 2>/dev/null || true)
+    fi
+    if [[ -z "${json}" ]]; then
+        echo "  ! ${name}  (NOT generated — needs liboqs locally OR the built polaris-app:prod image)"
+        echo "      Build the prod image first, or 'pip install liboqs-python', then re-run." >&2
+        echo "      (HSM/KMS custody: supply your own ML-DSA-65 key loader instead.)" >&2
+        return 0
+    fi
+    ( umask 0177 && printf '%s\n' "${json}" > "${target}" )
+    chmod 0600 "${target}"
+    echo "  ✓ ${name}  (ML-DSA-65 keypair generated; mode 0600)"
+}
+
 cat <<'BANNER'
 
   Polaris — secret material generator
@@ -79,6 +108,7 @@ BANNER
 write_secret_if_missing polaris_secret_key       32
 write_secret_if_missing polaris_db_password      24
 write_secret_if_missing polaris_db_root_password 24
+write_signing_key_if_missing
 
 cat <<BANNER
 

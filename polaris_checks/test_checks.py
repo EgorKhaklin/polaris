@@ -1044,5 +1044,47 @@ def test_alert_rules_check_discriminates(tmp_path):
         "must FAIL when the artifact does not ship"
 
 
+def test_prod_real_pqc_check_discriminates(tmp_path):
+    web = tmp_path / "polaris_web"
+    gh = tmp_path / ".github" / "workflows"
+    web.mkdir(); gh.mkdir(parents=True)
+    GOOD_DF = "FROM x\nRUN pip install liboqs-python\n"
+    GOOD_COMPOSE = ("services:\n  app:\n    environment:\n"
+                    "      POLARIS_USE_REAL_PQC: '1'\n"
+                    "      POLARIS_PQC_SIGNING_KEY_FILE: /run/secrets/polaris_signing_key\n"
+                    "    secrets:\n      - polaris_signing_key\n")
+    GOOD_CI = "jobs:\n  d:\n    steps:\n      - name: Verify real ML-DSA-65 signing inside the prod image\n"
+
+    def write(df=GOOD_DF, compose=GOOD_COMPOSE, ci=GOOD_CI):
+        (web / "Dockerfile.prod").write_text(df)
+        (web / "docker-compose.prod.yml").write_text(compose)
+        (gh / "ci.yml").write_text(ci)
+
+    # 1. liboqs not installed in the prod image -> FAIL.
+    write(df="FROM x\nRUN pip install flask\n")
+    assert checks.check_prod_real_pqc(tmp_path)[0].level == "FAIL", \
+        "must FAIL when Dockerfile.prod does not install liboqs"
+
+    # 2. liboqs present but the flag is off -> FAIL.
+    write(compose="services:\n  app:\n    environment:\n      POLARIS_ENV: production\n")
+    assert checks.check_prod_real_pqc(tmp_path)[0].level == "FAIL", \
+        "must FAIL when POLARIS_USE_REAL_PQC is not set in prod"
+
+    # 3. Flag on but no signing-key secret -> FAIL.
+    write(compose="services:\n  app:\n    environment:\n      POLARIS_USE_REAL_PQC: '1'\n")
+    assert checks.check_prod_real_pqc(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the signing-key secret is not mounted (no trust anchor)"
+
+    # 4. CI does not verify real PQC in the prod image -> FAIL.
+    write(ci="jobs:\n  d:\n    steps:\n      - name: build\n")
+    assert checks.check_prod_real_pqc(tmp_path)[0].level == "FAIL", \
+        "must FAIL when CI does not verify real PQC inside the prod image"
+
+    # 5. All three + CI verification -> OK.
+    write()
+    assert checks.check_prod_real_pqc(tmp_path)[0].level == "OK", \
+        "must PASS with liboqs in the image, the flag on, the key secret, and CI verification"
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

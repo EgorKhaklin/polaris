@@ -5,6 +5,33 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.116 — 2026-06-05 (production-readiness, wave 2: real ML-DSA-65 is the production default)
+
+Real post-quantum signing was testable (v9.103) and verification was enforced
+(v9.113), but production still signed with the SHA3-256 placeholder: liboqs was
+not in the prod image, so `POLARIS_USE_REAL_PQC=1` there would have failed to
+import. This ship makes real ML-DSA-65 the actual default in production.
+
+- **liboqs ships in the prod image.** `Dockerfile.prod`'s Python builder now
+  builds liboqs from source (the `liboqs-python` install triggers it) and the
+  runtime stage copies the prebuilt library into the `polaris` user's home — no
+  compiler or build tools in the runtime layer. Validated by building the image
+  and signing inside it: `available: True, enabled: True, ML-DSA-65, 3309-byte
+  signature, verify-at-use True`, all as the non-root user.
+- **The flag is on, with a real trust anchor.** `docker-compose.prod.yml` sets
+  `POLARIS_USE_REAL_PQC=1` and mounts a new `polaris_signing_key` secret (the
+  ML-DSA keypair), pointed to by `POLARIS_PQC_SIGNING_KEY_FILE` — so the public
+  key is the stable anchor `verify_token_signature` checks against.
+- **Key minting.** `polaris-generate-secrets.sh` mints the signing keypair (via a
+  local liboqs or the built `polaris-app:prod` image) into the gitignored
+  secrets dir, mode 0600. Operators custodying key material in an HSM/KMS supply
+  their own loader instead — that custody stays operator-gated.
+- **CI proves it in the image.** The `docker-image` job now runs real ML-DSA-65
+  sign + verify-at-use inside the built prod image, so a broken liboqs copy fails
+  CI, not a deploy. Pinned by `check_prod_real_pqc`. Closes the Wave 2 prod-
+  default box in `docs/PRODUCTION-READINESS.md` (DB trust-anchor table +
+  use-surface wiring + uc6 remain).
+
 ## v9.115 — 2026-06-05 (production-readiness, wave 4: alerting rules are a shipped, validated artifact)
 
 `DR.md` told operators that "PolarisHigh5xx and related Prometheus alerting
