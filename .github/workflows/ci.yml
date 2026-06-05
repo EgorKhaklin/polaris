@@ -385,7 +385,7 @@ jobs:
   # Dependabot (.github/dependabot.yml) opens PRs for new advisories weekly.
   # --------------------------------------------------------------------------
   cve-scan:
-    name: Dependency CVE scan (pip-audit)
+    name: Dependency CVE scan + SAST
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -396,8 +396,8 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install pip-audit
-        run: pip install pip-audit
+      - name: Install pip-audit + bandit
+        run: pip install pip-audit bandit
 
       - name: Audit the RUNTIME surface (gating)
         run: |
@@ -409,3 +409,14 @@ jobs:
         run: |
           echo "Auditing polaris_web/requirements-dev.txt (test tooling — not in prod)"
           pip-audit -r polaris_web/requirements-dev.txt --progress-spinner off
+
+      # SAST: scan our own source for security anti-patterns. GATES on HIGH
+      # severity + medium-confidence (a real, actionable finding — e.g. the
+      # world-writable state dir bandit caught at v9.112). Lower-severity
+      # findings (bind-all on the container, parameterized SQL flagged as string
+      # building, the dev /tmp default) are reported but do not block; a
+      # deliberate exception carries an inline `# nosec <id>` with a rationale.
+      - name: SAST (bandit, gating on HIGH severity)
+        run: |
+          echo "Scanning polaris_web + polaris_cli for HIGH-severity issues"
+          bandit -r polaris_web polaris_cli -x '*/venv/*' --severity-level high --confidence-level medium -q

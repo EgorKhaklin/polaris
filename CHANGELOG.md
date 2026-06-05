@@ -5,6 +5,31 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.112 — 2026-06-05 (production-readiness, wave 4: SAST in CI catches a world-writable state dir)
+
+Dependency CVEs were scanned (v9.105) but our own source never was. Adding
+bandit (SAST) immediately surfaced a real HIGH: `_ensure_state_dir()` did
+`chmod 0o777` on `POLARIS_STATE_DIR` — world-writable — and that directory can
+hold sensitive state (in the dev launcher path, the persisted Flask
+`secret_key`). On a shared host any local account could replace those files
+(session forgery) or drop the `quit` file to tear the stack down.
+
+- **The state dir is locked down in production.** `_ensure_state_dir()` now
+  `chmod`s `0o700` when `POLARIS_ENV=production` — the container owns the
+  directory and no host launcher shares it, so owner-only is correct. The looser
+  `0o777` survives only outside production, where the watch-mode launcher runs as
+  a different uid and genuinely needs the cross-uid share (carrying an inline
+  `# nosec B103` with the rationale).
+- **SAST gates the build.** The `cve-scan` job (now "Dependency CVE scan + SAST")
+  runs `bandit` over `polaris_web` + `polaris_cli`, gating on HIGH severity +
+  medium confidence. Lower-severity findings (bind-all inside the container,
+  parameterized SQL flagged as string-building, the dev `/tmp` default) are
+  reported but do not block.
+- **Pinned + tested.** `check_sast_scanning` (43rd check) asserts CI runs bandit
+  gating on high severity; `StateDirPermsTests` proves the dir is `0o700` in
+  production and `0o777` only in dev. Ticks the SAST box in
+  `docs/PRODUCTION-READINESS.md` Wave 4.
+
 ## v9.111 — 2026-06-05 (production-readiness: CI builds + round-trips the self-built pgbouncer image)
 
 v9.110 made pgbouncer self-built but nothing in CI built or ran that image — the

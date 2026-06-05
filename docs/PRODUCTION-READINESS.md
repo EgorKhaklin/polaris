@@ -121,7 +121,11 @@ left a real foundation. Genuinely sound today:
   tooling (pytest/hypothesis/playwright) into `requirements-dev.txt` so the prod
   image no longer ships a test framework (or its CVEs); the dev surface is
   audited informationally. Dependabot opens weekly update PRs. Pinned by
-  `check_prod_image_no_test_deps` + `check_cve_scanning`. (SAST still open.)
+  `check_prod_image_no_test_deps` + `check_cve_scanning`.
+- [x] **SAST in CI (v9.112).** `bandit` scans `polaris_web` + `polaris_cli`,
+  gating on HIGH severity — it immediately caught a world-writable
+  (`chmod 0o777`) state dir, now `0o700` in production. Pinned by
+  `check_sast_scanning` + `StateDirPermsTests`.
 - [x] **SQL console is READ ONLY at the engine (v9.104).** `sql_query` calls
   `conn.set_session(readonly=True)` before any statement, so a data-modifying
   CTE that slips past the `SELECT`/`WITH` keyword whitelist is refused by

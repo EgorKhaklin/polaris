@@ -438,6 +438,26 @@ def check_cve_scanning(root: pathlib.Path) -> list[Finding]:
 
 
 # ---------------------------------------------------------------------------
+# Static application security testing (SAST). pip-audit covers dependency CVEs;
+# bandit covers OUR source for security anti-patterns (hardcoded secrets, weak
+# crypto, world-writable files, shell=True, etc.). CI must run it and GATE on
+# high-severity findings so a real issue (e.g. the world-writable state dir
+# bandit caught at v9.112) fails the build rather than shipping.
+# ---------------------------------------------------------------------------
+def check_sast_scanning(root: pathlib.Path) -> list[Finding]:
+    ci = _read(root, ".github/workflows/ci.yml")
+    if not ci:
+        return _fail("sast", ".github/workflows/ci.yml is missing")
+    if "bandit" not in ci:
+        return _fail("sast", "CI must run bandit (SAST) over polaris_web + polaris_cli")
+    if not re.search(r"bandit\b[^\n]*--severity-level\s+high", ci):
+        return _fail("sast",
+                     "the bandit run must GATE on high severity (--severity-level high), so a real "
+                     "finding fails the build instead of shipping")
+    return _ok("sast", "CI runs bandit SAST gating on high-severity findings")
+
+
+# ---------------------------------------------------------------------------
 # Schema migrations must bound their lock acquisition and statement time. An
 # ALTER TABLE that needs an ACCESS EXCLUSIVE lock queues behind any open
 # transaction and, once granted, blocks ALL traffic on that table — an
@@ -1045,6 +1065,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_sql_console_readonly,
     check_prod_image_no_test_deps,
     check_cve_scanning,
+    check_sast_scanning,
     check_migration_timeouts,
     check_web_concurrency_honored,
     check_health_liveness_readiness_split,

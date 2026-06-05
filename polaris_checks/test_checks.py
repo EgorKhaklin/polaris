@@ -909,5 +909,28 @@ def test_pgbouncer_self_built_check_discriminates(tmp_path):
         "must FAIL on a case-variant bitnami/pgbouncer reference"
 
 
+def test_sast_scanning_check_discriminates(tmp_path):
+    gh = tmp_path / ".github" / "workflows"
+    gh.mkdir(parents=True)
+
+    def write_ci(text):
+        (gh / "ci.yml").write_text(text)
+
+    # 1. No bandit in CI -> FAIL.
+    write_ci("jobs:\n  test:\n    steps: []\n")
+    assert checks.check_sast_scanning(tmp_path)[0].level == "FAIL", \
+        "must FAIL when CI does not run bandit"
+
+    # 2. bandit present but not gating on high severity -> FAIL.
+    write_ci("jobs:\n  s:\n    steps:\n      run: bandit -r polaris_web\n")
+    assert checks.check_sast_scanning(tmp_path)[0].level == "FAIL", \
+        "must FAIL when bandit does not gate on high severity"
+
+    # 3. bandit gating on high severity -> OK.
+    write_ci("jobs:\n  s:\n    steps:\n      run: bandit -r polaris_web polaris_cli --severity-level high -q\n")
+    assert checks.check_sast_scanning(tmp_path)[0].level == "OK", \
+        "must PASS when bandit gates on high severity"
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

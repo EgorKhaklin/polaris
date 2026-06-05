@@ -451,7 +451,17 @@ QUIT_FILE      = os.path.join(POLARIS_STATE_DIR, 'quit')
 def _ensure_state_dir():
     try:
         os.makedirs(POLARIS_STATE_DIR, exist_ok=True)
-        os.chmod(POLARIS_STATE_DIR, 0o777)
+        # In production the container owns this directory and no host launcher
+        # shares it, so lock it to the owner (0o700). It can hold sensitive state
+        # (in dev, the persisted secret_key), so a world-writable mode there would
+        # let any local account replace those files. The looser 0o777 below is a
+        # DEV-only convenience: the watch-mode launcher runs as a different uid on
+        # the docker dev path and reads/writes the same heartbeat/quit/secret
+        # files, so it needs cross-uid access — never reached in production.
+        if _PRODUCTION:
+            os.chmod(POLARIS_STATE_DIR, 0o700)
+        else:
+            os.chmod(POLARIS_STATE_DIR, 0o777)  # nosec B103
     except (OSError, PermissionError):
         pass
 
