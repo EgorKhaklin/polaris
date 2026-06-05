@@ -107,6 +107,11 @@ services:
       POLARIS_PORT: '8000'
       POLARIS_STATE_DIR: /var/lib/polaris/state
       POLARIS_ENV: production
+      # v9.120: gunicorn runs multiple workers, so Prometheus metrics use
+      # multiprocess mode — each worker file-backs its samples here and /metrics
+      # aggregates them (else a scrape reports only one worker's counts).
+      # gunicorn.conf.py clears this dir at master start.
+      PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus-multiproc
       POLARIS_ZK_BINARY: /opt/polaris/zk
       WEB_CONCURRENCY: ${WEB_CONCURRENCY:-4}
       # v9.116: real ML-DSA-65 signing is the production default (liboqs ships in

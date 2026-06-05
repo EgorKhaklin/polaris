@@ -92,8 +92,24 @@ try:
         CONTENT_TYPE_LATEST as _PROM_CONTENT_TYPE,
     )
     _PROM_AVAILABLE = True
-    # Use a dedicated registry so we don't collide with anything else
-    # that might import prometheus_client in the same process.
+    # Multiprocess mode (gunicorn with >1 worker, the prod default). When
+    # PROMETHEUS_MULTIPROC_DIR is set, prometheus_client makes each metric
+    # FILE-BACKED (one file per worker pid in that dir), and the /metrics scrape
+    # aggregates ALL of them via a MultiProcessCollector — so a counter reflects
+    # the whole app, not just the worker that happened to serve the scrape. The
+    # dedicated registry below is kept for the single-process path (dev) and to
+    # avoid collisions; in multiprocess mode the scrape uses its own collector
+    # registry instead (see the /metrics route). gunicorn.conf.py clears the dir
+    # at master start and reaps dead workers (child_exit).
+    _PROM_MULTIPROC_DIR = os.environ.get('PROMETHEUS_MULTIPROC_DIR')
+    if _PROM_MULTIPROC_DIR:
+        from prometheus_client import multiprocess as _prom_multiprocess
+        # A Gauge across workers needs an aggregation mode; app_info is a constant
+        # 1 with the same labels everywhere, so 'max' collapses it to one line.
+        _gauge_extra = {'multiprocess_mode': 'max'}
+    else:
+        _prom_multiprocess = None
+        _gauge_extra = {}
     _METRICS_REGISTRY = _PromRegistry()
     _METRICS_REQUESTS = _PromCounter(
         'polaris_requests_total',
@@ -123,9 +139,12 @@ try:
         'Polaris app metadata (always 1; labels carry the data)',
         labelnames=('version',),
         registry=_METRICS_REGISTRY,
+        **_gauge_extra,
     )
 except ImportError:
     _PROM_AVAILABLE = False
+    _PROM_MULTIPROC_DIR = None
+    _prom_multiprocess = None
 
 
 # Polaris version — single source of truth for the running build.
@@ -2129,7 +2148,16 @@ def metrics():
     except Exception:
         pass
 
-    payload = _prom_generate_latest(_METRICS_REGISTRY)
+    # In multiprocess mode, aggregate every worker's file-backed samples through a
+    # fresh MultiProcessCollector registry — otherwise the scrape would report only
+    # the worker that served it (a 4x undercount under 4 gunicorn workers). In
+    # single-process mode the dedicated registry is scraped directly.
+    if _PROM_MULTIPROC_DIR and _prom_multiprocess is not None:
+        _scrape_registry = _PromRegistry()
+        _prom_multiprocess.MultiProcessCollector(_scrape_registry)
+        payload = _prom_generate_latest(_scrape_registry)
+    else:
+        payload = _prom_generate_latest(_METRICS_REGISTRY)
     return payload, 200, {'Content-Type': _PROM_CONTENT_TYPE}
 
 

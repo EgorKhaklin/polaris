@@ -643,6 +643,38 @@ def check_web_concurrency_honored(root: pathlib.Path) -> list[Finding]:
 
 
 # ---------------------------------------------------------------------------
+# Prometheus metrics must aggregate ACROSS gunicorn workers. With a per-worker
+# registry a /metrics scrape reports only the worker that served it — a 4x
+# undercount under 4 workers. Multiprocess mode (PROMETHEUS_MULTIPROC_DIR) file-
+# backs each worker's samples and the scrape aggregates them via a
+# MultiProcessCollector; gunicorn must reap a dead worker's files (child_exit +
+# mark_process_dead) and the prod compose must set the dir.
+# ---------------------------------------------------------------------------
+def check_prometheus_multiprocess(root: pathlib.Path) -> list[Finding]:
+    app = _read(root, "polaris_web/app.py")
+    gconf = _read(root, "polaris_web/gunicorn.conf.py")
+    compose = _read(root, "polaris_web/docker-compose.prod.yml")
+    if not app or not gconf or not compose:
+        return _fail("prom_multiproc",
+                     "app.py / gunicorn.conf.py / docker-compose.prod.yml is missing")
+    if "MultiProcessCollector" not in app or "PROMETHEUS_MULTIPROC_DIR" not in app:
+        return _fail("prom_multiproc",
+                     "app.py must aggregate /metrics via a MultiProcessCollector when "
+                     "PROMETHEUS_MULTIPROC_DIR is set (else metrics undercount across workers)")
+    if "mark_process_dead" not in gconf or "def child_exit" not in gconf:
+        return _fail("prom_multiproc",
+                     "gunicorn.conf.py must reap a dead worker's metric files (a child_exit hook "
+                     "calling mark_process_dead)")
+    if "PROMETHEUS_MULTIPROC_DIR" not in compose:
+        return _fail("prom_multiproc",
+                     "docker-compose.prod.yml must set PROMETHEUS_MULTIPROC_DIR so the multi-worker "
+                     "app aggregates metrics")
+    return _ok("prom_multiproc",
+               "Prometheus /metrics aggregates across workers (multiprocess dir + "
+               "MultiProcessCollector + child_exit reaping)")
+
+
+# ---------------------------------------------------------------------------
 # Liveness and readiness are distinct production probes and must not be
 # conflated. Liveness ("is the process alive?") must be CHEAP and dependency-
 # free: an orchestrator RESTARTS on liveness failure, so checking the DB there
@@ -1272,6 +1304,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_migration_timeouts,
     check_deploy_syncs_db_objects,
     check_web_concurrency_honored,
+    check_prometheus_multiprocess,
     check_health_liveness_readiness_split,
     check_compose_resource_limits,
     check_prod_images_digest_pinned,

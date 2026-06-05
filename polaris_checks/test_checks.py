@@ -1149,5 +1149,38 @@ def test_deploy_syncs_db_objects_check_discriminates(tmp_path):
         "must PASS when migrate has --sync-objects and the deploy runs migrate + sync on the stack"
 
 
+def test_prometheus_multiprocess_check_discriminates(tmp_path):
+    web = tmp_path / "polaris_web"
+    web.mkdir()
+    GOOD_APP = "PROMETHEUS_MULTIPROC_DIR\nMultiProcessCollector(reg)\n"
+    GOOD_GCONF = "def child_exit(server, worker):\n    multiprocess.mark_process_dead(worker.pid)\n"
+    GOOD_COMPOSE = "services:\n  app:\n    environment:\n      PROMETHEUS_MULTIPROC_DIR: /tmp/x\n"
+
+    def write(app=GOOD_APP, gconf=GOOD_GCONF, compose=GOOD_COMPOSE):
+        (web / "app.py").write_text(app)
+        (web / "gunicorn.conf.py").write_text(gconf)
+        (web / "docker-compose.prod.yml").write_text(compose)
+
+    # 1. app.py does not aggregate via MultiProcessCollector -> FAIL.
+    write(app="generate_latest(_METRICS_REGISTRY)\n")
+    assert checks.check_prometheus_multiprocess(tmp_path)[0].level == "FAIL", \
+        "must FAIL when /metrics does not aggregate across workers"
+
+    # 2. gunicorn does not reap dead workers -> FAIL.
+    write(gconf="def on_starting(s):\n    pass\n")
+    assert checks.check_prometheus_multiprocess(tmp_path)[0].level == "FAIL", \
+        "must FAIL without child_exit + mark_process_dead"
+
+    # 3. prod compose does not set the dir -> FAIL.
+    write(compose="services:\n  app:\n    environment:\n      POLARIS_ENV: production\n")
+    assert checks.check_prometheus_multiprocess(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the prod compose does not set PROMETHEUS_MULTIPROC_DIR"
+
+    # 4. all wired -> OK.
+    write()
+    assert checks.check_prometheus_multiprocess(tmp_path)[0].level == "OK", \
+        "must PASS with multiprocess collector + child_exit reaping + the dir set"
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

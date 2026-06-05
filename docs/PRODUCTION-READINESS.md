@@ -136,8 +136,13 @@ left a real foundation. Genuinely sound today:
   promtool-validated `polaris-alerts.yml` (5 rules) + `prometheus.yml` scrape
   config + README; ratios/quantiles stay valid per worker. Pinned by
   `check_alert_rules`. (Alertmanager backend operator-gated.)
-- [ ] Prometheus multiprocess mode (metrics undercount across 4 workers);
-  shipped alert rules; log rotation; request-correlation IDs; SLOs; runbooks.
+- [x] **Prometheus multiprocess metrics (v9.120).** `/metrics` aggregates across
+  all gunicorn workers (`PROMETHEUS_MULTIPROC_DIR` + a `MultiProcessCollector`;
+  gunicorn `child_exit` reaps dead workers) — no more 4x undercount. Pinned by
+  `check_prometheus_multiprocess`; proven across real processes in
+  `MetricsMultiprocessTests`.
+- [ ] Shipped alert rules (done, v9.115); log rotation (done, v9.109);
+  request-correlation IDs; SLOs; runbooks.
 - [x] **Dependency CVE scanning gates the build (v9.105).** A `cve-scan` CI job
   runs `pip-audit --strict` on the runtime `requirements.txt`, so a known CVE in
   a package the production image installs fails the build. v9.105 split test

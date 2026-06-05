@@ -5,6 +5,33 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.120 — 2026-06-05 (production-readiness, wave 4: Prometheus metrics aggregate across workers)
+
+The `/metrics` endpoint used a per-worker Prometheus registry, so a scrape
+reported only the gunicorn worker that happened to serve it — a 4x undercount
+of every counter under the prod default of 4 workers. Any absolute-count alert
+or dashboard built on it would read low by the worker count.
+
+- **Multiprocess mode.** When `PROMETHEUS_MULTIPROC_DIR` is set (now the prod
+  default), each worker file-backs its samples into that directory and the
+  `/metrics` scrape aggregates ALL of them through a fresh
+  `MultiProcessCollector` — so a counter reflects the whole app. The dedicated
+  single-process registry path is preserved for dev. The `polaris_app_info`
+  gauge gets `multiprocess_mode='max'` to collapse cleanly to one line.
+- **Worker lifecycle.** `gunicorn.conf.py` clears the metric directory at master
+  start (`on_starting`, before workers fork, so a previous run's files don't
+  pollute) and reaps a dead worker's files on `child_exit`
+  (`mark_process_dead`), so a cycled worker stops contributing to the aggregate.
+- **Proven across real processes.** `MetricsMultiprocessTests` increments a
+  counter in one process and scrapes `/metrics` from a SEPARATE process, which
+  must see the increment — the genuine cross-worker property, not a single-
+  process stand-in. The CI prod smoke-boot now sets the dir so the gunicorn
+  multiprocess path boots cleanly.
+- **Pinned + reconciled.** `check_prometheus_multiprocess` (50th check) asserts
+  the collector + `child_exit` + the dir; the alert-rules README no longer warns
+  about per-worker undercounting. Ticks the Prometheus box in
+  `docs/PRODUCTION-READINESS.md` Wave 4.
+
 ## v9.119 — 2026-06-05 (production-readiness, wave 2 COMPLETE: uc6 migration routes through the signing module)
 
 The last hardcoded signature. uc6 algorithm-migration wrote

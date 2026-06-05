@@ -264,6 +264,7 @@ jobs:
             -e POLARIS_DB_HOST=127.0.0.1 \
             -e POLARIS_SECRET_KEY=ci-prod-smoke-secret-not-real-32bytes \
             -e POLARIS_STATE_DIR=/tmp/pstate \
+            -e PROMETHEUS_MULTIPROC_DIR=/tmp/prom-mp \
             polaris-app:prod-ci
           sleep 8
           logs=$(docker logs prodtest 2>&1 || true)

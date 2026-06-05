@@ -3478,6 +3478,49 @@ class StateDirPermsTests(unittest.TestCase):
             "dev keeps the cross-uid launcher share")
 
 
+class MetricsMultiprocessTests(unittest.TestCase):
+    """v9.120: under gunicorn's multiple workers, /metrics must AGGREGATE every
+    worker's counters (PROMETHEUS_MULTIPROC_DIR) — not report only the worker
+    that happened to serve the scrape (a 4x undercount under 4 workers). Proven
+    across REAL processes: one process increments a counter and exits, a
+    separate process scrapes /metrics and must see that increment."""
+
+    def _mp_env(self, mpdir):
+        env = {k: v for k, v in os.environ.items()}
+        env['PROMETHEUS_MULTIPROC_DIR'] = mpdir
+        env.setdefault('POLARIS_SECRET_KEY', 'test-mp-32-bytes-secret-not-real!')
+        env.setdefault('POLARIS_DB_HOST', 'localhost')
+        env.setdefault('POLARIS_DB_NAME', 'polaris_test')
+        return env
+
+    def test_metrics_aggregate_across_separate_processes(self):
+        import subprocess, tempfile, shutil
+        mpdir = tempfile.mkdtemp()
+        cwd = os.path.dirname(os.path.abspath(__file__))
+        env = self._mp_env(mpdir)
+        try:
+            # Worker process: increment the request counter by 7, then exit.
+            subprocess.check_call(
+                [sys.executable, '-c',
+                 "import app; app._METRICS_REQUESTS.labels("
+                 "route='/mp', method='GET', status='200').inc(7)"],
+                cwd=cwd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            # A SEPARATE process scrapes /metrics; the MultiProcessCollector must
+            # surface the other worker's increment.
+            out = subprocess.check_output(
+                [sys.executable, '-c',
+                 "import app; b = app.app.test_client().get('/metrics').get_data(as_text=True);"
+                 "print(next((l for l in b.splitlines() "
+                 "if l.startswith('polaris_requests_total') and 'route=\"/mp\"' in l), 'MISSING'))"],
+                cwd=cwd, env=env, text=True, stderr=subprocess.DEVNULL)
+            self.assertNotIn('MISSING', out,
+                '/metrics did not surface a counter incremented in another worker process')
+            self.assertIn(' 7.0', out,
+                f'/metrics did not aggregate the other worker increment: {out!r}')
+        finally:
+            shutil.rmtree(mpdir, ignore_errors=True)
+
+
 # ============================================================================
 # Custom test runner with cleaner output
 # ============================================================================

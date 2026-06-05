@@ -101,6 +101,30 @@ def post_worker_init(worker):
 # Hooks for clean startup/shutdown
 def on_starting(server):
     server.log.info("Polaris web app starting with %d workers on %s", workers, bind)
+    # Prometheus multiprocess metrics (v9.120): clear the per-worker metric dir
+    # BEFORE workers fork, so a previous run's stale files don't pollute the
+    # aggregated /metrics. app.py file-backs each metric into this dir when it is
+    # set; the /metrics scrape aggregates all workers via a MultiProcessCollector.
+    mp_dir = os.environ.get('PROMETHEUS_MULTIPROC_DIR')
+    if mp_dir:
+        import shutil
+        shutil.rmtree(mp_dir, ignore_errors=True)
+        os.makedirs(mp_dir, exist_ok=True)
+        server.log.info("Prometheus multiprocess dir cleared: %s", mp_dir)
+
+
+def child_exit(server, worker):
+    # Prometheus multiprocess: reap the dead worker's metric files so its
+    # counters stop contributing to the aggregate once it exits (otherwise a
+    # cycled worker would linger as a ghost in the totals).
+    mp_dir = os.environ.get('PROMETHEUS_MULTIPROC_DIR')
+    if mp_dir:
+        try:
+            from prometheus_client import multiprocess
+            multiprocess.mark_process_dead(worker.pid)
+        except Exception as e:  # noqa: BLE001
+            server.log.warning("prometheus mark_process_dead failed: %s", e)
+
 
 def worker_int(worker):
     worker.log.info("Worker received INT signal, shutting down gracefully")

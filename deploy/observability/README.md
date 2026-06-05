@@ -35,12 +35,12 @@ pager/notification target) is **operator-provided**.
 | `PolarisHighDBLatency` | SEV-2 | DB round-trip p99 exceeds 5s for 5m |
 | `PolarisHighRequestLatency` | SEV-3 | request p99 exceeds 2s for 10m |
 
-## Metric-aggregation caveat (honest)
+## Metric aggregation
 
-The app's `/metrics` uses a per-worker Prometheus registry, so **absolute
-counters are per-gunicorn-worker** until multiprocess aggregation lands (a known
-Wave 4 follow-up in `docs/PRODUCTION-READINESS.md`). The rules above are
-deliberately **ratios** (`PolarisHigh5xx`) and **quantiles** (the latency
-alerts), which stay valid per worker — they do not depend on summing across
-workers. Do not add absolute-count thresholds (e.g. "more than N requests")
-until aggregation is in place; they would read low by the worker count.
+As of v9.120 the app's `/metrics` aggregates across all gunicorn workers
+(Prometheus multiprocess mode: `PROMETHEUS_MULTIPROC_DIR` is set in the prod
+compose, each worker file-backs its samples, and the scrape sums them via a
+`MultiProcessCollector`). So absolute counters reflect the whole app, and
+absolute-count thresholds are safe to add. The rules above remain **ratios**
+(`PolarisHigh5xx`) and **quantiles** (the latency alerts) because those are the
+right shapes for these conditions, not because of a per-worker limitation.
