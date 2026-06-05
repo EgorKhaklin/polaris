@@ -317,6 +317,40 @@ def check_pqc_signing_wired(root: pathlib.Path) -> list[Finding]:
 
 
 # ---------------------------------------------------------------------------
+# Docker image completeness — every LOCAL module app.py imports must be COPYd
+# into both images, or the container ModuleNotFoundErrors at startup and crash-
+# loops. This has bitten twice: observability.py (v9.40) and pqc_signing.py
+# (v9.58, which crashed the dev + prod images until v9.94). The narrow
+# "copies security.py" doctor check did not generalize; this does.
+# ---------------------------------------------------------------------------
+def check_dockerfile_copies_app_modules(root: pathlib.Path) -> list[Finding]:
+    app = _read(root, "polaris_web/app.py")
+    web = root / "polaris_web"
+    if not app:
+        return _fail("dockerfile_modules", "polaris_web/app.py is missing")
+    # Local modules = `import X` / `from X import` where polaris_web/X.py exists.
+    # Tolerate trailing comments on the import line (the v9.40 miss was a regex
+    # that did not).
+    imported = set(re.findall(r"^\s*(?:import|from)\s+([A-Za-z_]\w*)", app, re.M))
+    local = sorted(m for m in imported if (web / f"{m}.py").is_file())
+    if not local:
+        return _fail("dockerfile_modules", "could not resolve app.py's local module imports")
+    for rel in ("polaris_web/Dockerfile", "polaris_web/Dockerfile.prod"):
+        df = _read(root, rel)
+        if not df:
+            continue
+        copy_lines = " ".join(l for l in df.splitlines() if l.lstrip().upper().startswith("COPY"))
+        copied = set(re.findall(r"\b([A-Za-z_]\w*)\.py\b", copy_lines))
+        missing = [m for m in local if m not in copied]
+        if missing:
+            return _fail("dockerfile_modules",
+                         f"{rel} does not COPY local module(s) app.py imports: "
+                         + ", ".join(missing) + " — the container will ModuleNotFoundError at startup")
+    return _ok("dockerfile_modules",
+               f"both Dockerfiles COPY every local app module ({', '.join(local)})")
+
+
+# ---------------------------------------------------------------------------
 # C2 — ZERO_KNOWLEDGE verifications must not carry a token_id. Enforced by a
 # CHECK constraint on VerificationEvent, not by application policy.
 # ---------------------------------------------------------------------------
@@ -675,6 +709,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_zk_two_witness_present,
     check_no_debug_artifacts,
     check_pqc_signing_wired,
+    check_dockerfile_copies_app_modules,
     check_c2_zk_token_null,
     check_c4_atomic_failed_login,
     check_c8_atlas_caps,

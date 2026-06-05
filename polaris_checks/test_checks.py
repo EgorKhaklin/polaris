@@ -476,5 +476,38 @@ def test_launcher_current_check_discriminates(tmp_path):
         "must PASS when deps come from requirements.txt, the suite is canonical, and ZK is built"
 
 
+def test_dockerfile_copies_app_modules_check_discriminates(tmp_path):
+    web = tmp_path / "polaris_web"
+    web.mkdir()
+    # app.py imports two local modules; both exist as files.
+    (web / "app.py").write_text(
+        "import os\nimport security\nimport pqc_signing  # v9.58 trailing comment\n")
+    (web / "security.py").write_text("# local\n")
+    (web / "pqc_signing.py").write_text("# local\n")
+
+    def write_dockerfiles(dev_copy, prod_copy):
+        (web / "Dockerfile").write_text(f"FROM python\n{dev_copy}\n")
+        (web / "Dockerfile.prod").write_text(f"FROM python\n{prod_copy}\n")
+
+    # 1. Dev Dockerfile omits pqc_signing.py (the real v9.58 bug) -> FAIL.
+    write_dockerfiles("COPY app.py security.py ./",
+                      "COPY app.py security.py pqc_signing.py ./")
+    out = checks.check_dockerfile_copies_app_modules(tmp_path)
+    assert out[0].level == "FAIL" and "pqc_signing" in out[0].message, \
+        "must FAIL when a Dockerfile omits a local module app.py imports"
+
+    # 2. Prod Dockerfile omits it -> FAIL (both images are checked).
+    write_dockerfiles("COPY app.py security.py pqc_signing.py ./",
+                      "COPY app.py security.py ./")
+    assert checks.check_dockerfile_copies_app_modules(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the prod Dockerfile omits a local module"
+
+    # 3. Both COPY every local module -> OK.
+    write_dockerfiles("COPY app.py security.py pqc_signing.py ./",
+                      "COPY --chown=x:y app.py security.py pqc_signing.py ./")
+    assert checks.check_dockerfile_copies_app_modules(tmp_path)[0].level == "OK", \
+        "must PASS when both Dockerfiles COPY every local app module"
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

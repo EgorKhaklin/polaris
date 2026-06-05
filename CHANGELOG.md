@@ -5,6 +5,30 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.94 — 2026-06-05 (the Docker image was missing pqc_signing.py — crash-loop fixed and guarded)
+
+The Docker path crash-looped on startup: `ModuleNotFoundError: No module named
+'pqc_signing'`. `app.py` has imported `pqc_signing` since v9.58, but neither
+`Dockerfile` nor `Dockerfile.prod` was updated to COPY it into the image, so the
+gunicorn worker failed to boot and the container restarted forever. The native
+path was unaffected (it runs `app.py` from the source tree), which is why this
+stayed latent until a Docker launch hit it — the launcher's default when Docker
+Desktop is installed.
+
+Both Dockerfiles now COPY `pqc_signing.py`. Verified: a rebuilt image comes up
+healthy and serves `/login`, `/metrics`, and `/api/health` (all 200).
+
+This is the same class of bug that bit `observability.py` in v9.40 — a local
+module added to `app.py`'s imports but not to the image COPY — and the only guard
+was a narrow doctor check hard-coded to `security.py`. A new machine check closes
+the class generally:
+
+- `polaris_web/Dockerfile`, `polaris_web/Dockerfile.prod` — COPY `pqc_signing.py`.
+- `polaris_checks/checks.py` — `check_dockerfile_copies_app_modules` (31st check)
+  resolves every LOCAL module `app.py` imports (tolerating trailing comments, the
+  v9.40 failure mode) and asserts BOTH images COPY each one. `test_checks.py`
+  discriminates across the dev-missing, prod-missing, and complete cases.
+
 ## v9.93 — 2026-06-05 (the macOS launcher: current, faster, and pinned)
 
 The launcher (`polaris_mac_launch.sh`, header was v2.5 / 2026-05-08) had drifted
