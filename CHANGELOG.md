@@ -5,6 +5,35 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.113 — 2026-06-05 (production-readiness, wave 2: signature verification is enforced, not just possible)
+
+The signing core could produce a real ML-DSA-65 signature (v9.103), but
+`verify()` was never called on any live path — a signature nothing ever checks
+is theater. v9.113 makes verification a live, enforced obligation.
+
+- **Issuance self-verifies.** `signature_bytes_for_token()` now verifies the
+  real signature it just produced against its own public key before handing it
+  to the DB, and raises `SigningError` (issuance blocked, surfaced to the
+  operator) if it does not check out. A broken key or liboqs can no longer
+  persist an unverifiable signature.
+- **A use-path verification primitive.** `verify_token_signature(token_value,
+  signature_bytes, algorithm_label)` checks a stored `TokenSignature` against
+  its token. For a real `ML-DSA-65` signature it verifies against the published
+  **trust anchor** (`trust_anchor_public_key_hex()`, the persistent signing
+  key's public key) — a genuine authenticity proof; without a configured anchor
+  it returns False (cannot prove authenticity). For the placeholder it is an
+  integrity recompute. Dispatch is on the algorithm recorded WITH the signature,
+  so a token verifies correctly regardless of the verifier's current mode.
+- **Exercised in CI.** The `pqc-real` job now asserts the trust anchor matches,
+  a real signature verifies at use, tamper/forgery is rejected, and the issuance
+  self-check refuses a signature that fails to verify. Eight new unit tests in
+  `test_pqc_signing.py` cover both the placeholder and real paths.
+- **Pinned.** `check_verify_enforced` (the 35th check, after `check_pqc_real_signing`)
+  asserts issuance self-verifies and CI exercises `verify_token_signature`.
+  Advances the Wave 2 box in `docs/PRODUCTION-READINESS.md` (still owed: a DB
+  trust-anchor table, wiring verification to a use surface, real PQC as the prod
+  default, and uc6 through the signing module).
+
 ## v9.112 — 2026-06-05 (production-readiness, wave 4: SAST in CI catches a world-writable state dir)
 
 Dependency CVEs were scanned (v9.105) but our own source never was. Adding

@@ -370,7 +370,23 @@ jobs:
           assert p.smoke_test(), "smoke_test failed"
           sig, alg = p.signature_bytes_for_token("token-ABC")
           assert alg == "ML-DSA-65" and len(sig) == 3309, f"bad real signature: {alg} {len(sig)}"
-          print("Real ML-DSA-65 persistent-key sign + verify OK")
+          # Verify-at-use (v9.113): the trust anchor is the persistent pk, a
+          # real signature verifies against it, and tamper/forgery is rejected.
+          assert p.trust_anchor_public_key_hex() == kp["public_key_hex"], "trust anchor mismatch"
+          assert p.verify_token_signature("token-ABC", sig, alg), "verify_token_signature rejected a valid signature"
+          assert not p.verify_token_signature("token-XYZ", sig, alg), "verify_token_signature accepted a forged token"
+          tampered = bytes([sig[0] ^ 0xFF]) + sig[1:]
+          assert not p.verify_token_signature("token-ABC", tampered, alg), "verify_token_signature accepted a tampered signature"
+          # The issuance self-check refuses a signature that does not verify.
+          _orig = p.verify; p.verify = lambda *a, **k: False
+          try:
+              try:
+                  p.signature_bytes_for_token("token-SELFCHECK"); raise SystemExit("self-check did not refuse")
+              except p.SigningError:
+                  pass
+          finally:
+              p.verify = _orig
+          print("Real ML-DSA-65 sign + verify-at-use + issuance self-check OK")
           PY
 
   # --------------------------------------------------------------------------

@@ -932,5 +932,51 @@ def test_sast_scanning_check_discriminates(tmp_path):
         "must PASS when bandit gates on high severity"
 
 
+def test_verify_enforced_check_discriminates(tmp_path):
+    web = tmp_path / "polaris_web"
+    gh = tmp_path / ".github" / "workflows"
+    web.mkdir(); gh.mkdir(parents=True)
+    GOOD_PQC = (
+        "def signature_bytes_for_token(t):\n"
+        "    if flag:\n"
+        "        r = sign(t)\n"
+        "        if not verify(t, r.signature_hex, r.public_key_hex):\n"
+        "            raise SigningError('nope')\n"
+        "        return r\n"
+        "    return digest, LABEL\n\n"
+        "def verify(m, s, k):\n    return True\n"
+        "def trust_anchor_public_key_hex():\n    return None\n"
+        "def verify_token_signature(t, s, a):\n    return True\n"
+    )
+    GOOD_CI = "jobs:\n  pqc-real:\n    steps:\n      run: assert verify_token_signature(x)\n"
+
+    def write(pqc, ci=GOOD_CI):
+        (web / "pqc_signing.py").write_text(pqc)
+        (gh / "ci.yml").write_text(ci)
+
+    # 1. Missing verify_token_signature / trust anchor -> FAIL.
+    write("def signature_bytes_for_token(t):\n    return digest\n\ndef verify(m,s,k):\n    return True\n")
+    assert checks.check_verify_enforced(tmp_path)[0].level == "FAIL", \
+        "must FAIL without the use-path verification primitive + trust anchor"
+
+    # 2. Has the functions, but issuance does not self-verify -> FAIL.
+    write("def signature_bytes_for_token(t):\n    return sign(t).sig\n\n"
+          "def verify(m,s,k):\n    return True\n"
+          "def trust_anchor_public_key_hex():\n    return None\n"
+          "def verify_token_signature(t,s,a):\n    return True\n")
+    assert checks.check_verify_enforced(tmp_path)[0].level == "FAIL", \
+        "must FAIL when signature_bytes_for_token does not self-verify"
+
+    # 3. Self-verifies + functions present + CI exercises it -> OK.
+    write(GOOD_PQC)
+    assert checks.check_verify_enforced(tmp_path)[0].level == "OK", \
+        "must PASS when issuance self-verifies and CI exercises verify_token_signature"
+
+    # 4. CI does not exercise verify_token_signature -> FAIL.
+    write(GOOD_PQC, ci="jobs:\n  pqc-real:\n    steps:\n      run: echo nothing\n")
+    assert checks.check_verify_enforced(tmp_path)[0].level == "FAIL", \
+        "must FAIL when CI does not exercise verify-at-use"
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

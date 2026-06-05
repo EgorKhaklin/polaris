@@ -65,11 +65,16 @@ left a real foundation. Genuinely sound today:
   stable, publishable trust anchor (the ephemeral per-call fallback remains only
   for dev). `generate_keypair()` mints one; a malformed key file fails loud.
   Pinned by `check_pqc_real_signing`; unit-tested in `PersistentKeyTests`.
-- [ ] **Wire it into issuance + a trust anchor (Wave 2 cont.).** Store the
-  issuer public key as a trust anchor (a `SigningKey`/Agency key), store the real
-  signature at issuance, and **enforce verification at use** (`verify()` is still
-  not called on a live path). Make real PQC the production default
-  (`POLARIS_USE_REAL_PQC=1` in prod, with liboqs in the prod image), and route
+- [x] **Verification is enforced (v9.113).** `verify()` is now live on a real
+  path: `signature_bytes_for_token()` self-verifies the signature it produces and
+  refuses (`SigningError`) to persist an unverifiable one, and
+  `verify_token_signature()` checks a stored signature against the published trust
+  anchor (`trust_anchor_public_key_hex()`). Exercised in the `pqc-real` CI job;
+  pinned by `check_verify_enforced`.
+- [ ] **Wire it the rest of the way (Wave 2 cont.).** Store the issuer public key
+  as a DB trust anchor (a `SigningKey`/Agency key) and surface verification at a
+  use point (token detail / a verify endpoint); make real PQC the production
+  default (`POLARIS_USE_REAL_PQC=1` in prod, with liboqs in the prod image); route
   uc6 migration through the signing module (it writes a hardcoded non-signature).
   *(Real key material / HSM custody remains operator-gated.)*
 

@@ -342,6 +342,37 @@ def check_pqc_real_signing(root: pathlib.Path) -> list[Finding]:
 
 
 # ---------------------------------------------------------------------------
+# Verification must be ENFORCED, not just possible. A signing core where
+# verify() is never called is theater. Two live obligations: (1) issuance
+# self-verifies the signature it produces (signature_bytes_for_token calls
+# verify) and refuses to persist one that does not check out; (2) a use-path
+# primitive (verify_token_signature) checks a stored signature against the
+# published trust anchor, exercised in the pqc-real CI job.
+# ---------------------------------------------------------------------------
+def check_verify_enforced(root: pathlib.Path) -> list[Finding]:
+    p = _read(root, "polaris_web/pqc_signing.py")
+    if not p:
+        return _fail("verify_enforced", "polaris_web/pqc_signing.py is missing")
+    if "def verify_token_signature" not in p or "def trust_anchor_public_key_hex" not in p:
+        return _fail("verify_enforced",
+                     "pqc_signing.py must expose verify_token_signature + "
+                     "trust_anchor_public_key_hex (the use-path check + the published anchor)")
+    m = re.search(r"def signature_bytes_for_token\(.*?\n(?=def [a-z])", p, re.S)
+    body = m.group(0) if m else ""
+    if "verify(" not in body:
+        return _fail("verify_enforced",
+                     "signature_bytes_for_token must self-verify the signature it produces (call "
+                     "verify) so an unverifiable signature is never persisted")
+    ci = _read(root, ".github/workflows/ci.yml")
+    if not ci or "verify_token_signature" not in ci:
+        return _fail("verify_enforced",
+                     "the pqc-real CI job must exercise verify_token_signature (verify-at-use)")
+    return _ok("verify_enforced",
+               "verification is enforced: issuance self-verifies, verify_token_signature checks "
+               "stored signatures against the trust anchor, exercised in CI")
+
+
+# ---------------------------------------------------------------------------
 # The /sql operator console must be read-only at the DATABASE level, not just
 # by a first-keyword whitelist. The whitelist accepts WITH, and a data-modifying
 # CTE (`WITH t AS (DELETE ... RETURNING *) SELECT * FROM t`) starts with WITH and
@@ -1062,6 +1093,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_no_debug_artifacts,
     check_pqc_signing_wired,
     check_pqc_real_signing,
+    check_verify_enforced,
     check_sql_console_readonly,
     check_prod_image_no_test_deps,
     check_cve_scanning,

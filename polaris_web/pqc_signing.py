@@ -67,6 +67,12 @@ class PQCUnavailableError(RuntimeError):
     """Raised when POLARIS_USE_REAL_PQC=1 but oqs is not importable."""
 
 
+class SigningError(RuntimeError):
+    """Raised when a produced signature fails its own verification self-check —
+    a real signature that does not verify against its key means broken key
+    material or liboqs, and must never be persisted."""
+
+
 # Detect liboqs-python at import time (defer ImportError so module
 # always imports — callers introspect via is_available()).
 _OQS_AVAILABLE = False
@@ -275,6 +281,14 @@ def signature_bytes_for_token(token_value: str) -> tuple:
     if flag_set:
         # flag_set AND _OQS_AVAILABLE (otherwise we raised above)
         result = sign(token_value.encode("utf-8"))
+        # Enforce verification on the issuance path: the signature we just
+        # produced MUST verify against its own public key before it is handed to
+        # the DB. A real signature that fails to self-verify means broken key
+        # material or liboqs — refuse to persist an unverifiable signature rather
+        # than silently store something no verifier will ever accept.
+        if not verify(token_value.encode("utf-8"), result.signature_hex, result.public_key_hex):
+            raise SigningError(
+                "produced ML-DSA-65 signature failed self-verification; refusing to issue")
         return bytes.fromhex(result.signature_hex), result.algorithm_name
     # Flag off: deterministic, dependency-free placeholder (not a signature).
     digest = hashlib.sha3_256(token_value.encode("utf-8")).digest()
@@ -313,6 +327,53 @@ def verify(
             return verifier.verify(digest, signature, public_key)
     except Exception:
         return False
+
+
+def trust_anchor_public_key_hex() -> Optional[str]:
+    """The published trust anchor: the persistent signing key's public key (hex).
+
+    This is the key a verifier checks token signatures against. Returns None when
+    no persistent key is configured (`POLARIS_PQC_SIGNING_KEY_FILE` unset) — there
+    is then no stable, publishable anchor, only per-process ephemeral keys, so a
+    real signature cannot be verified at use.
+    """
+    keypair = _load_persistent_keypair()
+    if keypair is None:
+        return None
+    _secret, public = keypair
+    return public.hex()
+
+
+def verify_token_signature(
+    token_value: str,
+    signature_bytes: bytes,
+    algorithm_label: str,
+) -> bool:
+    """Verify a stored `TokenSignature` against its token — the use-path check.
+
+    Dispatch on the algorithm recorded WITH the signature (not the current
+    process mode), so a token signed under one mode verifies correctly later:
+
+    - ``"ML-DSA-65"`` — a real signature. Verified against the trust-anchor
+      public key (`trust_anchor_public_key_hex`). Returns False when no trust
+      anchor is configured (cannot prove authenticity without it) or the
+      signature does not check out. This is a genuine authenticity proof: only
+      the holder of the anchor's private key could have produced it.
+    - ``PLACEHOLDER_LABEL`` — the deterministic SHA3-256 binding. Verification is
+      an integrity recompute + constant-time compare. This is NOT an authenticity
+      proof (there is no key); it only confirms the bytes match `token_value`.
+    - anything else — False (unknown signature scheme).
+    """
+    if algorithm_label == _ALG_NAME:
+        anchor = trust_anchor_public_key_hex()
+        if not anchor:
+            return False
+        return verify(token_value.encode("utf-8"), signature_bytes.hex(), anchor)
+    if algorithm_label == PLACEHOLDER_LABEL:
+        import hmac
+        expected = hashlib.sha3_256(token_value.encode("utf-8")).digest()
+        return hmac.compare_digest(signature_bytes, expected)
+    return False
 
 
 def smoke_test() -> bool:

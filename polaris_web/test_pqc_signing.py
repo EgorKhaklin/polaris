@@ -58,6 +58,24 @@ class PlaceholderPathTests(unittest.TestCase):
     def test_is_enabled_false_when_flag_unset(self):
         self.assertFalse(pqc_signing.is_enabled())
 
+    def test_verify_token_signature_placeholder_roundtrip(self):
+        token = 'TKN-PLACEHOLDER-VERIFY'
+        sig, label = pqc_signing.signature_bytes_for_token(token)
+        self.assertTrue(pqc_signing.verify_token_signature(token, sig, label))
+
+    def test_verify_token_signature_placeholder_rejects_tamper(self):
+        token = 'TKN-PLACEHOLDER-VERIFY'
+        sig, label = pqc_signing.signature_bytes_for_token(token)
+        # A different token recomputes a different binding.
+        self.assertFalse(pqc_signing.verify_token_signature('OTHER-TOKEN', sig, label))
+        # A flipped byte no longer matches.
+        tampered = bytes([sig[0] ^ 0xFF]) + sig[1:]
+        self.assertFalse(pqc_signing.verify_token_signature(token, tampered, label))
+
+    def test_verify_token_signature_unknown_label_is_false(self):
+        self.assertFalse(
+            pqc_signing.verify_token_signature('t', b'\x00' * 32, 'SOME-OTHER-ALG'))
+
 
 class FailLoudTests(unittest.TestCase):
     """Flag-on but liboqs unavailable: every entry point MUST raise rather than
@@ -145,6 +163,58 @@ class PersistentKeyTests(unittest.TestCase):
         pqc_signing._PERSISTENT_LOADED = False
         with self.assertRaises(RuntimeError):
             pqc_signing.sign(b"x")
+
+    def test_trust_anchor_is_the_persistent_public_key(self):
+        self.assertEqual(
+            pqc_signing.trust_anchor_public_key_hex(), self._kp["public_key_hex"])
+
+    def test_verify_token_signature_real_roundtrip_and_tamper(self):
+        os.environ["POLARIS_USE_REAL_PQC"] = "1"
+        try:
+            token = "TKN-REAL-VERIFY"
+            sig, label = pqc_signing.signature_bytes_for_token(token)
+            self.assertEqual(label, "ML-DSA-65")
+            # A real signature verifies against the trust anchor at use.
+            self.assertTrue(pqc_signing.verify_token_signature(token, sig, label))
+            # Wrong token / tampered signature are rejected.
+            self.assertFalse(pqc_signing.verify_token_signature("WRONG-TOKEN", sig, label))
+            tampered = bytes([sig[0] ^ 0xFF]) + sig[1:]
+            self.assertFalse(pqc_signing.verify_token_signature(token, tampered, label))
+        finally:
+            os.environ.pop("POLARIS_USE_REAL_PQC", None)
+
+    def test_issuance_refuses_a_signature_that_does_not_self_verify(self):
+        # The enforcement: if the produced signature fails its self-check,
+        # issuance raises rather than persisting an unverifiable signature.
+        os.environ["POLARIS_USE_REAL_PQC"] = "1"
+        orig_verify = pqc_signing.verify
+        pqc_signing.verify = lambda *a, **k: False  # force the self-check to fail
+        try:
+            with self.assertRaises(pqc_signing.SigningError):
+                pqc_signing.signature_bytes_for_token("TKN-SELFCHECK")
+        finally:
+            pqc_signing.verify = orig_verify
+            os.environ.pop("POLARIS_USE_REAL_PQC", None)
+
+    def test_real_signature_unverifiable_without_a_trust_anchor(self):
+        # With no persistent key there is no anchor, so even a genuine real
+        # signature cannot be verified at use — the anchor is required.
+        os.environ["POLARIS_USE_REAL_PQC"] = "1"
+        saved = os.environ.pop("POLARIS_PQC_SIGNING_KEY_FILE", None)
+        pqc_signing._PERSISTENT_LOADED = False
+        pqc_signing._PERSISTENT_KEYPAIR = None
+        try:
+            token = "TKN-NO-ANCHOR"
+            sig, label = pqc_signing.signature_bytes_for_token(token)
+            self.assertEqual(label, "ML-DSA-65")
+            self.assertIsNone(pqc_signing.trust_anchor_public_key_hex())
+            self.assertFalse(pqc_signing.verify_token_signature(token, sig, label))
+        finally:
+            if saved is not None:
+                os.environ["POLARIS_PQC_SIGNING_KEY_FILE"] = saved
+            os.environ.pop("POLARIS_USE_REAL_PQC", None)
+            pqc_signing._PERSISTENT_LOADED = False
+            pqc_signing._PERSISTENT_KEYPAIR = None
 
 
 if __name__ == '__main__':

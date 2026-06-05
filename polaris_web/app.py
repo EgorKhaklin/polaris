@@ -3515,7 +3515,7 @@ def uc1_issue():
             ), fetch='returning')['token_id']  # 'returning' commits the transaction
             flash(f'Issued and activated token #{new_token_id}', 'success')
             return redirect(url_for('tokens_detail', tok_id=new_token_id))
-        except pqc_signing.PQCUnavailableError as e:
+        except (pqc_signing.PQCUnavailableError, pqc_signing.SigningError) as e:
             flash(f'Issuance blocked: {e}', 'error')
         except (psycopg2.Error, ValueError, KeyError) as e:
             flash(db_error_to_message(e), 'error')
