@@ -5,6 +5,23 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.111 — 2026-06-05 (production-readiness: CI builds + round-trips the self-built pgbouncer image)
+
+v9.110 made pgbouncer self-built but nothing in CI built or ran that image — the
+same blind spot that let a broken app image (v9.40, v9.58) and an unbuildable
+prod image (v9.98) ship green. A regression in `Dockerfile.pgbouncer` or the
+entrypoint would only surface at deploy, when the stack cannot reach the
+database.
+
+- **Real round-trip in CI.** The `docker-image` job now builds the pgbouncer
+  image and exercises the actual path: a Postgres (scram) backend, a
+  `polaris_app` role, the file-mounted secret, then a client query through
+  `pgbouncer:6432` asserting `PB-OK` — proving SCRAM works on both hops in CI,
+  not just on a developer's machine. A negative check confirms the container
+  fails closed when the secret is not mounted.
+- **Pinned.** `check_pgbouncer_self_built` now also requires CI to build
+  `Dockerfile.pgbouncer`, so the coverage cannot be silently dropped.
+
 ## v9.110 — 2026-06-05 (production-readiness: the prod stack's pgbouncer is self-built, not a vanished vendor image)
 
 The production compose pinned `bitnami/pgbouncer:1.22` for connection pooling.

@@ -274,6 +274,40 @@ jobs:
             echo "::error::prod image crashed on startup"; exit 1
           fi
 
+      # The self-built pgbouncer (v9.110) replaced bitnami/pgbouncer:1.22 after
+      # Bitnami removed it from Docker Hub — a broken pooler image means the whole
+      # stack cannot reach the database, but nothing built/ran it in CI. This
+      # exercises the real path: build the image, then postgres(scram) ->
+      # pgbouncer -> client through :6432, plus a negative (no secret must fail).
+      - name: Build + round-trip the self-built pgbouncer image
+        run: |
+          set -e
+          docker build -f polaris_web/Dockerfile.pgbouncer -t polaris-pgbouncer:ci polaris_web
+          docker network create pbci
+          docker run -d --name pbci-pg --network pbci \
+            -e POSTGRES_PASSWORD=rootpw -e POSTGRES_DB=polaris \
+            postgres:16-alpine -c password_encryption=scram-sha-256
+          for i in $(seq 1 30); do docker exec pbci-pg pg_isready -U postgres >/dev/null 2>&1 && break; sleep 1; done
+          APPPW='ci-App@Pw#42'
+          docker exec -e PGPASSWORD=rootpw -e APPPW="$APPPW" pbci-pg sh -c \
+            'psql -U postgres -d polaris -q -c "CREATE ROLE polaris_app LOGIN PASSWORD '"'"'$APPPW'"'"'; GRANT ALL ON DATABASE polaris TO polaris_app;"'
+          printf '%s' "$APPPW" > /tmp/pbsecret
+          docker run -d --name pbci-pb --network pbci \
+            -e POLARIS_DB_HOST=pbci-pg -e POLARIS_DB_USER=polaris_app -e POLARIS_DB_NAME=polaris \
+            -v /tmp/pbsecret:/run/secrets/polaris_db_password:ro polaris-pgbouncer:ci
+          sleep 6
+          docker logs pbci-pb | tail -10
+          got=$(docker run --rm --network pbci -e PGPASSWORD="$APPPW" postgres:16-alpine \
+            psql "host=pbci-pb port=6432 user=polaris_app dbname=polaris" -tAc "SELECT 'PB-OK'" 2>&1 | tr -d '[:space:]')
+          echo "pgbouncer round-trip result: $got"
+          [ "$got" = "PB-OK" ] || { echo "::error::pgbouncer round-trip (scram on both hops) failed"; exit 1; }
+          if docker run --rm --network pbci -e POLARIS_DB_HOST=pbci-pg polaris-pgbouncer:ci 2>/dev/null; then
+            echo "::error::pgbouncer started WITHOUT the mounted secret"; exit 1
+          fi
+          docker rm -f pbci-pg pbci-pb >/dev/null 2>&1 || true
+          docker network rm pbci >/dev/null 2>&1 || true
+          echo "self-built pgbouncer image OK (round-trip + fail-closed)"
+
   # --------------------------------------------------------------------------
   # Real post-quantum signing (ML-DSA-65 / FIPS 204) was previously untestable:
   # liboqs is not in the base image or the main test job, so the real signing

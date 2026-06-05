@@ -857,6 +857,9 @@ def test_pgbouncer_self_built_check_discriminates(tmp_path):
     GOOD_COMPOSE = ("services:\n  pgbouncer:\n    build:\n      context: .\n"
                     "      dockerfile: Dockerfile.pgbouncer\n    image: polaris-pgbouncer:prod\n")
     GOOD_ENTRY = "#!/bin/sh\nPWFILE=\"${POLARIS_DB_PASSWORD_FILE:-/run/secrets/x}\"\n"
+    gh = tmp_path / ".github" / "workflows"
+    gh.mkdir(parents=True)
+    (gh / "ci.yml").write_text("jobs:\n  d:\n    steps:\n      run: docker build -f polaris_web/Dockerfile.pgbouncer .\n")
 
     def write(compose=GOOD_COMPOSE, df="FROM alpine\n", entry=GOOD_ENTRY):
         (web / "docker-compose.prod.yml").write_text(compose)

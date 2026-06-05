@@ -586,9 +586,14 @@ def check_pgbouncer_self_built(root: pathlib.Path) -> list[Finding]:
         return _fail("pgbouncer_image",
                      "pgbouncer-entrypoint.sh must READ the DB password from the file-mounted "
                      "secret (POLARIS_DB_PASSWORD_FILE), not an environment variable")
+    ci = _read(root, ".github/workflows/ci.yml")
+    if not ci or "Dockerfile.pgbouncer" not in ci:
+        return _fail("pgbouncer_image",
+                     "CI must build + exercise the self-built pgbouncer image (Dockerfile.pgbouncer) "
+                     "so a broken pooler image is caught in CI, not at deploy")
     return _ok("pgbouncer_image",
-               "pgbouncer is self-built from Dockerfile.pgbouncer (no third-party catalog) and "
-               "reads the file-mounted DB secret (scram on both hops)")
+               "pgbouncer is self-built from Dockerfile.pgbouncer (no third-party catalog), reads "
+               "the file-mounted DB secret (scram on both hops), and is round-tripped in CI")
 
 
 # ---------------------------------------------------------------------------
