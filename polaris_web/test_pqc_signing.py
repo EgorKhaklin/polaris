@@ -93,5 +93,59 @@ class FailLoudTests(unittest.TestCase):
         self.assertFalse(pqc_signing.is_enabled())
 
 
+@unittest.skipUnless(pqc_signing.is_available(),
+                     "liboqs (oqs) not importable; real-PQC tests skip")
+class PersistentKeyTests(unittest.TestCase):
+    """The production signing path: a PERSISTENT keypair (loaded from
+    POLARIS_PQC_SIGNING_KEY_FILE) gives a stable public key that is a real
+    verification trust anchor, vs the ephemeral-per-call dev fallback. Runs only
+    where liboqs is installed (locally / the pqc-real CI job)."""
+
+    def setUp(self):
+        import json
+        import tempfile
+        self._kp = pqc_signing.generate_keypair()
+        self.assertEqual(self._kp["algorithm"], "ML-DSA-65")
+        self._kf = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False)
+        json.dump(self._kp, self._kf)
+        self._kf.close()
+        self._saved = os.environ.get("POLARIS_PQC_SIGNING_KEY_FILE")
+        os.environ["POLARIS_PQC_SIGNING_KEY_FILE"] = self._kf.name
+        # Reset the module's key cache so it re-reads our file.
+        pqc_signing._PERSISTENT_LOADED = False
+        pqc_signing._PERSISTENT_KEYPAIR = None
+
+    def tearDown(self):
+        os.unlink(self._kf.name)
+        if self._saved is None:
+            os.environ.pop("POLARIS_PQC_SIGNING_KEY_FILE", None)
+        else:
+            os.environ["POLARIS_PQC_SIGNING_KEY_FILE"] = self._saved
+        pqc_signing._PERSISTENT_LOADED = False
+        pqc_signing._PERSISTENT_KEYPAIR = None
+
+    def test_persistent_public_key_is_stable_and_verifies(self):
+        r1 = pqc_signing.sign(b"token-ABC")
+        r2 = pqc_signing.sign(b"token-ABC")
+        # Stable public key = a real trust anchor (the ephemeral path would differ).
+        self.assertEqual(r1.public_key_hex, r2.public_key_hex)
+        self.assertEqual(r1.public_key_hex, self._kp["public_key_hex"])
+        self.assertTrue(pqc_signing.verify(b"token-ABC", r1.signature_hex, r1.public_key_hex))
+        self.assertTrue(pqc_signing.verify(b"token-ABC", r2.signature_hex, r2.public_key_hex))
+
+    def test_forged_message_and_wrong_key_fail(self):
+        r = pqc_signing.sign(b"token-ABC")
+        self.assertFalse(pqc_signing.verify(b"token-XYZ", r.signature_hex, r.public_key_hex))
+        other = pqc_signing.generate_keypair()
+        self.assertFalse(pqc_signing.verify(b"token-ABC", r.signature_hex, other["public_key_hex"]))
+
+    def test_malformed_key_file_fails_loud(self):
+        with open(self._kf.name, "w") as fh:
+            fh.write("{not json")
+        pqc_signing._PERSISTENT_LOADED = False
+        with self.assertRaises(RuntimeError):
+            pqc_signing.sign(b"x")
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

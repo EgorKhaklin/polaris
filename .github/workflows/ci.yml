@@ -269,3 +269,57 @@ jobs:
           if echo "$logs" | grep -qiE "ModuleNotFoundError|ImportError|Traceback"; then
             echo "::error::prod image crashed on startup"; exit 1
           fi
+
+  # --------------------------------------------------------------------------
+  # Real post-quantum signing (ML-DSA-65 / FIPS 204) was previously untestable:
+  # liboqs is not in the base image or the main test job, so the real signing
+  # path never ran in CI. This job installs liboqs-python and proves the real
+  # path end to end with a PERSISTENT key (v9.103): the public key is stable
+  # across signs (a real trust anchor), signatures verify, and forgeries fail.
+  # Heavy (liboqs builds from source ~minutes), so it runs as its own job.
+  # --------------------------------------------------------------------------
+  pqc-real:
+    name: Real PQC (ML-DSA-65) sign + verify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install liboqs-python (builds liboqs)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build
+          pip install liboqs-python
+
+      - name: Real ML-DSA-65 persistent-key sign + verify
+        working-directory: polaris_web
+        env:
+          POLARIS_USE_REAL_PQC: '1'
+        run: |
+          python - <<'PY'
+          import os, json, tempfile
+          import pqc_signing as p
+          assert p.is_available(), "oqs not importable"
+          assert p.is_enabled(), "real PQC not enabled"
+          kp = p.generate_keypair()
+          assert kp["algorithm"] == "ML-DSA-65"
+          kf = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False)
+          json.dump(kp, kf); kf.close()
+          os.environ["POLARIS_PQC_SIGNING_KEY_FILE"] = kf.name
+          r1 = p.sign(b"token-ABC")
+          r2 = p.sign(b"token-ABC")
+          assert r1.public_key_hex == r2.public_key_hex == kp["public_key_hex"], "persistent pk not stable"
+          assert p.verify(b"token-ABC", r1.signature_hex, r1.public_key_hex), "verify failed"
+          assert not p.verify(b"token-XYZ", r1.signature_hex, r1.public_key_hex), "forged message accepted"
+          other = p.generate_keypair()
+          assert not p.verify(b"token-ABC", r1.signature_hex, other["public_key_hex"]), "wrong key accepted"
+          assert p.smoke_test(), "smoke_test failed"
+          sig, alg = p.signature_bytes_for_token("token-ABC")
+          assert alg == "ML-DSA-65" and len(sig) == 3309, f"bad real signature: {alg} {len(sig)}"
+          print("Real ML-DSA-65 persistent-key sign + verify OK")
+          PY

@@ -5,6 +5,39 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.103 — 2026-06-05 (production-readiness, wave 2: real ML-DSA-65 signing, persistent key, tested in CI)
+
+The defining gap between reference and reality: token signing was not real. The
+default signed with a `sha3_256(token_value)` placeholder that authenticates
+nothing, real ML-DSA-65 was never exercised in CI, and even with the flag on
+`sign()` generated a fresh ephemeral keypair per call and threw the private key
+away — so the public key was never stable and the signature was unverifiable
+against any known anchor. This wave lays the real foundation:
+
+- **Real ML-DSA-65 is now tested.** A dedicated `pqc-real` CI job installs
+  liboqs-python and proves the real path end to end: it generates a keypair,
+  signs with a persistent key, verifies (True), and confirms a forged message
+  and a wrong key both fail. Real signatures are 3309 bytes, public keys 1952
+  bytes (FIPS 204). liboqs builds and runs.
+- **Persistent signing key.** `sign()` loads a long-lived keypair from
+  `POLARIS_PQC_SIGNING_KEY_FILE` (JSON `{algorithm, secret_key_hex,
+  public_key_hex}`) when set, so every signature uses the same key and its public
+  key is a stable, publishable **trust anchor**. The ephemeral per-call keypair
+  remains only as the dev/test fallback. A malformed key file fails loud (never
+  silently degrades). `generate_keypair()` mints one; the real private key
+  belongs in an HSM/KMS (operator-custodied) — this is the loading mechanism.
+
+Still ahead in Wave 2 (tracked in `docs/PRODUCTION-READINESS.md`): store the
+issuer public key as a DB trust anchor, store the real signature at issuance and
+**enforce verification at use**, make real PQC the prod default (liboqs in the
+prod image), and route uc6 through the signing module.
+
+- `polaris_web/pqc_signing.py` — `_load_persistent_keypair`, `generate_keypair`,
+  persistent-key `sign()`.
+- `.github/workflows/ci.yml` — `pqc-real` job (real ML-DSA sign+verify).
+- `polaris_web/test_pqc_signing.py` — `PersistentKeyTests` (skip without liboqs).
+- `polaris_checks/checks.py` — `check_pqc_real_signing` (34th check).
+
 ## v9.102 — 2026-06-05 (production-readiness, wave 3: backups are encrypted at rest, DR doc made honest)
 
 A database backup is a full `pg_dump` of the (would-be) national-identity

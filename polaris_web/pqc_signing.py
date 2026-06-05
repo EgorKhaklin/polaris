@@ -57,6 +57,7 @@ to the deterministic stub.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 from dataclasses import dataclass
 from typing import Optional
@@ -140,16 +141,75 @@ def availability_report() -> dict:
     }
 
 
+# Long-lived signing keypair. Production sets POLARIS_PQC_SIGNING_KEY_FILE to a
+# JSON file {algorithm, secret_key_hex, public_key_hex} (mode 0600). The private
+# key is the issuer's signing key — in a real deployment it belongs in an HSM/KMS;
+# this file is the loading MECHANISM the operator points at their custodied
+# material. When set, every signature uses the SAME key, so its public key is a
+# stable, publishable trust anchor that verifiers check against. When unset
+# (dev/test), sign() falls back to an ephemeral per-call keypair, which is NOT
+# verifiable against any known anchor and must never be the production path.
+_PERSISTENT_KEY_ENV = "POLARIS_PQC_SIGNING_KEY_FILE"
+_PERSISTENT_KEYPAIR: Optional[tuple] = None
+_PERSISTENT_LOADED = False
+
+
+def _load_persistent_keypair() -> Optional[tuple]:
+    """Return (secret_key_bytes, public_key_bytes) from the configured key file,
+    or None if POLARIS_PQC_SIGNING_KEY_FILE is unset. Cached after first load.
+    Raises RuntimeError on a malformed/mismatched key file (fail loud — a bad
+    signing key must not silently degrade to ephemeral)."""
+    global _PERSISTENT_KEYPAIR, _PERSISTENT_LOADED
+    if _PERSISTENT_LOADED:
+        return _PERSISTENT_KEYPAIR
+    _PERSISTENT_LOADED = True
+    path = os.environ.get(_PERSISTENT_KEY_ENV)
+    if not path:
+        _PERSISTENT_KEYPAIR = None
+        return None
+    try:
+        with open(path) as fh:
+            data = json.load(fh)
+        if data.get("algorithm") != _ALG_NAME:
+            raise RuntimeError(
+                f"{_PERSISTENT_KEY_ENV} algorithm {data.get('algorithm')!r} != {_ALG_NAME}")
+        keypair = (bytes.fromhex(data["secret_key_hex"]), bytes.fromhex(data["public_key_hex"]))
+    except (OSError, ValueError, KeyError) as exc:
+        raise RuntimeError(f"{_PERSISTENT_KEY_ENV}={path} is unreadable/malformed: {exc}") from exc
+    _PERSISTENT_KEYPAIR = keypair
+    return keypair
+
+
+def generate_keypair() -> dict:
+    """Generate a fresh ML-DSA-65 keypair for POLARIS_PQC_SIGNING_KEY_FILE.
+
+    Returns {algorithm, secret_key_hex, public_key_hex}. The secret key is the
+    issuer's long-lived signing key: write it to a 0600 file (or load it into an
+    HSM/KMS) and publish the public key as the verification trust anchor.
+    """
+    if not _OQS_AVAILABLE:
+        raise PQCUnavailableError(
+            f"liboqs-python is not importable: {_OQS_IMPORT_ERROR}.")
+    import oqs as _oqs  # type: ignore
+    with _oqs.Signature(_ALG_NAME) as signer:
+        public_key = signer.generate_keypair()
+        secret_key = signer.export_secret_key()
+    return {
+        "algorithm": _ALG_NAME,
+        "secret_key_hex": secret_key.hex(),
+        "public_key_hex": public_key.hex(),
+    }
+
+
 def sign(message: bytes) -> SigningResult:
     """Sign `message` with ML-DSA-65.
 
-    Raises PQCUnavailableError if oqs is not importable.
-    Raises RuntimeError if liboqs reports any internal failure.
+    Uses the long-lived keypair from POLARIS_PQC_SIGNING_KEY_FILE when configured
+    (so the public key is a stable trust anchor); otherwise generates an ephemeral
+    per-call keypair (the dev/test fallback — not verifiable against a known anchor).
 
+    Raises PQCUnavailableError if oqs is not importable.
     Returns SigningResult with public_key, signature, message hash.
-    For now generates a fresh keypair per call; production should
-    use a long-lived key bound to the issuing agency (see
-    docs/operator/PQC-MIGRATION.md).
     """
     if not _OQS_AVAILABLE:
         raise PQCUnavailableError(
@@ -163,10 +223,16 @@ def sign(message: bytes) -> SigningResult:
     # SHA3-256 the message for binding to a fixed-size digest
     digest = hashlib.sha3_256(message).digest()
 
-    # Generate a fresh keypair (in production, this is per-agency long-lived)
-    with _oqs.Signature(_ALG_NAME) as signer:
-        public_key = signer.generate_keypair()
-        signature = signer.sign(digest)
+    keypair = _load_persistent_keypair()
+    if keypair is not None:
+        secret_key, public_key = keypair
+        with _oqs.Signature(_ALG_NAME, secret_key=secret_key) as signer:
+            signature = signer.sign(digest)
+    else:
+        # No persistent key configured — ephemeral keypair (dev/test only).
+        with _oqs.Signature(_ALG_NAME) as signer:
+            public_key = signer.generate_keypair()
+            signature = signer.sign(digest)
 
     return SigningResult(
         algorithm_name=_ALG_NAME,

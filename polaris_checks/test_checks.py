@@ -565,5 +565,32 @@ def test_backup_encryption_check_discriminates(tmp_path):
         "must PASS when backup encrypts and restore decrypts"
 
 
+def test_pqc_real_signing_check_discriminates(tmp_path):
+    web = tmp_path / "polaris_web"
+    gh = tmp_path / ".github" / "workflows"
+    web.mkdir(); gh.mkdir(parents=True)
+    GOOD_PQC = ("POLARIS_PQC_SIGNING_KEY_FILE\ndef generate_keypair(): ...\ndef verify(): ...\n")
+    GOOD_CI = "jobs:\n  pqc-real:\n    steps: [pip install liboqs-python]\n"
+
+    def write(pqc, ci):
+        (web / "pqc_signing.py").write_text(pqc)
+        (gh / "ci.yml").write_text(ci)
+
+    # 1. Ephemeral-only (no persistent key file) -> FAIL.
+    write("def generate_keypair(): ...\ndef verify(): ...\n", GOOD_CI)
+    assert checks.check_pqc_real_signing(tmp_path)[0].level == "FAIL", \
+        "must FAIL when there is no persistent signing key"
+
+    # 2. Persistent key but CI never tests real PQC -> FAIL.
+    write(GOOD_PQC, "jobs:\n  test:\n    steps: []\n")
+    assert checks.check_pqc_real_signing(tmp_path)[0].level == "FAIL", \
+        "must FAIL when CI does not exercise the real ML-DSA path"
+
+    # 3. Persistent key + verify + CI pqc-real job with liboqs -> OK.
+    write(GOOD_PQC, GOOD_CI)
+    assert checks.check_pqc_real_signing(tmp_path)[0].level == "OK", \
+        "must PASS with a persistent key, verify, and a real-PQC CI job"
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

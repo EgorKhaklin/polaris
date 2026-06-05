@@ -317,6 +317,31 @@ def check_pqc_signing_wired(root: pathlib.Path) -> list[Finding]:
 
 
 # ---------------------------------------------------------------------------
+# Real signing core (production-readiness Wave 2) — a signature that nobody can
+# verify against a stable key is theater. pqc_signing must support a PERSISTENT
+# signing key (POLARIS_PQC_SIGNING_KEY_FILE), expose generate_keypair + verify,
+# and CI must actually exercise the real ML-DSA path (the pqc-real job installs
+# liboqs and runs a persistent-key sign+verify). See docs/PRODUCTION-READINESS.md.
+# ---------------------------------------------------------------------------
+def check_pqc_real_signing(root: pathlib.Path) -> list[Finding]:
+    p = _read(root, "polaris_web/pqc_signing.py")
+    if not p:
+        return _fail("pqc_real", "polaris_web/pqc_signing.py is missing")
+    if "POLARIS_PQC_SIGNING_KEY_FILE" not in p:
+        return _fail("pqc_real",
+                     "pqc_signing.py must load a persistent signing key "
+                     "(POLARIS_PQC_SIGNING_KEY_FILE), not generate an ephemeral key per call")
+    if "def generate_keypair" not in p or "def verify" not in p:
+        return _fail("pqc_real", "pqc_signing.py must expose generate_keypair + verify")
+    ci = _read(root, ".github/workflows/ci.yml")
+    if "pqc-real" not in ci or "liboqs" not in ci:
+        return _fail("pqc_real",
+                     "CI must install liboqs and test the real ML-DSA signing path (the pqc-real job)")
+    return _ok("pqc_real",
+               "real signing core: persistent key + verify, exercised by the CI pqc-real job")
+
+
+# ---------------------------------------------------------------------------
 # Docker image completeness — every LOCAL module app.py imports must be COPYd
 # into both images, or the container ModuleNotFoundErrors at startup and crash-
 # loops. This has bitten twice: observability.py (v9.40) and pqc_signing.py
@@ -761,6 +786,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_zk_two_witness_present,
     check_no_debug_artifacts,
     check_pqc_signing_wired,
+    check_pqc_real_signing,
     check_dockerfile_copies_app_modules,
     check_c2_zk_token_null,
     check_c4_atomic_failed_login,

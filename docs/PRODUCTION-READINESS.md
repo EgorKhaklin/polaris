@@ -56,18 +56,22 @@ left a real foundation. Genuinely sound today:
   the 4 gunicorn workers. Now wired. Pinned by `check_prod_hardening`.
 
 ### Wave 2 — cryptographic core (the heart; BLOCKER)
-- [ ] **Real PQC is the production default, not the SHA3 placeholder.** Today the
-  shipped default signs tokens with a deterministic `sha3_256(token_value)` that
-  authenticates nothing. Make real ML-DSA-65 (liboqs) the production path.
-- [ ] **Signing-key custody.** `sign()` generates a fresh ephemeral keypair per
-  call and discards the private key. Load a persistent per-agency signing key
-  from a secret/KMS instead. (The real key *material* and HSM/KMS are
-  operator-gated; the loading mechanism is buildable.)
-- [ ] **Verify signatures at use.** `pqc_signing.verify()` is called nowhere in
-  the product — TokenSignature is write-only. Enforce verification on the paths
-  that consume a token's authenticity.
-- [ ] uc6 algorithm-migration writes a hardcoded non-signature; route it through
-  the signing module.
+- [x] **Real ML-DSA-65 is now testable + tested (v9.103).** liboqs-python builds
+  and runs; a dedicated CI job (`pqc-real`) installs it and proves real signing
+  end to end. Real signatures are 3309 bytes, public keys 1952 bytes (FIPS 204),
+  verify True, forgeries False.
+- [x] **Persistent signing key (v9.103).** `sign()` now loads a long-lived
+  keypair from `POLARIS_PQC_SIGNING_KEY_FILE` when set, so the public key is a
+  stable, publishable trust anchor (the ephemeral per-call fallback remains only
+  for dev). `generate_keypair()` mints one; a malformed key file fails loud.
+  Pinned by `check_pqc_real_signing`; unit-tested in `PersistentKeyTests`.
+- [ ] **Wire it into issuance + a trust anchor (Wave 2 cont.).** Store the
+  issuer public key as a trust anchor (a `SigningKey`/Agency key), store the real
+  signature at issuance, and **enforce verification at use** (`verify()` is still
+  not called on a live path). Make real PQC the production default
+  (`POLARIS_USE_REAL_PQC=1` in prod, with liboqs in the prod image), and route
+  uc6 migration through the signing module (it writes a hardcoded non-signature).
+  *(Real key material / HSM custody remains operator-gated.)*
 
 ### Wave 3 — data protection + DR (BLOCKER/HIGH)
 - [x] **Encrypt backups at rest (v9.102).** `polaris-backup.sh` encrypts the
