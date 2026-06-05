@@ -5,6 +5,37 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.123 — 2026-06-05 (production-readiness, wave 4: SLOs + alert runbooks, grounded and honest)
+
+Wave 4 shipped the alert rules (v9.115) but left the SLO targets and the
+response runbooks open. This closes both, grounded only in metrics Polaris
+actually exposes, and refuses to overclaim that any of it is enforced.
+
+- **`docs/operator/SLOS.md`, reference SLO targets.** Availability (≥ 99.9%
+  non-5xx, the exact complement of the `PolarisHigh5xx` ratio), request-latency
+  p99 < 2s, and DB-round-trip p99 < 5s, each computed from a metric the app
+  emits (`polaris_requests_total`, `polaris_request_latency_seconds`,
+  `polaris_db_query_latency_seconds`) over a 30-day window. Error budget stated
+  (0.1% of requests, ~43 min/30d). Honesty discipline up front: these are
+  reference targets for a notional deployment, not a measured guarantee, and the
+  Prometheus + Alertmanager backend is operator-gated. `duress_events_total` and
+  `auth_failures_per_minute` are deliberately excluded as SLIs (security
+  signals, not reliability budget; per-identity SLOs would be an aggregation
+  vector, vocation).
+- **`docs/operator/RUNBOOKS.md`, one runbook per shipped alert.** A section
+  for each of the five alerts (`PolarisAppDown`, `PolarisAppInfoAbsent`,
+  `PolarisHigh5xx`, `PolarisHighDBLatency`, `PolarisHighRequestLatency`), each
+  with Trigger / Likely cause / Diagnosis / Remediation, cross-linked to the DR
+  failure-class procedures and the SLO thresholds.
+- **`check_alert_runbooks` (53rd check).** Parses the `- alert: <Name>` lines
+  out of `polaris-alerts.yml` and asserts a one-to-one mapping with the
+  `## <name>` runbook headings: FAIL if an alert has no runbook (a page with no
+  runbook is a 03:00 dead end), FAIL on an orphan section (stale guidance).
+  Detection test covers missing-runbook, one-to-one-OK, orphan, and
+  missing-file cases.
+- **Production-readiness ledger.** The Wave 4 "SLOs; runbooks" item is now
+  ticked.
+
 ## v9.122 — 2026-06-05 (production-readiness, wave 4: request-correlation ids that cannot become a surveillance key)
 
 Production debugging needs to tie a log line to the request a caller saw, but in

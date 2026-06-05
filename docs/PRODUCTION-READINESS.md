@@ -153,8 +153,14 @@ left a real foundation. Genuinely sound today:
   `structured_log` line, echoed on the response, cleared in teardown. Vocation:
   never derived from identity, never written to the audit-of-record — pinned by
   `check_correlation_id` and a DB-backed non-persistence test.
-- [ ] Shipped alert rules (done, v9.115); log rotation (done, v9.109);
-  SLOs; runbooks.
+- [x] **SLOs + alert runbooks (v9.123).** `docs/operator/SLOS.md` states the
+  reference SLO targets (≥ 99.9% non-5xx availability, request p99 < 2s, DB
+  round-trip p99 < 5s) grounded only in exposed metrics, with the error budget
+  and the up-front honesty that these are reference targets for a notional
+  deployment, not a measured guarantee (Prometheus/Alertmanager operator-gated).
+  `docs/operator/RUNBOOKS.md` ships one Trigger/Diagnosis/Remediation section
+  per shipped alert. Pinned by `check_alert_runbooks` (one-to-one alert↔runbook
+  mapping). Shipped alert rules (done, v9.115); log rotation (done, v9.109).
 - [x] **Dependency CVE scanning gates the build (v9.105).** A `cve-scan` CI job
   runs `pip-audit --strict` on the runtime `requirements.txt`, so a known CVE in
   a package the production image installs fails the build. v9.105 split test

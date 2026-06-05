@@ -803,6 +803,45 @@ def check_alert_rules(root: pathlib.Path) -> list[Finding]:
 
 
 # ---------------------------------------------------------------------------
+# Every shipped alert must have a runbook, and every runbook must name a real
+# alert. An alert that pages on-call with no documented Trigger/Diagnosis/
+# Remediation is a 03:00 dead end; a runbook section for an alert that no longer
+# exists is stale guidance. This parses the alert names out of polaris-alerts.yml
+# and asserts a one-to-one mapping with the `## <AlertName>` headings in
+# docs/operator/RUNBOOKS.md (no missing runbook, no orphan section).
+# ---------------------------------------------------------------------------
+def check_alert_runbooks(root: pathlib.Path) -> list[Finding]:
+    rules = _read(root, "deploy/observability/polaris-alerts.yml")
+    book = _read(root, "docs/operator/RUNBOOKS.md")
+    if not rules:
+        return _fail("alert_runbooks",
+                     "deploy/observability/polaris-alerts.yml is missing — no alerts to document")
+    if not book:
+        return _fail("alert_runbooks",
+                     "docs/operator/RUNBOOKS.md is missing — every shipped alert needs a runbook")
+    alerts = re.findall(r"(?m)^\s*-\s*alert:\s*(\w+)\s*$", rules)
+    if not alerts:
+        return _fail("alert_runbooks", "could not parse any `- alert: <Name>` lines from polaris-alerts.yml")
+    # Runbook sections are H2 headings naming exactly one alert.
+    sections = re.findall(r"(?m)^##\s+(\w+)\s*$", book)
+    documented = {s for s in sections if s.startswith("Polaris")}
+    alert_set = set(alerts)
+    missing = sorted(alert_set - documented)
+    if missing:
+        return _fail("alert_runbooks",
+                     "alert(s) with no `## <name>` runbook section in docs/operator/RUNBOOKS.md: "
+                     + ", ".join(missing) + " — an alert that pages with no runbook is a dead end")
+    orphans = sorted(documented - alert_set)
+    if orphans:
+        return _fail("alert_runbooks",
+                     "RUNBOOKS.md has runbook section(s) for alert(s) not in polaris-alerts.yml: "
+                     + ", ".join(orphans) + " — stale guidance; remove or re-add the alert")
+    return _ok("alert_runbooks",
+               f"all {len(alert_set)} shipped alerts have exactly one runbook section in "
+               "docs/operator/RUNBOOKS.md (no missing, no orphan)")
+
+
+# ---------------------------------------------------------------------------
 # The connection pooler must not depend on a third-party image that can vanish.
 # bitnami/pgbouncer:1.22 was removed from Docker Hub when Bitnami retired their
 # free catalogue (Aug 2025), leaving the prod stack unable to pull its pooler.
@@ -1431,6 +1470,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_compose_resource_limits,
     check_prod_images_digest_pinned,
     check_alert_rules,
+    check_alert_runbooks,
     check_pgbouncer_self_built,
     check_app_db_tls,
     check_correlation_id,

@@ -1044,6 +1044,46 @@ def test_alert_rules_check_discriminates(tmp_path):
         "must FAIL when the artifact does not ship"
 
 
+def test_alert_runbooks_check_discriminates(tmp_path):
+    obs = tmp_path / "deploy" / "observability"
+    ref = tmp_path / "docs" / "operator"
+    obs.mkdir(parents=True)
+    ref.mkdir(parents=True)
+    RULES = ("groups:\n  - name: polaris\n    rules:\n"
+             "      - alert: PolarisAppDown\n        expr: up == 0\n"
+             "      - alert: PolarisHigh5xx\n        expr: ratio > 0.01\n")
+
+    def write_rules(text=RULES):
+        (obs / "polaris-alerts.yml").write_text(text)
+
+    def write_book(text):
+        (ref / "RUNBOOKS.md").write_text(text)
+
+    # 1. An alert with no runbook section -> FAIL.
+    write_rules()
+    write_book("# RUNBOOKS\n\n## PolarisAppDown\n\nbody\n")
+    out = checks.check_alert_runbooks(tmp_path)
+    assert out[0].level == "FAIL", "must FAIL when an alert lacks a runbook section"
+    assert "PolarisHigh5xx" in out[0].message
+
+    # 2. Every alert documented, one-to-one -> OK.
+    write_book("# RUNBOOKS\n\n## PolarisAppDown\n\nbody\n\n## PolarisHigh5xx\n\nbody\n")
+    assert checks.check_alert_runbooks(tmp_path)[0].level == "OK", \
+        "must PASS when every alert has exactly one runbook section"
+
+    # 3. An orphan runbook for an alert that no longer exists -> FAIL.
+    write_book("# RUNBOOKS\n\n## PolarisAppDown\n\nbody\n\n## PolarisHigh5xx\n\nbody\n"
+               "\n## PolarisGhostAlert\n\nbody\n")
+    out = checks.check_alert_runbooks(tmp_path)
+    assert out[0].level == "FAIL", "must FAIL on an orphan runbook section"
+    assert "PolarisGhostAlert" in out[0].message
+
+    # 4. Missing RUNBOOKS.md entirely -> FAIL.
+    (ref / "RUNBOOKS.md").unlink()
+    assert checks.check_alert_runbooks(tmp_path)[0].level == "FAIL", \
+        "must FAIL when RUNBOOKS.md does not exist"
+
+
 def test_prod_real_pqc_check_discriminates(tmp_path):
     web = tmp_path / "polaris_web"
     gh = tmp_path / ".github" / "workflows"
