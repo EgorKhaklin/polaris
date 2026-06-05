@@ -148,7 +148,25 @@ WORK=$(mktemp -d)
 trap 'rm -rf "${WORK}"' EXIT
 
 step "1/6" "extracting ${BACKUP_FILE} → ${WORK}…"
-tar -xzf "${BACKUP_FILE}" -C "${WORK}"
+# Encrypted backups (.enc, produced when POLARIS_BACKUP_KEY_FILE was set at
+# backup time) must be decrypted before extraction. Decrypt to a temp tarball
+# using the same key; the MANIFEST SHA-256 check below then catches any tamper.
+EXTRACT_SRC="${BACKUP_FILE}"
+if [[ "${BACKUP_FILE}" == *.enc ]]; then
+    KEY_FILE="${POLARIS_BACKUP_KEY_FILE:-}"
+    if [[ -z "${KEY_FILE}" || ! -r "${KEY_FILE}" ]]; then
+        echo "  ✗ ${BACKUP_FILE} is encrypted but POLARIS_BACKUP_KEY_FILE is unset/unreadable" >&2
+        exit "${EXIT_MANIFEST_MISSING}"
+    fi
+    EXTRACT_SRC="${WORK}/decrypted.tar.gz"
+    if ! openssl enc -d -aes-256-cbc -pbkdf2 \
+            -in "${BACKUP_FILE}" -out "${EXTRACT_SRC}" -pass "file:${KEY_FILE}"; then
+        echo "  ✗ decryption failed — wrong key, or the backup is corrupt/tampered" >&2
+        exit "${EXIT_MANIFEST_MISSING}"
+    fi
+    echo "  ✓ decrypted encrypted backup"
+fi
+tar -xzf "${EXTRACT_SRC}" -C "${WORK}"
 
 # Find the extracted polaris-<ts>/ directory.
 EXTRACTED=$(find "${WORK}" -maxdepth 1 -mindepth 1 -type d -name 'polaris-*' | head -1)

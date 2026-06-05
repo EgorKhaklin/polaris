@@ -168,6 +168,35 @@ OUT="${DEST}/polaris-${TS}.tar.gz"
 tar -czf "${OUT}" -C "${WORK}" "polaris-${TS}"
 chmod 0600 "${OUT}"
 
+# At-rest encryption of the backup. These tarballs are a full pg_dump of the
+# (would-be) national-identity database; in production they MUST NOT sit in
+# plaintext. Set POLARIS_BACKUP_KEY_FILE to a key/passphrase file (mode 0600) and
+# the tarball is encrypted with AES-256-CBC (PBKDF2) and the plaintext removed.
+# Integrity is covered by the SHA-256 MANIFEST inside, which the restore verifies
+# after decryption — tampered ciphertext fails that check. (age/gpg to a real
+# recipient key are stronger; openssl is used here for universal availability.)
+KEY_FILE="${POLARIS_BACKUP_KEY_FILE:-}"
+if [ -n "${KEY_FILE}" ]; then
+    if [ ! -r "${KEY_FILE}" ]; then
+        echo "  ✗ POLARIS_BACKUP_KEY_FILE=${KEY_FILE} is not readable" >&2
+        exit 3
+    fi
+    ENC="${OUT}.enc"
+    if ! openssl enc -aes-256-cbc -pbkdf2 -salt \
+            -in "${OUT}" -out "${ENC}" -pass "file:${KEY_FILE}"; then
+        echo "  ✗ backup encryption failed (openssl)" >&2
+        rm -f "${ENC}"
+        exit 3
+    fi
+    rm -f "${OUT}"
+    chmod 0600 "${ENC}"
+    OUT="${ENC}"
+    echo "  → encrypted at rest (AES-256-CBC/PBKDF2): ${OUT}"
+else
+    echo "  ! WARNING: this backup is UNENCRYPTED plaintext. For production, set"
+    echo "    POLARIS_BACKUP_KEY_FILE to a key file so the dump is encrypted at rest."
+fi
+
 SIZE=$(du -h "${OUT}" | awk '{print $1}')
 echo
 echo "  ✓ backup complete:  ${OUT}  (${SIZE})"

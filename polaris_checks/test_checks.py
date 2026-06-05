@@ -540,5 +540,30 @@ def test_prod_hardening_check_discriminates(tmp_path):
         "must PASS when demo accounts are neutralized and Redis is wired"
 
 
+def test_backup_encryption_check_discriminates(tmp_path):
+    sc = tmp_path / "scripts"
+    sc.mkdir()
+    bk = sc / "polaris-backup.sh"
+    rs = sc / "polaris-restore.sh"
+
+    # 1. Backup script has no encryption support -> FAIL.
+    bk.write_text("tar -czf backup.tar.gz .\n")
+    rs.write_text("tar -xzf backup.tar.gz\n")
+    assert checks.check_backup_encryption(tmp_path)[0].level == "FAIL", \
+        "must FAIL when backups are not encryptable"
+
+    # 2. Backup encrypts but restore cannot decrypt -> FAIL.
+    bk.write_text('KEY="$POLARIS_BACKUP_KEY_FILE"\nopenssl enc -aes-256-cbc -in t -out t.enc\n')
+    rs.write_text("tar -xzf backup.tar.gz\n")
+    assert checks.check_backup_encryption(tmp_path)[0].level == "FAIL", \
+        "must FAIL when restore cannot decrypt .enc backups"
+
+    # 3. Both present -> OK.
+    bk.write_text('KEY="$POLARIS_BACKUP_KEY_FILE"\nopenssl enc -aes-256-cbc -in t -out t.enc\n')
+    rs.write_text('if [[ "$f" == *.enc ]]; then openssl enc -d -aes-256-cbc -in "$f"; fi\n')
+    assert checks.check_backup_encryption(tmp_path)[0].level == "OK", \
+        "must PASS when backup encrypts and restore decrypts"
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

@@ -34,24 +34,34 @@ incident**, not for the engineer at design time.
 
 ## 1. Targets — RPO and RTO
 
-| Target | Value | Source / Mechanism |
+> **Honest status (v9.102):** what ships today is `polaris-backup.sh` — an
+> on-demand / scheduled **encrypted `pg_dump`** (AES-256 when
+> `POLARIS_BACKUP_KEY_FILE` is set). With a daily schedule that is an **actual
+> RPO of ~24 hours** (worst case = the time since the last dump). The ≤1-minute
+> RPO below is the **TARGET**, reachable only by wiring continuous WAL archiving
+> (pgbackrest → S3), which is **not yet configured** — it requires an operator
+> to provision the WAL archive + offsite store (see
+> [`PRODUCTION-READINESS.md`](../PRODUCTION-READINESS.md), Wave 3 / the gated
+> "offsite backup target" decision). Do not quote the ≤1-min figure until
+> `pgbackrest --stanza=polaris check` actually passes.
+
+| Target | Value | Status / Mechanism |
 |---|---|---|
-| **RPO** (Recovery Point Objective) | **≤ 1 minute** | pgbackrest WAL archiving (v8.93 OPERATIONS.md §"Point-in-time recovery"). Continuous WAL stream → S3 (or equivalent). Worst-case data loss = unflushed WAL between disk write and S3 upload. |
-| **RTO** (Recovery Time Objective) | **≤ 30 minutes** | polaris-restore.sh (v8.81) drill measurement on a single-host stack with sample-size data. Larger volumes scale roughly linearly with database size; estimate: +5 min per 10 GB compressed pg_dump. |
-| **MTTR** (Mean Time To Restore — incident detection → service restored) | **≤ 60 minutes** | RTO + 30 min for detection (alert → on-call → triage → decide-to-restore). Tighten by reducing detection latency (alert thresholds tuned per OPERATIONS.md). |
+| **RPO** (Recovery Point Objective) | **≤ 1 minute** (target) · **~24h** (today) | TARGET via pgbackrest WAL archiving (continuous WAL → S3). TODAY: the scheduled encrypted `pg_dump` from `polaris-backup.sh`; RPO = the dump interval. |
+| **RTO** (Recovery Time Objective) | **≤ 30 minutes** | polaris-restore.sh drill on a single-host stack with sample-size data. Larger volumes scale roughly linearly; estimate +5 min per 10 GB compressed dump. |
+| **MTTR** (incident detection → service restored) | **≤ 60 minutes** | RTO + 30 min for detection. Detection itself depends on alerting that is not yet wired (PRODUCTION-READINESS.md). |
 
 These are the **published** targets. Internal team SLOs may be
 tighter; operator's compliance regime (SOC 2, FedRAMP, PCI) may
-demand specific values; the auditor-facing version derives from
-these plus the drill cadence in § 5.
+demand specific values.
 
-**RPO=1 min is achievable only if WAL archiving is healthy.**
-Verify daily:
+**The ≤1-min RPO is achievable only once WAL archiving is wired and healthy.**
+Once pgbackrest is configured, verify daily:
 ```bash
 pgbackrest --stanza=polaris check
 ```
-If this fails, the RPO regresses to the last successful base backup
-(default: 24h). Treat as SEV-2 incident.
+Until then, the RPO is the backup interval (default daily, ~24h). If a
+configured WAL archive later fails its check, treat as SEV-2.
 
 ---
 

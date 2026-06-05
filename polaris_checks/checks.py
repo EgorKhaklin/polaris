@@ -508,6 +508,27 @@ def check_prod_hardening(root: pathlib.Path) -> list[Finding]:
 
 
 # ---------------------------------------------------------------------------
+# Backup at-rest encryption — DB backups are a full pg_dump of (would-be)
+# national-identity data; they must not sit in plaintext. polaris-backup.sh must
+# support encrypting to POLARIS_BACKUP_KEY_FILE and polaris-restore.sh must
+# decrypt .enc backups (production-readiness Wave 3, v9.102).
+# ---------------------------------------------------------------------------
+def check_backup_encryption(root: pathlib.Path) -> list[Finding]:
+    bk = _read(root, "scripts/polaris-backup.sh")
+    rs = _read(root, "scripts/polaris-restore.sh")
+    if not bk or not rs:
+        return _fail("backup_encryption", "backup/restore scripts missing")
+    if "POLARIS_BACKUP_KEY_FILE" not in bk or "openssl enc" not in bk:
+        return _fail("backup_encryption",
+                     "polaris-backup.sh must support at-rest encryption (POLARIS_BACKUP_KEY_FILE + openssl)")
+    if "openssl enc -d" not in rs or ".enc" not in rs:
+        return _fail("backup_encryption",
+                     "polaris-restore.sh must decrypt encrypted (.enc) backups")
+    return _ok("backup_encryption",
+               "backups support at-rest encryption (POLARIS_BACKUP_KEY_FILE) and restore decrypts them")
+
+
+# ---------------------------------------------------------------------------
 # Doc/schema drift — the headline architecture doc must state the real number
 # of tables. A reviewer reads this number; it must not contradict the schema.
 # ---------------------------------------------------------------------------
@@ -750,6 +771,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_cookie_secure_in_production,
     check_prod_app_password_synced,
     check_prod_hardening,
+    check_backup_encryption,
     check_table_count_matches_doc,
     check_launcher_current,
     check_local_clock_convention,

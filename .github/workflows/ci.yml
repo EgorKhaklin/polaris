@@ -141,27 +141,40 @@ jobs:
       # The disaster-recovery path (backup -> restore) is operator-critical and,
       # like the Docker images, was never exercised in CI — a broken restore is
       # only discovered during an actual disaster. v9.100 fixed the restore
-      # reporting a benign pg_restore warning as a hard failure; this round-trip
-      # keeps the whole path honest: dump the loaded DB, restore it into a fresh
-      # database, and confirm the data came back.
-      - name: Backup + restore round-trip (DR path)
+      # reporting a benign pg_restore warning as a hard failure; v9.102 added
+      # at-rest encryption. This round-trip exercises the ENCRYPTED path end to
+      # end: dump -> encrypt -> decrypt -> restore -> confirm the data came back,
+      # plus a negative check that a missing key fails closed.
+      - name: Backup + restore round-trip (DR path, encrypted)
         env:
           PGHOST: localhost
           PGPASSWORD: ci_password
         run: |
           mkdir -p /tmp/polaris-backups
+          head -c 48 /dev/urandom | base64 > /tmp/backup.key
+          chmod 600 /tmp/backup.key
+          POLARIS_BACKUP_KEY_FILE=/tmp/backup.key \
           POLARIS_DB_NAME=polaris_test POLARIS_DB_USER=postgres POLARIS_DB_HOST=localhost \
             bash scripts/polaris-backup.sh --dest=/tmp/polaris-backups
-          TARBALL=$(ls -1t /tmp/polaris-backups/polaris-*.tar.gz | head -1)
-          test -n "$TARBALL" || { echo "::error::backup produced no tarball"; exit 1; }
+          ENC=$(ls -1t /tmp/polaris-backups/polaris-*.tar.gz.enc | head -1)
+          test -n "$ENC" || { echo "::error::encrypted backup produced no .enc tarball"; exit 1; }
+          # Negative: restore without the key must fail closed.
+          psql -h localhost -U postgres -c "DROP DATABASE IF EXISTS polaris_restore_neg"
+          psql -h localhost -U postgres -c "CREATE DATABASE polaris_restore_neg"
+          if PGUSER=postgres bash scripts/polaris-restore.sh "$ENC" --target=polaris_restore_neg 2>/dev/null; then
+            echo "::error::restore of an encrypted backup succeeded WITHOUT the key"; exit 1
+          fi
+          echo "negative check OK (no key -> refused)"
+          # Positive: decrypt + restore with the key, verify the data.
           psql -h localhost -U postgres -c "DROP DATABASE IF EXISTS polaris_restore_ci"
           psql -h localhost -U postgres -c "CREATE DATABASE polaris_restore_ci"
-          PGUSER=postgres bash scripts/polaris-restore.sh "$TARBALL" --target=polaris_restore_ci
+          POLARIS_BACKUP_KEY_FILE=/tmp/backup.key PGUSER=postgres \
+            bash scripts/polaris-restore.sh "$ENC" --target=polaris_restore_ci
           rows=$(psql -h localhost -U postgres -d polaris_restore_ci -tAc \
             "SELECT count(*) FROM IdentityToken" | tr -dc '0-9')
           echo "restored IdentityToken rows: ${rows:-0}"
           [ "${rows:-0}" -ge 1 ] || { echo "::error::restore did not reproduce the data"; exit 1; }
-          echo "DR round-trip OK"
+          echo "Encrypted DR round-trip OK"
 
   # --------------------------------------------------------------------------
   # The `test` job above exercises the app CODE against a native Postgres; it

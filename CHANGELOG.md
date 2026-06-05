@@ -5,6 +5,29 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.102 — 2026-06-05 (production-readiness, wave 3: backups are encrypted at rest, DR doc made honest)
+
+A database backup is a full `pg_dump` of the (would-be) national-identity
+database. Shipping it as plaintext on local disk is a BLOCKER. `polaris-backup.sh`
+now encrypts the tarball with AES-256-CBC (PBKDF2) when `POLARIS_BACKUP_KEY_FILE`
+is set, removes the plaintext, and warns loudly when no key is configured;
+integrity is covered by the SHA-256 MANIFEST inside, which the restore verifies
+after decryption. `polaris-restore.sh` transparently decrypts `.enc` backups with
+the same key and **fails closed** when the key is missing or wrong. Verified
+end-to-end locally and in CI: the DR round-trip step now dumps → encrypts →
+(negative: refuses without the key) → decrypts → restores → confirms the data.
+
+`DR.md` is also reconciled: it had claimed a wired ≤1-minute RPO via
+pgbackrest/WAL/S3 that does not exist. It now states the real RPO (the encrypted
+`pg_dump` interval, ~24h) and presents continuous WAL archiving as the
+not-yet-configured target (an operator-gated offsite-store decision).
+
+- `scripts/polaris-backup.sh` — optional AES-256 at-rest encryption.
+- `scripts/polaris-restore.sh` — decrypt `.enc` backups; fail closed without the key.
+- `.github/workflows/ci.yml` — encrypted DR round-trip + no-key negative check.
+- `docs/operator/DR.md` — honest RPO; `docs/PRODUCTION-READINESS.md` — Wave 3 ticks.
+- `polaris_checks/checks.py` — `check_backup_encryption` (33rd check).
+
 ## v9.101 — 2026-06-05 (production-readiness, wave 1: no default credentials, real rate limiting, honest roadmap)
 
 The maintainer asked to make Polaris production-ready. A six-dimension assessment

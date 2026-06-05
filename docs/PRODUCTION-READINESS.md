@@ -70,10 +70,18 @@ left a real foundation. Genuinely sound today:
   the signing module.
 
 ### Wave 3 — data protection + DR (BLOCKER/HIGH)
-- [ ] **Encrypt backups** (currently plaintext `pg_dump` on local disk) and
-  reconcile `DR.md` (it promises pgbackrest/WAL/S3 RPO<=1min that is not wired).
+- [x] **Encrypt backups at rest (v9.102).** `polaris-backup.sh` encrypts the
+  tarball with AES-256-CBC/PBKDF2 when `POLARIS_BACKUP_KEY_FILE` is set (and warns
+  loudly when it is not); `polaris-restore.sh` decrypts `.enc` backups and fails
+  closed without the key. CI now runs the encrypted round-trip + a no-key
+  negative check. Pinned by `check_backup_encryption`.
+- [x] **Reconciled `DR.md` (v9.102):** it no longer claims a wired ≤1-min RPO;
+  the real RPO is the encrypted-`pg_dump` interval (~24h), and pgbackrest/WAL/S3
+  is documented as the not-yet-configured target.
 - [ ] **App<->DB TLS** (`sslmode`), and field-level / at-rest encryption posture
   for PII and the plaintext ZK `proof_path`.
+- [ ] Offsite backup target + WAL archiving for the ≤1-min RPO (operator-gated:
+  the S3/offsite store).
 
 ### Wave 4 — deploy/ops/reliability/observability (HIGH/MEDIUM)
 - [ ] Migration `lock_timeout`/`statement_timeout`; zero-downtime/rolling deploy.
