@@ -937,13 +937,13 @@ def test_verify_enforced_check_discriminates(tmp_path):
     gh = tmp_path / ".github" / "workflows"
     web.mkdir(); gh.mkdir(parents=True)
     GOOD_PQC = (
-        "def signature_bytes_for_token(t):\n"
+        "def signature_with_key_for_token(t):\n"
         "    if flag:\n"
         "        r = sign(t)\n"
         "        if not verify(t, r.signature_hex, r.public_key_hex):\n"
         "            raise SigningError('nope')\n"
         "        return r\n"
-        "    return digest, LABEL\n\n"
+        "    return digest, LABEL, None\n\n"
         "def verify(m, s, k):\n    return True\n"
         "def trust_anchor_public_key_hex():\n    return None\n"
         "def verify_token_signature(t, s, a):\n    return True\n"
@@ -960,12 +960,12 @@ def test_verify_enforced_check_discriminates(tmp_path):
         "must FAIL without the use-path verification primitive + trust anchor"
 
     # 2. Has the functions, but issuance does not self-verify -> FAIL.
-    write("def signature_bytes_for_token(t):\n    return sign(t).sig\n\n"
+    write("def signature_with_key_for_token(t):\n    return sign(t).sig, lbl, pk\n\n"
           "def verify(m,s,k):\n    return True\n"
           "def trust_anchor_public_key_hex():\n    return None\n"
           "def verify_token_signature(t,s,a):\n    return True\n")
     assert checks.check_verify_enforced(tmp_path)[0].level == "FAIL", \
-        "must FAIL when signature_bytes_for_token does not self-verify"
+        "must FAIL when signature_with_key_for_token does not self-verify"
 
     # 3. Self-verifies + functions present + CI exercises it -> OK.
     write(GOOD_PQC)
@@ -1084,6 +1084,42 @@ def test_prod_real_pqc_check_discriminates(tmp_path):
     write()
     assert checks.check_prod_real_pqc(tmp_path)[0].level == "OK", \
         "must PASS with liboqs in the image, the flag on, the key secret, and CI verification"
+
+
+def test_signature_self_contained_verify_check_discriminates(tmp_path):
+    web = tmp_path / "polaris_web"; sql = tmp_path / "polaris_sql"
+    web.mkdir(); sql.mkdir()
+
+    def write(pqc, schema, proc, app):
+        (web / "pqc_signing.py").write_text(pqc)
+        (sql / "01_schema.sql").write_text(schema)
+        (sql / "05_procedures.sql").write_text(proc)
+        (web / "app.py").write_text(app)
+
+    GOOD_PQC = "def signature_with_key_for_token(): ...\ndef verify_stored_signature(): ...\n"
+    GOOD_SCHEMA = "CREATE TABLE TokenSignature (signing_public_key_hex TEXT);\n"
+    GOOD_PROC = "FUNCTION uc1_issue_and_activate(p_signing_public_key_hex TEXT) ...\n"
+    GOOD_APP = "x = pqc_signing.verify_stored_signature(a, b, c)\n"
+
+    # 1. pqc_signing missing the functions -> FAIL.
+    write("def sign(): ...\n", GOOD_SCHEMA, GOOD_PROC, GOOD_APP)
+    assert checks.check_signature_self_contained_verify(tmp_path)[0].level == "FAIL"
+
+    # 2. schema missing the column -> FAIL.
+    write(GOOD_PQC, "CREATE TABLE TokenSignature (signature_bytes BYTEA);\n", GOOD_PROC, GOOD_APP)
+    assert checks.check_signature_self_contained_verify(tmp_path)[0].level == "FAIL"
+
+    # 3. procedure missing the param -> FAIL.
+    write(GOOD_PQC, GOOD_SCHEMA, "FUNCTION uc1_issue_and_activate(p_signature_bytes BYTEA) ...\n", GOOD_APP)
+    assert checks.check_signature_self_contained_verify(tmp_path)[0].level == "FAIL"
+
+    # 4. token-detail does not verify -> FAIL.
+    write(GOOD_PQC, GOOD_SCHEMA, GOOD_PROC, "render_template('tokens_detail.html')\n")
+    assert checks.check_signature_self_contained_verify(tmp_path)[0].level == "FAIL"
+
+    # 5. all wired -> OK.
+    write(GOOD_PQC, GOOD_SCHEMA, GOOD_PROC, GOOD_APP)
+    assert checks.check_signature_self_contained_verify(tmp_path)[0].level == "OK"
 
 
 if __name__ == "__main__":

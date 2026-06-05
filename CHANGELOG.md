@@ -5,6 +5,35 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.117 — 2026-06-05 (production-readiness, wave 2: the issuer public key is a DB trust anchor, verification is surfaced at use)
+
+v9.113 enforced verification but left it dependent on the live
+`POLARIS_PQC_SIGNING_KEY_FILE`, and `TokenSignature` recorded only the crypto
+algorithm — not the signature SCHEME — so a verifier could not tell a real
+ML-DSA-65 signature from the SHA3-256 placeholder, nor verify after a key
+rotation. v9.117 stores the issuer public key WITH each signature and shows the
+verification result on the token-detail page.
+
+- **`TokenSignature.signing_public_key_hex`** (migration
+  `2026-06-05-001`): the issuer public key (hex) that produced the signature,
+  NULL for a placeholder. Self-contained — verification needs no live key file —
+  and null-vs-not captures the scheme. Write-once: the immutability trigger now
+  protects it (`IS DISTINCT FROM`, since it is nullable; verified by a refused
+  UPDATE).
+- **Threaded through issuance.** `signature_with_key_for_token()` surfaces the
+  public key; `uc1_issue_and_activate` takes `p_signing_public_key_hex` and
+  stores it; the placeholder path stores NULL.
+- **Verified at use.** The token-detail page calls
+  `verify_stored_signature(token_value, bytes, key)` for each signature and
+  renders a Verification column — *verified* (real, checks against the stored
+  key), *INVALID*, *placeholder*, or *verifier offline* — without the raw bytes
+  or key ever reaching the response.
+- **Tested + pinned.** DB-backed `test_token_detail_surfaces_signature_verification`,
+  two new `pqc_signing` unit tests, and the migration's up/down + write-once
+  proven against a throwaway DB. `check_signature_self_contained_verify` (the
+  48th check) pins the column + procedure param + the token-detail verify.
+  Advances the Wave 2 box in `docs/PRODUCTION-READINESS.md` (only uc6 remains).
+
 ## v9.116 — 2026-06-05 (production-readiness, wave 2: real ML-DSA-65 is the production default)
 
 Real post-quantum signing was testable (v9.103) and verification was enforced

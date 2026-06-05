@@ -61,7 +61,8 @@ CREATE OR REPLACE FUNCTION uc1_issue_and_activate(
     p_physical_serial         VARCHAR(64),
     p_hardware_model          VARCHAR(50),
     p_permitted_contexts      INTEGER[],
-    p_signature_bytes         BYTEA   DEFAULT NULL
+    p_signature_bytes         BYTEA   DEFAULT NULL,
+    p_signing_public_key_hex  TEXT    DEFAULT NULL
 ) RETURNS INTEGER
 LANGUAGE plpgsql
 AS $$
@@ -123,10 +124,13 @@ BEGIN
     -- and liboqs are present, a deterministic SHA3-256 binding of token_value
     -- otherwise. Direct SQL callers that pass NULL fall back to the legacy
     -- deterministic string, so existing tooling and tests are unaffected.
-    INSERT INTO TokenSignature (token_id, algorithm_id, signature_bytes)
+    -- v9.117: store the issuer public key (hex) alongside the signature so
+    -- verify-at-use is self-contained. NULL for the placeholder path (no key).
+    INSERT INTO TokenSignature (token_id, algorithm_id, signature_bytes, signing_public_key_hex)
     VALUES (v_token_id, p_algorithm_id,
             COALESCE(p_signature_bytes,
-                     ('UC1_ISSUE_PLACEHOLDER_' || v_token_id::TEXT)::BYTEA));
+                     ('UC1_ISSUE_PLACEHOLDER_' || v_token_id::TEXT)::BYTEA),
+            p_signing_public_key_hex);
 
     INSERT INTO TokenLifecycleEvent
         (token_id, actor_agency_id, event_type, reason_code)

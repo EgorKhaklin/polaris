@@ -272,6 +272,19 @@ def signature_bytes_for_token(token_value: str) -> tuple:
     The caller stores the bytes in `TokenSignature.signature_bytes` and records
     the algorithm in `TokenSignature.algorithm_id` (C7: algorithm by reference).
     """
+    sig, label, _pk = signature_with_key_for_token(token_value)
+    return sig, label
+
+
+def signature_with_key_for_token(token_value: str) -> tuple:
+    """Like `signature_bytes_for_token`, but also returns the signing PUBLIC KEY.
+
+    Returns `(signature_bytes, algorithm_label, public_key_hex_or_none)`. The
+    caller stores the public key WITH the signature (TokenSignature.
+    signing_public_key_hex) so verification at use is self-contained — no live
+    trust-anchor lookup, and it survives key rotation. For the placeholder path
+    the third element is None (there is no key).
+    """
     flag_set = os.environ.get("POLARIS_USE_REAL_PQC", "0") == "1"
     if flag_set and not _OQS_AVAILABLE:
         raise PQCUnavailableError(
@@ -289,10 +302,34 @@ def signature_bytes_for_token(token_value: str) -> tuple:
         if not verify(token_value.encode("utf-8"), result.signature_hex, result.public_key_hex):
             raise SigningError(
                 "produced ML-DSA-65 signature failed self-verification; refusing to issue")
-        return bytes.fromhex(result.signature_hex), result.algorithm_name
+        return bytes.fromhex(result.signature_hex), result.algorithm_name, result.public_key_hex
     # Flag off: deterministic, dependency-free placeholder (not a signature).
     digest = hashlib.sha3_256(token_value.encode("utf-8")).digest()
-    return digest, PLACEHOLDER_LABEL
+    return digest, PLACEHOLDER_LABEL, None
+
+
+def verify_stored_signature(
+    token_value: str,
+    signature_bytes: bytes,
+    signing_public_key_hex: Optional[str],
+) -> bool:
+    """Verify a stored TokenSignature against its token using the public key
+    stored WITH the signature — self-contained, no live trust-anchor lookup.
+
+    - ``signing_public_key_hex`` non-empty: a real ML-DSA-65 signature, verified
+      against that key (a genuine authenticity proof). Returns False if liboqs is
+      unavailable (a real signature cannot be checked without it).
+    - ``signing_public_key_hex`` None/empty: the deterministic SHA3-256
+      placeholder; an integrity recompute + constant-time compare (NOT an
+      authenticity proof — there is no key).
+    """
+    if signing_public_key_hex:
+        if not _OQS_AVAILABLE:
+            return False
+        return verify(token_value.encode("utf-8"), signature_bytes.hex(), signing_public_key_hex)
+    import hmac
+    expected = hashlib.sha3_256(token_value.encode("utf-8")).digest()
+    return hmac.compare_digest(signature_bytes, expected)
 
 
 def verify(

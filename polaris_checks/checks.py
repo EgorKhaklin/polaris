@@ -308,12 +308,16 @@ def check_pqc_signing_wired(root: pathlib.Path) -> list[Finding]:
     app = _read(root, "polaris_web/app.py")
     if "import pqc_signing" not in app:
         return _fail("pqc_wired", "app.py does not import pqc_signing")
-    if "signature_bytes_for_token" not in app:
+    # Issuance must route through the signing module — either the 2-tuple
+    # signature_bytes_for_token or the 3-tuple signature_with_key_for_token
+    # (v9.117, which also surfaces the public key to store with the signature).
+    if not re.search(r"pqc_signing\.signature_(bytes_for_token|with_key_for_token)", app):
         return _fail("pqc_wired",
-                     "app.py does not call pqc_signing.signature_bytes_for_token; the "
-                     "issuance signature would bypass the signing module")
+                     "app.py does not call pqc_signing.signature_bytes_for_token / "
+                     "signature_with_key_for_token; the issuance signature would bypass the "
+                     "signing module")
     return _ok("pqc_wired",
-               "issuance signature routes through pqc_signing.signature_bytes_for_token")
+               "issuance signature routes through the pqc_signing module")
 
 
 # ---------------------------------------------------------------------------
@@ -357,7 +361,9 @@ def check_verify_enforced(root: pathlib.Path) -> list[Finding]:
         return _fail("verify_enforced",
                      "pqc_signing.py must expose verify_token_signature + "
                      "trust_anchor_public_key_hex (the use-path check + the published anchor)")
-    m = re.search(r"def signature_bytes_for_token\(.*?\n(?=def [a-z])", p, re.S)
+    # The self-verify lives in signature_with_key_for_token (v9.117); the older
+    # signature_bytes_for_token is now a thin wrapper around it.
+    m = re.search(r"def signature_with_key_for_token\(.*?\n(?=def [a-z])", p, re.S)
     body = m.group(0) if m else ""
     if "verify(" not in body:
         return _fail("verify_enforced",
@@ -370,6 +376,38 @@ def check_verify_enforced(root: pathlib.Path) -> list[Finding]:
     return _ok("verify_enforced",
                "verification is enforced: issuance self-verifies, verify_token_signature checks "
                "stored signatures against the trust anchor, exercised in CI")
+
+
+# ---------------------------------------------------------------------------
+# The issuer public key is stored WITH each signature (TokenSignature.
+# signing_public_key_hex) so verification at use is self-contained — no live
+# key-file lookup, and it survives key rotation. This pins the whole wiring:
+# the column (schema), the stored-proc parameter, issuance threading the key,
+# and the token-detail page verifying each stored signature.
+# ---------------------------------------------------------------------------
+def check_signature_self_contained_verify(root: pathlib.Path) -> list[Finding]:
+    p = _read(root, "polaris_web/pqc_signing.py")
+    if not p or "def verify_stored_signature" not in p or "def signature_with_key_for_token" not in p:
+        return _fail("self_contained_verify",
+                     "pqc_signing.py must expose signature_with_key_for_token + "
+                     "verify_stored_signature (the self-contained store + verify path)")
+    schema = _read(root, "polaris_sql/01_schema.sql")
+    if "signing_public_key_hex" not in schema:
+        return _fail("self_contained_verify",
+                     "TokenSignature must have signing_public_key_hex in 01_schema.sql (the "
+                     "stored issuer public key / DB trust anchor)")
+    proc = _read(root, "polaris_sql/05_procedures.sql")
+    if "p_signing_public_key_hex" not in proc:
+        return _fail("self_contained_verify",
+                     "uc1_issue_and_activate must accept p_signing_public_key_hex and store it")
+    app = _read(root, "polaris_web/app.py")
+    if "verify_stored_signature" not in app:
+        return _fail("self_contained_verify",
+                     "the token-detail route must verify each stored signature "
+                     "(pqc_signing.verify_stored_signature) so verification is surfaced at use")
+    return _ok("self_contained_verify",
+               "the issuer public key is stored with each signature and verification is surfaced "
+               "at use (token detail) — self-contained, survives key rotation")
 
 
 # ---------------------------------------------------------------------------
@@ -1190,6 +1228,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_pqc_signing_wired,
     check_pqc_real_signing,
     check_verify_enforced,
+    check_signature_self_contained_verify,
     check_prod_real_pqc,
     check_sql_console_readonly,
     check_prod_image_no_test_deps,

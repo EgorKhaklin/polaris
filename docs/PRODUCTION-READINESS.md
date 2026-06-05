@@ -77,10 +77,13 @@ left a real foundation. Genuinely sound today:
   trust anchor), and `polaris-generate-secrets.sh` mints the keypair. CI verifies
   real ML-DSA-65 sign + verify-at-use inside the built image. Pinned by
   `check_prod_real_pqc`. *(HSM/KMS key custody remains operator-gated.)*
-- [ ] **Wire it the rest of the way (Wave 2 cont.).** Store the issuer public key
-  as a DB trust anchor (a `SigningKey`/Agency key) and surface verification at a
-  use point (token detail / a verify endpoint); route uc6 migration through the
-  signing module (it writes a hardcoded non-signature).
+- [x] **DB trust anchor + verification surfaced at use (v9.117).**
+  `TokenSignature.signing_public_key_hex` stores the issuer public key with each
+  signature (NULL = placeholder), so verification is self-contained and survives
+  key rotation; the token-detail page verifies each signature and renders the
+  result. Pinned by `check_signature_self_contained_verify`.
+- [ ] **uc6 through the signing module (Wave 2 cont.).** uc6 algorithm-migration
+  still writes a hardcoded non-signature instead of routing through `pqc_signing`.
 
 ### Wave 3 — data protection + DR (BLOCKER/HIGH)
 - [x] **Encrypt backups at rest (v9.102).** `polaris-backup.sh` encrypts the

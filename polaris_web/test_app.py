@@ -644,6 +644,35 @@ class UC1Tests(PolarisTestCase):
             "the route may be bypassing pqc_signing")
         self.assertNotIn(b'UC1_ISSUE_PLACEHOLDER', stored)
 
+    def test_token_detail_surfaces_signature_verification(self):
+        """v9.117: the token-detail page verifies each stored signature at use
+        (against the public key stored with it) and shows the result. A
+        freshly-issued token follows the placeholder path in the test default,
+        storing sha3(token_value) with a NULL public key — so the page renders
+        the new Verification column with a 'placeholder' result (integrity ok)."""
+        token_value = 'TKN-V117-DETAIL'
+        r = self._post('/uc1/issue', data={
+            'legal_name': 'V117 Detail Holder',
+            'date_of_birth': '1985-06-20',
+            'jurisdiction': 'US-OH',
+            'issuing_agency_id': '1',
+            'algorithm_id': '1',
+            'biometric_binding_type': 'IRIS',
+            'witness_agency_id': '2',
+            'liveness_check_type': 'MULTI_MODAL',
+            'token_value': token_value,
+            'physical_serial': 'SN-V117-DETAIL',
+            'hardware_model': 'TitanQ-3',
+            'contexts': ['1'],
+        }, follow_redirects=True)
+        self.assertEqual(r.status_code, 200)
+        body = r.get_data(as_text=True)
+        self.assertIn('Verification', body, "the token-detail signature table must have a Verification column")
+        self.assertIn('placeholder', body, "a freshly-issued placeholder signature must verify as 'placeholder'")
+        # The stored signature must not equal a value that would render as INVALID
+        # for a correctly-issued token.
+        self.assertNotIn('&#10007; INVALID', body, "a correctly-issued signature must not show INVALID")
+
     def test_unauthorized_algorithm_rejected(self):
         """Agency 2 (PA) does not hold a grant on algorithm 4 (SLH-DSA-256s)."""
         r = self._post('/uc1/issue', data={

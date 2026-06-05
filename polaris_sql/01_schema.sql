@@ -873,6 +873,12 @@ CREATE TABLE TokenSignature (
     algorithm_id       INTEGER      NOT NULL
                        REFERENCES CryptographicAlgorithm(algorithm_id),
     signature_bytes    BYTEA        NOT NULL,
+    signing_public_key_hex TEXT,
+        -- v9.117: the issuer public key (hex) that produced signature_bytes,
+        -- stored WITH the signature so verify-at-use is self-contained (no live
+        -- key-file lookup, survives key rotation). NULL = a deterministic
+        -- placeholder signature (SHA3-256, no key); non-NULL = a real ML-DSA-65
+        -- signature verifiable against this key. Write-once (immutability trigger).
     signed_at          TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     deprecation_date   TIMESTAMP,
         -- NULL = currently active; non-NULL = no longer accepted

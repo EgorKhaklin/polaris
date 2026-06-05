@@ -211,7 +211,7 @@
 <h3>Token Signatures (R11-1)</h3>
 <table class="data">
     <thead>
-        <tr><th>ID</th><th>Algorithm</th><th>Signed</th><th>State</th></tr>
+        <tr><th>ID</th><th>Algorithm</th><th>Signed</th><th>State</th><th>Verification</th></tr>
     </thead>
     <tbody>
         {% for s in v2_signatures %}
@@ -230,9 +230,23 @@
                     <span class="pill pill-success">ACTIVE</span>
                 {% endif %}
             </td>
+            <td>
+                {# v9.117: verified at use against the public key stored with the signature. #}
+                {% if s.verification == 'verified' %}
+                    <span class="pill pill-success" title="Real ML-DSA-65 signature verified against the stored issuer public key">&#10003; verified</span>
+                {% elif s.verification == 'invalid' %}
+                    <span class="pill pill-failure" title="Signature did NOT verify against its stored public key">&#10007; INVALID</span>
+                {% elif s.verification == 'unverifiable' %}
+                    <span class="pill pill-warn" title="Real signature, but liboqs is unavailable here to verify it">verifier offline</span>
+                {% elif s.verification == 'placeholder_ok' %}
+                    <span class="pill pill-warn" title="Deterministic placeholder (integrity only, not an authenticity proof)">placeholder</span>
+                {% else %}
+                    <span class="pill pill-warn" title="Placeholder signature that does not match the token (legacy/seed data)">placeholder (unverified)</span>
+                {% endif %}
+            </td>
         </tr>
         {% else %}
-        <tr><td colspan="4" class="empty">No signatures recorded.</td></tr>
+        <tr><td colspan="5" class="empty">No signatures recorded.</td></tr>
         {% endfor %}
     </tbody>
 </table>

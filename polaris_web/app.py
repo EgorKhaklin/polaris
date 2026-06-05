@@ -3223,12 +3223,30 @@ def tokens_detail(tok_id):
     #   - Duress-enrollment flag (R11-5; non-revealing — boolean only)
     v2_signatures = query("""
         SELECT s.signature_id, s.signed_at, s.deprecation_date,
+               s.signature_bytes, s.signing_public_key_hex,
                alg.name AS algorithm_name, alg.quantum_resistant
           FROM TokenSignature s
           JOIN CryptographicAlgorithm alg ON s.algorithm_id = alg.algorithm_id
          WHERE s.token_id = %s
          ORDER BY (s.deprecation_date IS NOT NULL), s.signed_at DESC
     """, (tok_id,))
+    # v9.117 — verify each stored signature at use, against the public key stored
+    # with it (self-contained). A real signature (key present) verifies against
+    # that key; a placeholder (key NULL) is an integrity recompute. The token
+    # value is the signed message; it never reaches the template.
+    for _s in v2_signatures:
+        _pk = _s.get('signing_public_key_hex')
+        _raw = _s.get('signature_bytes')
+        _sig = bytes(_raw) if _raw is not None else b''
+        _ok = pqc_signing.verify_stored_signature(token['token_value'], _sig, _pk)
+        if _pk:
+            _s['verification'] = ('verified' if _ok else
+                                  ('unverifiable' if not pqc_signing.is_available() else 'invalid'))
+        else:
+            _s['verification'] = 'placeholder_ok' if _ok else 'placeholder_unverified'
+        # Strip the raw bytes — they must not reach the template / response.
+        _s.pop('signature_bytes', None)
+        _s.pop('signing_public_key_hex', None)
     v2_anchor_batches = query("""
         SELECT a.anchor_id, a.commitment_hash AS leaf_hash,
                a.anchored_date AS anchor_timestamp,
@@ -3492,11 +3510,14 @@ def uc1_issue():
             # a real ML-DSA-65 signature when POLARIS_USE_REAL_PQC=1 + liboqs
             # are present, a deterministic SHA3-256 placeholder otherwise —
             # rather than a hardcoded SQL string. Passed as p_signature_bytes.
-            sig_bytes, _sig_alg = pqc_signing.signature_bytes_for_token(
+            # v9.117: also capture the signing public key so it is stored with
+            # the signature (TokenSignature.signing_public_key_hex) and
+            # verification at use is self-contained. None for the placeholder.
+            sig_bytes, _sig_alg, sig_pubkey = pqc_signing.signature_with_key_for_token(
                 request.form['token_value'])
             new_token_id = query("""
                 SELECT uc1_issue_and_activate(
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
                 ) AS token_id
             """, (
                 request.form['legal_name'],
@@ -3512,6 +3533,7 @@ def uc1_issue():
                 request.form.get('hardware_model') or None,
                 contexts,
                 psycopg2.Binary(sig_bytes),
+                sig_pubkey,
             ), fetch='returning')['token_id']  # 'returning' commits the transaction
             flash(f'Issued and activated token #{new_token_id}', 'success')
             return redirect(url_for('tokens_detail', tok_id=new_token_id))

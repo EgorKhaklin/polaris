@@ -76,6 +76,14 @@ class PlaceholderPathTests(unittest.TestCase):
         self.assertFalse(
             pqc_signing.verify_token_signature('t', b'\x00' * 32, 'SOME-OTHER-ALG'))
 
+    def test_signature_with_key_placeholder_has_no_key(self):
+        sig, label, pk = pqc_signing.signature_with_key_for_token('TKN-PH')
+        self.assertEqual(label, pqc_signing.PLACEHOLDER_LABEL)
+        self.assertIsNone(pk)
+        # verify_stored_signature with no key is the integrity recompute.
+        self.assertTrue(pqc_signing.verify_stored_signature('TKN-PH', sig, None))
+        self.assertFalse(pqc_signing.verify_stored_signature('OTHER-TOKEN', sig, None))
+
 
 class FailLoudTests(unittest.TestCase):
     """Flag-on but liboqs unavailable: every entry point MUST raise rather than
@@ -194,6 +202,24 @@ class PersistentKeyTests(unittest.TestCase):
                 pqc_signing.signature_bytes_for_token("TKN-SELFCHECK")
         finally:
             pqc_signing.verify = orig_verify
+            os.environ.pop("POLARIS_USE_REAL_PQC", None)
+
+    def test_signature_with_key_real_returns_pubkey_and_verifies_self_contained(self):
+        os.environ["POLARIS_USE_REAL_PQC"] = "1"
+        try:
+            sig, label, pk = pqc_signing.signature_with_key_for_token("TKN-REAL-SC")
+            self.assertEqual(label, "ML-DSA-65")
+            self.assertEqual(pk, self._kp["public_key_hex"])
+            # verify_stored_signature uses the STORED key — no live anchor lookup.
+            self.assertTrue(pqc_signing.verify_stored_signature("TKN-REAL-SC", sig, pk))
+            self.assertFalse(pqc_signing.verify_stored_signature("WRONG-TOKEN", sig, pk))
+            tampered = bytes([sig[0] ^ 0xFF]) + sig[1:]
+            self.assertFalse(pqc_signing.verify_stored_signature("TKN-REAL-SC", tampered, pk))
+            # A signature is self-contained: it verifies against its stored key
+            # even with no POLARIS_PQC_SIGNING_KEY_FILE configured (no live anchor).
+            other = pqc_signing.generate_keypair()
+            self.assertFalse(pqc_signing.verify_stored_signature("TKN-REAL-SC", sig, other["public_key_hex"]))
+        finally:
             os.environ.pop("POLARIS_USE_REAL_PQC", None)
 
     def test_real_signature_unverifiable_without_a_trust_anchor(self):

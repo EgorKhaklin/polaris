@@ -454,11 +454,14 @@ BEGIN
             USING ERRCODE = 'insufficient_privilege';
     END IF;
 
-    -- UPDATE: only deprecation_date may change.
+    -- UPDATE: only deprecation_date may change. signing_public_key_hex (v9.117)
+    -- is nullable, so it is compared with IS DISTINCT FROM (a plain <> with NULL
+    -- would yield NULL, not TRUE, and silently let a change through).
     IF NEW.signature_id      <> OLD.signature_id
        OR NEW.token_id        <> OLD.token_id
        OR NEW.algorithm_id    <> OLD.algorithm_id
        OR NEW.signature_bytes <> OLD.signature_bytes
+       OR NEW.signing_public_key_hex IS DISTINCT FROM OLD.signing_public_key_hex
        OR NEW.signed_at       <> OLD.signed_at THEN
         RAISE EXCEPTION
             'TokenSignature is append-only except for deprecation_date'
