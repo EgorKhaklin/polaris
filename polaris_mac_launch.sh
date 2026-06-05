@@ -1369,6 +1369,12 @@ print_post_launch_hints() {
         printf "%s%sDocker shortcuts:%s\n" "$DIM" "$BOLD" "$NC"
         printf "%s  cd polaris_web && docker compose logs -f app%s\n" "$DIM" "$NC"
         printf "%s  cd polaris_web && docker compose exec app sh%s\n" "$DIM" "$NC"
+        echo
+        printf "%sNote: the Docker dev image ships WITHOUT the ZK prover (by design),%s\n" "$YELLOW" "$NC"
+        printf "%sso /api/zk/epoch/close and /api/zk/verify are unavailable. Every page%s\n" "$DIM" "$NC"
+        printf "%sserves and /epochs renders the seeded epochs; only NEW epoch close/%s\n" "$DIM" "$NC"
+        printf "%sverify need it. For the full ZK demo, relaunch the native path:%s\n" "$DIM" "$NC"
+        printf "%s  ./polaris_mac_launch.sh up --native%s\n" "$DIM" "$NC"
     fi
     echo
     printf "%sExplore the Atlas at /atlas for the operational view.%s\n" "$BOLD" "$NC"
@@ -1377,7 +1383,9 @@ print_post_launch_hints() {
 }
 
 usage() {
-    sed -n '2,42p' "$0" | sed 's/^# \{0,1\}//'
+    # Start at line 4 — skip the shebang, the machine-readable AI-context line,
+    # and the first border — so --help leads with the human title, not metadata.
+    sed -n '4,44p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 # -----------------------------------------------------------------------------

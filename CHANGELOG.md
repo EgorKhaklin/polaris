@@ -5,6 +5,24 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.97 — 2026-06-05 (the launcher is honest about the Docker ZK degradation)
+
+The Docker dev image ships without the Rust ZK prover by design (README: "the
+compiled binary does not ship; the app degrades gracefully"). The native path
+builds it (v9.93), but on the Docker path that degradation was silent — a user
+only found out when `/api/zk/verify` returned a 400. The project's discipline is
+no silent degradation, so the launcher now says it at bring-up: the Docker dev
+image has no ZK prover, every page serves and `/epochs` renders the seeded
+epochs, only NEW epoch close/verify need it, and `up --native` gives the full ZK
+demo. Nothing is hidden; the user knows exactly what works and how to get the
+rest.
+
+Also: `--help` no longer leads with the machine-readable `AI-context:` line. It
+starts at the human title (the audit flagged this).
+
+- `polaris_mac_launch.sh` — docker post-launch hints state the ZK degradation +
+  the `--native` path to it; `usage()` skips the AI-context header line.
+
 ## v9.96 — 2026-06-05 (the launcher tells you WHY it failed)
 
 When the v9.94 Docker crash happened, the launcher printed "Web app failed to
