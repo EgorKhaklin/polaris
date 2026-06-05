@@ -40,13 +40,81 @@ operator can't disable what they can't see).
 
 from __future__ import annotations
 
+import contextvars
 import json
 import os
+import re
 import sys
 import threading
 import time
+import uuid
 from collections import deque
 from dataclasses import dataclass, field
+
+
+# ---------------------------------------------------------------------------
+# Request-correlation id (v9.122).
+#
+# A single ephemeral id per HTTP request so an operator can match a structured
+# log line to the response a caller saw. This is deliberately NOT a tracing
+# system (no spans, no cross-service propagation, no backend) — it is one field
+# stamped into the existing stdout JSON stream, consistent with the
+# anti-architect constraints above.
+#
+# Vocation (anti-coercion): the id is per-request and ephemeral. It lives only
+# in the contextvar below and the X-Request-ID response header. It is NEVER
+# derived from identity and is NEVER written to a DB row — in particular not the
+# append-only audit-of-record, where the C1 trigger would make it a permanent,
+# reconstructable cross-request linkage key. That asymmetry (useful for live
+# debugging in the moment, inert as a retention/aggregation vector) is the point.
+#
+# Accepted inbound ids are bounded to a safe charset and length so a hostile
+# X-Request-ID cannot inject newlines/control bytes into logs or grow unbounded
+# (the v9.83 "bound unbounded resources" posture). \A and \Z (not ^ / $) anchor
+# the whole string, so a trailing-newline payload cannot slip through.
+_REQUEST_ID_RE = re.compile(r"\A[A-Za-z0-9-]{8,64}\Z")
+_request_id_var: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "polaris_request_id", default="-"
+)
+
+
+def validate_or_new_request_id(raw) -> str:
+    """Return ``raw`` only if it is a well-formed inbound id, else mint a fresh one.
+
+    This is the ONLY function that is allowed to trust inbound bytes. A value is
+    accepted only when it is a ``str`` matching ``\\A[A-Za-z0-9-]{8,64}\\Z``;
+    anything else (None, wrong type, bad charset, too short/long, embedded
+    control char) is dropped in favour of ``uuid4().hex`` (32 hex chars, a strict
+    subset of the accepted charset).
+    """
+    if isinstance(raw, str) and _REQUEST_ID_RE.fullmatch(raw):
+        return raw
+    return uuid.uuid4().hex
+
+
+def set_request_id(value: str) -> contextvars.Token:
+    """Bind ``value`` as the current request id; returns the reset token."""
+    return _request_id_var.set(value)
+
+
+def get_request_id() -> str:
+    """The current request id, or the sentinel ``'-'`` outside any request."""
+    return _request_id_var.get()
+
+
+def reset_request_id(token: contextvars.Token) -> None:
+    """Clear the request id back to its prior value.
+
+    Tolerates a token created in a different context or already spent (Flask can
+    pop a shared-``g`` request context more than once, and a ``Token`` may only
+    reset once): this must never crash teardown. As a backstop, drop the var
+    back to the sentinel so a reset that could not be honoured still cannot leak
+    the id into the next request a worker serves.
+    """
+    try:
+        _request_id_var.reset(token)
+    except (ValueError, LookupError, RuntimeError):
+        _request_id_var.set("-")
 
 
 class Counter:
@@ -165,6 +233,7 @@ def structured_log(event: str, **fields) -> None:
         "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "pid": _REGISTRY.process_id,
         "event": event,
+        "request_id": get_request_id(),
     }
     record.update(fields)
     try:

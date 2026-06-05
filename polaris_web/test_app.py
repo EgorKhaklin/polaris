@@ -27,6 +27,7 @@ Output: one line per test (PASS/FAIL with description), final summary.
 """
 
 import os
+import re
 import sys
 import unittest
 from contextlib import closing
@@ -7041,6 +7042,115 @@ class ResourceBoundTests(unittest.TestCase):
         if r.status_code == 200:  # prometheus_client present
             self.assertNotIn(marker, r.data.decode(),
                              'the raw 404 path must not appear as a metric label')
+
+
+class CorrelationIdTests(UnauthenticatedTestCase):
+    """v9.122 — the X-Request-ID contract and its vocation guarantee.
+
+    The id is per-request and ephemeral: generated when absent, validated when
+    inbound, honoured only behind a trusted proxy, distinct per request, and
+    NEVER written to the append-only audit-of-record (no cross-request linkage).
+    """
+
+    _GEN_RE = re.compile(r'^[A-Za-z0-9]{32}$')  # uuid4().hex shape
+
+    def _trust_proxy(self, on):
+        if on:
+            os.environ['POLARIS_TRUST_PROXY'] = '1'
+        else:
+            os.environ.pop('POLARIS_TRUST_PROXY', None)
+
+    def test_correlation_id_generated_when_absent(self):
+        r = self.client.get('/login')
+        rid = r.headers.get('X-Request-ID')
+        self.assertIsNotNone(rid, 'every response must carry X-Request-ID')
+        self.assertRegex(rid, self._GEN_RE, 'a missing id must be server-minted (uuid4 hex)')
+
+    def test_correlation_id_not_honoured_from_untrusted_client(self):
+        # Default posture: no trusted proxy, so an inbound client-chosen id is
+        # ignored and a fresh one is minted (the client cannot pick its token).
+        self._trust_proxy(False)
+        r = self.client.get('/login', headers={'X-Request-ID': 'client-chosen-1234'})
+        rid = r.headers.get('X-Request-ID')
+        self.assertNotEqual(rid, 'client-chosen-1234',
+                            'an untrusted client must not choose its correlation id')
+        self.assertRegex(rid, self._GEN_RE)
+
+    def test_correlation_id_honoured_behind_trusted_proxy(self):
+        self._trust_proxy(True)
+        try:
+            r = self.client.get('/login', headers={'X-Request-ID': 'abc-123-DEF-456'})
+            self.assertEqual(r.headers.get('X-Request-ID'), 'abc-123-DEF-456',
+                             'a well-formed inbound id from a trusted proxy is echoed verbatim')
+        finally:
+            self._trust_proxy(False)
+
+    def test_correlation_id_replaced_when_malformed(self):
+        # Even on the trusted path, a malformed/over-long id is rejected and
+        # replaced (no newline/control-char log injection, no unbounded length).
+        # (A literal newline cannot even reach the app: werkzeug/WSGI rejects it
+        # at the header boundary, which is its own layer of defense. These are
+        # the malformed values that DO arrive: bad charset, too long, too short.)
+        self._trust_proxy(True)
+        try:
+            for bad in ('bad id with spaces/$$$', 'x' * 5000, 'short'):
+                r = self.client.get('/login', headers={'X-Request-ID': bad})
+                rid = r.headers.get('X-Request-ID')
+                self.assertNotEqual(rid, bad)
+                self.assertRegex(rid, self._GEN_RE,
+                                 'a malformed inbound id must be replaced by a minted one')
+        finally:
+            self._trust_proxy(False)
+
+    def test_correlation_id_distinct_per_request(self):
+        # Two back-to-back requests with no inbound id must get DIFFERENT ids,
+        # proving the contextvar was cleared in teardown and did not leak.
+        a = self.client.get('/login').headers.get('X-Request-ID')
+        b = self.client.get('/login').headers.get('X-Request-ID')
+        self.assertNotEqual(a, b, 'the id must not leak across requests on a reused worker')
+
+    def test_correlation_id_present_on_error_response(self):
+        r = self.client.get('/no-such-path-' + 'z' * 8)
+        self.assertEqual(r.status_code, 404)
+        self.assertIn('X-Request-ID', r.headers,
+                      'the id must ride handled error responses (404)')
+
+    def test_correlation_id_never_persisted_to_audit(self):
+        # The load-bearing vocation proof: drive requests that WRITE audit rows
+        # (failed logins -> LOGIN_FAILED) while a trusted, operator-chosen
+        # correlation id is in context, then assert no audit row anywhere
+        # contains that id. A static check cannot prove this; the DB can.
+        self._trust_proxy(True)
+        sentinels = ['corrtest-vocation-{:04d}'.format(i) for i in range(3)]
+        try:
+            for i, rid in enumerate(sentinels):
+                # Distinct non-existent usernames so the real admin never locks.
+                self.client.post('/login',
+                                 data={'username': 'nouser{}'.format(i),
+                                       'password': 'wrong-Pw@123'},
+                                 headers={'X-Request-ID': rid})
+        finally:
+            self._trust_proxy(False)
+
+        conn = psycopg2.connect(**DB_CONFIG)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT count(*), "
+                    "string_agg(coalesce(username,'')||'|'||coalesce(user_agent,'')||'|'"
+                    "||coalesce(detail,'')||'|'||coalesce(ip_address,''), ' ') "
+                    "FROM AuthAuditLog")
+                row_count, blob = cur.fetchone()
+        finally:
+            conn.close()
+
+        # Rows WERE written (the test is meaningful, not vacuous)...
+        self.assertGreater(row_count, 0, 'the failed logins should have written audit rows')
+        # ...and none of them carries the correlation id.
+        blob = blob or ''
+        for rid in sentinels:
+            self.assertNotIn(rid, blob,
+                             'the correlation id must never reach the audit-of-record (vocation)')
 
 
 if __name__ == '__main__':

@@ -1225,5 +1225,87 @@ def test_app_db_tls_check_discriminates(tmp_path):
         "must PASS with sslmode + compose TLS + postgres ssl + pgbouncer TLS"
 
 
+def test_correlation_id_check_discriminates(tmp_path):
+    web = tmp_path / "polaris_web"
+    web.mkdir()
+    GOOD_OBS = (
+        "import contextvars, re, uuid\n"
+        "_RE = re.compile(r'\\A[A-Za-z0-9-]{8,64}\\Z')\n"
+        "_v = contextvars.ContextVar('rid', default='-')\n"
+        "def validate_or_new_request_id(raw):\n"
+        "    if isinstance(raw, str) and _RE.fullmatch(raw):\n"
+        "        return raw\n"
+        "    return uuid.uuid4().hex\n"
+    )
+    GOOD_APP = (
+        "@app.before_request\n"
+        "def _corr():\n"
+        "    g._t = observability.set_request_id("
+        "observability.validate_or_new_request_id(request.headers.get('X-Request-ID')))\n"
+        "@app.teardown_request\n"
+        "def _td(e):\n"
+        "    reset_request_id(g._t)\n"
+        "@app.after_request\n"
+        "def _echo(r):\n"
+        "    r.headers['X-Request-ID'] = observability.get_request_id()\n"
+        "    return r\n"
+    )
+    GOOD_SEC = "def client_ip():\n    return request.remote_addr\n"
+
+    def write(obs=GOOD_OBS, app=GOOD_APP, sec=GOOD_SEC):
+        (web / "observability.py").write_text(obs)
+        (web / "app.py").write_text(app)
+        (web / "security.py").write_text(sec)
+
+    # 1. all wired correctly -> OK.
+    write()
+    assert checks.check_correlation_id(tmp_path)[0].level == "OK", \
+        "must PASS the correct wiring"
+
+    # 2. unbounded validator (drop the {8,64} length bound) -> FAIL.
+    write(obs=GOOD_OBS.replace("{8,64}", "+"))
+    assert checks.check_correlation_id(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the id length is unbounded (log-injection / memory hole)"
+
+    # 3. no uuid4 generation fallback -> FAIL.
+    write(obs=GOOD_OBS.replace("uuid.uuid4().hex", "raw"))
+    assert checks.check_correlation_id(tmp_path)[0].level == "FAIL", \
+        "must FAIL without a generated id when none is supplied"
+
+    # 4. the id-owning module gains DB access -> FAIL.
+    write(obs=GOOD_OBS + "def leak(c):\n    c.execute('INSERT INTO audit VALUES (1)')\n")
+    assert checks.check_correlation_id(tmp_path)[0].level == "FAIL", \
+        "must FAIL when observability.py can touch the DB"
+
+    # 5. no teardown reset -> FAIL (id leaks across requests).
+    write(app=GOOD_APP.replace("reset_request_id(g._t)", "pass"))
+    assert checks.check_correlation_id(tmp_path)[0].level == "FAIL", \
+        "must FAIL without a teardown reset"
+
+    # 6. set_request_id fed a raw header instead of the validator -> FAIL.
+    bad = GOOD_APP.replace(
+        "observability.set_request_id(observability.validate_or_new_request_id("
+        "request.headers.get('X-Request-ID')))",
+        "observability.set_request_id(request.headers.get('X-Request-ID'))")
+    write(app=bad)
+    assert checks.check_correlation_id(tmp_path)[0].level == "FAIL", \
+        "must FAIL when a raw inbound header is bound without validation"
+
+    # 7. VOCATION: the DB-write/audit module references the id -> FAIL.
+    write(sec=GOOD_SEC + "def audit():\n    log(get_request_id())\n")
+    assert checks.check_correlation_id(tmp_path)[0].level == "FAIL", \
+        "must FAIL when security.py references the request id (surveillance vector)"
+
+    # 8. VOCATION: the id co-occurs with an audit call in app.py -> FAIL.
+    write(app=GOOD_APP + "    security._audit(get_db, 'X', detail=observability.get_request_id())\n")
+    assert checks.check_correlation_id(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the id is threaded into an _audit() call"
+
+    # 9. missing files -> FAIL.
+    (web / "observability.py").unlink()
+    assert checks.check_correlation_id(tmp_path)[0].level == "FAIL", \
+        "must FAIL when a wiring file is absent"
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

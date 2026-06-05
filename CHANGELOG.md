@@ -5,6 +5,39 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.122 — 2026-06-05 (production-readiness, wave 4: request-correlation ids that cannot become a surveillance key)
+
+Production debugging needs to tie a log line to the request a caller saw, but in
+a privacy-first identity system a correlation id is a hazard: persist it into the
+audit trail and it becomes a permanent, reconstructable record of one person's
+activity. This ships the id with that failure mode designed out.
+
+- **Per-request, ephemeral by construction.** `observability.py` holds the id in
+  a `contextvars.ContextVar` set in `before_request` and cleared in
+  `teardown_request`, so it never leaks into the next request a worker serves.
+  It lives only in that contextvar and the `X-Request-ID` response header. There
+  is no DB column, cookie, cache, or global registry.
+- **Stamped into the logs, echoed to the caller.** Every `structured_log` line
+  carries `request_id`, and the unhandled `[db_error]` path now routes through
+  `structured_log` so the single most useful line to correlate is tagged. The id
+  is echoed in `X-Request-ID` on every response produced through the normal
+  pipeline, including handled error responses (404/403/413/429).
+- **Bounded and mint-always.** An inbound id is accepted only if it matches
+  `\A[A-Za-z0-9-]{8,64}\Z` (safe charset, bounded length, newline-proof anchors);
+  anything else is replaced by `uuid4().hex`. An inbound id is honoured only
+  behind a trusted proxy (`POLARIS_TRUST_PROXY`, symmetric with
+  `X-Forwarded-For`); otherwise the server always mints its own, so an untrusted
+  client cannot choose its correlation token.
+- **Vocation, enforced.** The id is never derived from identity and never written
+  to the append-only audit-of-record. `check_correlation_id` (52nd check) fails
+  the build if `observability.py` gains DB access, if `security.py` references
+  the id, if it co-occurs with an audit call, if `set_request_id` is fed anything
+  but the validator, or if it is seeded from a session/user. The proof a static
+  check cannot give is a DB-backed test: it drives failed logins (which write
+  audit rows) while a trusted operator-chosen id is in context, then asserts no
+  `AuthAuditLog` row contains it. Useful for live debugging, inert as an
+  aggregation vector. That asymmetry is the anti-coercion property.
+
 ## v9.121 — 2026-06-05 (production-readiness, wave 3: the app<->DB path is encrypted on both hops)
 
 The prod stack routes the app through pgbouncer to Postgres, and both hops moved

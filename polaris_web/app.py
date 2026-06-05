@@ -348,8 +348,9 @@ def db_error_to_message(e):
         return first_line
 
     # Unknown error path — DON'T leak internal details. Log server-side.
-    import sys
-    sys.stderr.write(f"[db_error] Unhandled: {msg[:500]}\n")
+    # v9.122: route through structured_log so the line carries the request id
+    # (the single most useful line to correlate to a caller's failed request).
+    observability.structured_log(event='db_error', detail=msg[:500])
     return "An internal database error occurred. The administrator has been notified."
 
 
@@ -363,6 +364,34 @@ def db_error_to_message(e):
 # Make get_db reachable from security.py via app.config (decorators need it
 # but can't import from app.py without circular imports).
 app.config['GET_DB'] = get_db
+
+
+# v9.122 — request-correlation id. Registered FIRST so the id is already in
+# context when the security/metrics hooks below emit their structured logs.
+# Mint-always by default: an inbound X-Request-ID is honoured only behind a
+# trusted proxy (symmetric with X-Forwarded-For in security.client_ip), so an
+# untrusted client cannot choose its own correlation token. The id is bound to a
+# contextvar (cleared in teardown) and echoed in X-Request-ID; it is never
+# written to a DB row. See observability.py for the vocation rationale.
+@app.before_request
+def _correlation_before_request():
+    raw = None
+    if os.environ.get('POLARIS_TRUST_PROXY', '').lower() in ('1', 'true', 'yes'):
+        raw = request.headers.get('X-Request-ID')
+    g._request_id_token = observability.set_request_id(
+        observability.validate_or_new_request_id(raw))
+
+
+@app.teardown_request
+def _correlation_teardown(exc):
+    # Always runs, even on exceptions, so the contextvar never leaks the id into
+    # the next request this worker serves. Null the token first so a second
+    # teardown on a shared `g` (Flask reuses one app-context `g` across nested
+    # request contexts) cannot reset the same Token twice.
+    token = getattr(g, '_request_id_token', None)
+    if token is not None:
+        g._request_id_token = None
+        observability.reset_request_id(token)
 
 
 @app.before_request
@@ -448,6 +477,17 @@ def _metrics_after_request(response):
             observability.record_error()
     except Exception:
         pass
+    return response
+
+
+# v9.122 — echo the request id back so a caller can quote it when reporting an
+# issue. This rides every response produced through the normal pipeline,
+# including registered errorhandler responses (404/403/413/429, and the 500
+# error page in production). Under TESTING a truly unhandled 500 is re-raised
+# (PROPAGATE_EXCEPTIONS) and produces no response, so there is nothing to tag.
+@app.after_request
+def _correlation_after_request(response):
+    response.headers['X-Request-ID'] = observability.get_request_id()
     return response
 
 

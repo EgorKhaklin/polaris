@@ -887,6 +887,90 @@ def check_app_db_tls(root: pathlib.Path) -> list[Finding]:
 
 
 # ---------------------------------------------------------------------------
+# Request-correlation id (v9.122). A per-request id stamped into the structured
+# logs and echoed in X-Request-ID, so an operator can correlate a log line to a
+# caller's request. The VOCATION constraint is the load-bearing part: the id
+# must stay ephemeral and per-request and must NEVER be written to a DB row — in
+# particular not the append-only audit-of-record, where the C1 trigger would
+# turn it into a permanent, reconstructable cross-request linkage key (exactly
+# the surveillance vector Polaris refuses). A static grep cannot PROVE
+# non-persistence (the DB-backed test does that), but it can bite the realistic
+# regressions: the id leaking into the DB-write module, the id-owning module
+# gaining DB access, or the inbound-trust boundary being bypassed.
+# ---------------------------------------------------------------------------
+def check_correlation_id(root: pathlib.Path) -> list[Finding]:
+    obs = _read(root, "polaris_web/observability.py")
+    app = _read(root, "polaris_web/app.py")
+    sec = _read(root, "polaris_web/security.py")
+    if not (obs and app):
+        return _fail("correlation_id", "observability.py or app.py is missing")
+
+    # --- the id core lives in observability.py ---
+    if "ContextVar(" not in obs:
+        return _fail("correlation_id",
+                     "observability.py must hold the request id in a contextvars.ContextVar "
+                     "(per-request, not a global)")
+    if "[A-Za-z0-9-]" not in obs or "{8,64}" not in obs:
+        return _fail("correlation_id",
+                     "the inbound id validator must bound BOTH charset ([A-Za-z0-9-]) and length "
+                     "({8,64}) — an unbounded value is a log-injection + memory-abuse hole")
+    if "uuid4(" not in obs:
+        return _fail("correlation_id",
+                     "observability.py must mint a fresh uuid4 id when none is supplied")
+    # The id-owning module must never touch the DB: if it could INSERT, the
+    # non-persistence property would no longer be auditable from app.py alone.
+    if re.search(r"\b(execute|cursor|get_db)\s*\(", obs) or re.search(r"\bINSERT\b", obs):
+        return _fail("correlation_id",
+                     "observability.py must stay DB-free (no execute/cursor/get_db/INSERT) — the "
+                     "request id must never reach a DB row from the module that owns it")
+
+    # --- the lifecycle is wired in app.py ---
+    if "set_request_id(" not in app:
+        return _fail("correlation_id", "app.py must bind the id in a before_request (set_request_id)")
+    if "X-Request-ID" not in app:
+        return _fail("correlation_id", "app.py must echo the id in the X-Request-ID response header")
+    if "teardown_request" not in app or "reset_request_id(" not in app:
+        return _fail("correlation_id",
+                     "app.py must clear the id in teardown_request (reset_request_id) so it does not "
+                     "leak across requests on a reused worker")
+    # set_request_id may ONLY be fed by validate_or_new_request_id — that is the
+    # sole function allowed to trust inbound bytes. A raw header into the
+    # contextvar would be a log-injection / response-splitting path.
+    for m in re.finditer(r"(?<![A-Za-z_])set_request_id\(", app):
+        window = app[m.end():m.end() + 90]
+        if "validate_or_new_request_id" not in window:
+            return _fail("correlation_id",
+                         "set_request_id() must be called only with validate_or_new_request_id(...) "
+                         "(never a raw inbound header)")
+
+    # --- VOCATION: the id must not reach the DB-write / audit path ---
+    # The DB-write + audit module must not even reference the id.
+    if "get_request_id" in sec:
+        return _fail("correlation_id",
+                     "security.py (the DB-write/audit module) must not reference get_request_id — the "
+                     "request id has no business in an audit row (vocation: no cross-request linkage)")
+    # Backstop in app.py: the id must not co-occur with an audit/DB write call.
+    for line in app.splitlines():
+        if "get_request_id" not in line:
+            continue
+        if re.search(r"(_audit\(|cur\.execute\(|reason_code|requesting_purpose)", line):
+            return _fail("correlation_id",
+                         "the request id appears on a DB-write/audit line in app.py — it must never "
+                         "be persisted (vocation)")
+    # The id must not be derived from identity (that would make it a user key).
+    for line in app.splitlines():
+        if "set_request_id" not in line and "validate_or_new_request_id" not in line:
+            continue
+        if re.search(r"(session\.get\(|user_id|username)", line):
+            return _fail("correlation_id",
+                         "the request id must not be seeded from identity (session/user_id/username)")
+
+    return _ok("correlation_id",
+               "request id is per-request, validated+bounded ([A-Za-z0-9-]{8,64} or uuid4), echoed in "
+               "X-Request-ID, cleared in teardown, and never written to the audit-of-record (vocation)")
+
+
+# ---------------------------------------------------------------------------
 # Docker image completeness — every LOCAL module app.py imports must be COPYd
 # into both images, or the container ModuleNotFoundErrors at startup and crash-
 # loops. This has bitten twice: observability.py (v9.40) and pqc_signing.py
@@ -1349,6 +1433,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_alert_rules,
     check_pgbouncer_self_built,
     check_app_db_tls,
+    check_correlation_id,
     check_dockerfile_copies_app_modules,
     check_c2_zk_token_null,
     check_c4_atomic_failed_login,

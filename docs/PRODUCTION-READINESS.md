@@ -147,8 +147,14 @@ left a real foundation. Genuinely sound today:
   gunicorn `child_exit` reaps dead workers) — no more 4x undercount. Pinned by
   `check_prometheus_multiprocess`; proven across real processes in
   `MetricsMultiprocessTests`.
+- [x] **Request-correlation IDs (v9.122).** Per-request `X-Request-ID`:
+  generated when absent, validated to `[A-Za-z0-9-]{8,64}` when inbound (honoured
+  only behind `POLARIS_TRUST_PROXY`, else minted), stamped into every
+  `structured_log` line, echoed on the response, cleared in teardown. Vocation:
+  never derived from identity, never written to the audit-of-record — pinned by
+  `check_correlation_id` and a DB-backed non-persistence test.
 - [ ] Shipped alert rules (done, v9.115); log rotation (done, v9.109);
-  request-correlation IDs; SLOs; runbooks.
+  SLOs; runbooks.
 - [x] **Dependency CVE scanning gates the build (v9.105).** A `cve-scan` CI job
   runs `pip-audit --strict` on the runtime `requirements.txt`, so a known CVE in
   a package the production image installs fails the build. v9.105 split test
