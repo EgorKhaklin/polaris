@@ -37,3 +37,16 @@ updates:
       - dependencies
     commit-message:
       prefix: ci
+
+  # Docker base images + the prod compose's digest-pinned images (v9.114).
+  # Tracks the FROM lines in the Dockerfiles and the digest-pinned image: refs
+  # in docker-compose.prod.yml, opening PRs to bump a pinned digest when the
+  # upstream tag moves (a frozen digest otherwise never gets security updates).
+  - package-ecosystem: docker
+    directory: /polaris_web
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
+    commit-message:
+      prefix: docker

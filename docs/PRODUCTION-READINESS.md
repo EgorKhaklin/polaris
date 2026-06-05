@@ -117,7 +117,10 @@ left a real foundation. Genuinely sound today:
   could not pull it and was unstartable. Now built from `alpine` + the distro
   package (`Dockerfile.pgbouncer`), reading the DB password from the file-mounted
   secret with SCRAM on both hops. Pinned by `check_pgbouncer_self_built`.
-- [ ] Pinned image digests.
+- [x] **Pinned image digests (v9.114).** The prod compose's third-party images
+  (caddy, postgres, redis) are pinned `tag@sha256:<digest>` so a mutated or
+  deleted upstream tag cannot change what runs; the `docker` Dependabot
+  ecosystem keeps the pins current. Pinned by `check_prod_images_digest_pinned`.
 - [ ] Prometheus multiprocess mode (metrics undercount across 4 workers);
   shipped alert rules; log rotation; request-correlation IDs; SLOs; runbooks.
 - [x] **Dependency CVE scanning gates the build (v9.105).** A `cve-scan` CI job

@@ -19,7 +19,10 @@
 services:
 
   caddy:
-    image: caddy:2-alpine
+    # Digest-pinned (v9.114): the tag stays for readability, the @sha256 makes
+    # the image immutable so a mutated/retagged upstream cannot change what runs.
+    # Dependabot (docker ecosystem) opens PRs to bump the digest.
+    image: caddy:2-alpine@sha256:77c07d5ebfa5be9fd6c820d2094ae662c9e7eeb9bf98346b7f639900263ee2a2
     deploy:
       resources:
         limits:
@@ -188,7 +191,7 @@ services:
     # polaris-net network. App connects to pgbouncer:6432.
 
   postgres:
-    image: postgres:16-alpine
+    image: postgres:16-alpine@sha256:16bc17c64a573ef34162af9298258d1aec548232985b33ed7b1eac33ba35c229
     deploy:
       resources:
         limits:
@@ -235,7 +238,7 @@ services:
       - polaris-net
 
   redis:
-    image: redis:7-alpine
+    image: redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
     deploy:
       resources:
         limits:

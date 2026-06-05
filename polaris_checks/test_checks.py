@@ -978,5 +978,37 @@ def test_verify_enforced_check_discriminates(tmp_path):
         "must FAIL when CI does not exercise verify-at-use"
 
 
+def test_prod_images_digest_pinned_check_discriminates(tmp_path):
+    web = tmp_path / "polaris_web"
+    gh = tmp_path / ".github"
+    web.mkdir(); gh.mkdir()
+    (gh / "dependabot.yml").write_text("version: 2\nupdates:\n  - package-ecosystem: docker\n")
+
+    def write(compose):
+        (web / "docker-compose.prod.yml").write_text(compose)
+
+    PINNED = ("services:\n"
+              "  caddy:\n    image: caddy:2-alpine@sha256:" + "a" * 64 + "\n"
+              "  app:\n    build: .\n    image: polaris-app:prod\n"
+              "  redis:\n    image: redis:7-alpine@sha256:" + "b" * 64 + "\n")
+
+    # 1. A third-party image pinned only by tag -> FAIL.
+    write("services:\n  caddy:\n    image: caddy:2-alpine\n"
+          "  app:\n    image: polaris-app:prod\n")
+    assert checks.check_prod_images_digest_pinned(tmp_path)[0].level == "FAIL", \
+        "must FAIL when a third-party image is tag-pinned only"
+
+    # 2. All third-party images digest-pinned, locally-built exempt -> OK.
+    write(PINNED)
+    assert checks.check_prod_images_digest_pinned(tmp_path)[0].level == "OK", \
+        "must PASS when every third-party image is @sha256-pinned (polaris-* exempt)"
+
+    # 3. Digest-pinned but Dependabot lacks the docker ecosystem -> FAIL.
+    (gh / "dependabot.yml").write_text("version: 2\nupdates:\n  - package-ecosystem: pip\n")
+    write(PINNED)
+    assert checks.check_prod_images_digest_pinned(tmp_path)[0].level == "FAIL", \
+        "must FAIL when Dependabot does not track docker (pins would never update)"
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

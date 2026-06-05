@@ -5,6 +5,27 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.114 — 2026-06-05 (production-readiness, wave 4: prod images are pinned by digest, not a mutable tag)
+
+The prod compose pulled `caddy:2-alpine`, `postgres:16-alpine`, and
+`redis:7-alpine` by tag. A tag is a mutable pointer: upstream can repoint it at
+different content, or retire it entirely — exactly what happened to
+`bitnami/pgbouncer:1.22` (v9.110). Pulling by tag means the deploy can silently
+run something other than what was reviewed.
+
+- **Digest-pinned.** All three third-party prod images are now
+  `name:tag@sha256:<digest>` — the tag stays for readability, the digest makes
+  the image immutable. The deploy runs exactly the bytes that were vetted; a
+  mutated or deleted upstream tag cannot change that. (The locally-built
+  `polaris-app` / `polaris-pgbouncer` images have no registry digest to pin.)
+- **Kept current.** A frozen digest never receives security updates on its own,
+  so the `docker` ecosystem was added to `.github/dependabot.yml` — it opens PRs
+  to bump a pinned digest when the upstream tag moves.
+- **Pinned** by `check_prod_images_digest_pinned` (the 44th check): every
+  third-party `image:` in the prod compose must carry `@sha256:` and Dependabot
+  must track docker. Ticks the image-digest box in
+  `docs/PRODUCTION-READINESS.md` Wave 4.
+
 ## v9.113 — 2026-06-05 (production-readiness, wave 2: signature verification is enforced, not just possible)
 
 The signing core could produce a real ML-DSA-65 signature (v9.103), but

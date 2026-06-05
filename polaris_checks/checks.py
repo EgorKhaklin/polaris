@@ -602,6 +602,39 @@ def check_compose_resource_limits(root: pathlib.Path) -> list[Finding]:
 
 
 # ---------------------------------------------------------------------------
+# Third-party images in the PROD compose must be pinned by digest (@sha256), not
+# just a mutable tag. A tag can be repointed at different content upstream (or, as
+# bitnami/pgbouncer showed, deleted); a digest is immutable, so the deploy runs
+# exactly what was reviewed. Locally-built images (polaris-*) are exempt — they
+# have no registry digest. Dependabot's docker ecosystem bumps the pins.
+# ---------------------------------------------------------------------------
+def check_prod_images_digest_pinned(root: pathlib.Path) -> list[Finding]:
+    compose = _read(root, "polaris_web/docker-compose.prod.yml")
+    if not compose:
+        return _fail("image_digests", "polaris_web/docker-compose.prod.yml is missing")
+    unpinned = []
+    for m in re.finditer(r"(?m)^\s*image:\s*(\S+)", compose):
+        img = m.group(1).strip().strip('"').strip("'")
+        if img.startswith("polaris-"):
+            continue  # built locally via `build:`, no registry digest to pin
+        if "@sha256:" not in img:
+            unpinned.append(img)
+    if unpinned:
+        return _fail("image_digests",
+                     "prod-compose third-party image(s) are tag-pinned, not digest-pinned: "
+                     + ", ".join(unpinned) + " — pin as name:tag@sha256:<digest> so a mutated or "
+                     "deleted upstream tag cannot change what runs")
+    dep = root / ".github" / "dependabot.yml"
+    if not dep.is_file() or "docker" not in dep.read_text():
+        return _fail("image_digests",
+                     "add the docker ecosystem to .github/dependabot.yml so the pinned digests get "
+                     "security bumps (a frozen digest never updates on its own)")
+    return _ok("image_digests",
+               "all third-party prod-compose images are digest-pinned (@sha256); Dependabot's "
+               "docker ecosystem keeps the pins current")
+
+
+# ---------------------------------------------------------------------------
 # The connection pooler must not depend on a third-party image that can vanish.
 # bitnami/pgbouncer:1.22 was removed from Docker Hub when Bitnami retired their
 # free catalogue (Aug 2025), leaving the prod stack unable to pull its pooler.
@@ -1102,6 +1135,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_web_concurrency_honored,
     check_health_liveness_readiness_split,
     check_compose_resource_limits,
+    check_prod_images_digest_pinned,
     check_pgbouncer_self_built,
     check_dockerfile_copies_app_modules,
     check_c2_zk_token_null,
