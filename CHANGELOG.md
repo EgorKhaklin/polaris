@@ -5,6 +5,44 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.110 — 2026-06-05 (production-readiness: the prod stack's pgbouncer is self-built, not a vanished vendor image)
+
+The production compose pinned `bitnami/pgbouncer:1.22` for connection pooling.
+Bitnami retired their free Docker Hub catalogue in August 2025: that tag now
+404s and the whole `bitnami/pgbouncer` repo has zero tags (the `bitnamilegacy`
+mirror is gone too). `docker compose -f docker-compose.prod.yml up` could no
+longer pull the pooler, and since the app reaches Postgres only through
+`pgbouncer:6432`, the entire stack was unstartable — a latent outage waiting for
+the next clean deploy, the same class as the v9.98 unbuildable-image bug.
+
+- **Self-built pooler, no third-party catalogue.** `polaris_web/Dockerfile.pgbouncer`
+  builds pgbouncer from `alpine` + the distro package (PgBouncer 1.22.1, same
+  version as before). Nothing external can disappear out from under the stack
+  again.
+- **Secret stays a file, SCRAM on both hops.** `pgbouncer-entrypoint.sh`
+  generates `pgbouncer.ini` + `userlist.txt` at start, reading the DB password
+  from the file-mounted Docker secret (`POLARIS_DB_PASSWORD_FILE`) — it never
+  enters the environment, the image, or `docker inspect`. The password is stored
+  plaintext in a `0600` userlist with `auth_type = scram-sha-256`, so pgbouncer
+  runs SCRAM both verifying the app and authenticating onward to Postgres.
+  Embedded quotes are doubled per pgbouncer's userlist grammar so an exotic
+  password cannot break or inject a second entry.
+- **Least privilege + validated config.** No `admin_users`/`stats_users`, so the
+  app role cannot issue pgbouncer admin commands (PAUSE/RELOAD/SHUTDOWN); the
+  backend user is pinned in the `[databases]` entry so a client cannot have a
+  claimed identity forwarded; control-character passwords and malformed numeric/
+  enum/identifier settings are rejected at start rather than corrupting the
+  generated config. (These came out of an adversarial review of the change.)
+- **Healthcheck + ordering.** The pgbouncer service gets a TCP healthcheck and
+  the app now waits on `pgbouncer: service_healthy`.
+- **Verified with real containers.** Built the image and ran the full path —
+  Postgres (scram) -> pgbouncer -> client through `:6432` — with both an ordinary
+  and an adversarial (`"`/`\`) password, confirmed transaction pooling, the
+  healthy healthcheck, and a loud failure when the secret is missing.
+- **Pinned.** `check_pgbouncer_self_built` (42nd check) fails if bitnami/pgbouncer
+  reappears, the self-built Dockerfile/entrypoint goes missing, or the password
+  moves to an env var.
+
 ## v9.109 — 2026-06-05 (production-readiness, wave 4: every prod container bounds its memory, CPU, and logs)
 
 The production compose set no resource limits and no log rotation on any

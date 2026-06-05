@@ -851,5 +851,60 @@ def test_compose_resource_limits_check_discriminates(tmp_path):
         "must FAIL when the prod compose is absent"
 
 
+def test_pgbouncer_self_built_check_discriminates(tmp_path):
+    web = tmp_path / "polaris_web"
+    web.mkdir()
+    GOOD_COMPOSE = ("services:\n  pgbouncer:\n    build:\n      context: .\n"
+                    "      dockerfile: Dockerfile.pgbouncer\n    image: polaris-pgbouncer:prod\n")
+    GOOD_ENTRY = "#!/bin/sh\nPWFILE=\"${POLARIS_DB_PASSWORD_FILE:-/run/secrets/x}\"\n"
+
+    def write(compose=GOOD_COMPOSE, df="FROM alpine\n", entry=GOOD_ENTRY):
+        (web / "docker-compose.prod.yml").write_text(compose)
+        if df is not None:
+            (web / "Dockerfile.pgbouncer").write_text(df)
+        elif (web / "Dockerfile.pgbouncer").exists():
+            (web / "Dockerfile.pgbouncer").unlink()
+        (web / "pgbouncer-entrypoint.sh").write_text(entry)
+
+    # 1. Still references the removed bitnami image -> FAIL.
+    write(compose="services:\n  pgbouncer:\n    image: bitnami/pgbouncer:1.22\n")
+    assert checks.check_pgbouncer_self_built(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the compose still pulls bitnami/pgbouncer"
+
+    # 2. No Dockerfile.pgbouncer present -> FAIL.
+    write(df=None)
+    assert checks.check_pgbouncer_self_built(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the self-built Dockerfile is absent"
+
+    # 3. Entrypoint reads the password from env, not the file secret -> FAIL.
+    write(entry="#!/bin/sh\nPASSWORD=\"$PGBOUNCER_PASSWORD\"\n")
+    assert checks.check_pgbouncer_self_built(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the entrypoint does not use the file-mounted secret"
+
+    # 4. Self-built, builds Dockerfile.pgbouncer, reads the file secret -> OK.
+    write()
+    assert checks.check_pgbouncer_self_built(tmp_path)[0].level == "OK", \
+        "must PASS for a self-built pooler reading the file-mounted secret"
+
+    # 5. Dockerfile.pgbouncer named only in a COMMENT while a third-party image
+    #    is actually pulled -> FAIL (substring match would false-pass here).
+    write(compose="# we use Dockerfile.pgbouncer now\nservices:\n  pgbouncer:\n"
+                  "    image: third-party/pgbouncer:2.0\n")
+    assert checks.check_pgbouncer_self_built(tmp_path)[0].level == "FAIL", \
+        "must FAIL when Dockerfile.pgbouncer is only mentioned in a comment"
+
+    # 6. POLARIS_DB_PASSWORD_FILE named only in a COMMENT while the password is
+    #    actually read from the environment -> FAIL.
+    write(entry="#!/bin/sh\n# TODO: switch to POLARIS_DB_PASSWORD_FILE\n"
+                "PASSWORD=\"$PGBOUNCER_PASSWORD\"\n")
+    assert checks.check_pgbouncer_self_built(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the secret is only named in a comment, not read in code"
+
+    # 7. Upper/mixed-case BITNAMI reference (Docker refs are case-insensitive) -> FAIL.
+    write(compose="services:\n  pgbouncer:\n    image: BITNAMI/PgBouncer:1.22\n")
+    assert checks.check_pgbouncer_self_built(tmp_path)[0].level == "FAIL", \
+        "must FAIL on a case-variant bitnami/pgbouncer reference"
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

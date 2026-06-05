@@ -1,0 +1,34 @@
+# syntax=docker/dockerfile:1
+# ============================================================================
+# Dockerfile.pgbouncer — self-built PgBouncer pooler for the Polaris prod stack
+#
+# v9.110. Replaces bitnami/pgbouncer:1.22, which Bitnami removed from Docker Hub
+# when they retired their free catalogue (Aug 2025), leaving the prod compose
+# unable to pull its pooler. Built from alpine + the distro pgbouncer package,
+# so there is no third-party image that can disappear out from under the stack.
+# Config (pgbouncer.ini + userlist.txt) is generated at container start by
+# pgbouncer-entrypoint.sh, which reads the FILE-MOUNTED DB secret — the password
+# never lands in the image, the compose file, or `docker inspect`.
+#
+# Build context is polaris_web/ (see docker-compose.prod.yml: context: .).
+# ============================================================================
+FROM alpine:3.20
+
+# pgbouncer + scram support live in the distro package; netcat gives the
+# compose healthcheck a cheap TCP liveness probe on the listen port.
+RUN apk add --no-cache pgbouncer netcat-openbsd \
+    && rm -rf /var/cache/apk/*
+
+# Run as a non-root user with a writable config dir for the generated
+# userlist.txt / pgbouncer.ini. The package may already create 'pgbouncer';
+# create it deterministically if not.
+RUN (id pgbouncer >/dev/null 2>&1 || adduser -D -H -s /sbin/nologin pgbouncer) \
+    && mkdir -p /etc/pgbouncer \
+    && chown -R pgbouncer:pgbouncer /etc/pgbouncer
+
+COPY pgbouncer-entrypoint.sh /usr/local/bin/pgbouncer-entrypoint.sh
+RUN chmod 0755 /usr/local/bin/pgbouncer-entrypoint.sh
+
+USER pgbouncer
+EXPOSE 6432
+ENTRYPOINT ["/usr/local/bin/pgbouncer-entrypoint.sh"]

@@ -107,6 +107,11 @@ left a real foundation. Genuinely sound today:
   `deploy.resources.limits` (memory + cpu, sized to role) and a `json-file`
   log driver capped at `10m` x `5`, so one container cannot OOM the host and
   logs cannot fill the disk. Pinned by `check_compose_resource_limits`.
+- [x] **Self-built pgbouncer (v9.110).** The pooler pinned `bitnami/pgbouncer:1.22`,
+  which Bitnami removed from Docker Hub (free-catalogue retirement) — the stack
+  could not pull it and was unstartable. Now built from `alpine` + the distro
+  package (`Dockerfile.pgbouncer`), reading the DB password from the file-mounted
+  secret with SCRAM on both hops. Pinned by `check_pgbouncer_self_built`.
 - [ ] Pinned image digests.
 - [ ] Prometheus multiprocess mode (metrics undercount across 4 workers);
   shipped alert rules; log rotation; request-correlation IDs; SLOs; runbooks.

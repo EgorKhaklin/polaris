@@ -78,7 +78,7 @@ services:
     restart: unless-stopped
     depends_on:
       pgbouncer:
-        condition: service_started
+        condition: service_healthy
       postgres:
         condition: service_healthy
       redis:
@@ -119,17 +119,27 @@ services:
     # No `ports:` block here — app is only reachable via Caddy
 
   # ----------------------------------------------------------------------
-  # pgbouncer — Arc B Phase 2 connection pooler (v8.83)
+  # pgbouncer — Arc B Phase 2 connection pooler (v8.83; self-built v9.110)
   #
   # Multiplexes thousands of short-lived app connections onto a handful
   # of long-lived Postgres backends. Transaction-pooling mode (one
   # backend per transaction); compatible with Polaris's per-request
-  # connection pattern. Userlist is file-mounted from ./secrets/.
+  # connection pattern.
+  #
+  # v9.110: built from polaris_web/Dockerfile.pgbouncer (alpine + the distro
+  # pgbouncer package) instead of bitnami/pgbouncer:1.22, which Bitnami removed
+  # from Docker Hub when they retired their free catalogue. The entrypoint reads
+  # the DB password from the file-mounted secret and runs SCRAM on both hops.
   #
   # See `docs/operator/OPERATIONS.md` § Scaling for tuning notes.
   # ----------------------------------------------------------------------
   pgbouncer:
-    image: bitnami/pgbouncer:1.22
+    build:
+      # Context is polaris_web/ (this compose file's directory): the pgbouncer
+      # image only needs Dockerfile.pgbouncer + pgbouncer-entrypoint.sh.
+      context: .
+      dockerfile: Dockerfile.pgbouncer
+    image: polaris-pgbouncer:prod
     deploy:
       resources:
         limits:
@@ -148,22 +158,30 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      PGBOUNCER_DATABASE: polaris
-      POSTGRESQL_HOST: postgres
-      POSTGRESQL_PORT: 5432
-      POSTGRESQL_DATABASE: polaris
-      POSTGRESQL_USERNAME: polaris_app
-      POSTGRESQL_PASSWORD_FILE: /run/secrets/polaris_db_password
+      # Consumed by pgbouncer-entrypoint.sh to generate pgbouncer.ini +
+      # userlist.txt at start. The password is NOT here — it is read from the
+      # file-mounted secret below (POLARIS_DB_PASSWORD_FILE).
+      POLARIS_DB_HOST: postgres
+      POLARIS_DB_PORT: '5432'
+      POLARIS_DB_NAME: polaris
+      POLARIS_DB_USER: polaris_app
+      POLARIS_DB_PASSWORD_FILE: /run/secrets/polaris_db_password
+      PGBOUNCER_LISTEN_PORT: '6432'
       PGBOUNCER_POOL_MODE: transaction
-      PGBOUNCER_DEFAULT_POOL_SIZE: 20
-      PGBOUNCER_MIN_POOL_SIZE: 5
-      PGBOUNCER_RESERVE_POOL_SIZE: 5
-      PGBOUNCER_MAX_CLIENT_CONN: 500
-      PGBOUNCER_MAX_DB_CONNECTIONS: 50
-      PGBOUNCER_AUTH_TYPE: scram-sha-256
-      PGBOUNCER_IGNORE_STARTUP_PARAMETERS: extra_float_digits
+      PGBOUNCER_DEFAULT_POOL_SIZE: '20'
+      PGBOUNCER_MIN_POOL_SIZE: '5'
+      PGBOUNCER_RESERVE_POOL_SIZE: '5'
+      PGBOUNCER_MAX_CLIENT_CONN: '500'
+      PGBOUNCER_MAX_DB_CONNECTIONS: '50'
     secrets:
       - polaris_db_password
+    healthcheck:
+      # Cheap TCP liveness on the listen port (netcat is in the image).
+      test: ["CMD", "nc", "-z", "127.0.0.1", "6432"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
     networks:
       - polaris-net
     # No `ports:` block — pgbouncer is reachable only from inside the

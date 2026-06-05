@@ -551,6 +551,47 @@ def check_compose_resource_limits(root: pathlib.Path) -> list[Finding]:
 
 
 # ---------------------------------------------------------------------------
+# The connection pooler must not depend on a third-party image that can vanish.
+# bitnami/pgbouncer:1.22 was removed from Docker Hub when Bitnami retired their
+# free catalogue (Aug 2025), leaving the prod stack unable to pull its pooler.
+# Polaris now builds pgbouncer itself (Dockerfile.pgbouncer, alpine + the distro
+# package) and the entrypoint reads the DB password from the file-mounted secret
+# (not an env literal). This check keeps the bitnami image from creeping back and
+# keeps the secret off the environment.
+# ---------------------------------------------------------------------------
+def check_pgbouncer_self_built(root: pathlib.Path) -> list[Finding]:
+    compose = _read(root, "polaris_web/docker-compose.prod.yml")
+    if not compose:
+        return _fail("pgbouncer_image", "polaris_web/docker-compose.prod.yml is missing")
+    # Docker image refs are case-insensitive and may be quoted; match accordingly.
+    if re.search(r"""image:\s*['"]?bitnami/pgbouncer""", compose, re.I):
+        return _fail("pgbouncer_image",
+                     "the prod compose references bitnami/pgbouncer — that image was removed from "
+                     "Docker Hub (Bitnami catalogue retirement); the stack cannot pull it")
+    df = _read(root, "polaris_web/Dockerfile.pgbouncer")
+    entry = _read(root, "polaris_web/pgbouncer-entrypoint.sh")
+    if not df or not entry:
+        return _fail("pgbouncer_image",
+                     "the self-built pooler needs polaris_web/Dockerfile.pgbouncer + "
+                     "pgbouncer-entrypoint.sh")
+    # Require an actual `dockerfile: Dockerfile.pgbouncer` build directive, not a
+    # passing mention of the filename in a comment.
+    if not re.search(r"(?m)^\s*dockerfile:\s*Dockerfile\.pgbouncer\b", compose):
+        return _fail("pgbouncer_image",
+                     "the pgbouncer service must build from Dockerfile.pgbouncer (a "
+                     "`dockerfile:` directive), not pull a third-party image that can disappear")
+    # Require the secret to be consumed in code — a `VAR=...POLARIS_DB_PASSWORD_FILE`
+    # assignment — not merely named in a comment while the password comes from env.
+    if not re.search(r"(?m)^\s*[A-Za-z_][A-Za-z0-9_]*=[^#\n]*POLARIS_DB_PASSWORD_FILE", entry):
+        return _fail("pgbouncer_image",
+                     "pgbouncer-entrypoint.sh must READ the DB password from the file-mounted "
+                     "secret (POLARIS_DB_PASSWORD_FILE), not an environment variable")
+    return _ok("pgbouncer_image",
+               "pgbouncer is self-built from Dockerfile.pgbouncer (no third-party catalog) and "
+               "reads the file-mounted DB secret (scram on both hops)")
+
+
+# ---------------------------------------------------------------------------
 # Docker image completeness — every LOCAL module app.py imports must be COPYd
 # into both images, or the container ModuleNotFoundErrors at startup and crash-
 # loops. This has bitten twice: observability.py (v9.40) and pqc_signing.py
@@ -1003,6 +1044,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_web_concurrency_honored,
     check_health_liveness_readiness_split,
     check_compose_resource_limits,
+    check_pgbouncer_self_built,
     check_dockerfile_copies_app_modules,
     check_c2_zk_token_null,
     check_c4_atomic_failed_login,

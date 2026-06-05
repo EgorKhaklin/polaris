@@ -1,0 +1,129 @@
+#!/bin/sh
+# ============================================================================
+# pgbouncer-entrypoint.sh — config generator for the self-built Polaris pooler
+#
+# v9.110. Polaris previously used bitnami/pgbouncer:1.22, which Bitnami removed
+# from Docker Hub when they retired their free catalogue (Aug 2025) — the prod
+# stack became unpullable. This image is built from alpine + the pgbouncer
+# package (polaris_web/Dockerfile.pgbouncer), so there is no third-party catalog
+# to disappear, and it reads the DB password from the FILE-MOUNTED Docker secret
+# (POLARIS_DB_PASSWORD_FILE) rather than an environment variable — the password
+# never appears in the compose file, the image, or `docker inspect`.
+#
+# Auth model: the userlist stores the password in PLAINTEXT and auth_type is
+# scram-sha-256. PgBouncer uses the plaintext to run SCRAM in BOTH directions —
+# it verifies the app (client) with SCRAM and authenticates onward to Postgres
+# with SCRAM — so neither side sends a cleartext password on the wire and we
+# avoid having to match Postgres's stored SCRAM verifier (salt/iterations) or
+# stand up an auth_query function. The userlist is written 0600.
+# ============================================================================
+set -eu
+
+PWFILE="${POLARIS_DB_PASSWORD_FILE:-/run/secrets/polaris_db_password}"
+if [ ! -r "$PWFILE" ]; then
+    echo "pgbouncer: password file '$PWFILE' is missing or unreadable" >&2
+    echo "pgbouncer: mount the DB password as a file and set POLARIS_DB_PASSWORD_FILE" >&2
+    exit 1
+fi
+# Command substitution strips trailing newlines only; an INTERIOR newline (or
+# any control char) survives and would break the line-oriented userlist.txt or
+# inject into the generated ini. A real DB password has none — reject loudly.
+PASSWORD="$(printf '%s' "$(cat "$PWFILE")")"
+if [ -z "$PASSWORD" ]; then
+    echo "pgbouncer: password file '$PWFILE' is empty" >&2
+    exit 1
+fi
+# Reject any control character. Two detectors because each alone has a blind
+# spot under BusyBox (the alpine shell): `wc -l` catches embedded NEWLINES
+# (grep is line-oriented and never sees them), and `grep [[:cntrl:]]` catches
+# the other control bytes (tab, CR, ...) within a line. BusyBox `tr` does NOT
+# support the [:print:] class, so it cannot be used here.
+if [ "$(printf '%s' "$PASSWORD" | wc -l)" -ne 0 ] \
+   || printf '%s' "$PASSWORD" | LC_ALL=C grep -q '[[:cntrl:]]'; then
+    echo "pgbouncer: password contains control characters (newline/tab/etc.); refusing" >&2
+    exit 1
+fi
+
+DB_USER="${POLARIS_DB_USER:-polaris_app}"
+DB_HOST="${POLARIS_DB_HOST:-postgres}"
+DB_PORT="${POLARIS_DB_PORT:-5432}"
+DB_NAME="${POLARIS_DB_NAME:-polaris}"
+LISTEN_PORT="${PGBOUNCER_LISTEN_PORT:-6432}"
+POOL_MODE="${PGBOUNCER_POOL_MODE:-transaction}"
+MAX_CLIENT_CONN="${PGBOUNCER_MAX_CLIENT_CONN:-500}"
+DEFAULT_POOL_SIZE="${PGBOUNCER_DEFAULT_POOL_SIZE:-20}"
+MIN_POOL_SIZE="${PGBOUNCER_MIN_POOL_SIZE:-5}"
+RESERVE_POOL_SIZE="${PGBOUNCER_RESERVE_POOL_SIZE:-5}"
+MAX_DB_CONNECTIONS="${PGBOUNCER_MAX_DB_CONNECTIONS:-50}"
+
+# The settings above are interpolated unquoted into pgbouncer.ini, so validate
+# them: numerics must be all-digits, the pool mode must be one of the three
+# pgbouncer modes, and the identifiers must be plain (no spaces/'='/';' that
+# could smuggle a second directive). All of these come from the compose
+# (operator-controlled), so a bad value is a config error, not an attack — fail
+# fast rather than generate a corrupt ini.
+for _nv in "POLARIS_DB_PORT=$DB_PORT" "PGBOUNCER_LISTEN_PORT=$LISTEN_PORT" \
+           "PGBOUNCER_MAX_CLIENT_CONN=$MAX_CLIENT_CONN" \
+           "PGBOUNCER_DEFAULT_POOL_SIZE=$DEFAULT_POOL_SIZE" \
+           "PGBOUNCER_MIN_POOL_SIZE=$MIN_POOL_SIZE" \
+           "PGBOUNCER_RESERVE_POOL_SIZE=$RESERVE_POOL_SIZE" \
+           "PGBOUNCER_MAX_DB_CONNECTIONS=$MAX_DB_CONNECTIONS"; do
+    case "${_nv#*=}" in
+        ''|*[!0-9]*) echo "pgbouncer: ${_nv%%=*} must be a positive integer (got '${_nv#*=}')" >&2; exit 1 ;;
+    esac
+done
+case "$POOL_MODE" in
+    transaction|session|statement) ;;
+    *) echo "pgbouncer: PGBOUNCER_POOL_MODE must be transaction|session|statement (got '$POOL_MODE')" >&2; exit 1 ;;
+esac
+case "$DB_USER" in ''|*[!A-Za-z0-9_]*) echo "pgbouncer: POLARIS_DB_USER must be a plain SQL identifier (got '$DB_USER')" >&2; exit 1 ;; esac
+case "$DB_NAME" in ''|*[!A-Za-z0-9_]*) echo "pgbouncer: POLARIS_DB_NAME must be a plain SQL identifier (got '$DB_NAME')" >&2; exit 1 ;; esac
+case "$DB_HOST" in ''|*[!A-Za-z0-9._-]*) echo "pgbouncer: POLARIS_DB_HOST must be a plain hostname (got '$DB_HOST')" >&2; exit 1 ;; esac
+
+CONF_DIR="${PGBOUNCER_CONF_DIR:-/etc/pgbouncer}"
+USERLIST="$CONF_DIR/userlist.txt"
+INI="$CONF_DIR/pgbouncer.ini"
+
+umask 077
+mkdir -p "$CONF_DIR"
+
+# userlist.txt: "user" "plaintext-password". PgBouncer's auth_file parser
+# escapes a literal double-quote inside a quoted value by DOUBLING it ("") and
+# treats backslashes literally — so we double any embedded ", which also stops a
+# password from breaking out of its quotes and injecting a second entry.
+esc_user="$(printf '%s' "$DB_USER" | sed -e 's/"/""/g')"
+esc_pw="$(printf '%s' "$PASSWORD" | sed -e 's/"/""/g')"
+printf '"%s" "%s"\n' "$esc_user" "$esc_pw" > "$USERLIST"
+chmod 600 "$USERLIST"
+
+cat > "$INI" <<EOF
+# Generated by pgbouncer-entrypoint.sh at container start — do not edit.
+[databases]
+# Pin the backend user, so pgbouncer always connects onward as this single role
+# regardless of any username a client claims (clients still must authenticate
+# against the userlist, which only contains this user).
+$DB_NAME = host=$DB_HOST port=$DB_PORT dbname=$DB_NAME user=$DB_USER
+
+[pgbouncer]
+listen_addr = 0.0.0.0
+listen_port = $LISTEN_PORT
+auth_type = scram-sha-256
+auth_file = $USERLIST
+pool_mode = $POOL_MODE
+max_client_conn = $MAX_CLIENT_CONN
+default_pool_size = $DEFAULT_POOL_SIZE
+min_pool_size = $MIN_POOL_SIZE
+reserve_pool_size = $RESERVE_POOL_SIZE
+max_db_connections = $MAX_DB_CONNECTIONS
+# psycopg2 sends extra_float_digits; pgbouncer must tolerate it in transaction mode.
+ignore_startup_parameters = extra_float_digits
+# Log to stderr (no logfile), no pidfile — let Docker own the process lifecycle.
+logfile =
+pidfile =
+# No admin_users / stats_users: the application role must NOT be able to issue
+# pgbouncer admin commands (PAUSE/RELOAD/SHUTDOWN). Reloads happen via container
+# restart, preserving the least-privilege boundary the DB grants enforce.
+EOF
+
+echo "pgbouncer: serving $DB_NAME on :$LISTEN_PORT ($POOL_MODE pool) -> $DB_HOST:$DB_PORT as $DB_USER (scram-sha-256)" >&2
+exec pgbouncer "$INI"
