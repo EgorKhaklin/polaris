@@ -5,6 +5,28 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.107 — 2026-06-05 (production-readiness, wave 4: WEB_CONCURRENCY is no longer an inert knob)
+
+`Dockerfile.prod` and `docker-compose.prod.yml` both advertise
+`WEB_CONCURRENCY` as the worker-count knob (gunicorn's own convention), but
+`gunicorn.conf.py` read only `POLARIS_WORKERS`. So an operator scaling the
+stack with `WEB_CONCURRENCY=8` silently got the default 4 workers — and, with
+no Redis configured, a per-worker in-memory rate limiter at 4x the intended
+per-IP cap. The knob the deploy surface tells you to use did nothing.
+
+- **The config honors both knobs.** `gunicorn.conf.py` now resolves
+  `POLARIS_WORKERS` (explicit Polaris override) > `WEB_CONCURRENCY` (the deploy
+  knob) > 4. The resolved count is still re-exported to `POLARIS_WORKERS` so
+  `security.py`'s multi-worker detection (which warns when >1 worker runs
+  without Redis) stays accurate regardless of which knob was set.
+- **Bad values fall back, they don't crash.** A non-integer worker count
+  resolves to 4 rather than raising during every worker boot.
+- **Pinned + tested.** `check_web_concurrency_honored` (39th check) asserts the
+  config reads `WEB_CONCURRENCY`; `GunicornConfigTests` (4 cases, in the CI app
+  suite) proves the resolution: WEB_CONCURRENCY honored, POLARIS_WORKERS wins,
+  default 4, bad value falls back. Ticks the WEB_CONCURRENCY box in
+  `docs/PRODUCTION-READINESS.md` Wave 4.
+
 ## v9.106 — 2026-06-05 (production-readiness, wave 4: migrations bound their lock + statement time so one ALTER cannot stall the site)
 
 A schema migration that needs an ACCESS EXCLUSIVE lock — most `ALTER TABLE`

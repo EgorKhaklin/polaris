@@ -93,8 +93,12 @@ left a real foundation. Genuinely sound today:
   (defaults `3s`/`60s`, overridable), so a blocking `ALTER` fails fast instead
   of stalling all traffic on the table. Pinned by `check_migration_timeouts`.
   (Zero-downtime/rolling deploy still open.)
-- [ ] `WEB_CONCURRENCY` is inert (workers hardcoded); container resource limits;
-  pinned image digests; split liveness vs readiness in `/api/health`.
+- [x] **`WEB_CONCURRENCY` is now honored (v9.107).** `gunicorn.conf.py` resolves
+  `POLARIS_WORKERS` > `WEB_CONCURRENCY` > 4 (the deploy surface advertised
+  `WEB_CONCURRENCY` but the config ignored it). Pinned by
+  `check_web_concurrency_honored` + `GunicornConfigTests`.
+- [ ] Container resource limits; pinned image digests; split liveness vs
+  readiness in `/api/health`.
 - [ ] Prometheus multiprocess mode (metrics undercount across 4 workers);
   shipped alert rules; log rotation; request-correlation IDs; SLOs; runbooks.
 - [x] **Dependency CVE scanning gates the build (v9.105).** A `cve-scan` CI job

@@ -6,14 +6,36 @@
 #
 # Tunables via environment variables:
 #     POLARIS_PORT       (default 5000)
-#     POLARIS_WORKERS    (default 4 — CPU-cores × 2 + 1 is a common heuristic)
+#     POLARIS_WORKERS    (Polaris knob) / WEB_CONCURRENCY (gunicorn convention)
+#                        (default 4 — CPU-cores × 2 + 1 is a common heuristic)
 #     POLARIS_TIMEOUT    (default 30s — max time for a single request)
 # ============================================================================
 
 import os
 
 bind = f"0.0.0.0:{os.environ.get('POLARIS_PORT', '5000')}"
-workers = int(os.environ.get('POLARIS_WORKERS', '4'))
+# Honor BOTH knobs. The Dockerfile.prod and docker-compose.prod.yml advertise
+# WEB_CONCURRENCY (gunicorn's own convention), but this config previously read
+# only POLARIS_WORKERS — so setting WEB_CONCURRENCY did nothing and an operator
+# scaling the stack with it silently got the default 4 workers (and, with no
+# Redis, a per-worker rate limiter at 4× the configured cap). Precedence:
+# POLARIS_WORKERS (explicit Polaris override) > WEB_CONCURRENCY (the deploy
+# knob) > 4. Both are validated as positive ints; a bad value falls back to 4
+# rather than crashing every worker boot.
+def _resolve_workers() -> int:
+    for var in ('POLARIS_WORKERS', 'WEB_CONCURRENCY'):
+        raw = os.environ.get(var)
+        if raw is None or raw.strip() == '':
+            continue
+        try:
+            n = int(raw)
+        except ValueError:
+            continue
+        if n >= 1:
+            return n
+    return 4
+
+workers = _resolve_workers()
 worker_class = 'sync'  # default; switch to 'gevent' if doing many slow DB calls
 
 # Re-export the resolved worker count so workers (which import security.py

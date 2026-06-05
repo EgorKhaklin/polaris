@@ -462,6 +462,28 @@ def check_migration_timeouts(root: pathlib.Path) -> list[Finding]:
 
 
 # ---------------------------------------------------------------------------
+# The worker-count knob must actually work. Dockerfile.prod and the prod compose
+# advertise WEB_CONCURRENCY (gunicorn's own convention), but gunicorn.conf.py
+# read only POLARIS_WORKERS — so setting WEB_CONCURRENCY did nothing and an
+# operator scaling the stack with it silently got the default 4 workers (and,
+# with no Redis, a per-worker rate limiter at 4x the configured cap). The config
+# must honor WEB_CONCURRENCY so the advertised knob is real.
+# ---------------------------------------------------------------------------
+def check_web_concurrency_honored(root: pathlib.Path) -> list[Finding]:
+    conf = _read(root, "polaris_web/gunicorn.conf.py")
+    if not conf:
+        return _fail("web_concurrency", "polaris_web/gunicorn.conf.py is missing")
+    if "WEB_CONCURRENCY" not in conf:
+        return _fail("web_concurrency",
+                     "gunicorn.conf.py must honor WEB_CONCURRENCY — the Dockerfile.prod and "
+                     "docker-compose.prod.yml set it, but the config reads only POLARIS_WORKERS, "
+                     "so the advertised scaling knob is inert")
+    return _ok("web_concurrency",
+               "gunicorn.conf.py honors WEB_CONCURRENCY (the knob the prod image + compose set), "
+               "with POLARIS_WORKERS taking precedence")
+
+
+# ---------------------------------------------------------------------------
 # Docker image completeness — every LOCAL module app.py imports must be COPYd
 # into both images, or the container ModuleNotFoundErrors at startup and crash-
 # loops. This has bitten twice: observability.py (v9.40) and pqc_signing.py
@@ -911,6 +933,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_prod_image_no_test_deps,
     check_cve_scanning,
     check_migration_timeouts,
+    check_web_concurrency_honored,
     check_dockerfile_copies_app_modules,
     check_c2_zk_token_null,
     check_c4_atomic_failed_login,

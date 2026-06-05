@@ -742,5 +742,29 @@ def test_migration_timeouts_check_discriminates(tmp_path):
         "must FAIL when the migrate script is absent"
 
 
+def test_web_concurrency_honored_check_discriminates(tmp_path):
+    web = tmp_path / "polaris_web"
+    web.mkdir()
+
+    def write(conf):
+        (web / "gunicorn.conf.py").write_text(conf)
+
+    # 1. Reads only POLARIS_WORKERS -> FAIL (WEB_CONCURRENCY inert).
+    write("workers = int(os.environ.get('POLARIS_WORKERS', '4'))\n")
+    assert checks.check_web_concurrency_honored(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the config ignores WEB_CONCURRENCY"
+
+    # 2. Honors WEB_CONCURRENCY -> OK.
+    write("workers = int(os.environ.get('POLARIS_WORKERS') "
+          "or os.environ.get('WEB_CONCURRENCY') or 4)\n")
+    assert checks.check_web_concurrency_honored(tmp_path)[0].level == "OK", \
+        "must PASS when WEB_CONCURRENCY is honored"
+
+    # 3. Missing config -> FAIL.
+    (web / "gunicorn.conf.py").unlink()
+    assert checks.check_web_concurrency_honored(tmp_path)[0].level == "FAIL", \
+        "must FAIL when gunicorn.conf.py is absent"
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

@@ -3356,6 +3356,46 @@ class ErrorHandlingTests(PolarisTestCase):
         self.assertHTML(r, '404', 'Page not found')
 
 
+class GunicornConfigTests(unittest.TestCase):
+    """gunicorn.conf.py must honor WEB_CONCURRENCY (advertised by Dockerfile.prod
+    and the prod compose), with POLARIS_WORKERS taking precedence, and fall back
+    to 4 on a bad value rather than crashing every worker boot. Exercised in a
+    subprocess so the config's `os.environ['POLARIS_WORKERS']=...` re-export does
+    not leak into the rest of the suite."""
+
+    def _resolve_workers(self, overrides):
+        import subprocess
+        code = (
+            "import importlib.util as u;"
+            "s=u.spec_from_file_location('g','gunicorn.conf.py');"
+            "m=u.module_from_spec(s); s.loader.exec_module(m);"
+            "print(m.workers)"
+        )
+        env = {k: v for k, v in os.environ.items()
+               if k not in ('POLARIS_WORKERS', 'WEB_CONCURRENCY')}
+        env.update(overrides)
+        out = subprocess.check_output(
+            [sys.executable, '-c', code],
+            cwd=os.path.dirname(os.path.abspath(__file__)), env=env)
+        return int(out.strip())
+
+    def test_web_concurrency_is_honored(self):
+        # The whole point: WEB_CONCURRENCY (the knob the image + compose set)
+        # actually changes the worker count now.
+        self.assertEqual(self._resolve_workers({'WEB_CONCURRENCY': '8'}), 8)
+
+    def test_polaris_workers_takes_precedence(self):
+        self.assertEqual(
+            self._resolve_workers({'POLARIS_WORKERS': '2', 'WEB_CONCURRENCY': '8'}), 2)
+
+    def test_default_is_four(self):
+        self.assertEqual(self._resolve_workers({}), 4)
+
+    def test_bad_value_falls_back_to_four(self):
+        # A non-integer must not crash worker boot.
+        self.assertEqual(self._resolve_workers({'WEB_CONCURRENCY': 'garbage'}), 4)
+
+
 # ============================================================================
 # Custom test runner with cleaner output
 # ============================================================================
