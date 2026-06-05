@@ -3289,6 +3289,24 @@ class SQLConsoleTests(PolarisTestCase):
         self.assertEqual(r.status_code, 200)
         # Should have rendered a result table
 
+    def test_data_modifying_cte_refused_by_db_readonly(self):
+        """The keyword whitelist accepts WITH, so a data-modifying CTE
+        (`WITH x AS (DELETE ... RETURNING *) SELECT * FROM x`) slips straight
+        past it. The real boundary is the read-only transaction: Postgres
+        refuses the write itself. This discriminates cleanly — on a writable
+        transaction this 0-row CTE-DELETE would simply succeed and render an
+        empty result; refused, it surfaces the sanitized DB-error message. We
+        target a non-existent id so nothing is mutated even under regression."""
+        r = self._post('/sql', data={
+            'sql': ("WITH gone AS (DELETE FROM Individual WHERE individual_id = -99999 "
+                    "RETURNING individual_id) SELECT * FROM gone"),
+        })
+        self.assertEqual(r.status_code, 200)
+        body = r.get_data(as_text=True).lower()
+        self.assertIn('database error', body,
+                      "a data-modifying CTE must be refused by the read-only "
+                      "transaction, not executed")
+
     def test_oversized_query_rejected(self):
         """Queries over the length cap must be rejected before execution."""
         # 5001 chars of SELECT 1; clearly over the 5000 cap

@@ -592,5 +592,49 @@ def test_pqc_real_signing_check_discriminates(tmp_path):
         "must PASS with a persistent key, verify, and a real-PQC CI job"
 
 
+def test_sql_console_readonly_check_discriminates(tmp_path):
+    web = tmp_path / "polaris_web"
+    web.mkdir()
+
+    def write(body):
+        (web / "app.py").write_text(
+            "def sql_query():\n" + body + "\n\ndef next_route():\n    pass\n"
+        )
+
+    # 1. Keyword whitelist only, no DB-level read-only -> FAIL (CTE-bypassable).
+    write("    cur.execute('SET statement_timeout = 5000')\n    cur.execute(sql)")
+    assert checks.check_sql_console_readonly(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the console relies only on the SELECT/WITH keyword gate"
+
+    # 2. A mid-transaction SET default_transaction_read_only does NOT bind the
+    #    query's own already-started transaction -> still FAIL (the real bug the
+    #    DB-backed test caught; the check must not accept this non-fix).
+    write("    cur.execute('SET statement_timeout = 5000')\n"
+          "    cur.execute('SET default_transaction_read_only = on')\n"
+          "    cur.execute(sql)")
+    assert checks.check_sql_console_readonly(tmp_path)[0].level == "FAIL", \
+        "must FAIL on the non-functional mid-transaction SET (it does not bind the query)"
+
+    # 3. Session set read-only before any statement -> OK.
+    write("    conn.set_session(readonly=True)\n"
+          "    cur.execute('SET statement_timeout = 5000')\n"
+          "    cur.execute(sql)")
+    assert checks.check_sql_console_readonly(tmp_path)[0].level == "OK", \
+        "must PASS once the session is set read-only before any statement"
+
+    # 4. read-only set in some OTHER function, not sql_query -> FAIL (scoped to the handler).
+    (web / "app.py").write_text(
+        "def sql_query():\n    cur.execute(sql)\n\n"
+        "def elsewhere():\n    conn.set_session(readonly=True)\n"
+    )
+    assert checks.check_sql_console_readonly(tmp_path)[0].level == "FAIL", \
+        "must FAIL when read-only is set outside the sql_query handler"
+
+    # 5. Missing app.py -> FAIL.
+    (web / "app.py").unlink()
+    assert checks.check_sql_console_readonly(tmp_path)[0].level == "FAIL", \
+        "must FAIL when app.py is absent"
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))

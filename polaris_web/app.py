@@ -4311,7 +4311,14 @@ def sql_query():
     Hardening:
         - Query length capped at 5000 chars to prevent pasting huge payloads
         - Statement timeout of 5 seconds so a runaway query can't hang the worker
-        - Whitelist on first keyword (SELECT or WITH only)
+        - The session is set READ ONLY (`set_session(readonly=True)`) before any
+          statement opens a transaction, so the engine itself refuses every write.
+          This is the real boundary: the first-keyword whitelist below is only a
+          friendly early error, and it is bypassable by a data-modifying CTE
+          (`WITH t AS (DELETE ... RETURNING *) SELECT * FROM t` starts with WITH).
+          The read-only session makes Postgres reject that CTE with "cannot
+          execute DELETE in a read-only transaction" regardless.
+        - Whitelist on first keyword (SELECT or WITH only) — UX, not security
         - EXPLAIN ANALYZE button surfaces query plans (still read-only)
     """
     SQL_MAX_LENGTH = 5000
@@ -4339,9 +4346,21 @@ def sql_query():
                     # Use a plain cursor here (NOT RealDictCursor) so cur.fetchall()
                     # returns tuples we can zip with column names.
                     conn = psycopg2.connect(**DB_CONFIG)
-                    # Set statement_timeout BEFORE starting our query. We use
-                    # SET (session-level on this connection) which lasts until
-                    # this connection closes — perfectly scoped to the request.
+                    # The security boundary: make the whole session read-only at
+                    # the engine level, BEFORE any statement opens a transaction.
+                    # `set_session(readonly=True)` must be issued outside a
+                    # transaction, so it goes here, immediately after connect and
+                    # before the first execute — `SET default_transaction_read_only`
+                    # issued mid-transaction would NOT bind the query's own
+                    # (already-started) transaction. Now any write — including one
+                    # smuggled past the first-keyword whitelist via a data-modifying
+                    # CTE (`WITH t AS (DELETE ... RETURNING *) SELECT * FROM t`) — is
+                    # refused by Postgres ("cannot execute DELETE in a read-only
+                    # transaction"), not just discouraged by the keyword gate.
+                    conn.set_session(readonly=True)
+                    # Set statement_timeout BEFORE starting our query. SET of a
+                    # runtime parameter is permitted inside a read-only transaction;
+                    # it lasts until this connection closes — scoped to the request.
                     with conn.cursor() as cur:
                         cur.execute(f"SET statement_timeout = {SQL_TIMEOUT_MS}")
 

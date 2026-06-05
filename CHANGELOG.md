@@ -5,6 +5,34 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.104 — 2026-06-05 (production-readiness, wave 4: the /sql console is read-only at the engine, not just the keyword gate)
+
+The operator SQL console refused writes with a first-keyword whitelist: only
+`SELECT` and `WITH` were accepted. But `WITH` admits a data-modifying CTE —
+`WITH gone AS (DELETE FROM Individual WHERE ... RETURNING *) SELECT * FROM gone`
+starts with `WITH`, sails past the gate, and deletes. `polaris_app` holds DELETE
+on the non-audit tables, so nothing below the app stopped it. The console was
+write-capable through a CTE.
+
+- **The session is now read-only at the database.** `sql_query` calls
+  `conn.set_session(readonly=True)` immediately after connect, before any
+  statement opens a transaction, so Postgres itself refuses every write —
+  "cannot execute DELETE in a read-only transaction" — regardless of how the SQL
+  is shaped. The keyword whitelist stays as a friendly early error; it is no
+  longer the boundary.
+- **The subtlety that needed a DB-backed test.** The first attempt issued `SET
+  default_transaction_read_only = on` mid-transaction. It did nothing: psycopg2
+  had already opened the transaction on the prior `SET statement_timeout`, and
+  that GUC only binds transactions that begin after it. The CTE-DELETE still
+  succeeded ("0 rows"). The new `test_data_modifying_cte_refused_by_db_readonly`
+  caught it — it failed (write executed), then passed once the fix moved to
+  `set_session(readonly=True)` before any statement. A static check alone would
+  have green-lit the non-fix.
+- **Pinned both ways.** `check_sql_console_readonly` (35th check) asserts the
+  handler calls `set_session(readonly=True)`; the DB-backed test proves the
+  engine actually refuses the CTE write. Ticks the SQL-console box in
+  `docs/PRODUCTION-READINESS.md` Wave 4.
+
 ## v9.103 — 2026-06-05 (production-readiness, wave 2: real ML-DSA-65 signing, persistent key, tested in CI)
 
 The defining gap between reference and reality: token signing was not real. The

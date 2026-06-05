@@ -342,6 +342,35 @@ def check_pqc_real_signing(root: pathlib.Path) -> list[Finding]:
 
 
 # ---------------------------------------------------------------------------
+# The /sql operator console must be read-only at the DATABASE level, not just
+# by a first-keyword whitelist. The whitelist accepts WITH, and a data-modifying
+# CTE (`WITH t AS (DELETE ... RETURNING *) SELECT * FROM t`) starts with WITH and
+# writes. `set_session(readonly=True)` — issued before any statement opens a
+# transaction — makes Postgres itself refuse every write on that connection,
+# closing the bypass. (A mid-transaction `SET default_transaction_read_only`
+# would NOT bind the query's already-started transaction; that subtlety is why
+# this needs a DB-backed test, not just this static check.) The grant boundary
+# already stops DDL; this stops DML smuggled through the console.
+# ---------------------------------------------------------------------------
+def check_sql_console_readonly(root: pathlib.Path) -> list[Finding]:
+    app = _read(root, "polaris_web/app.py")
+    if not app:
+        return _fail("sql_console_ro", "polaris_web/app.py is missing")
+    m = re.search(r"def sql_query\(.*?\n(?=@app\.route|def [a-z])", app, re.S)
+    body = m.group(0) if m else ""
+    if not body:
+        return _fail("sql_console_ro", "could not locate the sql_query console handler")
+    if not re.search(r"set_session\(\s*readonly\s*=\s*True", body):
+        return _fail("sql_console_ro",
+                     "the /sql console must call conn.set_session(readonly=True) before any "
+                     "statement so the database refuses writes — the SELECT/WITH keyword "
+                     "whitelist alone is bypassable by a data-modifying CTE")
+    return _ok("sql_console_ro",
+               "the /sql console sets the session READ ONLY at the DB level "
+               "(CTE-smuggled writes are refused by Postgres, not just the keyword gate)")
+
+
+# ---------------------------------------------------------------------------
 # Docker image completeness — every LOCAL module app.py imports must be COPYd
 # into both images, or the container ModuleNotFoundErrors at startup and crash-
 # loops. This has bitten twice: observability.py (v9.40) and pqc_signing.py
@@ -787,6 +816,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_no_debug_artifacts,
     check_pqc_signing_wired,
     check_pqc_real_signing,
+    check_sql_console_readonly,
     check_dockerfile_copies_app_modules,
     check_c2_zk_token_null,
     check_c4_atomic_failed_login,

@@ -94,8 +94,12 @@ left a real foundation. Genuinely sound today:
 - [ ] Prometheus multiprocess mode (metrics undercount across 4 workers);
   shipped alert rules; log rotation; request-correlation IDs; SLOs; runbooks.
 - [ ] CVE scanning (pip-audit/Dependabot) + SAST in CI.
-- [ ] SQL console: make the connection READ ONLY (the keyword whitelist is
-  CTE-bypassable).
+- [x] **SQL console is READ ONLY at the engine (v9.104).** `sql_query` calls
+  `conn.set_session(readonly=True)` before any statement, so a data-modifying
+  CTE that slips past the `SELECT`/`WITH` keyword whitelist is refused by
+  Postgres itself. Pinned by `check_sql_console_readonly`; the DB-backed
+  `test_data_modifying_cte_refused_by_db_readonly` proves the engine refuses the
+  write (it caught a mid-transaction `SET` non-fix first).
 
 The full enumerated gap list with file pointers lives in the v9.101 assessment;
 each wave lands as its own CI-green ship and ticks its boxes here.
