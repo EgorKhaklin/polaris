@@ -1,0 +1,32 @@
+# Caddyfile.citest — CI/local override of the prod Caddyfile (v9.140).
+#
+# The production Caddyfile provisions a Let's Encrypt cert for POLARIS_DOMAIN,
+# which cannot run in CI (no public domain / ACME). This mirrors the prod edge's
+# reverse-proxy + the rate_limit plugin directive (so it still exercises the
+# self-built image's plugin), but terminates TLS with Caddy's internal CA so the
+# full prod stack can be booted and proven end-to-end without ACME.
+{
+    admin off
+    auto_https disable_redirects
+    local_certs
+}
+
+localhost:443 {
+    tls internal
+
+    reverse_proxy app:8000 {
+        health_uri /api/health
+        health_interval 30s
+        health_timeout 5s
+    }
+
+    # Exercise the third-party plugin directive the prod Caddyfile relies on, so
+    # the boot test also confirms the self-built image carries it at runtime.
+    rate_limit {
+        zone citest {
+            key {client_ip}
+            events 1000
+            window 1m
+        }
+    }
+}

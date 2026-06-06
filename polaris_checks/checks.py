@@ -1483,6 +1483,48 @@ def check_caddy_self_built(root: pathlib.Path) -> list[Finding]:
 
 
 # ---------------------------------------------------------------------------
+# The FULL production compose must boot and serve end to end, not just the dev
+# compose + per-image tests. CI booting only the dev stack (db+app on :5000) let
+# real prod-down bugs ship: a Caddyfile directive the stock image lacked (v9.135)
+# and 09_grants.sql hardcoding the test DB name so prod init aborted before TLS
+# (v9.140) — the prod stack had never come up. This pins the keystone test: a CI
+# job generates secrets, builds the prod images, boots docker-compose.prod.yml +
+# the citest override (Caddy internal CA instead of ACME), and asserts the stack
+# serves /api/health through the TLS edge with the DB-backed components healthy.
+# ---------------------------------------------------------------------------
+def check_prod_stack_boot(root: pathlib.Path) -> list[Finding]:
+    ci = _read(root, ".github/workflows/ci.yml")
+    if not ci:
+        return _fail("prod_stack_boot", ".github/workflows/ci.yml is missing")
+    # The boot harness (override compose + Caddyfile) must exist.
+    if not (root / "polaris_web" / "docker-compose.citest.yml").is_file():
+        return _fail("prod_stack_boot",
+                     "polaris_web/docker-compose.citest.yml is missing (the prod-stack boot "
+                     "override that swaps Caddy's ACME edge for an internal CA in CI)")
+    if not (root / "polaris_web" / "Caddyfile.citest").is_file():
+        return _fail("prod_stack_boot",
+                     "polaris_web/Caddyfile.citest is missing (the CI edge config)")
+    # CI must actually boot the FULL prod compose with the override, not the dev one.
+    if "docker-compose.prod.yml" not in ci or "docker-compose.citest.yml" not in ci:
+        return _fail("prod_stack_boot",
+                     "a CI job must boot the FULL prod compose end to end "
+                     "(docker compose -f docker-compose.prod.yml -f docker-compose.citest.yml up)")
+    # It must generate the secrets the prod stack needs (not run on dev defaults).
+    if "polaris-generate-secrets.sh" not in ci:
+        return _fail("prod_stack_boot",
+                     "the prod-stack boot job must run polaris-generate-secrets.sh so the stack "
+                     "boots on real generated secrets + certs, like a deploy")
+    # It must assert the stack actually SERVES through the edge (a health probe).
+    if "/api/health" not in ci:
+        return _fail("prod_stack_boot",
+                     "the prod-stack boot job must assert the stack serves /api/health through the "
+                     "Caddy TLS edge (a 200 + DB-backed components healthy), not just that it starts")
+    return _ok("prod_stack_boot",
+               "CI boots the FULL prod compose (generated secrets, real images, TLS edge) and "
+               "asserts it serves /api/health end to end")
+
+
+# ---------------------------------------------------------------------------
 # The app<->DB path must be TLS-encrypted, not silently plaintext. psycopg2's
 # default sslmode is 'prefer' (encrypt if offered, else cleartext, no warning).
 # The prod path encrypts BOTH hops: app -> pgbouncer (pgbouncer client_tls,
@@ -2108,6 +2150,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_pgbackrest_scaffolding,
     check_pgbouncer_self_built,
     check_caddy_self_built,
+    check_prod_stack_boot,
     check_app_db_tls,
     check_correlation_id,
     check_dockerfile_copies_app_modules,

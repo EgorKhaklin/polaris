@@ -850,3 +850,73 @@ jobs:
                 --scanners vuln --severity HIGH --ignore-unfixed \
                 --ignorefile /.trivyignore --exit-code 0 --no-progress "$img" || true
           done
+
+  # --------------------------------------------------------------------------
+  # Full PRODUCTION-compose boot (v9.140). The docker-image job boots the DEV
+  # compose (db+app on :5000); the prod compose (5 services, TLS on both DB hops,
+  # generated secrets, Caddy edge) was never booted end to end, which let two
+  # real prod-down bugs ship: a Caddyfile directive the stock caddy image lacked
+  # (v9.135) and 09_grants.sql hardcoding the test DB name so prod init aborted
+  # before enabling TLS (v9.140) — the prod stack had never come up. This boots it
+  # exactly like a deploy (real generated secrets + certs, the real images) with
+  # only the Caddy ACME edge swapped for an internal CA (no public domain in CI),
+  # and asserts the stack SERVES /api/health through the TLS edge with the
+  # DB-backed components healthy. Pinned by check_prod_stack_boot.
+  # --------------------------------------------------------------------------
+  prod-stack-boot:
+    name: Full prod compose boots + serves end to end
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Build the prod images
+        run: |
+          set -e
+          docker build -f polaris_web/Dockerfile.prod      -t polaris-app:prod       .
+          docker build -f polaris_web/Dockerfile.caddy     -t polaris-caddy:prod     polaris_web
+          docker build -f polaris_web/Dockerfile.pgbouncer -t polaris-pgbouncer:prod polaris_web
+          docker build -f polaris_web/Dockerfile.postgres  -t polaris-postgres:prod  polaris_web
+
+      - name: Generate secrets + certs (signing key via the built app image)
+        run: bash scripts/polaris-generate-secrets.sh
+
+      - name: Boot the full prod stack (prod + citest override)
+        working-directory: polaris_web
+        env:
+          POLARIS_DOMAIN: localhost
+        run: docker compose -f docker-compose.prod.yml -f docker-compose.citest.yml up -d
+
+      - name: Assert the stack serves /api/health through the TLS edge
+        working-directory: polaris_web
+        run: |
+          set -e
+          ok=0
+          for i in $(seq 1 60); do
+            code=$(curl -sk https://localhost:8443/api/health -o /dev/null -w '%{http_code}' || true)
+            if [ "$code" = "200" ]; then echo "served /api/health=200 through Caddy after check $i"; ok=1; break; fi
+            echo "check $i: /api/health through Caddy = $code"
+            sleep 4
+          done
+          if [ "$ok" != "1" ]; then
+            echo "::error::the full prod stack did not serve /api/health through the TLS edge"
+            docker compose -f docker-compose.prod.yml -f docker-compose.citest.yml ps
+            echo "=== postgres ==="; docker logs polaris-postgres 2>&1 | tail -40
+            echo "=== pgbouncer ==="; docker logs polaris-pgbouncer 2>&1 | tail -20
+            echo "=== app ==="; docker logs polaris-app 2>&1 | tail -40
+            echo "=== caddy ==="; docker logs polaris-caddy 2>&1 | tail -20
+            exit 1
+          fi
+          # Not just 200: the DB-backed roll-up must be healthy (proves the whole
+          # chain app -> pgbouncer verify-ca -> postgres TLS actually works).
+          body=$(curl -sk https://localhost:8443/api/health)
+          echo "$body" | python3 -c "import sys, json; d=json.load(sys.stdin); c=d['checks']; assert c['database']['status']=='healthy', 'database not healthy: %s' % c['database']; assert c['redis']['status']=='healthy', 'redis not healthy'; assert c['zk_binary']['status']=='healthy', 'zk_binary not healthy'; print('prod stack serves end to end: database + redis + zk_binary healthy through the TLS edge')"
+          # And postgres really has TLS on (the v9.140 regression that broke init).
+          docker exec polaris-postgres sh -c 'PGPASSWORD=$(cat /run/secrets/polaris_db_root_password 2>/dev/null || echo x) psql -U postgres -d polaris -tAc "SHOW ssl"' 2>/dev/null | grep -qx on \
+            || { echo "::error::postgres is not running with ssl=on (prod init did not enable TLS)"; exit 1; }
+          echo "postgres ssl=on confirmed"
+
+      - name: Tear down
+        if: always()
+        working-directory: polaris_web
+        run: docker compose -f docker-compose.prod.yml -f docker-compose.citest.yml down -v || true

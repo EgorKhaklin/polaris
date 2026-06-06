@@ -5,6 +5,35 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.140 — 2026-06-06 (the full production stack now boots end to end, and a prod-down init bug it found)
+
+Booting the FULL production compose for the first time (only the dev compose and
+per-image tests ran in CI before) found that the prod stack had never actually
+come up. `polaris_sql/09_grants.sql` hardcoded `GRANT CONNECT ON DATABASE
+polaris_test` — the dev/CI database name. Production uses `polaris`, so init hit
+`ERROR: database "polaris_test" does not exist`, and under `ON_ERROR_STOP=1` +
+`set -e` the whole `docker-init.sh` aborted BEFORE it enabled TLS. Result:
+postgres came up with `ssl=off`, pgbouncer's verify-ca backend connection was
+refused, the app could not reach the DB, gunicorn workers hung and crash-looped,
+and nothing served. Every existing test uses the `polaris_test` name, so this was
+invisible until the prod stack was booted as a whole.
+
+- **The fix.** `09_grants.sql` now grants CONNECT on `current_database()` via
+  dynamic SQL, the same pattern the file already uses for its ALTER DATABASE GUC
+  settings. It loads correctly into `polaris` (prod), `polaris_test` (dev/CI), or
+  any DB name. Verified: the prod stack boots, postgres comes up `ssl=on`, and
+  `/api/health` serves 200 through the Caddy TLS edge with database (41 tables,
+  ~18ms through the verify-ca hop), redis, and zk_binary all healthy.
+- **The keystone test.** A new `prod-stack-boot` CI job generates real secrets +
+  certs, builds the prod images, boots `docker-compose.prod.yml` +
+  `docker-compose.citest.yml` (the only change from prod is Caddy's internal CA
+  instead of ACME, since CI has no public domain), and asserts the stack serves
+  `/api/health` end to end with the DB-backed components healthy and postgres
+  `ssl=on`. This is the gap that let v9.135 and v9.140 ship; it is now closed.
+- **Pinned.** `check_prod_stack_boot` (66th check) requires the boot harness
+  (`Caddyfile.citest`, `docker-compose.citest.yml`) and a CI job that generates
+  secrets, boots the full prod compose, and probes `/api/health`.
+
 ## v9.139 — 2026-06-06 (fix a real deploy-blocker: the liboqs banner corrupted the generated signing key)
 
 Exercising the full production-stack bring-up found a genuine production bug.

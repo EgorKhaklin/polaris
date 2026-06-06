@@ -154,6 +154,15 @@ posture audit's migration roadmap.
   (S3 bucket + credentials) and the backup schedule remain operator-supplied.
 
 ### Wave 4 — deploy/ops/reliability/observability (HIGH/MEDIUM)
+- [x] **Full prod compose boots + serves end to end (v9.140).** CI booted only the
+  dev compose; booting the real prod stack for the first time found it had never
+  come up: `09_grants.sql` hardcoded the test DB name `polaris_test`, so prod init
+  (DB `polaris`) aborted before enabling TLS, postgres ran `ssl=off`, pgbouncer's
+  verify-ca backend was refused, and the app crash-looped. Fixed (dynamic
+  `current_database()` grant). A new `prod-stack-boot` CI job generates real
+  secrets, builds the prod images, boots `docker-compose.prod.yml` + the citest
+  override, and asserts `/api/health` serves through the TLS edge with the
+  DB-backed components healthy + postgres `ssl=on`. Pinned by `check_prod_stack_boot`.
 - [x] **Migration `lock_timeout`/`statement_timeout` (v9.106).**
   `polaris-migrate.sh` SET LOCALs both inside the apply/revert transaction
   (defaults `3s`/`60s`, overridable), so a blocking `ALTER` fails fast instead

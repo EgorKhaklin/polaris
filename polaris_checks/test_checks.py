@@ -1057,6 +1057,57 @@ def test_caddy_self_built_check_discriminates(tmp_path):
         "must PASS for a self-built edge with the plugin compiled in and CI validation"
 
 
+def test_prod_stack_boot_check_discriminates(tmp_path):
+    web = tmp_path / "polaris_web"
+    web.mkdir()
+    gh = tmp_path / ".github" / "workflows"
+    gh.mkdir(parents=True)
+    ci = gh / "ci.yml"
+
+    GOOD_CI = ("jobs:\n  prod-stack-boot:\n    steps:\n      run: |\n"
+               "        bash scripts/polaris-generate-secrets.sh\n"
+               "        docker compose -f docker-compose.prod.yml -f docker-compose.citest.yml up -d\n"
+               "        curl -sk https://localhost:8443/api/health\n")
+
+    def write(ci_text=GOOD_CI, override=True, caddyfile=True):
+        ci.write_text(ci_text)
+        ov = web / "docker-compose.citest.yml"
+        cf = web / "Caddyfile.citest"
+        if override: ov.write_text("services:\n  caddy: {}\n")
+        elif ov.exists(): ov.unlink()
+        if caddyfile: cf.write_text("localhost:443 { tls internal }\n")
+        elif cf.exists(): cf.unlink()
+
+    # 1. No citest override file -> FAIL.
+    write(override=False)
+    assert checks.check_prod_stack_boot(tmp_path)[0].level == "FAIL", \
+        "must FAIL without the docker-compose.citest.yml override"
+
+    # 2. Override present but CI never boots the prod compose -> FAIL.
+    write(ci_text="jobs:\n  x:\n    steps:\n      run: echo hi\n")
+    assert checks.check_prod_stack_boot(tmp_path)[0].level == "FAIL", \
+        "must FAIL when CI does not boot the full prod compose with the override"
+
+    # 3. Boots the compose but does not generate secrets -> FAIL.
+    write(ci_text="jobs:\n  b:\n    steps:\n      run: |\n"
+                  "        docker compose -f docker-compose.prod.yml -f docker-compose.citest.yml up -d\n"
+                  "        curl https://localhost:8443/api/health\n")
+    assert checks.check_prod_stack_boot(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the boot does not generate real secrets"
+
+    # 4. Boots + secrets but never asserts it serves /api/health -> FAIL.
+    write(ci_text="jobs:\n  b:\n    steps:\n      run: |\n"
+                  "        bash scripts/polaris-generate-secrets.sh\n"
+                  "        docker compose -f docker-compose.prod.yml -f docker-compose.citest.yml up -d\n")
+    assert checks.check_prod_stack_boot(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the boot does not assert serving through the edge"
+
+    # 5. Override + Caddyfile + boots prod compose + secrets + health probe -> OK.
+    write()
+    assert checks.check_prod_stack_boot(tmp_path)[0].level == "OK", \
+        "must PASS for a full prod-compose boot that generates secrets and probes /api/health"
+
+
 def test_edge_pq_kex_check_discriminates(tmp_path):
     ref = tmp_path / "docs" / "reference"
     ref.mkdir(parents=True)

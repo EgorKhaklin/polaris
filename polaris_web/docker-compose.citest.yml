@@ -1,0 +1,20 @@
+# docker-compose.citest.yml — CI/local override to boot the FULL prod stack
+# end-to-end (v9.140). Layer over docker-compose.prod.yml:
+#   docker compose -f docker-compose.prod.yml -f docker-compose.citest.yml up -d
+#
+# The ONLY change from prod is the TLS edge: the prod Caddyfile provisions a
+# Let's Encrypt cert for POLARIS_DOMAIN (no ACME in CI), so here Caddy serves the
+# same reverse-proxy + rate_limit config under its internal CA (localhost). Ports
+# are reset to a single 8443 -> 443 (no host 80/443 bind, so it never collides),
+# and the Caddyfile mount is swapped (merge-by-target). Everything else (app in
+# production mode, pgbouncer verify-ca to postgres, postgres TLS, the generated
+# secrets, the real images) is exactly prod, so the boot proves the production
+# deployment topology actually comes up and serves end to end.
+services:
+  caddy:
+    environment:
+      POLARIS_DOMAIN: localhost
+    volumes:
+      - ./Caddyfile.citest:/etc/caddy/Caddyfile:ro
+    ports: !override
+      - "8443:443"

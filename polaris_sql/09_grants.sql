@@ -25,7 +25,17 @@ BEGIN
     END IF;
 END$$;
 
-GRANT CONNECT ON DATABASE polaris_test TO polaris_app;
+-- Grant CONNECT on the CURRENT database, not a hardcoded name. This file loads
+-- into whatever DB it runs against: 'polaris_test' in dev/CI, 'polaris' in the
+-- prod compose. Hardcoding 'polaris_test' made prod init ERROR ("database
+-- polaris_test does not exist") under ON_ERROR_STOP, aborting docker-init.sh
+-- before it enabled TLS — so the prod stack never came up (found v9.140). Use
+-- current_database() dynamically, the same pattern this file already uses for
+-- the ALTER DATABASE GUC settings below.
+DO $$
+BEGIN
+    EXECUTE format('GRANT CONNECT ON DATABASE %I TO polaris_app', current_database());
+END$$;
 GRANT USAGE ON SCHEMA public TO polaris_app;
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO polaris_app;
