@@ -5,6 +5,34 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.129 — 2026-06-06 (hardening: fail closed on production misconfiguration, from a review of this session's ships)
+
+A multi-agent adversarial review of v9.121-v9.128 surfaced silent-failure and
+silent-misconfiguration gaps (each verified by hand; the speculative ones —
+"force duress sync in prod", a trigger that would break rectification — were
+discarded). This closes the four concrete ones.
+
+- **Refuse a plaintext DB hop in production.** `POLARIS_DB_SSLMODE` defaults to
+  `prefer`, which silently falls back to plaintext if the server lacks TLS. The
+  prod compose sets `require`, but a hand-rolled deployment could miss it. app.py
+  now refuses to start when `POLARIS_ENV=production` and `POLARIS_DB_SSLMODE` is
+  `prefer`/`allow`/`disable` (mirrors the default-`SECRET_KEY` guard).
+- **Refuse the duress timing side-channel in production.** `POLARIS_DURESS_SYNC=1`
+  records the duress event on the request thread, reintroducing the v9.82 timing
+  side-channel (a coerced operator's match becomes measurable). It is a test-only
+  knob; app.py now refuses to start with it set in production.
+- **The duress page can't fail silently.** `_METRICS_DURESS.inc()` was
+  `try/except: pass`; a lost increment (mmap permission, corrupt multiproc file)
+  would mean `PolarisDuressEvent` never fires and no one knows. It now logs the
+  failure to stderr (safe: off the request thread, and prod sync is refused).
+- **`/metrics` carries the duress signal — say so.** As of v9.128 a `/metrics`
+  scraper can observe that a duress alarm fired. The route docstring and
+  `deploy/observability/README.md` now state plainly that `/metrics` MUST be
+  reachable only by the operator's monitoring, never the public internet.
+- **Pinned.** `check_prod_fail_closed` (59th check) asserts both startup guards;
+  subprocess tests prove production boot is refused on a plaintext sslmode and on
+  `POLARIS_DURESS_SYNC=1`, and permitted on `require`.
+
 ## v9.128 — 2026-06-06 (production-readiness: the duress signal is now alertable)
 
 `observability.py` calls duress "the headline metric": a coerced operator's

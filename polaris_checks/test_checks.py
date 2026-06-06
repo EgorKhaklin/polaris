@@ -1369,6 +1369,43 @@ def test_duress_alertable_check_discriminates(tmp_path):
         "must FAIL when no PolarisDuressEvent alert references the counter"
 
 
+def test_prod_fail_closed_check_discriminates(tmp_path):
+    web = tmp_path / "polaris_web"
+    web.mkdir()
+    GOOD = (
+        "_PRODUCTION = os.environ.get('POLARIS_ENV') == 'production'\n"
+        "if _PRODUCTION:\n"
+        "    m = os.environ.get('POLARIS_DB_SSLMODE', 'prefer')\n"
+        "    if m in ('disable', 'allow', 'prefer'):\n"
+        "        sys.exit(2)\n"
+        "    if os.environ.get('POLARIS_DURESS_SYNC') == '1':\n"
+        "        sys.exit(2)\n"
+    )
+
+    def write(app=GOOD):
+        (web / "app.py").write_text(app)
+
+    # 1. both guards present -> OK.
+    write()
+    assert checks.check_prod_fail_closed(tmp_path)[0].level == "OK", \
+        "must PASS when both production fail-closed guards are present"
+
+    # 2. no _PRODUCTION flag -> FAIL.
+    write(app=GOOD.replace("_PRODUCTION", "_prod_flag"))
+    assert checks.check_prod_fail_closed(tmp_path)[0].level == "FAIL", \
+        "must FAIL without a _PRODUCTION flag"
+
+    # 3. the sslmode guard is gone -> FAIL.
+    write(app="_PRODUCTION = True\nif _PRODUCTION:\n    if os.environ.get('POLARIS_DURESS_SYNC') == '1':\n        sys.exit(2)\n")
+    assert checks.check_prod_fail_closed(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the POLARIS_DB_SSLMODE guard is missing"
+
+    # 4. the duress-sync guard is gone -> FAIL.
+    write(app="_PRODUCTION = True\nif _PRODUCTION:\n    m = os.environ.get('POLARIS_DB_SSLMODE', 'prefer')\n    if m in ('disable', 'allow', 'prefer'):\n        sys.exit(2)\n")
+    assert checks.check_prod_fail_closed(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the POLARIS_DURESS_SYNC guard is missing"
+
+
 def test_prod_real_pqc_check_discriminates(tmp_path):
     web = tmp_path / "polaris_web"
     gh = tmp_path / ".github" / "workflows"

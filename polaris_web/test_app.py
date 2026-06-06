@@ -3936,6 +3936,48 @@ class F05_ProductionSecretGuardTests(unittest.TestCase):
                          f"stderr: {proc.stderr[:300]}")
         self.assertIn('FATAL', proc.stderr)
 
+    def _prod_import(self, extra_env):
+        """Import app.py in a subprocess under POLARIS_ENV=production with a real
+        secret, plus extra_env. Returns the completed process."""
+        import subprocess
+        setup = ('import os, sys; sys.path.insert(0, "."); '
+                 'os.environ["POLARIS_ENV"]="production"; '
+                 'os.environ["POLARIS_SECRET_KEY"]="' + ('a1b2' * 16) + '"; '
+                 # Start from a clean slate so a stray parent value does not trip
+                 # a guard the test did not intend.
+                 'os.environ.pop("POLARIS_DURESS_SYNC", None); '
+                 'os.environ.pop("POLARIS_DB_SSLMODE", None); ')
+        for k, v in extra_env.items():
+            setup += 'os.environ["%s"]="%s"; ' % (k, v)
+        setup += 'import app'
+        return subprocess.run(
+            [sys.executable, '-c', setup],
+            cwd=os.path.dirname(os.path.abspath(__file__)),
+            capture_output=True, text=True, timeout=15)
+
+    def test_plaintext_sslmode_rejected_in_production(self):
+        """v9.129: a plaintext-capable POLARIS_DB_SSLMODE must refuse to boot in prod."""
+        proc = self._prod_import({'POLARIS_DB_SSLMODE': 'prefer'})
+        self.assertEqual(proc.returncode, 2, f"stderr: {proc.stderr[:400]}")
+        self.assertIn('FATAL', proc.stderr)
+        self.assertIn('POLARIS_DB_SSLMODE', proc.stderr)
+
+    def test_duress_sync_rejected_in_production(self):
+        """v9.129: POLARIS_DURESS_SYNC=1 (timing side-channel) must refuse to boot in prod."""
+        proc = self._prod_import({'POLARIS_DB_SSLMODE': 'require',
+                                  'POLARIS_DURESS_SYNC': '1'})
+        self.assertEqual(proc.returncode, 2, f"stderr: {proc.stderr[:400]}")
+        self.assertIn('FATAL', proc.stderr)
+        self.assertIn('POLARIS_DURESS_SYNC', proc.stderr)
+
+    def test_require_sslmode_boots_in_production(self):
+        """The guards are not over-eager: require + no duress-sync must NOT exit
+        for a TLS/duress reason (it may exit 0 or fail later on the DB, but not
+        with our FATAL guard messages)."""
+        proc = self._prod_import({'POLARIS_DB_SSLMODE': 'require'})
+        self.assertNotIn('POLARIS_DB_SSLMODE', proc.stderr)
+        self.assertNotIn('POLARIS_DURESS_SYNC', proc.stderr)
+
 
 class F06_CookieHardeningTests(PolarisTestCase):
     """F-07: Cookie attributes Secure / HttpOnly / SameSite. CWE-614, CWE-1004."""

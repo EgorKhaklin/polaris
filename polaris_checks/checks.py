@@ -877,6 +877,41 @@ def check_duress_alertable(root: pathlib.Path) -> list[Finding]:
 
 
 # ---------------------------------------------------------------------------
+# Fail-closed on production misconfiguration (v9.129). The prod compose sets
+# these correctly, but a hand-rolled deployment could miss them, so app.py
+# refuses to start in production when:
+#   - POLARIS_DB_SSLMODE permits a silent plaintext DB hop (prefer/allow/disable);
+#   - POLARIS_DURESS_SYNC=1 reintroduces the duress timing side-channel.
+# Mirrors the existing default-SECRET_KEY guard. This pins both guards so neither
+# can be silently dropped (a removed fail-closed check reads as "still safe").
+# ---------------------------------------------------------------------------
+def check_prod_fail_closed(root: pathlib.Path) -> list[Finding]:
+    app = _read(root, "polaris_web/app.py")
+    if not app:
+        return _fail("prod_fail_closed", "polaris_web/app.py is missing")
+    if "_PRODUCTION" not in app:
+        return _fail("prod_fail_closed", "app.py must compute a _PRODUCTION flag")
+    # The DB-TLS guard: POLARIS_DB_SSLMODE tied to a sys.exit, rejecting the
+    # plaintext-capable modes.
+    if not re.search(r"POLARIS_DB_SSLMODE.{0,500}sys\.exit", app, re.S):
+        return _fail("prod_fail_closed",
+                     "app.py must refuse to start in production when POLARIS_DB_SSLMODE permits a "
+                     "silent plaintext DB hop (a sys.exit guard on prefer/allow/disable)")
+    if not re.search(r"prefer", app):
+        return _fail("prod_fail_closed",
+                     "the sslmode guard must reject the plaintext-capable modes (prefer/allow/disable)")
+    # The duress-sync guard: POLARIS_DURESS_SYNC tied to a sys.exit.
+    if not re.search(r"POLARIS_DURESS_SYNC.{0,500}sys\.exit", app, re.S):
+        return _fail("prod_fail_closed",
+                     "app.py must refuse to start in production when POLARIS_DURESS_SYNC=1 (it "
+                     "reintroduces the duress timing side-channel)")
+    return _ok("prod_fail_closed",
+               "app.py fails closed in production on a plaintext-capable POLARIS_DB_SSLMODE and on "
+               "POLARIS_DURESS_SYNC=1 (the duress timing side-channel), alongside the default-SECRET_KEY "
+               "guard")
+
+
+# ---------------------------------------------------------------------------
 # At-rest data-protection posture. Polaris does not encrypt the live database at
 # the app layer (host volume encryption + key custody is operator-gated). The
 # risk is not that gap (it is documented and deliberate) but that the POSTURE doc
@@ -1726,6 +1761,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_alert_rules,
     check_alert_runbooks,
     check_duress_alertable,
+    check_prod_fail_closed,
     check_encryption_at_rest_posture,
     check_erasure_procedure,
     check_replication_scaffolding,

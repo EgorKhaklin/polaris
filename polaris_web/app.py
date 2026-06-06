@@ -244,6 +244,32 @@ if app.secret_key in ('dev-key-change-in-production', 'dev-secret-rotate-in-prod
         "      and set POLARIS_SECRET_KEY before deploying to production.\n\n"
     )
 
+# v9.129 — fail closed on two production misconfigurations the prod compose sets
+# correctly but a hand-rolled deployment could miss (the SECRET_KEY guard above
+# already does this for the session key):
+#   1. POLARIS_DB_SSLMODE defaults to 'prefer', which SILENTLY falls back to
+#      plaintext if the server lacks TLS — in production that ships identity data
+#      over a cleartext DB hop. Require an encrypting mode.
+#   2. POLARIS_DURESS_SYNC=1 records the duress event on the request thread,
+#      reintroducing the timing side-channel async exists to remove (a coerced
+#      operator's match becomes measurable in the response latency). Test-only.
+if _PRODUCTION:
+    _db_sslmode = os.environ.get('POLARIS_DB_SSLMODE', 'prefer').lower()
+    if _db_sslmode in ('disable', 'allow', 'prefer'):
+        sys.stderr.write(
+            "\n  FATAL: POLARIS_ENV=production but POLARIS_DB_SSLMODE is '" + _db_sslmode + "',\n"
+            "         which permits a silent plaintext fallback on the DB hop. Set it to\n"
+            "         'require' (or 'verify-ca'/'verify-full' with a CA). Refusing to start.\n\n"
+        )
+        sys.exit(2)
+    if os.environ.get('POLARIS_DURESS_SYNC') == '1':
+        sys.stderr.write(
+            "\n  FATAL: POLARIS_DURESS_SYNC=1 in production reintroduces the duress\n"
+            "         timing side-channel (a coerced operator's match becomes measurable\n"
+            "         in the response latency). It is a test-only knob. Unset it.\n\n"
+        )
+        sys.exit(2)
+
 
 # ----------------------------------------------------------------------------
 # Database connection
@@ -2185,6 +2211,14 @@ def metrics():
     that's a configuration choice the operator makes deliberately at
     the reverse-proxy layer (Caddy can rate-limit or route this path
     differently than user-facing routes).
+
+    SECURITY (v9.129): as of v9.128 this surface carries the duress signal
+    (`polaris_duress_events_total`). /metrics MUST be reachable only by the
+    operator's monitoring (an internal-only ACL), NOT the public internet: a
+    party who can scrape it can observe that — and roughly when — a duress alarm
+    fired. That is the same audience (the operator's Prometheus) that needs it to
+    page, so the control is /metrics access, not the metric. See
+    deploy/observability/README.md.
 
     Graceful fallback: if prometheus_client isn't installed (ad-hoc
     dev environment), returns HTTP 503 with a plain-text message.
@@ -4282,12 +4316,18 @@ def _record_duress_async(token_id, context_id, requesting_agency_id):
         except Exception:
             pass
         # v9.128 — bump the Prometheus counter so the duress signal is alertable
-        # on /metrics (PolarisDuressEvent). Best-effort; never raises.
+        # on /metrics (PolarisDuressEvent). Best-effort; never raises into the
+        # duress path. v9.129: log a failure to stderr — if the increment is lost
+        # (mmap permission, corrupt multiproc file), the page would never fire and
+        # the coerced operator signals into the void; an operator must see that.
+        # Safe here: this runs off the request thread (async) or, in tests, in
+        # sync mode (production sync is refused at startup), so the log adds no
+        # request-path timing the coercer could measure.
         if _PROM_AVAILABLE:
             try:
                 _METRICS_DURESS.inc()
-            except Exception:
-                pass
+            except Exception as _e:
+                sys.stderr.write("DURESS METRIC INCREMENT FAILED (alert may not fire): %s\n" % _e)
     except psycopg2.Error:
         conn.rollback()
         sys.stderr.write(f"DURESS RECORD FAILED for token_id={token_id}\n")

@@ -25,6 +25,16 @@ pager/notification target) is **operator-provided**.
    ```
    (Both pass as shipped.)
 
+## Access control (required)
+
+`/metrics` is unauthenticated by design (Prometheus scrapes it), but as of v9.128
+it carries the **duress signal** (`polaris_duress_events_total`). A party who can
+scrape `/metrics` can observe that — and roughly when — a duress alarm fired.
+**`/metrics` MUST be reachable only by your monitoring**, never the public
+internet: restrict it at the reverse proxy (Caddy) or the network layer to the
+Prometheus host. That is the same audience that needs it to page, so the control
+is *who can reach `/metrics`*, not the metric itself.
+
 ## The alerts
 
 | Alert | Severity | Fires when |
