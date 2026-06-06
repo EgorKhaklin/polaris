@@ -1328,6 +1328,47 @@ def test_pgbackrest_scaffolding_check_discriminates(tmp_path):
         "must FAIL when ci.yml has no pgBackRest restore round-trip"
 
 
+def test_duress_alertable_check_discriminates(tmp_path):
+    web = tmp_path / "polaris_web"
+    obs = tmp_path / "deploy" / "observability"
+    web.mkdir(parents=True)
+    obs.mkdir(parents=True)
+    GOOD_APP = (
+        "_METRICS_DURESS = _PromCounter('polaris_duress_events_total', 'x')\n"
+        "def _record_duress_async(token_id, context_id, requesting_agency_id):\n"
+        "    observability.record_duress_event(individual_id=token_id)\n"
+        "    _METRICS_DURESS.inc()\n"
+        "\n\n"
+        "def other():\n    pass\n"
+    )
+    GOOD_ALERTS = ("- alert: PolarisDuressEvent\n"
+                   "  expr: increase(polaris_duress_events_total[5m]) > 0\n")
+
+    def write(app=GOOD_APP, alerts=GOOD_ALERTS):
+        (web / "app.py").write_text(app)
+        (obs / "polaris-alerts.yml").write_text(alerts)
+
+    # 1. fully wired -> OK.
+    write()
+    assert checks.check_duress_alertable(tmp_path)[0].level == "OK", \
+        "must PASS when the duress counter is exposed, incremented, and alerted"
+
+    # 2. duress is only in the JSON metrics, not a Prometheus counter -> FAIL.
+    write(app="def _record_duress_async(t, c, a):\n    observability.record_duress_event(individual_id=t)\n\n\ndef o():\n    pass\n")
+    assert checks.check_duress_alertable(tmp_path)[0].level == "FAIL", \
+        "must FAIL when polaris_duress_events_total is not exposed on /metrics"
+
+    # 3. counter exists but is NOT incremented at the record site -> FAIL.
+    write(app=GOOD_APP.replace("    _METRICS_DURESS.inc()\n", ""))
+    assert checks.check_duress_alertable(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the counter is never incremented (the alert would never fire)"
+
+    # 4. no alert on the counter -> FAIL.
+    write(alerts="- alert: PolarisAppDown\n  expr: up == 0\n")
+    assert checks.check_duress_alertable(tmp_path)[0].level == "FAIL", \
+        "must FAIL when no PolarisDuressEvent alert references the counter"
+
+
 def test_prod_real_pqc_check_discriminates(tmp_path):
     web = tmp_path / "polaris_web"
     gh = tmp_path / ".github" / "workflows"

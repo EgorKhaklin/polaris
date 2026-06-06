@@ -129,6 +129,15 @@ try:
         labelnames=('disclosure_level',),
         registry=_METRICS_REGISTRY,
     )
+    # v9.128 — the headline anti-coercion alarm on /metrics. A duress-code match
+    # records a silent DuressEvent; this counter makes it page-able. An unread
+    # duress signal is the coercion-cover failure mode (a coerced operator's
+    # duress code raises a row no one reads), so it is exposed for alerting.
+    _METRICS_DURESS = _PromCounter(
+        'polaris_duress_events_total',
+        'Duress-code matches recorded (the headline anti-coercion alarm)',
+        registry=_METRICS_REGISTRY,
+    )
     _METRICS_DB_LATENCY = _PromHistogram(
         'polaris_db_query_latency_seconds',
         'Database round-trip from /api/health probe',
@@ -4272,6 +4281,13 @@ def _record_duress_async(token_id, context_id, requesting_agency_id):
                 individual_id=token_id, agency_id=requesting_agency_id)
         except Exception:
             pass
+        # v9.128 — bump the Prometheus counter so the duress signal is alertable
+        # on /metrics (PolarisDuressEvent). Best-effort; never raises.
+        if _PROM_AVAILABLE:
+            try:
+                _METRICS_DURESS.inc()
+            except Exception:
+                pass
     except psycopg2.Error:
         conn.rollback()
         sys.stderr.write(f"DURESS RECORD FAILED for token_id={token_id}\n")

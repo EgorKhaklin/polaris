@@ -112,8 +112,13 @@ left a real foundation. Genuinely sound today:
   the right control over field-level (which would break C3's unique index and the
   ZK second witness). Pinned by `check_encryption_at_rest_posture`. The host
   encryption layer + key custodian remain operator-gated.
-- [ ] Offsite backup target + WAL archiving for the ≤1-min RPO (operator-gated:
-  the S3/offsite store).
+- [x] **Continuous WAL archiving config (v9.127).** pgBackRest ships in the
+  postgres image (`Dockerfile.postgres`, digest-pinned base), `pgbackrest.conf`
+  defines the `polaris` stanza, and `docker-init.sh` enables `archive_mode` + the
+  `archive_command` when `POLARIS_PGBACKREST_ENABLED=1` (opt-in, so no-repo
+  deployments do not pile up WAL). A CI round-trip archives → backs up → RESTORES
+  with WAL replay. Pinned by `check_pgbackrest_scaffolding`. The **offsite repo**
+  (S3 bucket + credentials) and the backup schedule remain operator-supplied.
 
 ### Wave 4 — deploy/ops/reliability/observability (HIGH/MEDIUM)
 - [x] **Migration `lock_timeout`/`statement_timeout` (v9.106).**
@@ -145,7 +150,7 @@ left a real foundation. Genuinely sound today:
   deleted upstream tag cannot change what runs; the `docker` Dependabot
   ecosystem keeps the pins current. Pinned by `check_prod_images_digest_pinned`.
 - [x] **Shipped alert rules (v9.115).** `deploy/observability/` ships a
-  promtool-validated `polaris-alerts.yml` (5 rules) + `prometheus.yml` scrape
+  promtool-validated `polaris-alerts.yml` (6 rules) + `prometheus.yml` scrape
   config + README; ratios/quantiles stay valid per worker. Pinned by
   `check_alert_rules`. (Alertmanager backend operator-gated.)
 - [x] **Prometheus multiprocess metrics (v9.120).** `/metrics` aggregates across
@@ -167,6 +172,13 @@ left a real foundation. Genuinely sound today:
   `docs/operator/RUNBOOKS.md` ships one Trigger/Diagnosis/Remediation section
   per shipped alert. Pinned by `check_alert_runbooks` (one-to-one alert↔runbook
   mapping). Shipped alert rules (done, v9.115); log rotation (done, v9.109).
+- [x] **Duress signal is alertable (v9.128).** Duress was "the headline metric"
+  but lived only in the JSON `/api/metrics` (not scrapeable), so it could not
+  page. Now `polaris_duress_events_total` is a Prometheus counter on `/metrics`
+  (incremented where the silent `DuressEvent` is recorded), the SEV-1
+  `PolarisDuressEvent` alert fires immediately on any new event, and a
+  coercion-response runbook ships. The pager backend stays operator-gated. Pinned
+  by `check_duress_alertable` + a DB-backed counter-increment test.
 - [x] **Dependency CVE scanning gates the build (v9.105).** A `cve-scan` CI job
   runs `pip-audit --strict` on the runtime `requirements.txt`, so a known CVE in
   a package the production image installs fails the build. v9.105 split test

@@ -3058,6 +3058,38 @@ class DuressCodeTests(PolarisTestCase):
             _time.sleep(0.1)
         self.assertTrue(recorded, 'async duress recording must still land (durability)')
 
+    def test_duress_increments_prometheus_counter(self):
+        """v9.128 — the duress signal is ALERTABLE: a duress match bumps
+        polaris_duress_events_total on /metrics, which PolarisDuressEvent pages
+        on. Sync mode puts the increment on the request thread for determinism."""
+        import os as _os
+        prev = _os.environ.get('POLARIS_DURESS_SYNC')
+        _os.environ['POLARIS_DURESS_SYNC'] = '1'
+        self.addCleanup(lambda: (_os.environ.__setitem__('POLARIS_DURESS_SYNC', prev)
+                                 if prev is not None
+                                 else _os.environ.pop('POLARIS_DURESS_SYNC', None)))
+
+        def duress_count():
+            r = self.client.get('/metrics')
+            if r.status_code != 200:
+                return None  # prometheus_client not installed; /metrics is 503
+            m = re.search(r'(?m)^polaris_duress_events_total(?:\{[^}]*\})?\s+([0-9.]+)',
+                          r.data.decode())
+            return float(m.group(1)) if m else 0.0
+
+        before = duress_count()
+        if before is None:
+            self.skipTest('prometheus_client not installed; /metrics is 503')
+
+        r = self._post('/verifications/new', data={
+            'token_id': '2', 'requesting_agency_id': '5', 'context_id': '1',
+            'outcome': 'SUCCESS', 'disclosure_level': 'SELECTIVE',
+            'duress_code': self.DEMO_DURESS_CODE,
+        }, follow_redirects=True)
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(duress_count(), before + 1,
+                         'a duress match must increment polaris_duress_events_total (PolarisDuressEvent)')
+
     def test_wrong_duress_code_no_event(self):
         """Typing the wrong code (or any non-duress code) writes NO
         DuressEvent. Constant-time comparison rejects without leaking."""

@@ -5,6 +5,31 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.128 — 2026-06-06 (production-readiness: the duress signal is now alertable)
+
+`observability.py` calls duress "the headline metric": a coerced operator's
+duress code raises a silent `DuressEvent`, and an unread one is the
+coercion-cover failure mode (the whole mechanism is decorative if no one reads
+the row). The signal lived only in the JSON `/api/metrics`, which Prometheus does
+not scrape, so it could not page anyone. This makes it page-able.
+
+- **`polaris_duress_events_total` on `/metrics`.** A new Prometheus counter,
+  incremented in `_record_duress_async` right where the silent `DuressEvent` is
+  written (best-effort, never raises into the duress path). Multiprocess-
+  aggregated (v9.120), so the count is whole-app.
+- **`PolarisDuressEvent` alert (SEV-1, immediate).** `increase(...) > 0` fires on
+  any new duress event with no `for` window — duress cannot wait out a debounce.
+- **A response runbook.** `RUNBOOKS.md` gains a `PolarisDuressEvent` section that
+  is deliberately NOT a system-fix runbook: it is the coercion-response procedure
+  (read the event out of band, never tip off a coercer, do NOT revoke or alter
+  the holder's record in reaction, preserve the append-only evidence). The human
+  response is operator-defined; Polaris's job ends at recording + paging.
+- **Pinned + proven.** `check_duress_alertable` (58th check) fails the build if
+  the counter is removed, stops being incremented at the record site, or loses
+  its alert (a dead alert on a never-moving counter is worse than none). A
+  DB-backed test drives a real duress-code match and asserts the `/metrics`
+  counter increments; `check_alert_runbooks` enforces the new runbook section.
+
 ## v9.127 — 2026-06-06 (production-readiness: continuous WAL archiving with pgBackRest)
 
 DR.md named continuous WAL archiving (pgBackRest) as the path to the ≤1-min RPO

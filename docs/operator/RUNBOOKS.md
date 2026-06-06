@@ -27,10 +27,11 @@ edit either file.
 
 1. [PolarisAppDown](#polarisappdown)
 2. [PolarisAppInfoAbsent](#polarisappinfoabsent)
-3. [PolarisHigh5xx](#polarishigh5xx)
-4. [PolarisHighDBLatency](#polarishighdblatency)
-5. [PolarisHighRequestLatency](#polarishighrequestlatency)
-6. [Cross-references](#cross-references)
+3. [PolarisDuressEvent](#polarisduressevent)
+4. [PolarisHigh5xx](#polarishigh5xx)
+5. [PolarisHighDBLatency](#polarishighdblatency)
+6. [PolarisHighRequestLatency](#polarishighrequestlatency)
+7. [Cross-references](#cross-references)
 
 ---
 
@@ -107,6 +108,48 @@ normally.
   tmpfs path in the prod compose and restart the app.
 - Confirm recovery: `curl -fsS http://<target>/metrics | grep polaris_app_info`
   returns a line with the current `version` label.
+
+---
+
+## PolarisDuressEvent
+
+**Severity:** SEV-1 · **Expression:** `increase(polaris_duress_events_total[5m]) > 0` · **For:** immediate
+
+**This is not a system fault.** A token holder entered their enrolled DURESS
+code during a verification: the system silently recorded a `DuressEvent` (the
+coercer did not see anything unusual, by design) and incremented
+`polaris_duress_events_total`. This alert exists so a human learns of the signal,
+because an unread duress event is the coercion-cover failure mode (the whole
+mechanism is decorative if no one reads the row). Treat it as a person signalling
+they may be acting under coercion.
+
+**Trigger.** `polaris_duress_events_total` increased in the last 5 minutes (at
+least one duress-code match). The alert pages immediately (no `for` window):
+duress cannot wait out a debounce.
+
+**Likely cause.**
+- A genuine duress-code entry: a holder forced to authenticate under coercion
+  used their duress code to raise a silent alarm.
+- A drill or an accidental duress-code entry (still investigate; do not assume).
+
+**Diagnosis (out of band, never in front of the subject).**
+1. Read the event on the operator duress dashboard (`/duress`): the `token_id`,
+   `context_id`, `requesting_agency_id`, and timestamp of the `DuressEvent`.
+2. Correlate with the verification context (which agency/where) to understand the
+   situation the holder is signalling about. The append-only audit-of-record (C1)
+   holds the surrounding events.
+3. Do NOT contact the subject through the channel that may be compromised, and do
+   NOT take any visible action that could reveal the alarm to a coercer.
+
+**Remediation.** The response is a HUMAN safety/legal procedure, not a system
+change — and the procedure itself is **operator-defined** (who is notified, how
+the subject's safety is confirmed, what law-enforcement or welfare path applies).
+Polaris's job ends at recording + paging; do not script an automated action
+against the holder or the token. Do NOT revoke, lock, or alter the holder's
+record in reaction (that could endanger them and corrupts the evidentiary
+trail). Preserve the `DuressEvent` and the surrounding audit (they are
+append-only). The alert clears on its own once no new event arrives in the
+window; clearing is not "resolved" — the human response is.
 
 ---
 

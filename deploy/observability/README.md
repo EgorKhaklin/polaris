@@ -9,7 +9,7 @@ pager/notification target) is **operator-provided**.
 | File | What it is |
 |---|---|
 | [`prometheus.yml`](prometheus.yml) | Scrape config (the `polaris` job hitting `/metrics`) + `rule_files` loading the alerts. |
-| [`polaris-alerts.yml`](polaris-alerts.yml) | Five alerting rules, severity-labelled to the `docs/operator/DR.md` SEV ladder. |
+| [`polaris-alerts.yml`](polaris-alerts.yml) | Six alerting rules, severity-labelled to the `docs/operator/DR.md` SEV ladder. |
 
 ## Deploy
 
@@ -31,6 +31,7 @@ pager/notification target) is **operator-provided**.
 |---|---|---|
 | `PolarisAppDown` | SEV-1 | the scrape target is down for 2m |
 | `PolarisAppInfoAbsent` | SEV-1 | `polaris_app_info` is absent for 5m |
+| `PolarisDuressEvent` | SEV-1 | a duress-code match recorded a `DuressEvent` (fires immediately) |
 | `PolarisHigh5xx` | SEV-2 | the 5xx share of requests exceeds 1% for 10m |
 | `PolarisHighDBLatency` | SEV-2 | DB round-trip p99 exceeds 5s for 5m |
 | `PolarisHighRequestLatency` | SEV-3 | request p99 exceeds 2s for 10m |

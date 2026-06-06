@@ -5,11 +5,11 @@
 # to docs/operator/DR.md's SEV ladder; route them to your Alertmanager /
 # pager (the alerting backend is operator-provided).
 #
-# Metric-aggregation note: the app's /metrics uses a per-worker registry, so
-# absolute counters are per-gunicorn-worker until multiprocess aggregation
-# lands. The alerts below are deliberately RATIOS and QUANTILES (5xx share,
-# latency percentiles), which stay valid per worker — they do not depend on
-# summing across workers. Validate with: promtool check rules polaris-alerts.yml
+# Metric-aggregation note: as of v9.120 the app's /metrics aggregates across all
+# gunicorn workers (Prometheus multiprocess mode), so an absolute counter is
+# whole-app — which is what makes PolarisDuressEvent's `increase(...)` correct.
+# The ratio/quantile alerts (5xx share, latency percentiles) were valid even
+# per-worker and remain so. Validate with: promtool check rules polaris-alerts.yml
 groups:
   - name: polaris
     rules:
@@ -32,6 +32,18 @@ groups:
         annotations:
           summary: "polaris_app_info absent for 5m"
           description: "The app metadata gauge is missing — the process is not serving /metrics normally."
+
+      # SEV-1 — the headline anti-coercion alarm. A duress-code match recorded a
+      # silent DuressEvent; a coerced operator needs a human to know NOW. Fires
+      # immediately on any new event (no `for`: duress cannot wait out a window).
+      # An increase on the multiprocess-aggregated counter (v9.120) is whole-app.
+      - alert: PolarisDuressEvent
+        expr: increase(polaris_duress_events_total[5m]) > 0
+        labels:
+          severity: sev1
+        annotations:
+          summary: "Duress code matched — a coerced verification was recorded"
+          description: "polaris_duress_events_total increased: at least one duress-code match in the last 5m. Treat as a person signalling coercion; work the PolarisDuressEvent runbook out-of-band."
 
       # SEV-2 — sustained 5xx share. A ratio: valid per worker.
       - alert: PolarisHigh5xx

@@ -845,6 +845,38 @@ def check_alert_runbooks(root: pathlib.Path) -> list[Finding]:
 
 
 # ---------------------------------------------------------------------------
+# The duress signal must be ALERTABLE (v9.128). observability.py calls duress
+# "the headline metric": an unread duress event is the coercion-cover failure
+# mode. The JSON /api/metrics snapshot is not scrapeable for alerting, so the
+# count must be a Prometheus counter on /metrics, incremented where the
+# DuressEvent is recorded, with an alert on it — otherwise the page never fires.
+# ---------------------------------------------------------------------------
+def check_duress_alertable(root: pathlib.Path) -> list[Finding]:
+    app = _read(root, "polaris_web/app.py")
+    alerts = _read(root, "deploy/observability/polaris-alerts.yml")
+    if not (app and alerts):
+        return _fail("duress_alert", "app.py or the alerts file is missing")
+    if "polaris_duress_events_total" not in app:
+        return _fail("duress_alert",
+                     "app.py must expose polaris_duress_events_total on /metrics (the duress signal "
+                     "must be alertable, not only in the JSON /api/metrics)")
+    # It must be incremented where the DuressEvent is recorded, or the alert sits
+    # on a counter that never moves.
+    m = re.search(r"def _record_duress_async\b.*?(?=\n\ndef |\Z)", app, re.S)
+    if not m or "_METRICS_DURESS" not in m.group(0):
+        return _fail("duress_alert",
+                     "the duress counter must be incremented in _record_duress_async (where the "
+                     "DuressEvent is recorded) — an alert on a never-incremented counter never fires")
+    if "PolarisDuressEvent" not in alerts or "polaris_duress_events_total" not in alerts:
+        return _fail("duress_alert",
+                     "polaris-alerts.yml must alert (PolarisDuressEvent) on polaris_duress_events_total")
+    return _ok("duress_alert",
+               "the duress signal is alertable: polaris_duress_events_total is on /metrics, incremented "
+               "at the DuressEvent record site, and PolarisDuressEvent pages on it (runbook enforced by "
+               "check_alert_runbooks)")
+
+
+# ---------------------------------------------------------------------------
 # At-rest data-protection posture. Polaris does not encrypt the live database at
 # the app layer (host volume encryption + key custody is operator-gated). The
 # risk is not that gap (it is documented and deliberate) but that the POSTURE doc
@@ -1693,6 +1725,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_prod_images_digest_pinned,
     check_alert_rules,
     check_alert_runbooks,
+    check_duress_alertable,
     check_encryption_at_rest_posture,
     check_erasure_procedure,
     check_replication_scaffolding,
