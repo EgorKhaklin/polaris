@@ -1307,6 +1307,57 @@ def check_pgbouncer_self_built(root: pathlib.Path) -> list[Finding]:
 
 
 # ---------------------------------------------------------------------------
+# The TLS edge must actually START. The prod Caddyfile uses the `rate_limit`
+# directive from the third-party caddy-ratelimit plugin, which is NOT in the
+# stock caddy image: pinning the stock image (v9.114) made the edge crash-loop
+# on "unrecognized directive: rate_limit" and the whole front door never came up
+# (v9.135, same class as the bitnami/pgbouncer breakage). The fix is a self-built
+# Caddy (Dockerfile.caddy) with the plugin compiled in. This pins it: if the
+# Caddyfile uses a third-party directive, the edge must be built (not a stock
+# image), the plugin must be compiled in, and CI must validate the Caddyfile
+# against the built image so an unbacked directive can never reach production.
+# ---------------------------------------------------------------------------
+def check_caddy_self_built(root: pathlib.Path) -> list[Finding]:
+    caddyfile = _read(root, "polaris_web/Caddyfile")
+    compose = _read(root, "polaris_web/docker-compose.prod.yml")
+    if not caddyfile or not compose:
+        return _fail("caddy_edge", "polaris_web/Caddyfile or docker-compose.prod.yml is missing")
+    # The third-party directives the stock image does NOT ship. rate_limit is the
+    # live one; extend this set if the Caddyfile adopts more plugin directives.
+    THIRD_PARTY = {"rate_limit": "github.com/mholt/caddy-ratelimit"}
+    used = {d: mod for d, mod in THIRD_PARTY.items()
+            if re.search(r"(?m)^\s*%s\b" % re.escape(d), caddyfile)}
+    if not used:
+        # No plugin directives: the stock pinned image is fine, nothing to enforce.
+        return _ok("caddy_edge",
+                   "the Caddyfile uses no third-party directives; the stock edge image suffices")
+    # The caddy service must BUILD from Dockerfile.caddy, not pull a stock image
+    # that cannot load these directives.
+    if not re.search(r"(?m)^\s*dockerfile:\s*Dockerfile\.caddy\b", compose):
+        return _fail("caddy_edge",
+                     "the Caddyfile uses %s (third-party plugin directives), so the caddy service "
+                     "must build from Dockerfile.caddy with the plugins compiled in, not pull a "
+                     "stock caddy image that crash-loops on the unrecognized directive"
+                     % ", ".join(sorted(used)))
+    df = _read(root, "polaris_web/Dockerfile.caddy")
+    if not df:
+        return _fail("caddy_edge", "polaris_web/Dockerfile.caddy is missing")
+    for directive, module in sorted(used.items()):
+        if module not in df:
+            return _fail("caddy_edge",
+                         "the Caddyfile uses `%s` but Dockerfile.caddy does not compile in its "
+                         "plugin (%s) via xcaddy --with" % (directive, module))
+    ci = _read(root, ".github/workflows/ci.yml")
+    if not ci or "Dockerfile.caddy" not in ci or "caddy validate" not in ci:
+        return _fail("caddy_edge",
+                     "CI must build Dockerfile.caddy and `caddy validate` the real Caddyfile against "
+                     "it (the regression guard for the v9.135 crash class)")
+    return _ok("caddy_edge",
+               "the TLS edge is self-built (Dockerfile.caddy) with every third-party directive (%s) "
+               "compiled in, and CI validates the Caddyfile against it" % ", ".join(sorted(used)))
+
+
+# ---------------------------------------------------------------------------
 # The app<->DB path must be TLS-encrypted, not silently plaintext. psycopg2's
 # default sslmode is 'prefer' (encrypt if offered, else cleartext, no warning).
 # The prod path encrypts BOTH hops: app -> pgbouncer (pgbouncer client_tls,
@@ -1928,6 +1979,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_replication_scaffolding,
     check_pgbackrest_scaffolding,
     check_pgbouncer_self_built,
+    check_caddy_self_built,
     check_app_db_tls,
     check_correlation_id,
     check_dockerfile_copies_app_modules,

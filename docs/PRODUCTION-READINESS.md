@@ -162,6 +162,15 @@ posture audit's migration roadmap.
   could not pull it and was unstartable. Now built from `alpine` + the distro
   package (`Dockerfile.pgbouncer`), reading the DB password from the file-mounted
   secret with SCRAM on both hops. Pinned by `check_pgbouncer_self_built`.
+- [x] **Self-built Caddy edge (v9.135).** The prod Caddyfile uses the `rate_limit`
+  directive (third-party caddy-ratelimit plugin), which the stock `caddy:2-alpine`
+  image does not ship, so the pinned edge crash-looped on startup
+  (`unrecognized directive: rate_limit`) and the whole TLS front door never came
+  up — the same prod-down class as the pgbouncer breakage, missed because CI's
+  docker boot job runs the DEV compose (no Caddy). Now built from
+  `Dockerfile.caddy` with the plugin compiled in (`xcaddy`, FROM stages
+  digest-pinned, in-build plugin guard); a new `caddy-edge` CI job validates the
+  real Caddyfile against the built image. Pinned by `check_caddy_self_built`.
 - [x] **Pinned image digests (v9.114).** The prod compose's third-party images
   (caddy, postgres, redis) are pinned `tag@sha256:<digest>` so a mutated or
   deleted upstream tag cannot change what runs; the `docker` Dependabot

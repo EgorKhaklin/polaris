@@ -19,10 +19,15 @@
 services:
 
   caddy:
-    # Digest-pinned (v9.114): the tag stays for readability, the @sha256 makes
-    # the image immutable so a mutated/retagged upstream cannot change what runs.
-    # Dependabot (docker ecosystem) opens PRs to bump the digest.
-    image: caddy:2-alpine@sha256:77c07d5ebfa5be9fd6c820d2094ae662c9e7eeb9bf98346b7f639900263ee2a2
+    # Self-built (v9.135): the Caddyfile uses the third-party `rate_limit`
+    # directive, which is NOT in the stock caddy image, so the stock image
+    # crash-looped on the unrecognized directive. Dockerfile.caddy compiles the
+    # caddy-ratelimit plugin in (FROM stages digest-pinned; Dependabot tracks
+    # them). Same posture as the self-built pgbouncer.
+    build:
+      context: .
+      dockerfile: Dockerfile.caddy
+    image: polaris-caddy:prod
     deploy:
       resources:
         limits:

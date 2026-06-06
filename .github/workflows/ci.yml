@@ -549,6 +549,48 @@ jobs:
           echo "pgBackRest archive + backup + restore round-trip OK"
 
   # --------------------------------------------------------------------------
+  # The TLS edge (Caddy) was never built or config-validated in CI: the
+  # docker-image job boots the DEV compose, which runs the app directly with no
+  # Caddy. That blind spot shipped a prod-down bug (v9.135): the prod Caddyfile
+  # uses the `rate_limit` directive from the third-party caddy-ratelimit plugin,
+  # which is NOT in the stock caddy image, so the pinned stock image crash-looped
+  # on "unrecognized directive: rate_limit" and the front door never came up.
+  # This job builds the self-built Caddy (Dockerfile.caddy, plugin compiled in)
+  # and VALIDATES the real Caddyfile against it. A future unbacked directive, or
+  # a plugin that fails to compile, fails here instead of in production.
+  # --------------------------------------------------------------------------
+  caddy-edge:
+    name: Caddy edge build + Caddyfile validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Build the self-built Caddy image (compiles caddy-ratelimit)
+        run: docker build -f polaris_web/Dockerfile.caddy -t polaris-caddy:ci polaris_web
+
+      - name: The rate_limit plugin is actually present
+        run: |
+          docker run --rm polaris-caddy:ci caddy list-modules \
+            | grep -qx 'http.handlers.rate_limit' \
+            || { echo "::error::caddy-ratelimit plugin missing from the built edge image"; exit 1; }
+
+      - name: Validate the REAL prod Caddyfile against the built image
+        run: |
+          set -e
+          out=$(docker run --rm -e POLARIS_DOMAIN=polaris.example.gov \
+            -v "$PWD/polaris_web/Caddyfile:/etc/caddy/Caddyfile:ro" \
+            polaris-caddy:ci \
+            caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile 2>&1) || {
+              echo "$out"
+              echo "::error::prod Caddyfile failed to validate against the edge image (the v9.135 crash class)"
+              exit 1
+            }
+          echo "$out" | grep -q 'Valid configuration' \
+            || { echo "$out"; echo "::error::Caddyfile validation did not report 'Valid configuration'"; exit 1; }
+          echo "prod Caddyfile validates against the self-built edge image"
+
+  # --------------------------------------------------------------------------
   # Real post-quantum signing (ML-DSA-65 / FIPS 204) was previously untestable:
   # liboqs is not in the base image or the main test job, so the real signing
   # path never ran in CI. This job installs liboqs-python and proves the real

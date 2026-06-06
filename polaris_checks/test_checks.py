@@ -910,6 +910,61 @@ def test_pgbouncer_self_built_check_discriminates(tmp_path):
         "must FAIL on a case-variant bitnami/pgbouncer reference"
 
 
+def test_caddy_self_built_check_discriminates(tmp_path):
+    web = tmp_path / "polaris_web"
+    web.mkdir()
+    gh = tmp_path / ".github" / "workflows"
+    gh.mkdir(parents=True)
+
+    RL_CADDYFILE = "site {\n    rate_limit {\n        zone z { events 200 }\n    }\n}\n"
+    BUILD_COMPOSE = ("services:\n  caddy:\n    build:\n      context: .\n"
+                     "      dockerfile: Dockerfile.caddy\n    image: polaris-caddy:prod\n")
+    GOOD_DF = ("FROM caddy:2.11.4-builder-alpine AS builder\n"
+               "RUN xcaddy build --with github.com/mholt/caddy-ratelimit\n"
+               "FROM caddy:2.11.4-alpine\nCOPY --from=builder /usr/bin/caddy /usr/bin/caddy\n")
+    GOOD_CI = "jobs:\n  e:\n    steps:\n      run: docker build -f polaris_web/Dockerfile.caddy . && caddy validate\n"
+
+    def write(caddyfile=RL_CADDYFILE, compose=BUILD_COMPOSE, df=GOOD_DF, ci=GOOD_CI):
+        (web / "Caddyfile").write_text(caddyfile)
+        (web / "docker-compose.prod.yml").write_text(compose)
+        if df is not None:
+            (web / "Dockerfile.caddy").write_text(df)
+        elif (web / "Dockerfile.caddy").exists():
+            (web / "Dockerfile.caddy").unlink()
+        (gh / "ci.yml").write_text(ci)
+
+    # 1. Caddyfile uses rate_limit but the compose pulls the STOCK image -> FAIL.
+    write(compose="services:\n  caddy:\n    image: caddy:2-alpine@sha256:abc\n")
+    assert checks.check_caddy_self_built(tmp_path)[0].level == "FAIL", \
+        "must FAIL when a plugin directive is used but the edge is the stock image"
+
+    # 2. Builds Dockerfile.caddy but the plugin is not compiled in -> FAIL.
+    write(df="FROM caddy:2.11.4-alpine\n")
+    assert checks.check_caddy_self_built(tmp_path)[0].level == "FAIL", \
+        "must FAIL when Dockerfile.caddy does not compile in the caddy-ratelimit plugin"
+
+    # 3. Self-built + plugin compiled in, but CI does not validate the Caddyfile -> FAIL.
+    write(ci="jobs:\n  e:\n    steps:\n      run: echo nothing\n")
+    assert checks.check_caddy_self_built(tmp_path)[0].level == "FAIL", \
+        "must FAIL when CI does not build + validate the Caddyfile against the edge image"
+
+    # 4. Dockerfile.caddy named only in a COMMENT while the stock image is pulled -> FAIL.
+    write(compose="# build: Dockerfile.caddy\nservices:\n  caddy:\n    image: caddy:2-alpine\n")
+    assert checks.check_caddy_self_built(tmp_path)[0].level == "FAIL", \
+        "must FAIL when Dockerfile.caddy is only mentioned in a comment"
+
+    # 5. No third-party directive in the Caddyfile -> the stock image is fine -> OK.
+    write(caddyfile="site {\n    reverse_proxy app:8000\n}\n",
+          compose="services:\n  caddy:\n    image: caddy:2-alpine@sha256:abc\n")
+    assert checks.check_caddy_self_built(tmp_path)[0].level == "OK", \
+        "must PASS (nothing to enforce) when the Caddyfile uses no plugin directives"
+
+    # 6. rate_limit used, self-built, plugin compiled in, CI validates -> OK.
+    write()
+    assert checks.check_caddy_self_built(tmp_path)[0].level == "OK", \
+        "must PASS for a self-built edge with the plugin compiled in and CI validation"
+
+
 def test_sast_scanning_check_discriminates(tmp_path):
     gh = tmp_path / ".github" / "workflows"
     gh.mkdir(parents=True)

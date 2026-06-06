@@ -1,0 +1,38 @@
+# syntax=docker/dockerfile:1
+# ============================================================================
+# Dockerfile.caddy — self-built Caddy edge for the Polaris prod stack
+#
+# v9.135. The prod Caddyfile uses the `rate_limit` directive (edge brute-force
+# defense, 200 req/min/IP), which comes from the third-party caddy-ratelimit
+# plugin. That plugin is NOT compiled into the stock `caddy:2-alpine` image, so
+# the pinned stock image FAILED to load the Caddyfile:
+#
+#   Error: adapting config: Caddyfile:85: unrecognized directive: rate_limit
+#
+# i.e. the TLS edge container crash-looped on startup and the whole front door
+# never came up. This builds Caddy from source with the plugin compiled in (the
+# standard xcaddy pattern), exactly like the self-built pgbouncer (v9.110): no
+# third-party prebuilt image, and every directive the Caddyfile uses is backed.
+#
+# Both stages are digest-pinned (v9.114 discipline); Dependabot's docker
+# ecosystem tracks the FROM digests. The runtime stage is the SAME image the
+# compose pinned before (caddy:2.11.4-alpine = caddy:2-alpine @ 77c07d5e); we
+# only swap the binary for one that includes the plugin.
+#
+# Build context is polaris_web/ (see docker-compose.prod.yml: context: .).
+# ============================================================================
+FROM caddy:2.11.4-builder-alpine@sha256:0ff10d4b83af453e5526b1c3cd7ae43396832aa8a2a55311d624f6812b33767d AS builder
+
+# Compile the edge rate-limiter into the binary. Add future --with plugins here.
+RUN xcaddy build \
+    --with github.com/mholt/caddy-ratelimit
+
+FROM caddy:2.11.4-alpine@sha256:77c07d5ebfa5be9fd6c820d2094ae662c9e7eeb9bf98346b7f639900263ee2a2
+
+# Swap the stock binary for the plugin-enabled one; the base image's ENTRYPOINT
+# (caddy run --config /etc/caddy/Caddyfile) and non-root posture are preserved.
+COPY --from=builder /usr/bin/caddy /usr/bin/caddy
+
+# Fail the build if the plugin did not actually land in the binary (defense in
+# depth against a silently-broken xcaddy build shipping a plugin-less Caddy).
+RUN caddy list-modules | grep -q '^http.handlers.rate_limit$'

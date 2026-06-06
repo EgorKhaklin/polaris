@@ -5,6 +5,38 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.135 — 2026-06-06 (the production TLS edge actually starts: self-built Caddy with the rate_limit plugin)
+
+The prod stack's TLS front door would not come up. The Caddyfile uses the
+`rate_limit` directive (edge brute-force defense, 200 req/min/IP), which is the
+third-party caddy-ratelimit plugin and is NOT compiled into the stock
+`caddy:2-alpine` image the compose pinned. Validating the real Caddyfile against
+the pinned image proves it:
+
+    Error: adapting config: Caddyfile:85: unrecognized directive: rate_limit
+
+So the edge container crash-looped on startup and nothing reached the app. This
+is the same class as the bitnami/pgbouncer removal (v9.110): a latent prod-down
+breakage CI never caught because the docker boot job runs the DEV compose, which
+has no Caddy.
+
+- **Self-built edge.** `polaris_web/Dockerfile.caddy` compiles Caddy from source
+  with `xcaddy --with github.com/mholt/caddy-ratelimit`, both FROM stages
+  digest-pinned (the runtime stage is the same image the compose pinned before),
+  with an in-build `caddy list-modules` guard so a plugin-less build fails the
+  image, not production. The compose `caddy` service now builds it
+  (`image: polaris-caddy:prod`) instead of pulling the stock image, exactly like
+  the self-built pgbouncer. Verified locally: the real Caddyfile reports "Valid
+  configuration" against the built image and `http.handlers.rate_limit` is present.
+- **CI regression guard.** A new `caddy-edge` job builds `Dockerfile.caddy` and
+  runs `caddy validate` on the real Caddyfile against it, plus asserts the plugin
+  module is present. A future unbacked directive or a broken plugin build fails in
+  CI, not at deploy. This closes the blind spot that let the bug ship.
+- **Pinned.** `check_caddy_self_built` (62nd check): if the Caddyfile uses a
+  third-party directive, the edge must build from `Dockerfile.caddy` with that
+  plugin compiled in, and CI must validate the Caddyfile against the built image.
+  The stock image can never silently return.
+
 ## v9.134 — 2026-06-06 (an honest post-quantum posture audit: what is PQ, what is still classical)
 
 Polaris's thesis is a "post-quantum identity system." That is true of the token
