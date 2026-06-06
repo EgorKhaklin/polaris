@@ -45,7 +45,7 @@ RUN if [ "${POLARIS_ZK_BUILD}" = "1" ]; then \
 # ---------------------------------------------------------------------------
 # Stage 2: Python builder (deps to a virtual env we can copy)
 # ---------------------------------------------------------------------------
-FROM python:3.12-slim-bookworm AS py-builder
+FROM python:3.14-slim-bookworm AS py-builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
@@ -79,7 +79,7 @@ RUN pip install --no-cache-dir liboqs-python \
 # ---------------------------------------------------------------------------
 # Stage 3: Runtime (minimal Debian-slim, non-root)
 # ---------------------------------------------------------------------------
-FROM python:3.12-slim-bookworm AS runtime
+FROM python:3.14-slim-bookworm AS runtime
 
 LABEL org.opencontainers.image.title="Polaris (production)"
 LABEL org.opencontainers.image.description="National identity token reference implementation"

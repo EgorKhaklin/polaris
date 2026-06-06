@@ -8,7 +8,7 @@
 #   - Healthcheck via the dashboard route
 # ============================================================================
 
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 # Install psycopg2 build deps (libpq) and clean up
 RUN apt-get update && apt-get install -y --no-install-recommends \
