@@ -362,6 +362,64 @@ jobs:
           docker network rm pbci >/dev/null 2>&1 || true
           echo "self-built pgbouncer image OK (round-trip + fail-closed)"
 
+      # v9.126 — streaming-replication round-trip. Proves the replication config
+      # Polaris ships (wal_level=replica + a REPLICATION role + the pg_hba line,
+      # see docker-init.sh / check_replication_scaffolding) actually produces a
+      # working hot standby: a row written on the primary AFTER the standby is
+      # cloned must appear on the standby. The standby host itself is operator-
+      # gated; this proves the readiness + the pg_basebackup -R bootstrap the
+      # FAILOVER runbook documents.
+      - name: Streaming-replication primary -> standby round-trip
+        run: |
+          set -e
+          docker network create repci
+          docker run -d --name repci-primary --network repci \
+            -e POSTGRES_PASSWORD=rootpw -e POSTGRES_DB=polaris \
+            postgres:16-alpine \
+            -c wal_level=replica -c max_wal_senders=10 -c max_replication_slots=10 -c hot_standby=on
+          for i in $(seq 1 60); do
+            docker exec -e PGPASSWORD=rootpw repci-primary psql -U postgres -d polaris -tAc 'SELECT 1' >/dev/null 2>&1 && break
+            sleep 1
+          done
+          # A REPLICATION role + the pg_hba entry the prod docker-init.sh adds.
+          docker exec -e PGPASSWORD=rootpw repci-primary psql -U postgres -q \
+            -c "CREATE ROLE polaris_replicator WITH LOGIN REPLICATION PASSWORD 'reppw';"
+          docker exec repci-primary sh -c \
+            "echo 'host replication polaris_replicator 0.0.0.0/0 scram-sha-256' >> /var/lib/postgresql/data/pg_hba.conf"
+          docker exec -e PGPASSWORD=rootpw repci-primary psql -U postgres -q -c "SELECT pg_reload_conf();" >/dev/null
+          docker exec -e PGPASSWORD=rootpw repci-primary psql -U postgres -d polaris -q \
+            -c "CREATE TABLE repmark(id int, note text); INSERT INTO repmark VALUES (1,'before-clone');"
+          # Standby: pg_basebackup -R writes standby.signal + primary_conninfo (the
+          # FAILOVER runbook's bootstrap). chmod 0700 so postgres accepts the dir.
+          docker run -d --name repci-standby --network repci --user postgres -e PGPASSWORD=reppw \
+            postgres:16-alpine sh -c \
+            'rm -rf /var/lib/postgresql/data/* && pg_basebackup -h repci-primary -p 5432 -U polaris_replicator -D /var/lib/postgresql/data -R -X stream && chmod 0700 /var/lib/postgresql/data && exec postgres'
+          for i in $(seq 1 60); do
+            docker exec repci-standby psql -U postgres -d polaris -tAc 'SELECT 1' >/dev/null 2>&1 && break
+            sleep 1
+          done
+          # Write AFTER the standby is up, then read it on the standby.
+          docker exec -e PGPASSWORD=rootpw repci-primary psql -U postgres -d polaris -q \
+            -c "INSERT INTO repmark VALUES (2,'after-standby');"
+          got=""
+          for i in $(seq 1 30); do
+            got=$(docker exec repci-standby psql -U postgres -d polaris -tAc \
+              "SELECT string_agg(note, ',' ORDER BY id) FROM repmark" 2>/dev/null | tr -d '[:space:]')
+            [ "$got" = "before-clone,after-standby" ] && break
+            sleep 1
+          done
+          inrec=$(docker exec repci-standby psql -U postgres -d polaris -tAc 'SELECT pg_is_in_recovery()' 2>/dev/null | tr -d '[:space:]')
+          conn=$(docker exec -e PGPASSWORD=rootpw repci-primary psql -U postgres -tAc \
+            "SELECT count(*) FROM pg_stat_replication WHERE usename='polaris_replicator'" 2>/dev/null | tr -d '[:space:]')
+          docker logs repci-standby 2>&1 | grep -iE 'streaming|recovery' | tail -3
+          echo "standby in_recovery=$inrec  replicated=$got  primary_sees=$conn"
+          [ "$inrec" = "t" ] || { echo "::error::standby is not in recovery (not a real hot standby)"; exit 1; }
+          [ "$got" = "before-clone,after-standby" ] || { echo "::error::post-clone write did NOT replicate to the standby"; exit 1; }
+          [ "$conn" = "1" ] || { echo "::error::primary does not see the streaming standby"; exit 1; }
+          docker rm -f repci-primary repci-standby >/dev/null 2>&1 || true
+          docker network rm repci >/dev/null 2>&1 || true
+          echo "streaming-replication round-trip OK (live WAL streaming, post-clone write replicated)"
+
   # --------------------------------------------------------------------------
   # Real post-quantum signing (ML-DSA-65 / FIPS 204) was previously untestable:
   # liboqs is not in the base image or the main test job, so the real signing

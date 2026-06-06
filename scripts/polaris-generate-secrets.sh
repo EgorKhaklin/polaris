@@ -133,6 +133,11 @@ BANNER
 write_secret_if_missing polaris_secret_key       32
 write_secret_if_missing polaris_db_password      24
 write_secret_if_missing polaris_db_root_password 24
+# v9.126 — the streaming-replication role password. Mounted at the postgres
+# container so docker-init.sh creates the polaris_replicator role and a standby
+# can clone with `pg_basebackup` (see docs/operator/FAILOVER.md). The standby
+# host itself is operator-supplied.
+write_secret_if_missing polaris_replicator_password 24
 write_signing_key_if_missing
 write_postgres_cert_if_missing
 

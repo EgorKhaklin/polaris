@@ -242,9 +242,16 @@ services:
       # this, polaris_app keeps the dev default from 09_grants.sql and prod auth
       # fails. The secret is already mounted below.
       POLARIS_APP_PASSWORD_FILE: /run/secrets/polaris_db_password
+      # v9.126 — streaming-replication readiness. docker-init.sh reads this to
+      # create the polaris_replicator role + the pg_hba entry so a standby can
+      # clone with pg_basebackup. The standby HOST is operator-supplied (see
+      # docs/operator/FAILOVER.md); POLARIS_REPLICATION_CIDR (default 'samenet')
+      # scopes pg_hba for a remote standby.
+      POLARIS_REPLICATOR_PASSWORD_FILE: /run/secrets/polaris_replicator_password
     secrets:
       - polaris_db_password
       - polaris_db_root_password
+      - polaris_replicator_password
     volumes:
       - pg_data:/var/lib/postgresql/data
       - ../polaris_sql:/docker-entrypoint-initdb.d/sql:ro
@@ -307,6 +314,8 @@ secrets:
     file: ./secrets/polaris_db_password
   polaris_db_root_password:
     file: ./secrets/polaris_db_root_password
+  polaris_replicator_password:
+    file: ./secrets/polaris_replicator_password
   # ML-DSA-65 signing keypair (JSON: algorithm + secret_key_hex + public_key_hex),
   # minted by polaris-generate-secrets.sh. The public key is the trust anchor.
   polaris_signing_key:

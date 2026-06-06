@@ -1198,6 +1198,75 @@ def test_erasure_procedure_check_discriminates(tmp_path):
         "must FAIL when PRIVACY.md does not reference uc_pseudonymize_individual"
 
 
+def test_replication_scaffolding_check_discriminates(tmp_path):
+    web = tmp_path / "polaris_web"
+    scripts = tmp_path / "scripts"
+    op = tmp_path / "docs" / "operator"
+    gh = tmp_path / ".github" / "workflows"
+    for d in (web, scripts, op, gh):
+        d.mkdir(parents=True)
+    GOOD_INIT = (
+        "psql -c \"ALTER SYSTEM SET wal_level = replica;\"\n"
+        "psql -c \"CREATE ROLE polaris_replicator WITH LOGIN REPLICATION PASSWORD 'x'\"\n"
+        "echo 'host replication polaris_replicator samenet scram-sha-256' >> pg_hba.conf\n"
+    )
+    GOOD_COMPOSE = ("services:\n  postgres:\n    environment:\n"
+                    "      POLARIS_REPLICATOR_PASSWORD_FILE: /run/secrets/polaris_replicator_password\n"
+                    "    secrets:\n      - polaris_replicator_password\n")
+    GOOD_SECRETS = "write_secret_if_missing polaris_replicator_password 24\n"
+    GOOD_DOC = ("# failover\nStandby is operator-supplied and operator-gated.\n"
+                "Bootstrap with pg_basebackup -R; promote with pg_promote().\n")
+    GOOD_CI = "docker run pg_basebackup ...\npsql -c 'SELECT * FROM pg_stat_replication'\n"
+
+    def write(init=GOOD_INIT, compose=GOOD_COMPOSE, secrets=GOOD_SECRETS, doc=GOOD_DOC, ci=GOOD_CI):
+        (web / "docker-init.sh").write_text(init)
+        (web / "docker-compose.prod.yml").write_text(compose)
+        (scripts / "polaris-generate-secrets.sh").write_text(secrets)
+        (op / "FAILOVER.md").write_text(doc)
+        (gh / "ci.yml").write_text(ci)
+
+    # 1. fully wired -> OK.
+    write()
+    assert checks.check_replication_scaffolding(tmp_path)[0].level == "OK", \
+        "must PASS the complete replication scaffolding"
+
+    # 2. primary not made replication-ready (no wal_level) -> FAIL.
+    write(init=GOOD_INIT.replace("ALTER SYSTEM SET wal_level = replica", "echo nope"))
+    assert checks.check_replication_scaffolding(tmp_path)[0].level == "FAIL", \
+        "must FAIL without wal_level=replica in docker-init"
+
+    # 3. no replication role -> FAIL.
+    write(init=GOOD_INIT.replace("REPLICATION", "NOREPL"))
+    assert checks.check_replication_scaffolding(tmp_path)[0].level == "FAIL", \
+        "must FAIL without the polaris_replicator REPLICATION role"
+
+    # 4. secret not minted -> FAIL.
+    write(secrets="write_secret_if_missing polaris_db_password 24\n")
+    assert checks.check_replication_scaffolding(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the replicator password is not generated"
+
+    # 5. compose does not mount the secret -> FAIL.
+    write(compose="services:\n  postgres:\n    environment:\n      POLARIS_ENV: production\n")
+    assert checks.check_replication_scaffolding(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the prod compose does not mount the replicator secret"
+
+    # 6. doc does not document the bootstrap/promotion -> FAIL.
+    write(doc="# failover\nStandby is operator-supplied and operator-gated.\nSomehow promote it.\n")
+    assert checks.check_replication_scaffolding(tmp_path)[0].level == "FAIL", \
+        "must FAIL when FAILOVER.md omits pg_basebackup/pg_promote"
+
+    # 7. doc overclaims (not honest about operator-supplied standby) -> FAIL.
+    write(doc="# failover\nA running standby ships out of the box.\n"
+              "Bootstrap with pg_basebackup -R; promote with pg_promote().\n")
+    assert checks.check_replication_scaffolding(tmp_path)[0].level == "FAIL", \
+        "must FAIL when FAILOVER.md does not say the standby host is operator-supplied"
+
+    # 8. no CI round-trip -> FAIL.
+    write(ci="echo no replication test here\n")
+    assert checks.check_replication_scaffolding(tmp_path)[0].level == "FAIL", \
+        "must FAIL when ci.yml has no replication round-trip"
+
+
 def test_prod_real_pqc_check_discriminates(tmp_path):
     web = tmp_path / "polaris_web"
     gh = tmp_path / ".github" / "workflows"

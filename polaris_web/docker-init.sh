@@ -138,6 +138,49 @@ if [ -n "$POLARIS_APP_PASSWORD" ] && [ "$POLARIS_APP_PASSWORD" != "polaris_dev_p
          > /dev/null  # suppress any echo of the SQL
 fi
 
+# v9.126 — streaming-replication readiness. When the operator provides a
+# replication secret, make THIS primary replication-ready: set the WAL params a
+# standby needs (persisted via ALTER SYSTEM and applied on the real server start,
+# exactly like the TLS block above), create a least-privilege REPLICATION role
+# from the file-mounted secret, and allow it in pg_hba. The STANDBY HOST itself
+# is operator-gated (a second machine; co-locating it gives no HA) — it is
+# bootstrapped with `pg_basebackup -R` per docs/operator/FAILOVER.md. Optional:
+# with no replicator secret, this is a single node and nothing is touched.
+REPL_PWFILE="${POLARIS_REPLICATOR_PASSWORD_FILE:-}"
+if [ -n "$REPL_PWFILE" ] && [ -r "$REPL_PWFILE" ]; then
+    REPL_PW="$(cat "$REPL_PWFILE")"
+    if [ ${#REPL_PW} -lt 16 ]; then
+        echo "FATAL: the replication password must be at least 16 characters." >&2
+        exit 2
+    fi
+    # The pg_hba CIDR is operator-controlled: 'samenet' covers a standby on the
+    # same compose network; a remote standby needs its real CIDR. Validate it so
+    # a bad value is a loud config error, not a corrupt pg_hba line.
+    REPL_CIDR="${POLARIS_REPLICATION_CIDR:-samenet}"
+    case "$REPL_CIDR" in
+        ''|*[!A-Za-z0-9./:_-]*) echo "FATAL: POLARIS_REPLICATION_CIDR has invalid characters." >&2; exit 2 ;;
+    esac
+    echo "Enabling streaming-replication readiness (wal_level=replica + polaris_replicator role)..."
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" >/dev/null \
+        -c "ALTER SYSTEM SET wal_level = replica;" \
+        -c "ALTER SYSTEM SET max_wal_senders = 10;" \
+        -c "ALTER SYSTEM SET max_replication_slots = 10;" \
+        -c "ALTER SYSTEM SET hot_standby = on;" \
+        -c "ALTER SYSTEM SET wal_log_hints = on;"
+    # The replication role. docker-init runs once on a fresh data dir, so the role
+    # does not pre-exist; the secret is hex (no quote to escape), matching the
+    # polaris_app rotation above.
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" >/dev/null \
+        -c "CREATE ROLE polaris_replicator WITH LOGIN REPLICATION PASSWORD '$REPL_PW'"
+    # Allow the replication role in pg_hba (idempotent: append only if absent).
+    PG_HBA="${PGDATA:-/var/lib/postgresql/data}/pg_hba.conf"
+    HBA_LINE="host replication polaris_replicator $REPL_CIDR scram-sha-256"
+    if [ -f "$PG_HBA" ] && ! grep -qF "$HBA_LINE" "$PG_HBA"; then
+        echo "$HBA_LINE" >> "$PG_HBA"
+    fi
+    echo "Streaming-replication readiness enabled (standby host is operator-supplied; see FAILOVER.md)."
+fi
+
 # Production hardening (BLOCKER): the SQL seed (10_auth.sql) loads three demo
 # accounts with PUBLICLY-KNOWN passwords (admin/Admin@123!, operator/Operator@123!,
 # auditor/Auditor@123!) — and 04_data.sql enrolls a demo duress code. Fine for

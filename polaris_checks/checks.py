@@ -955,6 +955,59 @@ def check_erasure_procedure(root: pathlib.Path) -> list[Finding]:
 
 
 # ---------------------------------------------------------------------------
+# Streaming-replication readiness (v9.126). The HA gated item's scaffolding: the
+# primary is made replication-ready (wal_level + a REPLICATION role + pg_hba),
+# the bootstrap + promotion are documented, and a CI round-trip proves the config
+# produces a working hot standby. Only the standby HOST is operator-gated. This
+# pins the wiring so it cannot silently rot, and that the doc stays honest about
+# what is operator-supplied (no overclaiming a running standby).
+# ---------------------------------------------------------------------------
+def check_replication_scaffolding(root: pathlib.Path) -> list[Finding]:
+    init = _read(root, "polaris_web/docker-init.sh")
+    compose = _read(root, "polaris_web/docker-compose.prod.yml")
+    secrets = _read(root, "scripts/polaris-generate-secrets.sh")
+    doc = _read(root, "docs/operator/FAILOVER.md")
+    ci = _read(root, ".github/workflows/ci.yml")
+    if not (init and compose and secrets and doc and ci):
+        return _fail("replication", "a replication-scaffolding file is missing")
+    # The primary must be made replication-ready at init.
+    if not re.search(r"ALTER SYSTEM SET wal_level\s*=\s*replica", init):
+        return _fail("replication",
+                     "docker-init.sh must set wal_level=replica (ALTER SYSTEM) for replication readiness")
+    if not re.search(r"CREATE ROLE polaris_replicator.*REPLICATION", init):
+        return _fail("replication",
+                     "docker-init.sh must create the least-privilege polaris_replicator REPLICATION role")
+    if "host replication polaris_replicator" not in init:
+        return _fail("replication",
+                     "docker-init.sh must add a pg_hba entry for the replication role")
+    # The secret is generated and mounted (file-mounted convention, G28).
+    if "polaris_replicator_password" not in secrets:
+        return _fail("replication",
+                     "polaris-generate-secrets.sh must mint polaris_replicator_password")
+    if "POLARIS_REPLICATOR_PASSWORD_FILE" not in compose or "polaris_replicator_password" not in compose:
+        return _fail("replication",
+                     "the prod compose must mount the polaris_replicator_password secret + "
+                     "POLARIS_REPLICATOR_PASSWORD_FILE")
+    # The runbook documents the bootstrap + promotion and stays honest.
+    if "pg_basebackup" not in doc or "pg_promote" not in doc:
+        return _fail("replication",
+                     "FAILOVER.md must document the pg_basebackup standby bootstrap and pg_promote")
+    if "operator-gated" not in doc.lower() or "operator-supplied" not in doc.lower():
+        return _fail("replication",
+                     "FAILOVER.md must state the standby host is operator-supplied (no overclaiming a "
+                     "running standby)")
+    # A CI round-trip proves the config produces a working hot standby.
+    if "pg_basebackup" not in ci or "pg_stat_replication" not in ci:
+        return _fail("replication",
+                     "ci.yml must run a primary->standby replication round-trip (pg_basebackup + "
+                     "pg_stat_replication assertion)")
+    return _ok("replication",
+               "replication readiness ships: primary is wal_level=replica with a least-privilege "
+               "REPLICATION role + pg_hba; the bootstrap/promotion are documented (FAILOVER.md) and a "
+               "CI round-trip proves a working hot standby; the standby host stays operator-supplied")
+
+
+# ---------------------------------------------------------------------------
 # The connection pooler must not depend on a third-party image that can vanish.
 # bitnami/pgbouncer:1.22 was removed from Docker Hub when Bitnami retired their
 # free catalogue (Aug 2025), leaving the prod stack unable to pull its pooler.
@@ -1586,6 +1639,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_alert_runbooks,
     check_encryption_at_rest_posture,
     check_erasure_procedure,
+    check_replication_scaffolding,
     check_pgbouncer_self_built,
     check_app_db_tls,
     check_correlation_id,

@@ -198,11 +198,11 @@ These are yours. Production with real identity data cannot proceed without them:
 |---|---|
 | **Legal basis + DPIA + regulator approval** | Holding national-identity PII needs a named controller, jurisdiction, counsel-drafted DPIA, and regulatory sign-off. |
 | **Signing-key custody (HSM/KMS)** | The real private key material and its custody/rotation authority are operator-held; the agent can only build the loading + rotation mechanism. |
-| **Postgres HA topology** | Replica/standby/failover choice and the host/AZ/managed-tier are infrastructure decisions; today the single node is an unmitigated SPOF. |
+| **Postgres HA topology** | The replication READINESS ships (v9.126): the primary is `wal_level=replica` with a least-privilege `polaris_replicator` role, [`docs/operator/FAILOVER.md`](operator/FAILOVER.md) documents the `pg_basebackup` standby bootstrap + `pg_promote` failover, and CI proves a working hot standby. The standby HOST (a second machine/AZ), the failover decision, and any managed-tier choice remain operator infrastructure decisions; until a standby is stood up the single node is still a SPOF. |
 | **Encryption-at-rest host + key** | LUKS/TDE/fscrypt needs a provisioned host and a key custodian. |
 | **Offsite backup target + RPO** | The S3/offsite bucket, retention, and the real RPO/RTO targets. |
 | **Alerting backend + on-call** | The pager/notification backend and the named on-call rotation — including who receives the duress page — are organizational. |
-| **Right-to-erasure policy** | How erasure is honored against the append-only non-repudiation audit (crypto-shred vs pseudonymize, retention floor) is a legal/policy call. |
+| **Right-to-erasure policy** | The pseudonymize MECHANISM ships (v9.125: `uc_pseudonymize_individual` + the append-only `IndividualErasureEvent`). WHICH erasures to honor, the retention floor, and crypto-shred-vs-pseudonymize against the append-only non-repudiation audit remain a legal/policy call. |
 | **Independent pen-test + threat-model sign-off** | Requires a qualified external assessor and an accountable human signature. |
 
 ---

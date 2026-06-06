@@ -5,6 +5,35 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.126 — 2026-06-05 (production-readiness: streaming-replication readiness + a failover runbook)
+
+The single Postgres node was an unmitigated SPOF. This ships the buildable HA
+scaffolding — a replication-ready primary, the standby bootstrap + promotion
+runbook, and a CI proof — leaving only the operator-supplied standby host.
+
+- **Replication-ready primary.** When the operator mounts the
+  `polaris_replicator_password` secret, `docker-init.sh` sets the WAL params a
+  standby needs (`wal_level=replica`, `max_wal_senders`, `max_replication_slots`,
+  `hot_standby`, `wal_log_hints` via `ALTER SYSTEM`), creates a least-privilege
+  `polaris_replicator` role (`LOGIN REPLICATION` only — it can stream WAL, not
+  read application data), and adds the `pg_hba` entry
+  (`POLARIS_REPLICATION_CIDR`, default `samenet`).
+  `polaris-generate-secrets.sh` mints the password; the prod compose mounts it.
+- **`docs/operator/FAILOVER.md`.** The standby bootstrap (`pg_basebackup -R`,
+  which writes `standby.signal` + `primary_conninfo`), the promotion runbook
+  (fence the old primary, `pg_promote`, repoint the app/pgbouncer), re-establishing
+  redundancy, and the RPO/RTO story (async streaming meets the ≤1-min RPO far
+  more tightly than the backup interval for the standby-survives class). Honest:
+  the standby HOST and the failover decision are operator-gated; promotion is
+  manual, not an automated controller.
+- **Proven in CI.** A new `Streaming-replication primary -> standby` round-trip
+  stands up a primary with the shipped config, clones a standby with
+  `pg_basebackup -R`, and asserts a row written AFTER the clone replicates, the
+  standby is in recovery, and `pg_stat_replication` sees it. Pinned by
+  `check_replication_scaffolding` (56th check), which also fails the build if
+  `FAILOVER.md` overclaims a running standby. DR.md + PRODUCTION-READINESS.md
+  reconciled (HA scaffolding ships; standby host operator-supplied).
+
 ## v9.125 — 2026-06-05 (production-readiness: right-to-erasure that respects the audit)
 
 PRIVACY.md said pseudonymizing a holder's name was "operationally supported,"

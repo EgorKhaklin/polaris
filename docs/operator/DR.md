@@ -63,6 +63,13 @@ pgbackrest --stanza=polaris check
 Until then, the RPO is the backup interval (default daily, ~24h). If a
 configured WAL archive later fails its check, treat as SEV-2.
 
+For the failure class where a **standby survives the primary**, streaming
+replication meets the ≤1-min RPO far more tightly (seconds, not the backup
+interval): the replication readiness ships and the standby bootstrap + promotion
+are in [`FAILOVER.md`](FAILOVER.md), the HA complement to this backup-based
+recovery. Replication does not replace backups — a logical error replicates to
+the standby, so the `pg_dump`/PITR path here remains the recovery for that class.
+
 ---
 
 ## 2. Severity matrix
