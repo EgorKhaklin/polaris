@@ -374,10 +374,12 @@ def check_verify_enforced(root: pathlib.Path) -> list[Finding]:
     # signature_bytes_for_token is now a thin wrapper around it.
     m = re.search(r"def signature_with_key_for_token\(.*?\n(?=def [a-z])", p, re.S)
     body = m.group(0) if m else ""
-    if "verify(" not in body:
+    # The self-verify may be the lone verify() or, since v9.133, the two-witness
+    # verify_both() (a strictly stronger self-check); either satisfies enforcement.
+    if "verify(" not in body and "verify_both(" not in body:
         return _fail("verify_enforced",
                      "signature_bytes_for_token must self-verify the signature it produces (call "
-                     "verify) so an unverifiable signature is never persisted")
+                     "verify / verify_both) so an unverifiable signature is never persisted")
     ci = _read(root, ".github/workflows/ci.yml")
     if not ci or "verify_token_signature" not in ci:
         return _fail("verify_enforced",
@@ -385,6 +387,55 @@ def check_verify_enforced(root: pathlib.Path) -> list[Finding]:
     return _ok("verify_enforced",
                "verification is enforced: issuance self-verifies, verify_token_signature checks "
                "stored signatures against the trust anchor, exercised in CI")
+
+
+# ---------------------------------------------------------------------------
+# The ML-DSA-65 verify path is TWO-WITNESSED (v9.133): every real verdict is
+# cross-checked by two INDEPENDENT FIPS 204 implementations — liboqs (primary)
+# and cryptography/OpenSSL (the second witness) — which must AGREE, or the
+# signature is refused. A lone verifier would silently trust a signature a bug
+# or compromise in its one library mis-accepts; the witness closes that, the
+# same discipline polaris_zk/witness2 gives the ZK path. The contract: a
+# verify_both that both signing AND use-path sites route through, a real second
+# witness backed by cryptography's MLDSA65 (a different implementation, not a
+# second oqs call), and CI that proves the two agree.
+# ---------------------------------------------------------------------------
+def check_pqc_second_witness(root: pathlib.Path) -> list[Finding]:
+    p = _read(root, "polaris_web/pqc_signing.py")
+    if not p:
+        return _fail("pqc_second_witness", "polaris_web/pqc_signing.py is missing")
+    if "def verify_both" not in p or "def _verify_second_witness" not in p:
+        return _fail("pqc_second_witness",
+                     "pqc_signing.py must expose verify_both + _verify_second_witness "
+                     "(the two-witness ML-DSA-65 verify path)")
+    # The witness must be a DIFFERENT implementation, not a second liboqs call.
+    if "MLDSA65PublicKey" not in p or "mldsa" not in p:
+        return _fail("pqc_second_witness",
+                     "the second witness must be cryptography's MLDSA65 (an independent FIPS 204 "
+                     "implementation), not a second liboqs verify")
+    # A disagreement must be refused (fail closed), not silently averaged away.
+    if "DISAGREEMENT" not in p:
+        return _fail("pqc_second_witness",
+                     "verify_both must refuse (and log) when the two witnesses disagree")
+    # Every real verify site must route through verify_both, not the lone verify().
+    # The three sites: issuance self-verify, verify_stored_signature, verify_token_signature.
+    for fn in ("signature_with_key_for_token", "verify_stored_signature", "verify_token_signature"):
+        # Match the function body up to the next top-level def OR end of file (so a
+        # site that happens to be the last function is not wrongly read as empty).
+        m = re.search(r"def %s\(.*?(?=\ndef [a-z]|\Z)" % re.escape(fn), p, re.S)
+        body = m.group(0) if m else ""
+        if "verify_both(" not in body:
+            return _fail("pqc_second_witness",
+                         "%s must route its real-PQC verify through verify_both (two witnesses), "
+                         "not the lone verify()" % fn)
+    ci = _read(root, ".github/workflows/ci.yml")
+    if not ci or "SecondWitnessTests" not in ci:
+        return _fail("pqc_second_witness",
+                     "the pqc-real CI job must run the SecondWitnessTests (prove the two "
+                     "independent implementations agree on a real ML-DSA-65 signature)")
+    return _ok("pqc_second_witness",
+               "ML-DSA-65 verify is two-witnessed: liboqs + cryptography/OpenSSL must agree "
+               "(verify_both), a disagreement is refused, proven by the pqc-real CI job")
 
 
 # ---------------------------------------------------------------------------
@@ -1801,6 +1852,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_pqc_signing_wired,
     check_pqc_real_signing,
     check_verify_enforced,
+    check_pqc_second_witness,
     check_signature_self_contained_verify,
     check_prod_real_pqc,
     check_sql_console_readonly,

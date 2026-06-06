@@ -979,6 +979,70 @@ def test_verify_enforced_check_discriminates(tmp_path):
         "must FAIL when CI does not exercise verify-at-use"
 
 
+def test_pqc_second_witness_check_discriminates(tmp_path):
+    web = tmp_path / "polaris_web"
+    gh = tmp_path / ".github" / "workflows"
+    web.mkdir(); gh.mkdir(parents=True)
+
+    # A passing module: verify_both + an independent (cryptography MLDSA65) witness,
+    # a refused disagreement, and all three real-verify sites routed through it.
+    GOOD_PQC = (
+        "from cryptography.hazmat.primitives.asymmetric import mldsa\n"
+        "def _verify_second_witness(m, s, k):\n"
+        "    return mldsa.MLDSA65PublicKey.from_public_bytes(b'').verify(s, m)\n"
+        "def verify_both(m, s, k):\n"
+        "    if primary != witness:\n"
+        "        log('DISAGREEMENT')\n"
+        "        return False\n"
+        "    return primary\n"
+        "def signature_with_key_for_token(t):\n"
+        "    if not verify_both(t, r.signature_hex, r.public_key_hex):\n"
+        "        raise SigningError('nope')\n"
+        "    return r\n"
+        "def verify_stored_signature(t, s, k):\n    return verify_both(t, s, k)\n"
+        "def verify_token_signature(t, s, a):\n    return verify_both(t, s, anchor)\n"
+    )
+    GOOD_CI = "jobs:\n  pqc-real:\n    steps:\n      run: python -m unittest SecondWitnessTests\n"
+
+    def write(pqc, ci=GOOD_CI):
+        (web / "pqc_signing.py").write_text(pqc)
+        (gh / "ci.yml").write_text(ci)
+
+    # 1. No verify_both / second witness -> FAIL.
+    write("def verify(m, s, k):\n    return True\n")
+    assert checks.check_pqc_second_witness(tmp_path)[0].level == "FAIL", \
+        "must FAIL without verify_both + _verify_second_witness"
+
+    # 2. A second witness that is just another liboqs call (no independent impl) -> FAIL.
+    write(GOOD_PQC.replace("from cryptography.hazmat.primitives.asymmetric import mldsa\n", "")
+                  .replace("mldsa.MLDSA65PublicKey.from_public_bytes(b'').verify(s, m)", "oqs.verify(s, m)"))
+    assert checks.check_pqc_second_witness(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the witness is not an independent implementation (cryptography MLDSA65)"
+
+    # 3. Disagreement not refused -> FAIL.
+    write(GOOD_PQC.replace("log('DISAGREEMENT')\n        ", ""))
+    assert checks.check_pqc_second_witness(tmp_path)[0].level == "FAIL", \
+        "must FAIL when a witness disagreement is not refused/logged"
+
+    # 4. A real-verify site bypasses verify_both -> FAIL.
+    write(GOOD_PQC.replace(
+        "def verify_token_signature(t, s, a):\n    return verify_both(t, s, anchor)\n",
+        "def verify_token_signature(t, s, a):\n    return verify(t, s, anchor)\n"))
+    assert checks.check_pqc_second_witness(tmp_path)[0].level == "FAIL", \
+        "must FAIL when a verify site routes around verify_both (lone verifier)"
+
+    # 5. CI does not run the two-witness agreement test -> FAIL.
+    write(GOOD_PQC, ci="jobs:\n  pqc-real:\n    steps:\n      run: echo nothing\n")
+    assert checks.check_pqc_second_witness(tmp_path)[0].level == "FAIL", \
+        "must FAIL when CI does not prove the two witnesses agree"
+
+    # 6. All present -> OK.
+    write(GOOD_PQC)
+    assert checks.check_pqc_second_witness(tmp_path)[0].level == "OK", (
+        "must PASS with verify_both, an independent witness, a refused disagreement, "
+        "all sites routed through it, and CI proving agreement")
+
+
 def test_prod_images_digest_pinned_check_discriminates(tmp_path):
     web = tmp_path / "polaris_web"
     gh = tmp_path / ".github"

@@ -5,6 +5,41 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.133 — 2026-06-06 (the ML-DSA-65 verify path is two-witnessed, like the ZK path)
+
+Real ML-DSA-65 is the production signing default (v9.116), but every signature
+verdict came from ONE library: liboqs. A bug or compromise in that single
+implementation could silently accept a forged token, and a lone verifier would
+never know. The ZK path already guards against exactly this with an independent
+second witness (`polaris_zk/witness2/`); the PQC path did not. This brings the
+same discipline to signing.
+
+- **A second, independent witness.** `cryptography==48.0.0` (already pinned)
+  ships an OpenSSL-backed ML-DSA-65 — a DIFFERENT FIPS 204 implementation than
+  liboqs. `pqc_signing._verify_second_witness()` verifies the same SHA3-256
+  digest through it. Interop is real, not assumed: a liboqs signature verifies
+  under cryptography/OpenSSL (proven in tests and the pqc-real CI job).
+- **The two must AGREE.** `verify_both()` runs both and returns valid only when
+  they concur. A DISAGREEMENT — one accepts, one rejects — is a cryptographic red
+  flag (a library bug, a compromise, or tampering a lone verifier would miss), so
+  the verdict is False and the disagreement is logged loudly. Every real-PQC
+  verify site routes through it: the issuance self-verify (refuses to issue a
+  signature that fails the two-witness check), `verify_stored_signature`
+  (token-detail), and `verify_token_signature` (verify-at-use). The smoke test
+  exercises it too.
+- **Graceful, honest degradation.** When the witness library is too old to
+  provide ML-DSA, `verify_both` falls back to the lone primary — no worse than
+  before v9.133 — and `availability_report()` surfaces whether the witness is
+  live so operators are never misled about which guarantee is in force.
+- **Pinned + proven.** `check_pqc_second_witness` (60th check) asserts
+  `verify_both`/`_verify_second_witness` exist, the witness is cryptography's
+  MLDSA65 (not a second liboqs call), a disagreement is refused, all three verify
+  sites route through `verify_both`, and CI runs the agreement tests. New
+  `SecondWitnessTests` prove the two implementations agree on a valid signature,
+  both reject a tampered one, a forced disagreement is refused, and the path
+  degrades to the primary when the witness is absent. The pqc-real CI job
+  installs the witness and asserts cross-implementation agreement.
+
 ## v9.132 — 2026-06-06 (hardening: ENFORCE verify-ca at startup, from a review of v9.131)
 
 A focused adversarial review of the v9.131 verify-ca ship found the pinning was

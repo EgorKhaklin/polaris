@@ -33,11 +33,13 @@ signature. The procedure COALESCEs to the legacy placeholder string only for
 direct SQL callers that pass no signature, so existing tooling is unaffected.
 `polaris_checks.check_pqc_signing_wired` asserts this wiring stays in place.
 
-Per the two-witness principle (`DEVNOTES/two-witness-principle.md`),
-the ML-DSA-65 verdict is a **lone verifier** (single liboqs impl, no
-independent second witness) and is recorded there as an explicit
-ABSTAIN instance until either a second witness is added or the path is
-wired and verdict-two-witnessed.
+Per the two-witness principle (`DEVNOTES/two-witness-principle.md`), the
+ML-DSA-65 verify path is now **two-witnessed** (v9.133): the primary verdict
+(liboqs) is cross-checked against an INDEPENDENT second witness — cryptography's
+MLDSA65 (OpenSSL-backed, not liboqs) — and the two must AGREE (`verify_both`). A
+disagreement is a cryptographic red flag and the signature is refused. When the
+witness library is too old to provide ML-DSA, the verdict degrades to the lone
+primary (the pre-v9.133 behaviour), so the second witness never weakens the path.
 
 **Honest accounting (per the Anti-Architect's joint resolution):**
 
@@ -59,6 +61,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import sys
 from dataclasses import dataclass
 from typing import Optional
 
@@ -86,6 +89,30 @@ try:
 except ImportError as e:
     _OQS_IMPORT_ERROR = str(e)
     _OQS_AVAILABLE = False
+
+
+# v9.133 — an INDEPENDENT second witness for the ML-DSA-65 verify path. The
+# primary verifier above is liboqs; a LONE verifier means a bug or compromise in
+# that single implementation would pass unnoticed (the two-witness discipline the
+# ZK path already has in polaris_zk/witness2/). cryptography's MLDSA65 is a
+# DIFFERENT FIPS 204 implementation (OpenSSL-backed, not liboqs) and is already a
+# pinned dependency (cryptography==48.0.0). Every real verdict is cross-checked
+# against it; the two must AGREE. When the witness library is too old to provide
+# ML-DSA, the verdict degrades to the lone primary (no worse than pre-v9.133).
+_WITNESS_AVAILABLE = False
+_WITNESS_IMPORT_ERROR: Optional[str] = None
+_mldsa = None
+_InvalidSignature = Exception  # overwritten on a successful import below
+try:
+    from cryptography.hazmat.primitives.asymmetric import mldsa as _mldsa  # type: ignore
+    from cryptography.exceptions import InvalidSignature as _InvalidSignature  # type: ignore
+    _WITNESS_AVAILABLE = hasattr(_mldsa, "MLDSA65PublicKey")
+    if not _WITNESS_AVAILABLE:
+        _WITNESS_IMPORT_ERROR = (
+            "cryptography lacks MLDSA65PublicKey (needs cryptography>=48 + OpenSSL 3.5+)")
+except Exception as e:  # cryptography too old / no ML-DSA
+    _WITNESS_IMPORT_ERROR = str(e)
+    _WITNESS_AVAILABLE = False
 
 
 # FIPS 204 algorithm identifier used by liboqs (per OQS naming)
@@ -136,6 +163,9 @@ def availability_report() -> dict:
         "oqs_available": _OQS_AVAILABLE,
         "oqs_version": _OQS_VERSION,
         "oqs_import_error": _OQS_IMPORT_ERROR,
+        # v9.133 — the independent second witness (cryptography/OpenSSL).
+        "second_witness_available": _WITNESS_AVAILABLE,
+        "second_witness_error": _WITNESS_IMPORT_ERROR,
         "flag_set": os.environ.get("POLARIS_USE_REAL_PQC", "0") == "1",
         "is_enabled": is_enabled(),
         "algorithm": _ALG_NAME,
@@ -296,12 +326,14 @@ def signature_with_key_for_token(token_value: str) -> tuple:
         result = sign(token_value.encode("utf-8"))
         # Enforce verification on the issuance path: the signature we just
         # produced MUST verify against its own public key before it is handed to
-        # the DB. A real signature that fails to self-verify means broken key
-        # material or liboqs — refuse to persist an unverifiable signature rather
-        # than silently store something no verifier will ever accept.
-        if not verify(token_value.encode("utf-8"), result.signature_hex, result.public_key_hex):
+        # the DB. v9.133 — verify with BOTH witnesses (liboqs + the independent
+        # cryptography/OpenSSL impl); they must AGREE. A real signature that fails
+        # to self-verify means broken key material or liboqs, and a two-witness
+        # DISAGREEMENT means one implementation is wrong — either way, refuse to
+        # persist a signature the two independent verifiers do not both accept.
+        if not verify_both(token_value.encode("utf-8"), result.signature_hex, result.public_key_hex):
             raise SigningError(
-                "produced ML-DSA-65 signature failed self-verification; refusing to issue")
+                "produced ML-DSA-65 signature failed two-witness self-verification; refusing to issue")
         return bytes.fromhex(result.signature_hex), result.algorithm_name, result.public_key_hex
     # Flag off: deterministic, dependency-free placeholder (not a signature).
     digest = hashlib.sha3_256(token_value.encode("utf-8")).digest()
@@ -326,7 +358,7 @@ def verify_stored_signature(
     if signing_public_key_hex:
         if not _OQS_AVAILABLE:
             return False
-        return verify(token_value.encode("utf-8"), signature_bytes.hex(), signing_public_key_hex)
+        return verify_both(token_value.encode("utf-8"), signature_bytes.hex(), signing_public_key_hex)
     import hmac
     expected = hashlib.sha3_256(token_value.encode("utf-8")).digest()
     return hmac.compare_digest(signature_bytes, expected)
@@ -364,6 +396,62 @@ def verify(
             return verifier.verify(digest, signature, public_key)
     except Exception:
         return False
+
+
+def second_witness_available() -> bool:
+    """True iff the independent (cryptography/OpenSSL) ML-DSA-65 witness can run."""
+    return _WITNESS_AVAILABLE
+
+
+def _verify_second_witness(message: bytes, signature_hex: str, public_key_hex: str):
+    """Independent ML-DSA-65 verify via cryptography/OpenSSL — NOT liboqs.
+
+    Returns True/False (the witness's verdict), or None when the witness cannot
+    run (library too old, or it cannot even load the key) so the caller falls back
+    to the lone primary. Verifies the SAME SHA3-256 digest the signer signs.
+    """
+    if not _WITNESS_AVAILABLE:
+        return None
+    try:
+        pk_bytes = bytes.fromhex(public_key_hex)
+        sig_bytes = bytes.fromhex(signature_hex)
+    except ValueError:
+        return False
+    try:
+        pk = _mldsa.MLDSA65PublicKey.from_public_bytes(pk_bytes)
+    except Exception:
+        return None  # the witness cannot load this key — it cannot witness
+    digest = hashlib.sha3_256(message).digest()
+    try:
+        pk.verify(sig_bytes, digest)
+        return True
+    except _InvalidSignature:
+        return False
+    except Exception:
+        # A malformed signature the witness cannot parse is, to it, not valid.
+        return False
+
+
+def verify_both(message: bytes, signature_hex: str, public_key_hex: str) -> bool:
+    """Two-witness ML-DSA-65 verify (v9.133): the primary (liboqs) AND an
+    independent second witness (cryptography/OpenSSL) must AGREE the signature is
+    valid. A DISAGREEMENT (one accepts, one rejects) is a cryptographic red flag —
+    a bug or compromise in one implementation, or tampering a lone verifier would
+    miss — so the verdict is False and the disagreement is logged loudly. When the
+    witness library is unavailable, the lone primary verdict stands (no worse than
+    before v9.133). Raises PQCUnavailableError if the PRIMARY (oqs) is unavailable.
+    """
+    primary = verify(message, signature_hex, public_key_hex)
+    witness = _verify_second_witness(message, signature_hex, public_key_hex)
+    if witness is None:
+        return primary
+    if primary != witness:
+        sys.stderr.write(
+            "PQC SECOND-WITNESS DISAGREEMENT: liboqs=%s cryptography=%s on a ML-DSA-65 "
+            "signature — refusing to trust it (a lone verifier would have missed this).\n"
+            % (primary, witness))
+        return False
+    return primary
 
 
 def trust_anchor_public_key_hex() -> Optional[str]:
@@ -405,7 +493,7 @@ def verify_token_signature(
         anchor = trust_anchor_public_key_hex()
         if not anchor:
             return False
-        return verify(token_value.encode("utf-8"), signature_bytes.hex(), anchor)
+        return verify_both(token_value.encode("utf-8"), signature_bytes.hex(), anchor)
     if algorithm_label == PLACEHOLDER_LABEL:
         import hmac
         expected = hashlib.sha3_256(token_value.encode("utf-8")).digest()
@@ -426,6 +514,8 @@ def smoke_test() -> bool:
     msg = b"polaris-pqc-smoke-test-v9.24"
     try:
         result = sign(msg)
-        return verify(msg, result.signature_hex, result.public_key_hex)
+        # Exercise the two-witness path (v9.133): when the cryptography witness
+        # is present this confirms BOTH implementations agree, not just liboqs.
+        return verify_both(msg, result.signature_hex, result.public_key_hex)
     except Exception:
         return False

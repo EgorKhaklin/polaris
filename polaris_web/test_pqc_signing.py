@@ -243,5 +243,93 @@ class PersistentKeyTests(unittest.TestCase):
             pqc_signing._PERSISTENT_KEYPAIR = None
 
 
+@unittest.skipUnless(pqc_signing.is_available() and pqc_signing.second_witness_available(),
+                     "needs BOTH liboqs (oqs) and the cryptography ML-DSA witness")
+class SecondWitnessTests(unittest.TestCase):
+    """v9.133 — the ML-DSA-65 verify path is two-witnessed: liboqs (primary) and
+    cryptography/OpenSSL (independent second witness) must AGREE. A real signature
+    a single implementation would accept can hide a bug or compromise in that one
+    library; two independent FIPS-204 implementations that agree close that gap (the
+    same discipline polaris_zk/witness2 gives the ZK path). Runs only where BOTH
+    libraries are present (locally / the pqc-real CI job)."""
+
+    def setUp(self):
+        self._kp = pqc_signing.generate_keypair()
+        # A genuine ML-DSA-65 signature over the SHA3-256 digest, via the primary.
+        self._msg = b"two-witness-message"
+        import oqs  # type: ignore
+        digest = hashlib.sha3_256(self._msg).digest()
+        with oqs.Signature("ML-DSA-65", bytes.fromhex(self._kp["secret_key_hex"])) as signer:
+            self._sig_hex = signer.sign(digest).hex()
+        self._pk_hex = self._kp["public_key_hex"]
+
+    def test_witness_independently_verifies_an_oqs_signature(self):
+        # The cross-implementation interop claim: a signature produced by liboqs
+        # verifies under cryptography/OpenSSL. If this fails the two are not the
+        # same FIPS 204 primitive and the whole witness is meaningless.
+        self.assertTrue(pqc_signing._verify_second_witness(self._msg, self._sig_hex, self._pk_hex))
+
+    def test_witness_rejects_a_tampered_signature(self):
+        sig = bytes.fromhex(self._sig_hex)
+        tampered = bytes([sig[0] ^ 0xFF]) + sig[1:]
+        self.assertFalse(
+            pqc_signing._verify_second_witness(self._msg, tampered.hex(), self._pk_hex))
+
+    def test_witness_rejects_wrong_message(self):
+        self.assertFalse(
+            pqc_signing._verify_second_witness(b"OTHER-MESSAGE", self._sig_hex, self._pk_hex))
+
+    def test_verify_both_true_when_both_agree_valid(self):
+        self.assertTrue(pqc_signing.verify_both(self._msg, self._sig_hex, self._pk_hex))
+
+    def test_verify_both_false_when_both_agree_invalid(self):
+        self.assertFalse(pqc_signing.verify_both(b"WRONG", self._sig_hex, self._pk_hex))
+
+    def test_verify_both_false_on_disagreement(self):
+        # The load-bearing case: if the witness DISAGREES with the primary, the
+        # signature is refused even though the primary alone would accept it.
+        orig = pqc_signing._verify_second_witness
+        pqc_signing._verify_second_witness = lambda *a, **k: False  # force disagreement
+        try:
+            # primary accepts (genuine sig) but witness says False -> refused.
+            self.assertFalse(pqc_signing.verify_both(self._msg, self._sig_hex, self._pk_hex))
+        finally:
+            pqc_signing._verify_second_witness = orig
+
+    def test_verify_both_degrades_to_primary_when_witness_unavailable(self):
+        # Witness returns None (library too old / cannot load key) -> lone primary
+        # verdict stands; no worse than pre-v9.133. The primary still accepts.
+        orig = pqc_signing._verify_second_witness
+        pqc_signing._verify_second_witness = lambda *a, **k: None
+        try:
+            self.assertTrue(pqc_signing.verify_both(self._msg, self._sig_hex, self._pk_hex))
+        finally:
+            pqc_signing._verify_second_witness = orig
+
+    def test_availability_report_surfaces_the_witness(self):
+        report = pqc_signing.availability_report()
+        self.assertTrue(report["second_witness_available"])
+        self.assertIsNone(report["second_witness_error"])
+
+
+class SecondWitnessDegradationTests(unittest.TestCase):
+    """The graceful-degradation contract is testable even without the witness
+    library: when _WITNESS_AVAILABLE is forced off, verify_both must fall back to
+    the primary rather than crash."""
+
+    def setUp(self):
+        self._saved = pqc_signing._WITNESS_AVAILABLE
+        pqc_signing._WITNESS_AVAILABLE = False
+
+    def tearDown(self):
+        pqc_signing._WITNESS_AVAILABLE = self._saved
+
+    def test_second_witness_returns_none_when_unavailable(self):
+        self.assertIsNone(pqc_signing._verify_second_witness(b"m", "aa", "bb"))
+
+    def test_second_witness_available_reflects_flag(self):
+        self.assertFalse(pqc_signing.second_witness_available())
+
+
 if __name__ == '__main__':
     unittest.main(verbosity=2)

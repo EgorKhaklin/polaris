@@ -568,11 +568,14 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install liboqs-python (builds liboqs)
+      - name: Install liboqs-python (builds liboqs) + the cryptography witness
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake ninja-build
           pip install liboqs-python
+          # The independent second witness (v9.133): cryptography>=48 provides an
+          # OpenSSL-backed ML-DSA-65, a DIFFERENT FIPS 204 implementation than liboqs.
+          pip install "cryptography==48.0.0"
 
       - name: Real ML-DSA-65 persistent-key sign + verify
         working-directory: polaris_web
@@ -615,8 +618,25 @@ jobs:
                   pass
           finally:
               p.verify = _orig
-          print("Real ML-DSA-65 sign + verify-at-use + issuance self-check OK")
+          # Two-witness path (v9.133): the cryptography witness MUST be present in
+          # this job (we installed it) and must INDEPENDENTLY verify a liboqs
+          # signature, and verify_both must agree. A skip here would hide a broken
+          # witness, so assert availability rather than letting the test skip.
+          assert p.second_witness_available(), "cryptography ML-DSA witness not available in CI"
+          assert p._verify_second_witness(b"token-ABC", r1.signature_hex, r1.public_key_hex), \
+              "cryptography witness rejected a genuine liboqs ML-DSA-65 signature (interop broken)"
+          assert p.verify_both(b"token-ABC", r1.signature_hex, r1.public_key_hex), "verify_both rejected a valid signature"
+          assert not p.verify_both(b"token-XYZ", r1.signature_hex, r1.public_key_hex), "verify_both accepted a forged message"
+          print("Real ML-DSA-65 sign + verify-at-use + issuance self-check + two-witness agreement OK")
           PY
+
+      - name: Two-witness agreement tests (liboqs + cryptography must agree)
+        working-directory: polaris_web
+        env:
+          POLARIS_USE_REAL_PQC: '1'
+        run: |
+          # Runs SecondWitnessTests (skips unless BOTH libs present — they are here).
+          python -m unittest test_pqc_signing -v
 
   # --------------------------------------------------------------------------
   # Dependency CVE scan. The dependency surface was pinned but never audited —

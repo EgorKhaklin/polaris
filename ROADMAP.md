@@ -28,12 +28,7 @@ not an agent's to make. Wave 1 shipped in v9.101.
 
 ## Next ships
 
-1. **PQC second witness.** Issuance is wired through
-   `pqc_signing.signature_bytes_for_token` (v9.58) and the real ML-DSA-65 path is one
-   flag away (`POLARIS_USE_REAL_PQC=1`). Still open: a full independent ML-DSA-65
-   second witness for the verify path, premature while real PQC is OFF by default;
-   revisit when it goes live. `L · medium · MEDIUM · hardening`
-2. **PQC-posture audit** — audit Polaris against NIST PQC migration timelines;
+1. **PQC-posture audit** — audit Polaris against NIST PQC migration timelines;
    surface gaps. `S · low · LOW · cold-read-evidence`
 
 ---
