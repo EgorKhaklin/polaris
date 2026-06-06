@@ -12,7 +12,7 @@
 #
 # Build context is polaris_web/ (see docker-compose.prod.yml: context: .).
 # ============================================================================
-FROM alpine:3.20
+FROM alpine:3.23
 
 # pgbouncer + scram support live in the distro package; netcat gives the
 # compose healthcheck a cheap TCP liveness probe on the listen port; openssl
