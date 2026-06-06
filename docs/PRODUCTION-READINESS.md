@@ -87,7 +87,20 @@ left a real foundation. Genuinely sound today:
   issuer key, exactly like issuance — no more hardcoded `UC6_OPERATOR_MIGRATE`
   string. Pinned by `check_pqc_wired` + `test_uc6_route_signature_routes_through_signing_module`.
 
-**Wave 2 (cryptographic core) is complete.**
+- [x] **Two-witness ML-DSA-65 verification (v9.133).** Every real signature
+  verdict is cross-checked by two independent FIPS 204 implementations (liboqs +
+  cryptography/OpenSSL) that must agree, or the signature is refused. Pinned by
+  `check_pqc_second_witness`.
+- [x] **Honest PQC posture audit (v9.134).** The full crypto surface is audited
+  against the NIST FIPS 203/204/205 + IR 8547 (2030/2035) timeline in
+  [reference/PQC-POSTURE.md](reference/PQC-POSTURE.md): the token signature,
+  hashing, and ZK proof are post-quantum; TLS key exchange, the cert signatures,
+  and WebAuthn operator MFA are still classical, with the realistic exposure of
+  each stated plainly. Pinned by `check_pqc_posture`.
+
+**Wave 2 (cryptographic core) is complete.** The remaining PQC items (hybrid TLS
+KEX, PQC certs, PQC WebAuthn) are operator-gated or third-party-gated; see the
+posture audit's migration roadmap.
 
 ### Wave 3 — data protection + DR (BLOCKER/HIGH)
 - [x] **Encrypt backups at rest (v9.102).** `polaris-backup.sh` encrypts the

@@ -1043,6 +1043,52 @@ def test_pqc_second_witness_check_discriminates(tmp_path):
         "all sites routed through it, and CI proving agreement")
 
 
+def test_pqc_posture_check_discriminates(tmp_path):
+    ref = tmp_path / "docs" / "reference"
+    ref.mkdir(parents=True)
+    doc = ref / "PQC-POSTURE.md"
+
+    GOOD = (
+        "# PQC Posture\n"
+        "Audited against NIST FIPS 204 and IR 8547 (deprecate 2030, disallow 2035).\n"
+        "See the production-readiness ledger; nothing here claims deployability.\n"
+        "## What is post-quantum today\n"
+        "The token signature is ML-DSA-65 (FIPS 204), the ZK proof is FRI-based.\n"
+        "## What is still classical\n"
+        "TLS key exchange is classical ECDHE (harvest-now). WebAuthn operator MFA "
+        "uses classical ECDSA/EdDSA/RSA.\n"
+    )
+
+    # 1. Missing doc -> FAIL.
+    assert checks.check_pqc_posture(tmp_path)[0].level == "FAIL", "must FAIL with no posture doc"
+
+    # 2. Only the rosy half (no 'what is still classical') -> FAIL.
+    doc.write_text(GOOD.split("## What is still classical")[0])
+    assert checks.check_pqc_posture(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the still-classical half is absent (one-sided claim)"
+
+    # 3. Has both sections but omits a classical surface (no WebAuthn) -> FAIL.
+    doc.write_text(GOOD.replace("WebAuthn operator MFA uses classical ECDSA/EdDSA/RSA.", "Nothing else."))
+    assert checks.check_pqc_posture(tmp_path)[0].level == "FAIL", \
+        "must FAIL when a classical surface (WebAuthn) is not named"
+
+    # 4. Drops the NIST timeline mapping -> FAIL.
+    doc.write_text(GOOD.replace("deprecate 2030, disallow 2035", "someday"))
+    assert checks.check_pqc_posture(tmp_path)[0].level == "FAIL", \
+        "must FAIL without the NIST 2030/2035 timeline"
+
+    # 5. Overclaims by dropping the production-readiness disclaimer -> FAIL.
+    doc.write_text(GOOD.replace(
+        "See the production-readiness ledger; nothing here claims deployability.\n", ""))
+    assert checks.check_pqc_posture(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the production-readiness disclaimer is gone"
+
+    # 6. Honest, two-sided, timeline-mapped, disclaimed -> OK.
+    doc.write_text(GOOD)
+    assert checks.check_pqc_posture(tmp_path)[0].level == "OK", \
+        "must PASS an honest, two-sided, NIST-mapped, non-overclaiming audit"
+
+
 def test_prod_images_digest_pinned_check_discriminates(tmp_path):
     web = tmp_path / "polaris_web"
     gh = tmp_path / ".github"

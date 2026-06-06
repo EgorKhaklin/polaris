@@ -28,8 +28,10 @@ not an agent's to make. Wave 1 shipped in v9.101.
 
 ## Next ships
 
-1. **PQC-posture audit** — audit Polaris against NIST PQC migration timelines;
-   surface gaps. `S · low · LOW · cold-read-evidence`
+(Backlog is operator-gated from here. The next agent-buildable ship is a new
+feature or a maintainer-green-lit gated item; see the migration roadmap in
+[`docs/reference/PQC-POSTURE.md`](docs/reference/PQC-POSTURE.md) for the
+third-party-gated PQC items, hybrid TLS KEX first.)
 
 ---
 

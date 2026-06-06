@@ -439,6 +439,58 @@ def check_pqc_second_witness(root: pathlib.Path) -> list[Finding]:
 
 
 # ---------------------------------------------------------------------------
+# The PQC posture audit must stay HONEST. Polaris's thesis is "post-quantum",
+# but only its token core is; its transport (TLS key exchange) and operator auth
+# (WebAuthn) are still classical. docs/reference/PQC-POSTURE.md states that split
+# plainly. This check pins the honesty discipline: the doc must keep BOTH halves
+# (what is post-quantum AND what is still classical), must name the classical
+# surfaces by name (so the gap cannot be quietly deleted into an overclaim), must
+# map to the NIST timeline, and must not assert production-readiness. It is the
+# anti-larping guard for the headline claim, the same role check_thesis_* plays.
+# ---------------------------------------------------------------------------
+def check_pqc_posture(root: pathlib.Path) -> list[Finding]:
+    doc = _read(root, "docs/reference/PQC-POSTURE.md")
+    if not doc:
+        return _fail("pqc_posture",
+                     "docs/reference/PQC-POSTURE.md is missing (the honest post-quantum audit)")
+    low = doc.lower()
+    # Both halves of the honest split must be present.
+    if "what is post-quantum today" not in low or "what is still classical" not in low:
+        return _fail("pqc_posture",
+                     "PQC-POSTURE.md must keep BOTH an honest 'what is post-quantum today' AND a "
+                     "'what is still classical' section (the audit cannot become a one-sided claim)")
+    # The PQ core must be named.
+    if "ML-DSA-65" not in doc:
+        return _fail("pqc_posture",
+                     "PQC-POSTURE.md must name the post-quantum core (ML-DSA-65 token signature)")
+    # The classical surfaces must be named AND called classical, so the gap is not
+    # silently softened. TLS key exchange and WebAuthn are the load-bearing ones.
+    classical_block = low.split("what is still classical", 1)[1]
+    for surface in ("tls", "webauthn"):
+        if surface not in classical_block:
+            return _fail("pqc_posture",
+                         "PQC-POSTURE.md must name %s among the still-classical surfaces "
+                         "(honesty: the transport/auth gap stays stated)" % surface.upper())
+    if "classical" not in classical_block:
+        return _fail("pqc_posture",
+                     "the still-classical section must actually call its surfaces 'classical' "
+                     "(no euphemism for the quantum-vulnerable primitives)")
+    # The NIST migration clock must be cited (the audit is timeline-relative).
+    if "2030" not in doc or "2035" not in doc or "FIPS 204" not in doc:
+        return _fail("pqc_posture",
+                     "PQC-POSTURE.md must map to the NIST timeline (FIPS 204 + the 2030 deprecate / "
+                     "2035 disallow clock from IR 8547)")
+    # It must not overclaim production-readiness (the standing honesty line).
+    if "production-readiness" not in low and "production readiness" not in low:
+        return _fail("pqc_posture",
+                     "PQC-POSTURE.md must disclaim production-readiness (link the gap ledger), not "
+                     "imply the system is deployable")
+    return _ok("pqc_posture",
+               "PQC posture audit is honest: the PQ token core and the still-classical "
+               "transport/WebAuthn are both stated, mapped to the NIST 2030/2035 clock")
+
+
+# ---------------------------------------------------------------------------
 # The issuer public key is stored WITH each signature (TokenSignature.
 # signing_public_key_hex) so verification at use is self-contained — no live
 # key-file lookup, and it survives key rotation. This pins the whole wiring:
@@ -1853,6 +1905,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_pqc_real_signing,
     check_verify_enforced,
     check_pqc_second_witness,
+    check_pqc_posture,
     check_signature_self_contained_verify,
     check_prod_real_pqc,
     check_sql_console_readonly,

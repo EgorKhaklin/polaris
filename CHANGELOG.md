@@ -5,6 +5,38 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.134 — 2026-06-06 (an honest post-quantum posture audit: what is PQ, what is still classical)
+
+Polaris's thesis is a "post-quantum identity system." That is true of the token
+core and false of the transport, and an honest system has to say which is which.
+This audits the entire cryptographic surface against the NIST timeline and writes
+the result down without softening either side.
+
+- **The audit.** `docs/reference/PQC-POSTURE.md` separates the layers. Post-quantum
+  today: the ML-DSA-65 token signature (FIPS 204, two-witnessed since v9.133), the
+  SHA3 binding and anchor hashing, the Plonky2 FRI-based ZK inclusion proof (which
+  reduces to Poseidon collision-resistance, no Shor-breakable assumption), and the
+  scrypt / symmetric session layer. Still classical: TLS key exchange on all three
+  hops (classical ECDHE, harvest-now-decrypt-later), the RSA/ECDSA cert signatures,
+  and the WebAuthn operator-MFA algorithms (ES256/EdDSA/RS256). Each classical
+  surface states its real threat and its bounded exposure (the internal hops carry
+  only notional data; the WebAuthn key never leaves the authenticator; WebAuthn and
+  public-PKI migration are gated on third parties, not on Polaris).
+- **Mapped to the NIST clock.** Every primitive is tagged against FIPS 203/204/205
+  and IR 8547 (deprecate classical public-key after 2030, disallow after 2035),
+  with a prioritized migration roadmap led by hybrid X25519+ML-KEM-768 on the
+  client-to-edge hop.
+- **Grounded, not asserted.** The inventory is built from the real code (an
+  adversarial review caught and corrected a draft that presented BLAKE3/BLAKE2b as
+  live anchor hashes when `anchoring.py` falls back to SHA3-256, and that mislabeled
+  cert-signature forgery as harvest-now-decrypt-later). The audit reflects what the
+  code actually does.
+- **Pinned.** `check_pqc_posture` (61st check) keeps the audit honest: it must keep
+  BOTH the post-quantum AND the still-classical sections, name the classical
+  surfaces (TLS, WebAuthn) as classical, map to the 2030/2035 NIST clock, and
+  disclaim production-readiness. The doc cannot be quietly softened into an
+  overclaim. Linked from the reference index and the production-readiness ledger.
+
 ## v9.133 — 2026-06-06 (the ML-DSA-65 verify path is two-witnessed, like the ZK path)
 
 Real ML-DSA-65 is the production signing default (v9.116), but every signature

@@ -1,0 +1,171 @@
+# PQC Posture
+
+This document states precisely which Polaris primitives are post-quantum and
+which are still classical. It is an honest audit, not a marketing claim. Where a
+primitive is classical, it says so plainly. Polaris is a notional, educational
+reference system; see [../../MISSION.md](../../MISSION.md) for scope and
+[../PRODUCTION-READINESS.md](../PRODUCTION-READINESS.md) for the operational gap
+ledger. Nothing here asserts production-readiness.
+
+## Scope
+
+Polaris's thesis is a "post-quantum identity system." That thesis holds for the
+identity TOKEN and its proofs. It does not yet hold for the TRANSPORT that
+carries tokens or for the OPERATOR-AUTH that gates the console. This document
+separates those layers without softening either side.
+
+The reference standards are NIST FIPS 203 (ML-KEM), FIPS 204 (ML-DSA), and FIPS
+205 (SLH-DSA), all final as of 2024-08-13, and the NIST IR 8547 transition draft
+(deprecate classical public-key after 2030, disallow after 2035). CNSA 2.0 is NSA
+policy for National Security Systems and is reference context only; Polaris is a
+civilian educational system.
+
+## What is post-quantum today
+
+The core artifact and its supporting hashing and proof primitives are genuinely
+post-quantum or post-quantum-acceptable.
+
+- **Identity token signature: ML-DSA-65 (FIPS 204, Category 3, ~AES-192).** The
+  authenticity proof over `token_value` is a real lattice-based PQC signature
+  when `POLARIS_USE_REAL_PQC=1` (the production default) and liboqs is present.
+  The verify path is two-witnessed (v9.133): the liboqs verdict is cross-checked
+  against an independent OpenSSL-backed MLDSA65 witness, and the two must agree or
+  the signature is refused. The algorithm is pinned in `CryptographicAlgorithm`
+  per invariant C7. When the flag is off or liboqs is absent, the path falls back
+  to a deterministic SHA3-256 placeholder, which is NOT a cryptographic signature;
+  that fallback is the non-production default and is labelled as such.
+- **Token binding digest: SHA3-256 (FIPS 202).** The digest input to the ML-DSA-65
+  signature. A hash retains roughly half its bit-length against Grover, so
+  SHA3-256 keeps about 128-bit quantum preimage security. No quantum deprecation
+  deadline applies.
+- **Anchor and Merkle hashing: SHA3-256 and SHA3-512.** Blockchain-anchor batch
+  attestation hashes the Merkle tree with SHA3-256 or SHA3-512 (`anchoring.py`).
+  The `BLAKE3-256` label is accepted at the API but currently maps to SHA3-256 as
+  a fallback, because no BLAKE3 dependency is installed; it is honest to call the
+  implemented anchor hash SHA3, not BLAKE3. Genomic-anchor binding stores an
+  externally-computed digest under one of four accepted algorithm labels
+  (SHA3-256, SHA3-512, BLAKE3-256, BLAKE2b-256); the schema CHECK enforces
+  hash-only storage and never keeps plaintext. All of these are post-quantum
+  acceptable hashes.
+- **Zero-knowledge inclusion proof: Plonky2 over Goldilocks with Poseidon.** The
+  proof system is a PLONK protocol with a FRI-based polynomial commitment, which
+  is hash-based and transparent (no trusted setup). Its soundness reduces to
+  collision-resistance of the Poseidon hash with no discrete-log, pairing, or
+  factoring assumption. This makes it PLAUSIBLY post-quantum. It is NOT
+  NIST-certified: there is no FIPS for ZK proof systems, so the correct claim is
+  the hash reduction, stated explicitly, not a certification. This posture is
+  strictly stronger than pairing or discrete-log SNARKs such as Groth16 or
+  KZG-Plonk, whose soundness is quantum-broken.
+- **Operator password hashing: scrypt.** Memory-hard KDFs are effectively
+  unaffected by quantum computers in practice; Grover does not cheaply parallelize
+  the memory cost. No PQC deadline applies.
+- **Session, CSRF, and nonce material: `secrets.token_urlsafe` / `token_hex`,
+  HMAC-SHA3-256.** Symmetric and hash primitives at adequate bit-width. The only
+  PQC-sensitive part of a session is how a symmetric key is established over the
+  wire, which is a transport concern, addressed below.
+
+## What is still classical
+
+These surfaces are classical and quantum-vulnerable today. The threat differs by
+surface, and the realistic exposure is bounded but real.
+
+- **TLS key exchange on all three hops (client to Caddy edge, app to pgbouncer,
+  pgbouncer to postgres): classical ECDHE/DHE, no hybrid ML-KEM.** Threat:
+  harvest-now-decrypt-later. An adversary recording ciphertext today could
+  decrypt it once a cryptographically relevant quantum computer exists. Exposure:
+  the two internal hops carry only notional data, so the payoff there is near nil;
+  the client-to-edge hop is the only one carrying live request content, and
+  Polaris is a reference implementation, not a deployed registry. This is the most
+  time-sensitive category on the NIST clock.
+- **Edge certificate signature (Let's Encrypt CA, RSA 2048 or ECDSA P-256):
+  classical, Shor-breakable forgery.** Exposure: the standard public-PKI gap
+  shared by most of the classical web. The algorithm is chosen by the CA, not the
+  operator, so migration is gated on the CA-Browser ecosystem.
+- **Internal certificate signatures (self-signed RSA 2048 with SHA-256 for
+  postgres and pgbouncer): classical, Shor-breakable forgery.** Exposure:
+  infrastructure certs pinned via `sslmode=verify-ca`, reachable only inside the
+  deployment trust boundary. These are operator-generated, so they are the most
+  self-controllable cert gap. Note the threat here is future forgery and
+  impersonation, not harvest-now-decrypt-later: a signature carries no
+  confidentiality to record, and the ECDHE handshake, not the cert key, derives
+  the session secret.
+- **WebAuthn operator-MFA signatures (ES256/ECDSA P-256, EdDSA/Ed25519,
+  RS256/RSA): classical, Shor-breakable forgery.** Critical nuance: the signing
+  key is the authenticator's, held client-side in operator hardware, and is never
+  transmitted, so harvest-now-decrypt-later does NOT apply to the credential. The
+  threat is future signature forgery. Migration is gated on the FIDO Alliance,
+  browsers, and authenticator hardware, not on Polaris as the relying party. No
+  PQC COSE authenticators ship as of 2026-06. Polaris keeps COSE algorithm
+  selection negotiated rather than hardcoded (`webauthn_auth.py`), which is the
+  correct relying-party posture.
+- **Recovery-code mnemonic digest (SHA-256): classical SHA-2.** This is a hash,
+  not a public-key primitive, so it is NOT Shor-breakable and carries NO
+  deprecation deadline. Grover leaves about 128-bit quantum preimage security on
+  the 128-bit-entropy mnemonic. It is listed here only for transparency about the
+  algorithm family; it is acceptable as-is.
+
+## Gap table
+
+Status maps to the NIST IR 8547 timeline (deprecate classical public-key after
+2030, disallow after 2035).
+
+| Primitive | Category | Status | Rationale |
+|---|---|---|---|
+| ML-DSA-65 (token signature) | signing | PQ_SECURE | FIPS 204 Cat 3, real signature under the production default, two-witnessed, algorithm pinned per C7. |
+| SHA3-256 (token binding digest) | hashing | PQ_SECURE | FIPS 202; ~128-bit quantum preimage resistance. No deadline. |
+| SHA3-256/512 (blockchain anchor Merkle) | hashing | PQ_SECURE | Server-computed Merkle hashing; the BLAKE3-256 label falls back to SHA3-256. Grover quadratic only. No migration. |
+| SHA3/BLAKE labels (genomic anchor) | hashing | PQ_SECURE | Stores an externally-computed digest; plaintext never stored (schema CHECK). All accepted labels are PQ-acceptable hashes. No migration. |
+| Plonky2 + Poseidon (ZK proof) | zk | PQ_SECURE | Plausibly PQ: PLONK with a FRI (hash-based) commitment; soundness reduces to hash collision-resistance, no number-theoretic assumption. NOT NIST-certified; the claim is the reduction, not a certification. |
+| scrypt (operator password) | password | PQ_SECURE | Memory-hard KDF; unaffected in practice. No deadline. |
+| secrets.token_* (session/CSRF/nonce RNG) | session | PQ_SECURE | CSPRNG, 256/64-bit entropy. Symmetric; acceptable. |
+| HMAC-SHA3-256 (CSRF compare) | session | PQ_SECURE | Inherits hash security; constant-time compare. No item. |
+| SHA-256 (recovery-code digest) | hashing | REDUCED_BUT_OK | Classical SHA-2 but a hash, not public-key; ~128-bit quantum preimage. No deadline. Acceptable as-is. |
+| ECDSA/EdDSA/RSA (WebAuthn MFA) | webauthn | MIGRATE_BY_2035 | Classical, Shor-breakable. Key is client-side authenticator, never sent, so no HNDL. Migration gated on FIDO/hardware, not Polaris. |
+| TLS ECDHE/DHE (client to edge) | kex_transport | MIGRATE_BY_2030 | Classical KEX, HNDL. Hybrid X25519MLKEM768 recommended now. Highest-priority transport gap. |
+| TLS ECDHE/DHE (app to pgbouncer) | kex_transport | MIGRATE_BY_2030 | Classical KEX, HNDL. Internal hop, notional data; payoff near nil. Operator-gated hybrid path. |
+| TLS ECDHE/DHE (pgbouncer to postgres) | kex_transport | MIGRATE_BY_2030 | Classical KEX, HNDL. Internal hop, notional data. Operator-gated. |
+| RSA 2048 + SHA-256 (internal self-signed certs) | cert_signature | MIGRATE_BY_2035 | Classical, Shor-breakable forgery, ~112-bit. Pinned, inside trust boundary. Migrate to ML-DSA or SLH-DSA when the stack verifies PQC chains. |
+| RSA 2048 / ECDSA P-256 (Let's Encrypt CA) | cert_signature | MIGRATE_BY_2035 | Classical, Shor-breakable forgery. CA chooses the algorithm; gated on public-PKI rollout. |
+
+## Migration roadmap
+
+Prioritized and aligned to the NIST clock. Items below P1 are operator-gated or
+third-party-gated and are future work, not current defects.
+
+1. **P1, client-to-edge TLS hybrid KEX.** Offer X25519MLKEM768 at the Caddy TLS
+   layer once the stack exposes it. Hybrid runs classical and ML-KEM-768
+   concurrently so the session is safe if either holds. Addresses
+   harvest-now-decrypt-later on the only hop with live content. NIST: classical
+   KEX deprecated after 2030, disallowed after 2035; hybrid recommended now.
+2. **P2, internal-hop TLS hybrid KEX.** Enable hybrid ML-KEM on the
+   app/pgbouncer/postgres hops if and when pgbouncer and the driver support it.
+   Lower urgency: notional data only. NIST: same 2030/2035 clock.
+3. **P3, internal self-signed cert signatures.** Reissue with ML-DSA (FIPS 204),
+   or SLH-DSA (FIPS 205, hash-based) for a non-lattice root, once OpenSSL verifies
+   PQC chains. Most self-controllable cert gap. NIST: deprecate 2030, disallow
+   2035.
+4. **P4, edge CA cert signature.** No direct action; track the Let's Encrypt and
+   CA-Browser PQC rollout, expected via hybrid/composite certs. Third-party-gated.
+5. **P5, WebAuthn COSE agility.** Keep COSE selection negotiated (already done)
+   and add ML-DSA COSE identifiers when FIDO2/CTAP PQC profiles and authenticators
+   ship. No PQC COSE authenticators exist as of 2026-06. HNDL does not apply
+   because the key never leaves the authenticator.
+6. **P6, optional hygiene.** Optionally move the recovery-code digest from SHA-256
+   to SHA3-256 or SHA-384 for extra Grover margin. Hygiene, not a quantum
+   requirement; no deadline.
+7. **No action.** ML-DSA-65 signing, SHA3 hashing, Plonky2 ZK, scrypt, and the
+   session/CSRF symmetric layer are already post-quantum-secure or post-quantum
+   acceptable. Maintain ordinary parameter hygiene; do not quantum-panic a working
+   SHA3-256 or scrypt design.
+
+## Closing note
+
+This is an audit of a notional, educational reference system. The data is
+non-real. The honest summary is that the identity token at the center of Polaris
+is post-quantum, while the transport that carries it and the operator
+authentication that gates it are still classical, and the realistic exposure of
+those classical surfaces is bounded by the notional data, the client-side custody
+of the WebAuthn key, and the third-party gating of WebAuthn and public-PKI
+migration. Nothing here claims production-readiness; for the operational ledger
+see [../PRODUCTION-READINESS.md](../PRODUCTION-READINESS.md), and for the
+constitutional scope see [../../MISSION.md](../../MISSION.md).

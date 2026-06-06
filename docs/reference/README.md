@@ -18,6 +18,7 @@ narrative + principles see [`../story/`](../story/).
 | [`DATA-MODEL.md`](DATA-MODEL.md) | Schema table-by-table prose; per-table semantics + invariants |
 | [`SCALING.md`](SCALING.md) | v6 scaling architecture: B-tree indexes, viewport-aware globe, /api/atlas hard caps |
 | [`GLOSSARY.md`](GLOSSARY.md) | Defined terms (~470 lines; covers v1 → v9.x vocabulary) |
+| [`PQC-POSTURE.md`](PQC-POSTURE.md) | Post-quantum audit: which primitives are PQ-secure (token signature, hashing, ZK proof) vs still classical (TLS key exchange, WebAuthn), mapped to the NIST 2030/2035 timeline |
 
 ---
 
