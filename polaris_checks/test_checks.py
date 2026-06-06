@@ -714,6 +714,59 @@ def test_cve_scanning_check_discriminates(tmp_path):
         "must PASS with a gating runtime audit and Dependabot configured"
 
 
+def test_image_cve_scanning_check_discriminates(tmp_path):
+    gh = tmp_path / ".github" / "workflows"
+    gh.mkdir(parents=True)
+    web = tmp_path / "polaris_web"
+    web.mkdir()
+
+    GOOD_CI = ("jobs:\n  image-cve-scan:\n    steps:\n      run: |\n"
+               "        trivy image --severity CRITICAL --ignore-unfixed --ignorefile /.trivyignore "
+               "--exit-code 1 polaris-app:cve\n")
+    DOCKERFILES = {
+        "Dockerfile.prod": "FROM python:3.12-slim-bookworm\nRUN apt-get update && apt-get -y upgrade\n",
+        "Dockerfile.caddy": "FROM caddy:2-alpine\nRUN apk upgrade --no-cache\n",
+        "Dockerfile.pgbouncer": "FROM alpine:3.20\nRUN apk upgrade --no-cache && apk add pgbouncer\n",
+        "Dockerfile.postgres": "FROM postgres:16-alpine\nRUN apk upgrade --no-cache\n",
+    }
+
+    def write(ci=GOOD_CI, dockerfiles=None, trivyignore=True):
+        (gh / "ci.yml").write_text(ci)
+        for name, body in (dockerfiles or DOCKERFILES).items():
+            (web / name).write_text(body)
+        ti = tmp_path / ".trivyignore"
+        if trivyignore:
+            ti.write_text("# justified\nCVE-2025-68121\n")
+        elif ti.exists():
+            ti.unlink()
+
+    # 1. No Trivy in CI -> FAIL.
+    write(ci="jobs:\n  x:\n    steps:\n      run: echo hi\n")
+    assert checks.check_image_cve_scanning(tmp_path)[0].level == "FAIL", \
+        "must FAIL when CI does not run Trivy on the images"
+
+    # 2. Trivy present but not gating (no --exit-code 1) -> FAIL.
+    write(ci="jobs:\n  s:\n    steps:\n      run: trivy image --severity CRITICAL --ignore-unfixed app\n")
+    assert checks.check_image_cve_scanning(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the Trivy scan does not gate (--exit-code 1)"
+
+    # 3. Gating Trivy but a Dockerfile does not upgrade its base -> FAIL.
+    bad = dict(DOCKERFILES); bad["Dockerfile.prod"] = "FROM python:3.12-slim-bookworm\nRUN echo no-upgrade\n"
+    write(dockerfiles=bad)
+    assert checks.check_image_cve_scanning(tmp_path)[0].level == "FAIL", \
+        "must FAIL when a self-built Dockerfile does not patch its base"
+
+    # 4. Everything but no .trivyignore -> FAIL.
+    write(trivyignore=False)
+    assert checks.check_image_cve_scanning(tmp_path)[0].level == "FAIL", \
+        "must FAIL when exceptions are not documented in .trivyignore"
+
+    # 5. Gating Trivy + patched Dockerfiles + documented .trivyignore -> OK.
+    write()
+    assert checks.check_image_cve_scanning(tmp_path)[0].level == "OK", \
+        "must PASS with a gating image scan, base patching, and documented exceptions"
+
+
 def test_migration_timeouts_check_discriminates(tmp_path):
     scripts = tmp_path / "scripts"
     scripts.mkdir()

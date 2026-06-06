@@ -781,3 +781,59 @@ jobs:
         run: |
           echo "Scanning polaris_web + polaris_cli for HIGH-severity issues"
           bandit -r polaris_web polaris_cli -x '*/venv/*' --severity-level high --confidence-level medium -q
+
+  # --------------------------------------------------------------------------
+  # Container IMAGE CVE scanning (v9.138). pip-audit (the cve-scan job) covers
+  # Python deps and bandit covers our code, but the OS packages baked into the
+  # base images (Debian Bookworm, Alpine, the caddy/postgres/pgbouncer/redis
+  # bases) were never scanned. They shipped real fixable CRITICALs (e.g. 2 in the
+  # app's Bookworm base, cleared by apt-get upgrade in Dockerfile.prod). This job
+  # builds every self-built prod image and runs Trivy: it GATES on fixable
+  # CRITICAL (after the documented .trivyignore) and reports HIGH informationally
+  # (base-image HIGHs churn daily and are mostly unfixable, so gating on them
+  # would flake). The Dockerfiles apk/apt upgrade on top of the pinned bases so
+  # the fixable CVEs are actually patched in what ships, not just reported.
+  # --------------------------------------------------------------------------
+  image-cve-scan:
+    name: Container image CVE scan (Trivy)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Build the self-built prod images
+        run: |
+          set -e
+          docker build -f polaris_web/Dockerfile.prod      -t polaris-app:cve        .
+          docker build -f polaris_web/Dockerfile.caddy     -t polaris-caddy:cve      polaris_web
+          docker build -f polaris_web/Dockerfile.pgbouncer -t polaris-pgbouncer:cve  polaris_web
+          docker build -f polaris_web/Dockerfile.postgres  -t polaris-postgres:cve   polaris_web
+
+      - name: Trivy — GATE on fixable CRITICAL (after .trivyignore)
+        run: |
+          set -e
+          for img in polaris-app:cve polaris-caddy:cve polaris-pgbouncer:cve polaris-postgres:cve; do
+            echo "::group::Trivy CRITICAL gate — $img"
+            docker run --rm \
+              -v /var/run/docker.sock:/var/run/docker.sock \
+              -v "$PWD/.trivyignore:/.trivyignore:ro" \
+              aquasec/trivy:0.58.1 image \
+                --scanners vuln --severity CRITICAL --ignore-unfixed \
+                --ignorefile /.trivyignore --exit-code 1 --no-progress "$img" \
+              || { echo "::error::$img has a fixable CRITICAL CVE not covered by .trivyignore"; exit 1; }
+            echo "::endgroup::"
+          done
+          echo "All prod images: no fixable CRITICAL CVEs (post-.trivyignore)"
+
+      - name: Trivy — report HIGH (informational, non-gating)
+        continue-on-error: true
+        run: |
+          for img in polaris-app:cve polaris-caddy:cve polaris-pgbouncer:cve polaris-postgres:cve; do
+            echo "=== HIGH (informational) — $img ==="
+            docker run --rm \
+              -v /var/run/docker.sock:/var/run/docker.sock \
+              -v "$PWD/.trivyignore:/.trivyignore:ro" \
+              aquasec/trivy:0.58.1 image \
+                --scanners vuln --severity HIGH --ignore-unfixed \
+                --ignorefile /.trivyignore --exit-code 0 --no-progress "$img" || true
+          done

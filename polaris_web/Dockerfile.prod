@@ -87,7 +87,12 @@ LABEL org.opencontainers.image.source="https://github.com/polaris-id/polaris"
 LABEL org.opencontainers.image.licenses="Apache-2.0"
 LABEL org.opencontainers.image.version="8.77"
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# v9.138 — apt-get upgrade pulls patched OS packages on top of the pinned base,
+# clearing fixable CVEs in the base image (Trivy gates the built image on fixable
+# CRITICAL). Then install the runtime deps.
+RUN apt-get update \
+    && apt-get -y upgrade \
+    && apt-get install -y --no-install-recommends \
         libpq5 \
         curl \
         ca-certificates \

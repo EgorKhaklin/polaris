@@ -691,6 +691,55 @@ def check_cve_scanning(root: pathlib.Path) -> list[Finding]:
 
 
 # ---------------------------------------------------------------------------
+# Container IMAGE CVE scanning (v9.138). pip-audit covers Python deps; bandit
+# covers our code; but the OS packages in the base images were unscanned and
+# shipped real fixable CRITICALs. This pins the control: the self-built
+# Dockerfiles must patch their bases (apt-get upgrade / apk upgrade), CI must run
+# Trivy gating on fixable CRITICAL, and a documented .trivyignore carries the
+# justified exceptions. Without all three, image CVEs ship silently.
+# ---------------------------------------------------------------------------
+def check_image_cve_scanning(root: pathlib.Path) -> list[Finding]:
+    ci = _read(root, ".github/workflows/ci.yml")
+    if not ci:
+        return _fail("image_cve_scan", ".github/workflows/ci.yml is missing")
+    if "trivy" not in ci.lower():
+        return _fail("image_cve_scan",
+                     "CI must scan the built container images for OS-package CVEs (Trivy); "
+                     "pip-audit only covers Python dependencies")
+    # The scan must GATE on fixable CRITICAL (an --exit-code 1 + --severity CRITICAL
+    # run), not merely report. Require both tokens near the trivy usage.
+    if "--severity CRITICAL" not in ci or "--exit-code 1" not in ci:
+        return _fail("image_cve_scan",
+                     "the Trivy image scan must GATE on fixable CRITICAL "
+                     "(--severity CRITICAL --exit-code 1), not only report")
+    if "--ignore-unfixed" not in ci:
+        return _fail("image_cve_scan",
+                     "the Trivy gate should use --ignore-unfixed so it fails only on ACTIONABLE "
+                     "(fixable) CVEs, not on base-image CVEs with no upstream patch yet")
+    # The fixable CVEs must be PATCHED in what ships, not just reported: the
+    # self-built Dockerfiles upgrade their base packages.
+    patched = {
+        "polaris_web/Dockerfile.prod": "apt-get -y upgrade",
+        "polaris_web/Dockerfile.caddy": "apk upgrade",
+        "polaris_web/Dockerfile.pgbouncer": "apk upgrade",
+        "polaris_web/Dockerfile.postgres": "apk upgrade",
+    }
+    for path, token in patched.items():
+        df = _read(root, path)
+        if not df or token not in df:
+            return _fail("image_cve_scan",
+                         "%s must `%s` so fixable base-image CVEs are patched in the shipped image, "
+                         "not merely scanned" % (path, token))
+    # Exceptions must be documented, not silently widened.
+    if not (root / ".trivyignore").is_file():
+        return _fail("image_cve_scan",
+                     ".trivyignore is missing — Trivy exceptions must be documented + justified")
+    return _ok("image_cve_scan",
+               "CI builds + Trivy-scans every prod image gating on fixable CRITICAL; the "
+               "Dockerfiles patch their bases; exceptions are documented in .trivyignore")
+
+
+# ---------------------------------------------------------------------------
 # Static application security testing (SAST). pip-audit covers dependency CVEs;
 # bandit covers OUR source for security anti-patterns (hardcoded secrets, weak
 # crypto, world-writable files, shell=True, etc.). CI must run it and GATE on
@@ -2000,6 +2049,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_sql_console_readonly,
     check_prod_image_no_test_deps,
     check_cve_scanning,
+    check_image_cve_scanning,
     check_sast_scanning,
     check_migration_timeouts,
     check_deploy_syncs_db_objects,

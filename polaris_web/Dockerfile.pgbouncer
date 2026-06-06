@@ -17,7 +17,10 @@ FROM alpine:3.20
 # pgbouncer + scram support live in the distro package; netcat gives the
 # compose healthcheck a cheap TCP liveness probe on the listen port; openssl
 # mints the self-signed client_tls cert (v9.121) at start.
-RUN apk add --no-cache pgbouncer netcat-openbsd openssl \
+# v9.138 — apk upgrade pulls patched packages on top of the pinned base so the
+# built image clears fixable apk-package CVEs (Trivy gates on fixable CRITICAL).
+RUN apk upgrade --no-cache \
+    && apk add --no-cache pgbouncer netcat-openbsd openssl \
     && rm -rf /var/cache/apk/*
 
 # Run as a non-root user with a writable config dir for the generated

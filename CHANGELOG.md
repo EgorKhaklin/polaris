@@ -5,6 +5,36 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.138 — 2026-06-06 (scan the container images for CVEs, and patch the fixable ones)
+
+A repo-grounded production-readiness gap analysis found a real, standard control
+entirely absent: container IMAGE CVE scanning. pip-audit covers Python deps and
+bandit covers our code, but the OS packages baked into every base image were
+never scanned. They shipped real, fixable, CRITICAL CVEs. Measured with Trivy:
+the app's Debian Bookworm base carried 2 fixable CRITICAL + 3 HIGH, and
+postgres:16-alpine carried 1 CRITICAL + 16 HIGH. This adds the scan AND patches
+what is fixable, so the control is not just reporting.
+
+- **Patch the bases.** The four self-built Dockerfiles now upgrade their base
+  packages: `apt-get -y upgrade` (Dockerfile.prod) and `apk upgrade --no-cache`
+  (Dockerfile.caddy / pgbouncer / postgres). Measured result: the app image drops
+  to 0 fixable CRITICAL and 0 HIGH; caddy, pgbouncer, postgres to 0 fixable
+  CRITICAL.
+- **Gate on fixable CRITICAL.** A new `image-cve-scan` CI job builds every prod
+  image and runs Trivy, gating on fixable CRITICAL (`--severity CRITICAL
+  --ignore-unfixed --exit-code 1`) and reporting HIGH informationally (base-image
+  HIGHs churn daily and are mostly unfixable, so gating on them would flake).
+- **One documented exception.** `.trivyignore` carries CVE-2025-68121 (a Go
+  crypto/tls CVE in the postgres base image's `gosu` binary) with justification:
+  gosu is the entrypoint's privilege-drop helper and opens no TLS, so the
+  vulnerable session-resumption path is unreachable; it rides in across
+  postgres:16/17-alpine and is not addressable by apk upgrade. Re-evaluate when
+  the base ships a rebuilt gosu.
+- **Pinned.** `check_image_cve_scanning` (64th check): CI must Trivy-scan the
+  images gating on fixable CRITICAL with `--ignore-unfixed`, the self-built
+  Dockerfiles must patch their bases, and exceptions must be documented in
+  `.trivyignore`. Image CVEs cannot ship silently again.
+
 ## v9.137 — 2026-06-06 (precision: the internal-hop PQ gate is measured, and it is two limiters not one)
 
 A small honesty correction to the v9.134/v9.136 audit, grounded in measurement.

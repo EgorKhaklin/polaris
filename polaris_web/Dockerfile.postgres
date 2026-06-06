@@ -20,9 +20,14 @@
 # ============================================================================
 FROM postgres:16-alpine@sha256:16bc17c64a573ef34162af9298258d1aec548232985b33ed7b1eac33ba35c229
 
-# pgbackrest is in the distro package set; the dirs are owned by the postgres
-# user so the archive_command (run as postgres) and stanza ops can write them.
-RUN apk add --no-cache pgbackrest \
+# v9.138 — apk upgrade pulls patched apk packages on top of the pinned base
+# (clears fixable apk-package CVEs; the one residual fixable CRITICAL is a Go
+# stdlib CVE inside the base image's gosu binary, which does no TLS, so it is
+# unreachable and .trivyignore'd). pgbackrest is in the distro package set; the
+# dirs are owned by the postgres user so the archive_command (run as postgres)
+# and stanza ops can write them.
+RUN apk upgrade --no-cache \
+    && apk add --no-cache pgbackrest \
     && mkdir -p /var/lib/pgbackrest /etc/pgbackrest /var/log/pgbackrest \
     && chown -R postgres:postgres /var/lib/pgbackrest /etc/pgbackrest /var/log/pgbackrest \
     && rm -rf /var/cache/apk/*

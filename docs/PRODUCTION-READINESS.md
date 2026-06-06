@@ -220,6 +220,14 @@ posture audit's migration roadmap.
   image no longer ships a test framework (or its CVEs); the dev surface is
   audited informationally. Dependabot opens weekly update PRs. Pinned by
   `check_prod_image_no_test_deps` + `check_cve_scanning`.
+- [x] **Container image CVE scanning + base patching (v9.138).** pip-audit covered
+  Python deps and bandit our code, but the OS packages in the base images were
+  unscanned and shipped real fixable CRITICALs (2 in the app's Bookworm base, 1 in
+  postgres). The four self-built Dockerfiles now `apt-get/apk upgrade` their bases
+  (app image drops to 0 fixable CRITICAL/HIGH), and a new `image-cve-scan` CI job
+  Trivy-scans every prod image gating on fixable CRITICAL (HIGH reported). One
+  documented `.trivyignore` exception (an unreachable Go crypto/tls CVE in the
+  postgres base's gosu binary). Pinned by `check_image_cve_scanning`.
 - [x] **SAST in CI (v9.112).** `bandit` scans `polaris_web` + `polaris_cli`,
   gating on HIGH severity — it immediately caught a world-writable
   (`chmod 0o777`) state dir, now `0o700` in production. Pinned by
