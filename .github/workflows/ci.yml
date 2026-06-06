@@ -885,7 +885,25 @@ jobs:
         working-directory: polaris_web
         env:
           POLARIS_DOMAIN: localhost
-        run: docker compose -f docker-compose.prod.yml -f docker-compose.citest.yml up -d
+        run: |
+          set +e
+          docker compose -f docker-compose.prod.yml -f docker-compose.citest.yml up -d
+          rc=$?
+          echo "=== compose ps -a ==="
+          docker compose -f docker-compose.prod.yml -f docker-compose.citest.yml ps -a
+          if [ $rc -ne 0 ]; then
+            echo "::error::compose up failed (rc=$rc) — diagnostics below"
+            echo "=== HOST secret/cert perms ==="; ls -la secrets/ 2>&1
+            echo "=== pgbouncer logs ==="; docker logs polaris-pgbouncer 2>&1 | tail -60
+            echo "=== pgbouncer mounted cert perms (in-container) ==="
+            docker run --rm --user 0 --entrypoint sh \
+              -v "$PWD/secrets/pgbouncer_server.key:/k:ro" \
+              -v "$PWD/secrets/postgres_server.crt:/ca:ro" \
+              polaris-pgbouncer:prod -c 'ls -la /k /ca; id' 2>&1 || true
+            echo "=== postgres logs ==="; docker logs polaris-postgres 2>&1 | tail -30
+            echo "=== app logs ==="; docker logs polaris-app 2>&1 | tail -30
+            exit 1
+          fi
 
       - name: Assert the stack serves /api/health through the TLS edge
         working-directory: polaris_web
@@ -919,4 +937,6 @@ jobs:
       - name: Tear down
         if: always()
         working-directory: polaris_web
+        env:
+          POLARIS_DOMAIN: localhost
         run: docker compose -f docker-compose.prod.yml -f docker-compose.citest.yml down -v || true
