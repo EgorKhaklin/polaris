@@ -5,6 +5,30 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.130 — 2026-06-06 (hardening: pgBackRest operational safety, from the v9.121-v9.128 review)
+
+Three concrete operational gaps the review found in the v9.127 pgBackRest ship:
+an operator could enable archiving but never bootstrap the stanza (WAL fills the
+disk), run against a local repo thinking it was offsite, or leak S3 keys via the
+compose environment.
+
+- **Deploy auto-bootstraps the stanza.** When `POLARIS_PGBACKREST_ENABLED=1`,
+  `polaris-deploy.sh` now runs `pgbackrest --stanza=polaris stanza-create` +
+  `check` against the running stack (idempotent). A failure WARNS loudly but does
+  not block the deploy. Closes the "enabled but unbootstrapped -> archive-push
+  fails every WAL -> disk fills" gap.
+- **Loud local-repo warning.** `docker-init.sh` warns when archiving is enabled
+  but the repo is local (no `repo1-type=s3`) — a local repo does not survive host
+  loss, so it is not the offsite durability an operator usually expects.
+- **Secure S3-credential guidance.** pgBackRest has no `*_FILE` env convention, so
+  `pgbackrest.conf` + `DR.md` now show the correct pattern: write the keys into a
+  0600 file under `polaris_web/secrets/` (gitignored) and mount it at
+  `/etc/pgbackrest/conf.d/`, NOT as compose `environment:` literals (which leak
+  via `docker inspect`).
+- **Pinned.** `check_pgbackrest_scaffolding` now also asserts the deploy
+  auto-bootstrap, the local-repo warning, and the file-mounted-credential
+  guidance; detection tests cover each.
+
 ## v9.129 — 2026-06-06 (hardening: fail closed on production misconfiguration, from a review of this session's ships)
 
 A multi-agent adversarial review of v9.121-v9.128 surfaced silent-failure and

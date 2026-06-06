@@ -1271,26 +1271,35 @@ def test_pgbackrest_scaffolding_check_discriminates(tmp_path):
     web = tmp_path / "polaris_web"
     op = tmp_path / "docs" / "operator"
     gh = tmp_path / ".github" / "workflows"
-    for d in (web, op, gh):
+    scripts = tmp_path / "scripts"
+    for d in (web, op, gh, scripts):
         d.mkdir(parents=True)
     GOOD_DF = "FROM postgres:16-alpine@sha256:abc\nRUN apk add --no-cache pgbackrest\n"
-    GOOD_CONF = "[global]\nrepo1-path=/var/lib/pgbackrest\n# swap repo1 for s3 for offsite\n[polaris]\npg1-path=/var/lib/postgresql/data\n"
+    GOOD_CONF = ("[global]\nrepo1-path=/var/lib/pgbackrest\n# swap repo1 for s3 for offsite;\n"
+                 "# S3 keys via a 0600 file mounted at /etc/pgbackrest/conf.d/, not env\n"
+                 "[polaris]\npg1-path=/var/lib/postgresql/data\n")
     GOOD_COMPOSE = ("services:\n  postgres:\n    build:\n      dockerfile: Dockerfile.postgres\n"
                     "    environment:\n      POLARIS_PGBACKREST_ENABLED: \"0\"\n"
                     "    volumes:\n      - ./pgbackrest.conf:/etc/pgbackrest/pgbackrest.conf:ro\n")
     GOOD_INIT = ("if [ \"$POLARIS_PGBACKREST_ENABLED\" = \"1\" ]; then\n"
                  "  psql -c \"ALTER SYSTEM SET archive_mode = on;\"\n"
-                 "  psql -c \"ALTER SYSTEM SET archive_command = 'pgbackrest --stanza=polaris archive-push %p';\"\nfi\n")
+                 "  psql -c \"ALTER SYSTEM SET archive_command = 'pgbackrest --stanza=polaris archive-push %p';\"\n"
+                 "  if ! grep -qE 'repo1-type[[:space:]]*=[[:space:]]*s3' /etc/pgbackrest/pgbackrest.conf; then\n"
+                 "    echo 'WARNING: archiving to a LOCAL repo (no repo1-type=s3)' >&2\n  fi\nfi\n")
     GOOD_DR = "Bootstrap: pgbackrest --stanza=polaris stanza-create\n"
     GOOD_CI = "docker build Dockerfile.postgres\npgbackrest --stanza=polaris restore\n"
+    GOOD_DEPLOY = ("if [ \"$POLARIS_PGBACKREST_ENABLED\" = \"1\" ]; then\n"
+                   "  docker compose exec postgres pgbackrest --stanza=polaris stanza-create\nfi\n")
 
-    def write(df=GOOD_DF, conf=GOOD_CONF, compose=GOOD_COMPOSE, init=GOOD_INIT, dr=GOOD_DR, ci=GOOD_CI):
+    def write(df=GOOD_DF, conf=GOOD_CONF, compose=GOOD_COMPOSE, init=GOOD_INIT, dr=GOOD_DR,
+              ci=GOOD_CI, deploy=GOOD_DEPLOY):
         (web / "Dockerfile.postgres").write_text(df)
         (web / "pgbackrest.conf").write_text(conf)
         (web / "docker-compose.prod.yml").write_text(compose)
         (web / "docker-init.sh").write_text(init)
         (op / "DR.md").write_text(dr)
         (gh / "ci.yml").write_text(ci)
+        (scripts / "polaris-deploy.sh").write_text(deploy)
 
     # 1. fully wired -> OK.
     write()
@@ -1326,6 +1335,22 @@ def test_pgbackrest_scaffolding_check_discriminates(tmp_path):
     write(ci="echo no backup test\n")
     assert checks.check_pgbackrest_scaffolding(tmp_path)[0].level == "FAIL", \
         "must FAIL when ci.yml has no pgBackRest restore round-trip"
+
+    # 8. the deploy does not auto-bootstrap the stanza -> FAIL (v9.130).
+    write(deploy="echo deploy without pgbackrest\n")
+    assert checks.check_pgbackrest_scaffolding(tmp_path)[0].level == "FAIL", \
+        "must FAIL when polaris-deploy.sh does not stanza-create when archiving is enabled"
+
+    # 9. docker-init does not warn about a local repo -> FAIL (v9.130).
+    write(init=GOOD_INIT.replace("WARNING: archiving to a LOCAL repo (no repo1-type=s3)", "ok"))
+    assert checks.check_pgbackrest_scaffolding(tmp_path)[0].level == "FAIL", \
+        "must FAIL when docker-init does not warn on a local (non-s3) repo"
+
+    # 10. the S3-cred guidance does not use a file-mounted config (conf.d) -> FAIL (v9.130).
+    write(conf="[global]\nrepo1-path=/var/lib/pgbackrest\n# s3 swap\n[polaris]\npg1-path=/data\n",
+          dr="Bootstrap: pgbackrest --stanza=polaris stanza-create\n")
+    assert checks.check_pgbackrest_scaffolding(tmp_path)[0].level == "FAIL", \
+        "must FAIL when S3-credential guidance does not use a mounted conf.d (env literals leak)"
 
 
 def test_duress_alertable_check_discriminates(tmp_path):

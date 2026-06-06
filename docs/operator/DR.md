@@ -49,8 +49,25 @@ incident**, not for the engineer at design time.
 > figure until `pgbackrest --stanza=polaris check` actually passes against that
 > repo.
 >
+> S3 credentials are root-level secrets (read/write/delete every backup). Do NOT
+> put them in `docker-compose.prod.yml`'s `environment:` block — env literals leak
+> via `docker inspect`. Use the file-mounted pattern the rest of the stack uses:
+> write them into a 0600 file under `polaris_web/secrets/` (gitignored) and mount
+> it into pgBackRest's config-include dir:
+> ```bash
+> cat > polaris_web/secrets/pgbackrest-s3.conf <<'EOF'
+> [global]
+> repo1-s3-key=<access-key>
+> repo1-s3-key-secret=<secret-key>
+> EOF
+> chmod 600 polaris_web/secrets/pgbackrest-s3.conf
+> # mount it into the postgres service (docker-compose.prod.yml):
+> #   - ./secrets/pgbackrest-s3.conf:/etc/pgbackrest/conf.d/pgbackrest-s3.conf:ro
+> ```
 > Bootstrap (once, after pointing `pgbackrest.conf` at the offsite repo and
-> setting `POLARIS_PGBACKREST_ENABLED=1`):
+> setting `POLARIS_PGBACKREST_ENABLED=1`). `polaris-deploy.sh` runs `stanza-create`
+> + `check` automatically when archiving is enabled, but you can also run them by
+> hand:
 > ```bash
 > pgbackrest --stanza=polaris stanza-create
 > pgbackrest --stanza=polaris check

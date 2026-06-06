@@ -146,6 +146,31 @@ done
 "${SCRIPT_DIR}/polaris-migrate.sh" --sync-objects --target=docker-stack
 
 # ---------------------------------------------------------------------------
+# 5c. Bootstrap pgBackRest when continuous WAL archiving is enabled. docker-init
+#     turned archive_mode on (POLARIS_PGBACKREST_ENABLED=1), but the stanza must
+#     be created once against the running server or archive-push fails on every
+#     WAL segment and they pile up on disk. stanza-create is idempotent, so this
+#     is safe to re-run. Best-effort: a failure (e.g. an unreachable S3 repo)
+#     WARNS loudly but does NOT block the deploy — the app is fine; the operator
+#     must fix the repo before archiving works. This closes the "enabled but
+#     never bootstrapped -> WAL fills the disk" gap (v9.130).
+# ---------------------------------------------------------------------------
+if [[ "${POLARIS_PGBACKREST_ENABLED:-0}" == "1" ]]; then
+    echo "  [5c]  Bootstrapping pgBackRest stanza (WAL archiving is enabled)…"
+    if docker compose -f "${COMPOSE_FILE}" exec -T postgres \
+            pgbackrest --stanza=polaris stanza-create >/dev/null 2>&1 \
+       && docker compose -f "${COMPOSE_FILE}" exec -T postgres \
+            pgbackrest --stanza=polaris check >/dev/null 2>&1; then
+        echo "  ✓ pgBackRest stanza ready (archive-push validated)"
+    else
+        echo "  ⚠  pgBackRest stanza-create/check FAILED. Archiving is enabled but the" >&2
+        echo "     repo is not ready — WAL will accumulate on disk until this is fixed." >&2
+        echo "     Check pgbackrest.conf (repo1 path / S3 creds), then re-run:" >&2
+        echo "       docker compose -f ${COMPOSE_FILE} exec postgres pgbackrest --stanza=polaris check" >&2
+    fi
+fi
+
+# ---------------------------------------------------------------------------
 # 6. Smoke test
 # ---------------------------------------------------------------------------
 echo "  [6/7] Smoke test (/api/health)…"

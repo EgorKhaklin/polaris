@@ -1124,10 +1124,29 @@ def check_pgbackrest_scaffolding(root: pathlib.Path) -> list[Finding]:
     if "pgbackrest" not in ci or "restore" not in ci:
         return _fail("pgbackrest",
                      "ci.yml must run a pgBackRest archive+backup+RESTORE round-trip")
+    # v9.130 operational hardening: the deploy auto-bootstraps the stanza when
+    # archiving is enabled (so an operator who enables it but forgets
+    # stanza-create does not silently accumulate WAL until the disk fills).
+    deploy = _read(root, "scripts/polaris-deploy.sh")
+    if "stanza-create" not in deploy or "POLARIS_PGBACKREST_ENABLED" not in deploy:
+        return _fail("pgbackrest",
+                     "polaris-deploy.sh must run stanza-create when POLARIS_PGBACKREST_ENABLED=1 (so "
+                     "archiving enabled-but-unbootstrapped does not fill the disk with WAL)")
+    # docker-init warns loudly if archiving runs against a LOCAL (non-offsite) repo.
+    if not re.search(r"repo1-type.{0,40}s3", init) or "WARNING" not in init:
+        return _fail("pgbackrest",
+                     "docker-init.sh must WARN when archiving is enabled with a local (non-s3) repo "
+                     "(a local repo does not survive host loss)")
+    # The S3 credentials must be guided to a file-mounted secret, NOT compose env.
+    if "conf.d" not in conf and "conf.d" not in dr:
+        return _fail("pgbackrest",
+                     "the S3-credential guidance must use a file-mounted config (conf.d), not compose "
+                     "env literals which leak via docker inspect")
     return _ok("pgbackrest",
                "continuous WAL archiving ships: pgbackrest in the DB image (digest-pinned base) + the "
                "[polaris] stanza, opt-in archive_mode/archive_command, a documented stanza-create + "
-               "restore, and a CI backup+restore round-trip; the offsite S3 repo stays operator-supplied")
+               "restore, a CI backup+restore round-trip, deploy auto-bootstrap, a local-repo warning, "
+               "and file-mounted S3-credential guidance; the offsite S3 repo stays operator-supplied")
 
 
 # ---------------------------------------------------------------------------

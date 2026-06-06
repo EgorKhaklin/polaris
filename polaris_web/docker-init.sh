@@ -196,6 +196,15 @@ if [ "${POLARIS_PGBACKREST_ENABLED:-0}" = "1" ]; then
         -c "ALTER SYSTEM SET wal_level = replica;" \
         -c "ALTER SYSTEM SET max_wal_senders = 10;"
     echo "WAL archiving enabled. Run 'pgbackrest --stanza=polaris stanza-create' + schedule backups (DR.md)."
+    # v9.130 — warn loudly if the repo is LOCAL (no repo1-type=s3). A local repo
+    # on the DB host does not survive host loss, so it is not the offsite
+    # durability an operator enabling archiving usually expects.
+    if ! grep -qE '^[[:space:]]*repo1-type[[:space:]]*=[[:space:]]*s3' \
+            /etc/pgbackrest/pgbackrest.conf 2>/dev/null; then
+        echo "WARNING: pgBackRest archiving is enabled but the repo is LOCAL (no repo1-type=s3)." >&2
+        echo "         A local repo does NOT survive host loss; point repo1 at an offsite S3" >&2
+        echo "         bucket in pgbackrest.conf for real durability (docs/operator/DR.md)." >&2
+    fi
 fi
 
 # Production hardening (BLOCKER): the SQL seed (10_auth.sql) loads three demo
