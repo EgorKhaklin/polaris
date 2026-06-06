@@ -45,8 +45,14 @@ The recommended path:
 ```bash
 ./scripts/polaris-generate-secrets.sh
 # Generates all required secrets in secrets/
-# Sets file permissions to 0600
-# Sets directory permissions to 0700
+# Sets directory permissions to 0700 (the host boundary)
+# File modes: 0600 for secrets only ROOT reads (postgres root + replicator
+#   passwords), 0644 for secrets a NON-ROOT container reads directly (the Flask
+#   secret key, the DB password, the signing key — read by the app/pgbouncer at
+#   uid 1000). 0644 is required because docker compose mounts file secrets with
+#   the source file's perms, and on Linux a 0600 host-owned file is unreadable by
+#   the different-uid container user (the stack will not boot). The 0700 directory
+#   keeps a 0644 file reachable only by the owner host-side.
 ```
 
 This script is idempotent: it refuses to overwrite existing
@@ -58,14 +64,14 @@ For Flask session key (256-bit hex):
 
 ```bash
 openssl rand -hex 32 > secrets/polaris_secret_key
-chmod 0600 secrets/polaris_secret_key
+chmod 0644 secrets/polaris_secret_key
 ```
 
 OR via Python:
 
 ```bash
 python3 -c "import secrets; print(secrets.token_hex(32))" > secrets/polaris_secret_key
-chmod 0600 secrets/polaris_secret_key
+chmod 0644 secrets/polaris_secret_key
 ```
 
 For Postgres passwords (32-char alphanumeric, no special chars
@@ -73,7 +79,7 @@ to avoid shell-quoting issues in connection strings):
 
 ```bash
 LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 32 > secrets/polaris_db_password
-chmod 0600 secrets/polaris_db_password
+chmod 0644 secrets/polaris_db_password
 echo  # add trailing newline if your file expects it
 ```
 
@@ -90,18 +96,24 @@ After generation:
 
 ```bash
 ls -la secrets/
-# All files should be -rw------- (owner-only)
-# Directory should be drwx------ (owner-only)
+# Directory should be drwx------ (0700, owner-only) — this is the host boundary.
+# 0644 (-rw-r--r--): polaris_secret_key, polaris_db_password, polaris_signing_key,
+#   and the TLS certs/keys — read by the non-root app/pgbouncer containers (uid 1000).
+# 0600 (-rw-------): polaris_db_root_password, polaris_replicator_password — read
+#   only by postgres as root during init.
 
 stat -c '%a %n' secrets/* 2>/dev/null || stat -f '%A %N' secrets/*
-# Each should report 600 (file) or 700 (dir)
 ```
 
-If any permission is wrong, fix it:
+If a permission is wrong, fix it (do NOT blanket `chmod 0600 secrets/*` — that
+makes the container-read secrets unreadable by the non-root containers on Linux
+and the stack will not boot):
 
 ```bash
 chmod 0700 secrets/
-chmod 0600 secrets/*
+chmod 0644 secrets/polaris_secret_key secrets/polaris_db_password secrets/polaris_signing_key
+chmod 0600 secrets/polaris_db_root_password secrets/polaris_replicator_password
+# Or simply re-run ./scripts/polaris-generate-secrets.sh which sets them correctly.
 ```
 
 ---
@@ -126,7 +138,8 @@ chmod 0600 secrets/*
 
 What this does:
 1. Generates a new 256-bit hex secret
-2. Writes it to `secrets/polaris_secret_key` (preserves 0600)
+2. Writes it to `secrets/polaris_secret_key` (mode 0644 in the 0700 dir, so the
+   non-root app container can read it; see Verification above)
 3. Restarts the app container only (Postgres + Redis stay running)
 4. Re-runs the smoke test
 5. Reports success or rollback

@@ -45,6 +45,17 @@ gen_hex() {
 write_secret_if_missing() {
     local name="$1"
     local hex_bytes="$2"
+    # v9.140 — the file mode. Secrets a NON-ROOT container reads directly (the app
+    # at uid 1000, pgbouncer at uid 1000) must be 0644: docker compose mounts file
+    # secrets with the SOURCE file's perms (it ignores the secret `mode`/`uid`),
+    # and on Linux a 0600 file owned by the host user is unreadable by the
+    # different-uid container user — pgbouncer then exits "password file
+    # unreadable" and the stack never comes up (found v9.140 by booting the real
+    # prod compose). The 0700 SECRETS_DIR is the host boundary; a 0644 file inside
+    # an owner-only directory is still reachable only by the owner host-side, the
+    # same model v9.131 established for the pgbouncer key. Secrets only ROOT reads
+    # (postgres reads the root + replicator passwords as root during init) stay 0600.
+    local mode="${3:-0600}"
     local target="${SECRETS_DIR}/${name}"
 
     # -s (non-empty), not -e: a 0-byte file from an interrupted prior run must be
@@ -55,19 +66,19 @@ write_secret_if_missing() {
         return 0
     fi
 
-    # Use umask so the file is born 0600 even before chmod.
+    # Use umask so the file is born 0600 even before chmod widens it (if asked).
     ( umask 0177 && gen_hex "${hex_bytes}" > "${target}" )
-    chmod 0600 "${target}"
+    chmod "${mode}" "${target}"
 
     # Verify mode actually took.
-    local mode
-    if mode=$(stat -f '%Lp' "${target}" 2>/dev/null); then :;
-    else mode=$(stat -c '%a' "${target}" 2>/dev/null || echo "?"); fi
-    if [[ "${mode}" != "600" ]]; then
-        echo "  ✗ ${name}  (mode is ${mode}, expected 600 — fix manually)" >&2
+    local got
+    if got=$(stat -f '%Lp' "${target}" 2>/dev/null); then :;
+    else got=$(stat -c '%a' "${target}" 2>/dev/null || echo "?"); fi
+    if [[ "${got}" != "${mode#0}" ]]; then
+        echo "  ✗ ${name}  (mode is ${got}, expected ${mode#0} — fix manually)" >&2
         return 1
     fi
-    echo "  ✓ ${name}  (generated; mode 0600)"
+    echo "  ✓ ${name}  (generated; mode ${mode})"
 }
 
 # v9.116 — the ML-DSA-65 signing keypair. Unlike the hex secrets, this needs
@@ -114,8 +125,11 @@ print(json.dumps(pqc_signing.generate_keypair()))'
         return 1
     fi
     ( umask 0177 && printf '%s\n' "${json}" > "${target}" )
-    chmod 0600 "${target}"
-    echo "  ✓ ${name}  (ML-DSA-65 keypair generated; mode 0600)"
+    # 0644: the app (non-root) loads this signing key via POLARIS_PQC_SIGNING_KEY_FILE.
+    # A 0600 file owned by the host user is unreadable by the uid-1000 container
+    # user on Linux (see write_secret_if_missing); the 0700 dir is the boundary.
+    chmod 0644 "${target}"
+    echo "  ✓ ${name}  (ML-DSA-65 keypair generated; mode 0644)"
 }
 
 # v9.121 — a self-signed TLS server cert for Postgres, so the app<->DB hop is
@@ -181,8 +195,12 @@ cat <<'BANNER'
 
 BANNER
 
-write_secret_if_missing polaris_secret_key       32
-write_secret_if_missing polaris_db_password      24
+# 0644: the app (non-root) reads the Flask secret key; the app AND pgbouncer
+# (both non-root) read the DB password. 0600 would be unreadable by the container
+# user on Linux (see write_secret_if_missing). The root + replicator passwords
+# stay 0600 (postgres reads them as root during init).
+write_secret_if_missing polaris_secret_key       32 0644
+write_secret_if_missing polaris_db_password      24 0644
 write_secret_if_missing polaris_db_root_password 24
 # v9.126 — the streaming-replication role password. Mounted at the postgres
 # container so docker-init.sh creates the polaris_replicator role and a standby

@@ -30,9 +30,21 @@ invisible until the prod stack was booted as a whole.
   instead of ACME, since CI has no public domain), and asserts the stack serves
   `/api/health` end to end with the DB-backed components healthy and postgres
   `ssl=on`. This is the gap that let v9.135 and v9.140 ship; it is now closed.
+- **A second prod-down bug it found: unreadable secrets.** With postgres fixed,
+  the Linux CI boot surfaced another deploy-blocker the macOS boot had hidden:
+  `polaris-generate-secrets.sh` wrote the file-mounted secrets 0600, but docker
+  compose mounts file secrets with the source file's perms (it ignores the secret
+  `mode`/`uid`), so on Linux the non-root app/pgbouncer containers (uid 1000)
+  could not read a 0600 host-owned secret — pgbouncer exited "password file
+  unreadable" and crash-looped. The secrets a non-root container reads
+  (`polaris_secret_key`, `polaris_db_password`, `polaris_signing_key`) are now
+  0644 inside the 0700 dir (the dir is the host boundary, the same model v9.131
+  used for the pgbouncer key); the root-only secrets stay 0600. `SECRETS.md` is
+  corrected so an operator does not `chmod 0600 secrets/*` and re-break it.
 - **Pinned.** `check_prod_stack_boot` (66th check) requires the boot harness
   (`Caddyfile.citest`, `docker-compose.citest.yml`) and a CI job that generates
-  secrets, boots the full prod compose, and probes `/api/health`.
+  secrets, boots the full prod compose, and probes `/api/health`. Because the job
+  boots on a Linux runner with non-root containers, it catches exactly this class.
 
 ## v9.139 — 2026-06-06 (fix a real deploy-blocker: the liboqs banner corrupted the generated signing key)
 
