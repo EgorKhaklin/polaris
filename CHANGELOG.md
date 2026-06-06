@@ -5,6 +5,33 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.139 — 2026-06-06 (fix a real deploy-blocker: the liboqs banner corrupted the generated signing key)
+
+Exercising the full production-stack bring-up found a genuine production bug.
+`polaris-generate-secrets.sh` mints the ML-DSA-65 signing key by capturing the
+stdout of a `python -c "...print(json.dumps(generate_keypair()))"` (run via the
+prod image when liboqs is not local, the common operator path). But liboqs-python
+prints `liboqs-python faulthandler is disabled` to STDOUT at import, so the
+capture prepended that banner to the JSON and wrote a malformed key file. With
+`POLARIS_USE_REAL_PQC=1` (the production default since v9.116), the app then
+refuses to load it (`RuntimeError: ...malformed`), so real-PQC token issuance
+would have been broken on first deploy and only discovered there.
+
+- **Clean capture.** The generator now swallows stdout during the pqc import
+  (`sys.stdout = io.StringIO()`), so no import-time banner can leak into the key
+  JSON. Verified end to end: the regenerated key parses, and the app signs with it
+  (public key matches the trust anchor).
+- **Fail loud, never write a malformed key.** The captured output is now validated
+  to parse as ML-DSA-65 key JSON (both key halves present) before it is written;
+  contamination fails generation rather than shipping a broken key.
+- **Empty files regenerate.** The secret existence guards were `-e` (exists), so a
+  0-byte file from an interrupted prior run silently blocked regeneration and could
+  ship an empty secret. They are now `-s` (non-empty).
+- **Pinned three ways.** `check_signing_key_generation` (65th check) asserts the
+  stdout swallow, the JSON validation, and the `-s` guards; a detection test
+  covers it; and the `pqc-real` CI job now runs the generator's snippet under real
+  liboqs and asserts it emits clean ML-DSA-65 JSON.
+
 ## v9.138 — 2026-06-06 (scan the container images for CVEs, and patch the fixable ones)
 
 A repo-grounded production-readiness gap analysis found a real, standard control

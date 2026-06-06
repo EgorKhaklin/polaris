@@ -71,6 +71,14 @@ left a real foundation. Genuinely sound today:
   `verify_token_signature()` checks a stored signature against the published trust
   anchor (`trust_anchor_public_key_hex()`). Exercised in the `pqc-real` CI job;
   pinned by `check_verify_enforced`.
+- [x] **Signing-key generation produces a loadable key (v9.139).** Found by
+  exercising the prod-stack bring-up: `polaris-generate-secrets.sh` captured a
+  python one-liner's stdout to mint the ML-DSA-65 key, but liboqs prints a banner
+  to stdout at import, corrupting the JSON so the app refused to load it (real-PQC
+  issuance broken at deploy under the `POLARIS_USE_REAL_PQC=1` default). Fixed: the
+  generator swallows stdout during import, validates the JSON before writing, and
+  uses `-s` (non-empty) existence guards. Pinned by `check_signing_key_generation`
+  + a `pqc-real` CI assertion.
 - [x] **Real PQC is the production default (v9.116).** liboqs ships in the prod
   image (built in the Python builder, copied to the runtime), the prod compose
   sets `POLARIS_USE_REAL_PQC=1` and mounts the `polaris_signing_key` secret (the

@@ -47,7 +47,10 @@ write_secret_if_missing() {
     local hex_bytes="$2"
     local target="${SECRETS_DIR}/${name}"
 
-    if [[ -e "${target}" ]]; then
+    # -s (non-empty), not -e: a 0-byte file from an interrupted prior run must be
+    # regenerated, not treated as a real secret. An -e guard silently shipped an
+    # empty secret (found v9.139).
+    if [[ -s "${target}" ]]; then
         echo "  ✓ ${name}  (exists; not overwriting — use polaris-rotate-secret.sh to rotate)"
         return 0
     fi
@@ -75,21 +78,40 @@ write_secret_if_missing() {
 write_signing_key_if_missing() {
     local name="polaris_signing_key"
     local target="${SECRETS_DIR}/${name}"
-    if [[ -e "${target}" ]]; then
+    if [[ -s "${target}" ]]; then
         echo "  ✓ ${name}  (exists; not overwriting — use polaris-rotate-secret.sh to rotate)"
         return 0
     fi
+    # The keypair JSON must be the ONLY thing on stdout. liboqs-python prints a
+    # banner ("liboqs-python faulthandler is disabled") to STDOUT at import; a
+    # naive capture prepends it to the JSON, producing a malformed key file the
+    # app then refuses to load — real-PQC issuance broken at deploy (found v9.139).
+    # We swallow stdout during the import, restore it, then emit only the JSON.
+    local gen_py='import sys, io
+_saved = sys.stdout
+sys.stdout = io.StringIO()
+import pqc_signing
+sys.stdout = _saved
+import json
+print(json.dumps(pqc_signing.generate_keypair()))'
     local json=""
     if python3 -c "import oqs" >/dev/null 2>&1; then
-        json=$(python3 -c "import sys; sys.path.insert(0, '${POLARIS_ROOT}/polaris_web'); import pqc_signing, json; print(json.dumps(pqc_signing.generate_keypair()))" 2>/dev/null || true)
+        json=$(POLARIS_SYS_PATH="${POLARIS_ROOT}/polaris_web" python3 -c "import sys, os; sys.path.insert(0, os.environ['POLARIS_SYS_PATH']); ${gen_py}" 2>/dev/null || true)
     elif command -v docker >/dev/null 2>&1 && docker image inspect polaris-app:prod >/dev/null 2>&1; then
-        json=$(docker run --rm polaris-app:prod python -c "import pqc_signing, json; print(json.dumps(pqc_signing.generate_keypair()))" 2>/dev/null || true)
+        json=$(docker run --rm polaris-app:prod python -c "${gen_py}" 2>/dev/null || true)
     fi
     if [[ -z "${json}" ]]; then
         echo "  ! ${name}  (NOT generated — needs liboqs locally OR the built polaris-app:prod image)"
         echo "      Build the prod image first, or 'pip install liboqs-python', then re-run." >&2
         echo "      (HSM/KMS custody: supply your own ML-DSA-65 key loader instead.)" >&2
         return 0
+    fi
+    # Fail loud rather than write a malformed key: it MUST parse as ML-DSA-65 key
+    # JSON with both halves. This catches any future stdout contamination at
+    # generation time, not at app boot.
+    if ! printf '%s' "${json}" | python3 -c "import sys, json; d=json.load(sys.stdin); assert d.get('algorithm') == 'ML-DSA-65' and d.get('secret_key_hex') and d.get('public_key_hex')" >/dev/null 2>&1; then
+        echo "  ✗ ${name}  (generated output is not valid ML-DSA-65 key JSON — refusing to write a malformed key)" >&2
+        return 1
     fi
     ( umask 0177 && printf '%s\n' "${json}" > "${target}" )
     chmod 0600 "${target}"

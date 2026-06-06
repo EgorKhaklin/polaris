@@ -330,6 +330,45 @@ def check_pqc_signing_wired(root: pathlib.Path) -> list[Finding]:
 
 
 # ---------------------------------------------------------------------------
+# The production signing key MUST be generated as clean JSON. liboqs-python
+# prints a banner to STDOUT at import; polaris-generate-secrets.sh mints the key
+# by capturing a `python -c "...print(json.dumps(generate_keypair()))"` stdout,
+# so a naive capture prepends the banner and produces a malformed key file the
+# app refuses to load — real-PQC issuance broken at deploy (v9.139). Two
+# defenses must be present: the generator swallows stdout during the import (so
+# no banner can leak into the JSON), AND it validates the captured output parses
+# as ML-DSA-65 key JSON before writing (fail loud, never write a malformed key).
+# ---------------------------------------------------------------------------
+def check_signing_key_generation(root: pathlib.Path) -> list[Finding]:
+    sh = _read(root, "scripts/polaris-generate-secrets.sh")
+    if not sh:
+        return _fail("signing_key_gen", "scripts/polaris-generate-secrets.sh is missing")
+    if "generate_keypair" not in sh:
+        return _fail("signing_key_gen",
+                     "polaris-generate-secrets.sh must mint the ML-DSA-65 signing key "
+                     "(pqc_signing.generate_keypair)")
+    # Defense 1: stdout swallowed during import so the liboqs banner cannot leak.
+    if "io.StringIO()" not in sh or "sys.stdout" not in sh:
+        return _fail("signing_key_gen",
+                     "the signing-key generator must swallow stdout during the pqc import "
+                     "(sys.stdout = io.StringIO()) so the liboqs banner cannot corrupt the key JSON")
+    # Defense 2: validate the captured JSON before writing (fail loud).
+    if not re.search(r"json\.load.*algorithm.*ML-DSA-65|ML-DSA-65.*secret_key_hex", sh, re.S):
+        return _fail("signing_key_gen",
+                     "the generator must VALIDATE the captured output is ML-DSA-65 key JSON "
+                     "(algorithm + secret_key_hex + public_key_hex) before writing it")
+    # The existence guards must be -s (non-empty), not -e, so an interrupted run's
+    # 0-byte files are regenerated rather than silently shipped as empty secrets.
+    if re.search(r"\[\[\s*-e\s+\"\$\{target\}\"\s*\]\]", sh):
+        return _fail("signing_key_gen",
+                     "secret existence guards must test -s (non-empty), not -e: a 0-byte file "
+                     "from an interrupted run would silently block regeneration")
+    return _ok("signing_key_gen",
+               "the signing-key generator swallows the import banner, validates the key JSON "
+               "before writing, and regenerates empty files (-s guard)")
+
+
+# ---------------------------------------------------------------------------
 # Real signing core (production-readiness Wave 2) — a signature that nobody can
 # verify against a stable key is theater. pqc_signing must support a PERSISTENT
 # signing key (POLARIS_PQC_SIGNING_KEY_FILE), expose generate_keypair + verify,
@@ -2039,6 +2078,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_zk_two_witness_present,
     check_no_debug_artifacts,
     check_pqc_signing_wired,
+    check_signing_key_generation,
     check_pqc_real_signing,
     check_verify_enforced,
     check_pqc_second_witness,

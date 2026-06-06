@@ -734,6 +734,19 @@ jobs:
           # Runs SecondWitnessTests (skips unless BOTH libs present — they are here).
           python -m unittest test_pqc_signing -v
 
+      # v9.139 — the signing-key GENERATION must emit clean JSON. liboqs prints a
+      # banner to stdout at import; polaris-generate-secrets.sh captures a python
+      # one-liner's stdout to mint the key, so a naive capture corrupts the file
+      # and the app refuses to load it (real-PQC issuance broken at deploy). This
+      # proves the hazard is real AND that the generator's snippet defeats it.
+      - name: Signing-key generation emits clean JSON (no liboqs banner leak)
+        working-directory: polaris_web
+        run: |
+          # The fix polaris-generate-secrets.sh uses: swallow stdout during the
+          # pqc import (so the liboqs banner cannot leak), then emit only the JSON.
+          out=$(python -c 'import sys,io,json; _s=sys.stdout; sys.stdout=io.StringIO(); import pqc_signing; sys.stdout=_s; print(json.dumps(pqc_signing.generate_keypair()))')
+          echo "$out" | python -c "import sys, json; d=json.load(sys.stdin); assert d['algorithm']=='ML-DSA-65' and d['secret_key_hex'] and d['public_key_hex']; print('signing-key generation snippet emits clean ML-DSA-65 JSON')"
+
   # --------------------------------------------------------------------------
   # Dependency CVE scan. The dependency surface was pinned but never audited —
   # a known CVE in a pinned package would ship silently. This GATES on the

@@ -106,6 +106,45 @@ def test_pqc_wired_check_fails_when_issuance_bypasses_signing_module(tmp_path):
     assert out2[0].level == "FAIL", "must FAIL when the procedure does not accept p_signature_bytes"
 
 
+def test_signing_key_generation_check_discriminates(tmp_path):
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    sh = scripts / "polaris-generate-secrets.sh"
+
+    GOOD = (
+        "write_signing_key_if_missing() {\n"
+        "  if [[ -s \"${target}\" ]]; then return 0; fi\n"
+        "  gen_py='import sys, io\\n_saved=sys.stdout\\nsys.stdout = io.StringIO()\\n"
+        "import pqc_signing\\nsys.stdout=_saved\\nimport json\\nprint(json.dumps(pqc_signing.generate_keypair()))'\n"
+        "  json=$(docker run --rm polaris-app:prod python -c \"${gen_py}\")\n"
+        "  printf '%s' \"$json\" | python3 -c \"import sys,json; d=json.load(sys.stdin); "
+        "assert d.get('algorithm')=='ML-DSA-65' and d.get('secret_key_hex') and d.get('public_key_hex')\"\n"
+        "}\n")
+
+    # 1. Naive capture (no stdout swallow, no validation) -> FAIL.
+    sh.write_text("write() {\n  json=$(docker run polaris-app:prod python -c "
+                  "\"import pqc_signing, json; print(json.dumps(pqc_signing.generate_keypair()))\")\n}\n")
+    assert checks.check_signing_key_generation(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the generator does not swallow the import banner"
+
+    # 2. Swallows stdout but does NOT validate the JSON -> FAIL.
+    sh.write_text("g() {\n  sys.stdout = io.StringIO()\n"
+                  "  json=$(docker run polaris-app:prod python -c \"import pqc_signing, json; "
+                  "print(json.dumps(pqc_signing.generate_keypair()))\")\n}\n")
+    assert checks.check_signing_key_generation(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the captured key JSON is not validated before writing"
+
+    # 3. Uses -e existence guard (empty files silently block regeneration) -> FAIL.
+    sh.write_text(GOOD.replace('[[ -s "${target}" ]]', '[[ -e "${target}" ]]'))
+    assert checks.check_signing_key_generation(tmp_path)[0].level == "FAIL", \
+        "must FAIL when an existence guard uses -e instead of -s"
+
+    # 4. Swallows banner + validates + -s guard -> OK.
+    sh.write_text(GOOD)
+    assert checks.check_signing_key_generation(tmp_path)[0].level == "OK", \
+        "must PASS when the generator swallows the banner, validates, and uses -s"
+
+
 def test_c2_zk_null_check_fails_without_constraint(tmp_path):
     (tmp_path / "polaris_sql").mkdir()
     (tmp_path / "polaris_sql" / "01_schema.sql").write_text(
