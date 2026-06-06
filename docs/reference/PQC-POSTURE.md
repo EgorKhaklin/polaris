@@ -10,9 +10,11 @@ ledger. Nothing here asserts production-readiness.
 ## Scope
 
 Polaris's thesis is a "post-quantum identity system." That thesis holds for the
-identity TOKEN and its proofs. It does not yet hold for the TRANSPORT that
-carries tokens or for the OPERATOR-AUTH that gates the console. This document
-separates those layers without softening either side.
+identity TOKEN and its proofs, and as of v9.136 for the client-to-edge TRANSPORT
+key exchange with modern clients (hybrid X25519MLKEM768, proven off a real
+handshake). It does not yet hold for the two INTERNAL transport hops, for the
+certificate signatures, or for the OPERATOR-AUTH that gates the console. This
+document separates those layers without softening either side.
 
 The reference standards are NIST FIPS 203 (ML-KEM), FIPS 204 (ML-DSA), and FIPS
 205 (SLH-DSA), all final as of 2024-08-13, and the NIST IR 8547 transition draft
@@ -63,20 +65,45 @@ post-quantum or post-quantum-acceptable.
   HMAC-SHA3-256.** Symmetric and hash primitives at adequate bit-width. The only
   PQC-sensitive part of a session is how a symmetric key is established over the
   wire, which is a transport concern, addressed below.
+- **Client-to-edge TLS key exchange: X25519MLKEM768 hybrid, for modern clients
+  (v9.136).** The self-built Caddy edge (v9.135), built with a Go 1.24+ TLS stack
+  (the version where X25519MLKEM768 is offered by default), negotiates the hybrid
+  post-quantum group X25519MLKEM768 with any client that offers it. What is
+  PROVEN: a real TLS 1.3 handshake against the edge negotiates
+  `Negotiated TLS1.3 group: X25519MLKEM768`, both when the client forces the group
+  AND with the client's default groups; this is read off the wire locally and
+  asserted by the `caddy-edge` CI job on every push. So the SERVER offers and
+  selects the hybrid by default. Whether a given real browser gets it is then a
+  grounded inference: any client whose default supported_groups include
+  X25519MLKEM768 (current Chrome and Firefox, OpenSSL 3.5+, Go 1.24+) negotiates
+  post-quantum key exchange with no special configuration. A client offering only
+  classical X25519 still completes the handshake (verified), so by TLS group
+  selection it necessarily negotiates classical X25519, with no post-quantum
+  protection. The negotiated KEX group is independent of the certificate, so the
+  production Let's Encrypt path negotiates the same group as the `tls internal`
+  test in CI. This closes harvest-now-decrypt-later for connections from modern
+  (ML-KEM-capable) clients, on the only hop that carries live external content.
+  The hybrid is safe if EITHER X25519 or ML-KEM-768 holds. Caveat: the group is
+  negotiated OPPORTUNISTICALLY and cannot be required without breaking pre-ML-KEM
+  clients, so harvest-now-decrypt-later exposure persists for any connection that
+  does not negotiate ML-KEM (old clients, or an active downgrade of the offered
+  groups).
 
 ## What is still classical
 
 These surfaces are classical and quantum-vulnerable today. The threat differs by
 surface, and the realistic exposure is bounded but real.
 
-- **TLS key exchange on all three hops (client to Caddy edge, app to pgbouncer,
-  pgbouncer to postgres): classical ECDHE/DHE, no hybrid ML-KEM.** Threat:
-  harvest-now-decrypt-later. An adversary recording ciphertext today could
-  decrypt it once a cryptographically relevant quantum computer exists. Exposure:
-  the two internal hops carry only notional data, so the payoff there is near nil;
-  the client-to-edge hop is the only one carrying live request content, and
-  Polaris is a reference implementation, not a deployed registry. This is the most
-  time-sensitive category on the NIST clock.
+- **TLS key exchange on the two INTERNAL hops (app to pgbouncer, pgbouncer to
+  postgres): classical ECDHE, no hybrid ML-KEM.** The client-to-edge hop is now
+  hybrid post-quantum (see above); these two internal hops are not. The limiting
+  factor is pgbouncer: its image is on OpenSSL 3.3.7, which predates ML-KEM (added
+  in OpenSSL 3.5); postgres itself is already on OpenSSL 3.5.6, so the pooler is
+  what holds the internal hops at classical. Threat: harvest-now-decrypt-later.
+  Exposure: these hops carry only notional data inside the deployment trust
+  boundary, so the payoff is near nil. Closing them is gated on rebuilding
+  pgbouncer against an OpenSSL 3.5+ base and confirming both ends offer ML-KEM
+  groups.
 - **Edge certificate signature (Let's Encrypt CA, RSA 2048 or ECDSA P-256):
   classical, Shor-breakable forgery.** Exposure: the standard public-PKI gap
   shared by most of the classical web. The algorithm is chosen by the CA, not the
@@ -121,9 +148,9 @@ Status maps to the NIST IR 8547 timeline (deprecate classical public-key after
 | HMAC-SHA3-256 (CSRF compare) | session | PQ_SECURE | Inherits hash security; constant-time compare. No item. |
 | SHA-256 (recovery-code digest) | hashing | REDUCED_BUT_OK | Classical SHA-2 but a hash, not public-key; ~128-bit quantum preimage. No deadline. Acceptable as-is. |
 | ECDSA/EdDSA/RSA (WebAuthn MFA) | webauthn | MIGRATE_BY_2035 | Classical, Shor-breakable. Key is client-side authenticator, never sent, so no HNDL. Migration gated on FIDO/hardware, not Polaris. |
-| TLS ECDHE/DHE (client to edge) | kex_transport | MIGRATE_BY_2030 | Classical KEX, HNDL. Hybrid X25519MLKEM768 recommended now. Highest-priority transport gap. |
-| TLS ECDHE/DHE (app to pgbouncer) | kex_transport | MIGRATE_BY_2030 | Classical KEX, HNDL. Internal hop, notional data; payoff near nil. Operator-gated hybrid path. |
-| TLS ECDHE/DHE (pgbouncer to postgres) | kex_transport | MIGRATE_BY_2030 | Classical KEX, HNDL. Internal hop, notional data. Operator-gated. |
+| X25519MLKEM768 hybrid (client to edge) | kex_transport | PQ_SECURE (modern clients) | Hybrid PQ KEX, server offers + selects it by default (proven off a real handshake, forced + default; asserted by the caddy-edge CI job). Closes HNDL for connections from modern (ML-KEM-capable) clients; old clients negotiate classical X25519 (no PQ). Opportunistic, not required. Safe if either X25519 or ML-KEM-768 holds. |
+| TLS ECDHE (app to pgbouncer) | kex_transport | MIGRATE_BY_2030 | Classical KEX, HNDL. Internal hop, notional data; payoff near nil. Gated on pgbouncer OpenSSL 3.3.7 < 3.5 (no ML-KEM). |
+| TLS ECDHE (pgbouncer to postgres) | kex_transport | MIGRATE_BY_2030 | Classical KEX, HNDL. Internal hop, notional data. Gated on pgbouncer OpenSSL 3.3.7; postgres is already 3.5.6. |
 | RSA 2048 + SHA-256 (internal self-signed certs) | cert_signature | MIGRATE_BY_2035 | Classical, Shor-breakable forgery, ~112-bit. Pinned, inside trust boundary. Migrate to ML-DSA or SLH-DSA when the stack verifies PQC chains. |
 | RSA 2048 / ECDSA P-256 (Let's Encrypt CA) | cert_signature | MIGRATE_BY_2035 | Classical, Shor-breakable forgery. CA chooses the algorithm; gated on public-PKI rollout. |
 
@@ -132,13 +159,16 @@ Status maps to the NIST IR 8547 timeline (deprecate classical public-key after
 Prioritized and aligned to the NIST clock. Items below P1 are operator-gated or
 third-party-gated and are future work, not current defects.
 
-1. **P1, client-to-edge TLS hybrid KEX.** Offer X25519MLKEM768 at the Caddy TLS
-   layer once the stack exposes it. Hybrid runs classical and ML-KEM-768
-   concurrently so the session is safe if either holds. Addresses
-   harvest-now-decrypt-later on the only hop with live content. NIST: classical
-   KEX deprecated after 2030, disallowed after 2035; hybrid recommended now.
+1. **P1, client-to-edge TLS hybrid KEX. DONE (v9.135 + v9.136).** The self-built
+   Caddy edge (Go 1.24+ TLS stack) negotiates X25519MLKEM768 with modern clients,
+   proven off a real handshake and asserted by the caddy-edge CI job. Hybrid runs
+   classical and ML-KEM-768 concurrently so the session is safe if either holds.
+   This closed harvest-now-decrypt-later for modern clients on the only hop with
+   live content. Old clients still fall back to classical X25519 (opportunistic,
+   not required).
 2. **P2, internal-hop TLS hybrid KEX.** Enable hybrid ML-KEM on the
-   app/pgbouncer/postgres hops if and when pgbouncer and the driver support it.
+   app/pgbouncer/postgres hops. Concretely gated on rebuilding pgbouncer against
+   an OpenSSL 3.5+ base (currently 3.3.7, no ML-KEM); postgres is already 3.5.6.
    Lower urgency: notional data only. NIST: same 2030/2035 clock.
 3. **P3, internal self-signed cert signatures.** Reissue with ML-DSA (FIPS 204),
    or SLH-DSA (FIPS 205, hash-based) for a non-lattice root, once OpenSSL verifies
@@ -162,10 +192,13 @@ third-party-gated and are future work, not current defects.
 
 This is an audit of a notional, educational reference system. The data is
 non-real. The honest summary is that the identity token at the center of Polaris
-is post-quantum, while the transport that carries it and the operator
-authentication that gates it are still classical, and the realistic exposure of
-those classical surfaces is bounded by the notional data, the client-side custody
-of the WebAuthn key, and the third-party gating of WebAuthn and public-PKI
-migration. Nothing here claims production-readiness; for the operational ledger
-see [../PRODUCTION-READINESS.md](../PRODUCTION-READINESS.md), and for the
-constitutional scope see [../../MISSION.md](../../MISSION.md).
+is post-quantum, and as of v9.136 so is the client-to-edge transport key exchange
+for modern clients (hybrid X25519MLKEM768, proven off a real handshake and
+asserted by the caddy-edge CI job), while the two internal transport hops, the
+certificate signatures, and the operator authentication that gates the console
+are still classical. The realistic exposure of those classical
+surfaces is bounded by the notional data, the internal-only reach of the internal
+hops, the client-side custody of the WebAuthn key, and the third-party gating of
+WebAuthn and public-PKI migration. Nothing here claims production-readiness; for
+the operational ledger see [../PRODUCTION-READINESS.md](../PRODUCTION-READINESS.md),
+and for the constitutional scope see [../../MISSION.md](../../MISSION.md).

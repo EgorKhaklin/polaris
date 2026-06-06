@@ -491,6 +491,43 @@ def check_pqc_posture(root: pathlib.Path) -> list[Finding]:
 
 
 # ---------------------------------------------------------------------------
+# A post-quantum CLAIM must not drift ahead of its PROOF. The posture audit
+# (v9.136) states the client-to-edge TLS hop negotiates the hybrid PQ group
+# X25519MLKEM768. That positive security claim is only honest while CI actually
+# reads it off a real handshake: this check fails if the doc names the hybrid
+# group but the caddy-edge CI job does not prove the negotiation. (The empirical
+# v9.136 review flagged exactly this drift risk: an unproven "proven in CI".)
+# ---------------------------------------------------------------------------
+def check_edge_pq_kex(root: pathlib.Path) -> list[Finding]:
+    doc = _read(root, "docs/reference/PQC-POSTURE.md")
+    if not doc:
+        return _fail("edge_pq_kex", "docs/reference/PQC-POSTURE.md is missing")
+    GROUP = "X25519MLKEM768"
+    if GROUP not in doc:
+        # The doc makes no edge-PQ-KEX claim; nothing to pin.
+        return _ok("edge_pq_kex",
+                   "the posture audit makes no edge hybrid-KEX claim; nothing to pin")
+    ci = _read(root, ".github/workflows/ci.yml")
+    if not ci or GROUP not in ci:
+        return _fail("edge_pq_kex",
+                     "PQC-POSTURE.md claims the edge negotiates %s, but CI does not prove it; "
+                     "the caddy-edge job must read the negotiated group off a real handshake" % GROUP)
+    # The CI must ASSERT the negotiation, not merely mention the group name. Require
+    # both the negotiated-group read and a hard failure when it is absent.
+    if "Negotiated TLS1.3 group" not in ci:
+        return _fail("edge_pq_kex",
+                     "the caddy-edge job must read 'Negotiated TLS1.3 group' off a real TLS 1.3 "
+                     "handshake (not merely name the group) to prove the edge PQ-KEX claim")
+    if not re.search(r"grep -q '%s'" % re.escape(GROUP), ci):
+        return _fail("edge_pq_kex",
+                     "the caddy-edge job must GATE on the negotiated group being %s "
+                     "(a grep -q assertion), so the claim cannot pass without the proof" % GROUP)
+    return _ok("edge_pq_kex",
+               "the edge hybrid-KEX claim (%s) is backed by the caddy-edge CI job, which asserts "
+               "the negotiated group off a real handshake" % GROUP)
+
+
+# ---------------------------------------------------------------------------
 # The issuer public key is stored WITH each signature (TokenSignature.
 # signing_public_key_hex) so verification at use is self-contained — no live
 # key-file lookup, and it survives key rotation. This pins the whole wiring:
@@ -1957,6 +1994,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_verify_enforced,
     check_pqc_second_witness,
     check_pqc_posture,
+    check_edge_pq_kex,
     check_signature_self_contained_verify,
     check_prod_real_pqc,
     check_sql_console_readonly,

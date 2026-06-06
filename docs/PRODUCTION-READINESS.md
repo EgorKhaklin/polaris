@@ -97,6 +97,13 @@ left a real foundation. Genuinely sound today:
   hashing, and ZK proof are post-quantum; TLS key exchange, the cert signatures,
   and WebAuthn operator MFA are still classical, with the realistic exposure of
   each stated plainly. Pinned by `check_pqc_posture`.
+- [x] **Post-quantum edge key exchange, proven (v9.136).** The audit's
+  highest-priority transport gap (P1) is closed: the self-built Caddy edge
+  negotiates the hybrid PQ group X25519MLKEM768 with modern clients, proven off a
+  real TLS 1.3 handshake (forced + default) and asserted by the `caddy-edge` CI
+  job. Opportunistic (classical fallback for old clients), adversarially reviewed
+  for overclaim. The two internal hops stay classical, gated on pgbouncer's
+  OpenSSL (3.3.7 < 3.5). Pinned by `check_edge_pq_kex`.
 
 **Wave 2 (cryptographic core) is complete.** The remaining PQC items (hybrid TLS
 KEX, PQC certs, PQC WebAuthn) are operator-gated or third-party-gated; see the

@@ -5,6 +5,40 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.136 — 2026-06-06 (proven: the client-to-edge TLS hop does post-quantum hybrid key exchange)
+
+The v9.134 audit called the client-to-edge TLS hop classical. Continuing down the
+honest path, I tested it instead of assuming, and it was wrong in our favor: the
+self-built Caddy edge (v9.135, Go 1.24+ TLS stack) negotiates the hybrid
+post-quantum group X25519MLKEM768. This closes the audit's P1 gap (the
+highest-priority transport item) with proof, not inference.
+
+- **Proven off a real handshake.** Booting the edge with `tls internal` and
+  connecting with an OpenSSL 3.5 client, the negotiated group is
+  `X25519MLKEM768`, both when the client forces it AND with the client's default
+  groups (so the server offers and selects the hybrid by default). A classical
+  X25519-only client still completes the handshake, so it negotiates classical
+  X25519. The KEX group is cert-independent, so the production Let's Encrypt path
+  negotiates the same group as the test. A new `caddy-edge` CI step asserts all of
+  this on every push.
+- **Honest scope (adversarially reviewed).** A review panel checked the claim for
+  overclaim and caught real qualification gaps, all fixed: the protection is
+  OPPORTUNISTIC (the edge cannot require the hybrid without breaking pre-ML-KEM
+  clients), so harvest-now-decrypt-later is closed only for connections from
+  modern clients; old clients and active group-downgrade keep classical exposure.
+  The gap-table status is `PQ_SECURE (modern clients)`, not unconditional. The
+  toolchain claim is "Go 1.24+" (what the build supports), not a precise version
+  the build does not pin.
+- **The internal hops stay classical, precisely.** The audit now records that the
+  two internal hops (app to pgbouncer, pgbouncer to postgres) remain classical
+  because pgbouncer's image is on OpenSSL 3.3.7 (ML-KEM landed in 3.5); postgres
+  is already on 3.5.6, so the pooler is the limiter. P2 is gated on rebuilding
+  pgbouncer against an OpenSSL 3.5+ base.
+- **Pinned.** `check_edge_pq_kex` (63rd check) keeps the claim honest: if
+  `PQC-POSTURE.md` names the hybrid group, the `caddy-edge` CI job must read the
+  negotiated group off a real handshake and gate on it. The doc can never drift
+  ahead of the proof.
+
 ## v9.135 — 2026-06-06 (the production TLS edge actually starts: self-built Caddy with the rate_limit plugin)
 
 The prod stack's TLS front door would not come up. The Caddyfile uses the

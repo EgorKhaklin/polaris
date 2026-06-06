@@ -965,6 +965,51 @@ def test_caddy_self_built_check_discriminates(tmp_path):
         "must PASS for a self-built edge with the plugin compiled in and CI validation"
 
 
+def test_edge_pq_kex_check_discriminates(tmp_path):
+    ref = tmp_path / "docs" / "reference"
+    ref.mkdir(parents=True)
+    doc = ref / "PQC-POSTURE.md"
+    gh = tmp_path / ".github" / "workflows"
+    gh.mkdir(parents=True)
+    ci = gh / "ci.yml"
+
+    CLAIM_DOC = "## edge\nThe edge negotiates X25519MLKEM768 hybrid KEX.\n"
+    PROOF_CI = ("jobs:\n  caddy-edge:\n    steps:\n      run: |\n"
+                "        g=$(openssl s_client ... | grep -i 'Negotiated TLS1.3 group')\n"
+                "        echo \"$g\" | grep -q 'X25519MLKEM768' || exit 1\n")
+
+    # 1. Doc makes NO edge-KEX claim -> OK (nothing to pin).
+    doc.write_text("## edge\nThe edge uses classical ECDHE.\n")
+    ci.write_text("jobs:\n  x:\n    steps:\n      run: echo hi\n")
+    assert checks.check_edge_pq_kex(tmp_path)[0].level == "OK", \
+        "must PASS (nothing to pin) when the doc makes no hybrid-KEX claim"
+
+    # 2. Doc CLAIMS the hybrid group but CI never mentions it -> FAIL.
+    doc.write_text(CLAIM_DOC)
+    ci.write_text("jobs:\n  x:\n    steps:\n      run: echo hi\n")
+    assert checks.check_edge_pq_kex(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the doc claims the hybrid KEX but CI does not prove it"
+
+    # 3. CI names the group but never reads the negotiated group -> FAIL.
+    doc.write_text(CLAIM_DOC)
+    ci.write_text("jobs:\n  x:\n    steps:\n      run: echo X25519MLKEM768 is great\n")
+    assert checks.check_edge_pq_kex(tmp_path)[0].level == "FAIL", \
+        "must FAIL when CI mentions the group but does not read the negotiated group"
+
+    # 4. CI reads the group but does not GATE on it (no grep -q assertion) -> FAIL.
+    doc.write_text(CLAIM_DOC)
+    ci.write_text("jobs:\n  x:\n    steps:\n      run: |\n"
+                  "        echo X25519MLKEM768; echo 'Negotiated TLS1.3 group: x'\n")
+    assert checks.check_edge_pq_kex(tmp_path)[0].level == "FAIL", \
+        "must FAIL when CI does not gate on the negotiated group"
+
+    # 5. Doc claims it AND CI proves + gates on it -> OK.
+    doc.write_text(CLAIM_DOC)
+    ci.write_text(PROOF_CI)
+    assert checks.check_edge_pq_kex(tmp_path)[0].level == "OK", \
+        "must PASS when the doc claim is backed by a gating CI handshake proof"
+
+
 def test_sast_scanning_check_discriminates(tmp_path):
     gh = tmp_path / ".github" / "workflows"
     gh.mkdir(parents=True)
