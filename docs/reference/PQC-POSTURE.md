@@ -96,14 +96,20 @@ surface, and the realistic exposure is bounded but real.
 
 - **TLS key exchange on the two INTERNAL hops (app to pgbouncer, pgbouncer to
   postgres): classical ECDHE, no hybrid ML-KEM.** The client-to-edge hop is now
-  hybrid post-quantum (see above); these two internal hops are not. The limiting
-  factor is pgbouncer: its image is on OpenSSL 3.3.7, which predates ML-KEM (added
-  in OpenSSL 3.5); postgres itself is already on OpenSSL 3.5.6, so the pooler is
-  what holds the internal hops at classical. Threat: harvest-now-decrypt-later.
-  Exposure: these hops carry only notional data inside the deployment trust
-  boundary, so the payoff is near nil. Closing them is gated on rebuilding
-  pgbouncer against an OpenSSL 3.5+ base and confirming both ends offer ML-KEM
-  groups.
+  hybrid post-quantum (see above); these two internal hops are not, and the
+  limiter is not a single component. ML-KEM requires OpenSSL 3.5 on both ends of a
+  hop. Measured versions: the app's libpq is OpenSSL 3.0.20 (Debian Bookworm
+  base), pgbouncer is OpenSSL 3.3.7 (Alpine 3.20 base), and postgres is OpenSSL
+  3.5.6 (Alpine 3.23 base). So the app-to-pgbouncer hop is held classical by BOTH
+  ends (the app's libpq 3.0.20 as client and pgbouncer 3.3.7 as server, the app's
+  Bookworm libpq being the older limiter), and the pgbouncer-to-postgres hop is
+  held classical by pgbouncer 3.3.7 as the client (postgres at 3.5.6 is already
+  capable). Threat: harvest-now-decrypt-later. Exposure: these hops carry only
+  notional data inside the deployment trust boundary, so the payoff is near nil.
+  Closing both hops is gated on rebuilding the app image on an OpenSSL 3.5+ base
+  (Debian Trixie or equivalent) AND pgbouncer on an OpenSSL 3.5+ base, then
+  confirming both ends of each hop negotiate ML-KEM. Low priority given the
+  notional, internal-only exposure.
 - **Edge certificate signature (Let's Encrypt CA, RSA 2048 or ECDSA P-256):
   classical, Shor-breakable forgery.** Exposure: the standard public-PKI gap
   shared by most of the classical web. The algorithm is chosen by the CA, not the
@@ -149,8 +155,8 @@ Status maps to the NIST IR 8547 timeline (deprecate classical public-key after
 | SHA-256 (recovery-code digest) | hashing | REDUCED_BUT_OK | Classical SHA-2 but a hash, not public-key; ~128-bit quantum preimage. No deadline. Acceptable as-is. |
 | ECDSA/EdDSA/RSA (WebAuthn MFA) | webauthn | MIGRATE_BY_2035 | Classical, Shor-breakable. Key is client-side authenticator, never sent, so no HNDL. Migration gated on FIDO/hardware, not Polaris. |
 | X25519MLKEM768 hybrid (client to edge) | kex_transport | PQ_SECURE (modern clients) | Hybrid PQ KEX, server offers + selects it by default (proven off a real handshake, forced + default; asserted by the caddy-edge CI job). Closes HNDL for connections from modern (ML-KEM-capable) clients; old clients negotiate classical X25519 (no PQ). Opportunistic, not required. Safe if either X25519 or ML-KEM-768 holds. |
-| TLS ECDHE (app to pgbouncer) | kex_transport | MIGRATE_BY_2030 | Classical KEX, HNDL. Internal hop, notional data; payoff near nil. Gated on pgbouncer OpenSSL 3.3.7 < 3.5 (no ML-KEM). |
-| TLS ECDHE (pgbouncer to postgres) | kex_transport | MIGRATE_BY_2030 | Classical KEX, HNDL. Internal hop, notional data. Gated on pgbouncer OpenSSL 3.3.7; postgres is already 3.5.6. |
+| TLS ECDHE (app to pgbouncer) | kex_transport | MIGRATE_BY_2030 | Classical KEX, HNDL. Internal hop, notional data; payoff near nil. Gated on BOTH ends < OpenSSL 3.5: app libpq 3.0.20 (Bookworm) and pgbouncer 3.3.7 (Alpine 3.20). |
+| TLS ECDHE (pgbouncer to postgres) | kex_transport | MIGRATE_BY_2030 | Classical KEX, HNDL. Internal hop, notional data. Gated on pgbouncer 3.3.7 (client); postgres is already OpenSSL 3.5.6. |
 | RSA 2048 + SHA-256 (internal self-signed certs) | cert_signature | MIGRATE_BY_2035 | Classical, Shor-breakable forgery, ~112-bit. Pinned, inside trust boundary. Migrate to ML-DSA or SLH-DSA when the stack verifies PQC chains. |
 | RSA 2048 / ECDSA P-256 (Let's Encrypt CA) | cert_signature | MIGRATE_BY_2035 | Classical, Shor-breakable forgery. CA chooses the algorithm; gated on public-PKI rollout. |
 
@@ -167,9 +173,13 @@ third-party-gated and are future work, not current defects.
    live content. Old clients still fall back to classical X25519 (opportunistic,
    not required).
 2. **P2, internal-hop TLS hybrid KEX.** Enable hybrid ML-KEM on the
-   app/pgbouncer/postgres hops. Concretely gated on rebuilding pgbouncer against
-   an OpenSSL 3.5+ base (currently 3.3.7, no ML-KEM); postgres is already 3.5.6.
-   Lower urgency: notional data only. NIST: same 2030/2035 clock.
+   app/pgbouncer/postgres hops. Concretely gated on rebuilding TWO images on an
+   OpenSSL 3.5+ base: the app (libpq 3.0.20 on Debian Bookworm) and pgbouncer
+   (3.3.7 on Alpine 3.20); postgres is already 3.5.6. Both ends of a hop need 3.5+,
+   so the app-to-pgbouncer hop needs both rebuilt. Lower urgency: notional data
+   inside the trust boundary. The app base bump (Bookworm to Trixie or a 3.13
+   image) is a deliberate refresh with its own regression surface, not a quick
+   swap. NIST: same 2030/2035 clock.
 3. **P3, internal self-signed cert signatures.** Reissue with ML-DSA (FIPS 204),
    or SLH-DSA (FIPS 205, hash-based) for a non-lattice root, once OpenSSL verifies
    PQC chains. Most self-controllable cert gap. NIST: deprecate 2030, disallow

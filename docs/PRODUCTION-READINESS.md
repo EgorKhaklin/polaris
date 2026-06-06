@@ -102,8 +102,9 @@ left a real foundation. Genuinely sound today:
   negotiates the hybrid PQ group X25519MLKEM768 with modern clients, proven off a
   real TLS 1.3 handshake (forced + default) and asserted by the `caddy-edge` CI
   job. Opportunistic (classical fallback for old clients), adversarially reviewed
-  for overclaim. The two internal hops stay classical, gated on pgbouncer's
-  OpenSSL (3.3.7 < 3.5). Pinned by `check_edge_pq_kex`.
+  for overclaim. The two internal hops stay classical, gated on OpenSSL below 3.5
+  at both ends (measured v9.137: app libpq 3.0.20 on Bookworm, pgbouncer 3.3.7;
+  postgres is already 3.5.6). Pinned by `check_edge_pq_kex`.
 
 **Wave 2 (cryptographic core) is complete.** The remaining PQC items (hybrid TLS
 KEX, PQC certs, PQC WebAuthn) are operator-gated or third-party-gated; see the

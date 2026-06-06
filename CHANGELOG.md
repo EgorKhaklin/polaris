@@ -5,6 +5,25 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.137 — 2026-06-06 (precision: the internal-hop PQ gate is measured, and it is two limiters not one)
+
+A small honesty correction to the v9.134/v9.136 audit, grounded in measurement.
+The audit credited pgbouncer as "the" limiter holding the two internal TLS hops
+classical. Measuring the actual OpenSSL versions of every component shows that is
+incomplete: ML-KEM needs OpenSSL 3.5 on both ends of a hop, and the app's libpq
+is OpenSSL 3.0.20 (Debian Bookworm base), pgbouncer is 3.3.7 (Alpine 3.20), and
+postgres is already 3.5.6 (Alpine 3.23). So the app-to-pgbouncer hop is held
+classical by BOTH ends, with the app's Bookworm libpq the older limiter, not just
+the pooler. The doc, gap table, and roadmap P2 now state this precisely: closing
+the internal hops needs TWO image base bumps (the app and pgbouncer), and the app
+bump (Bookworm to Trixie or a 3.13 image) is a deliberate refresh with its own
+regression surface, low priority given the notional, internal-only exposure.
+
+This also records the honest conclusion of probing the next buildable transport
+item: the internal-hop PQ KEX (audit P2) is gated on base-image upgrades and is
+low value (notional data inside the trust boundary), not a quick win. No code
+change; the security claim is simply made more accurate.
+
 ## v9.136 — 2026-06-06 (proven: the client-to-edge TLS hop does post-quantum hybrid key exchange)
 
 The v9.134 audit called the client-to-edge TLS hop classical. Continuing down the
