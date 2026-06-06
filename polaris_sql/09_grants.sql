@@ -86,7 +86,11 @@ DECLARE
         -- v9.89: a consumed ZK anti-replay nonce must never be un-consumed
         -- (deleting it re-opens the replay window). polaris_app INSERTs to
         -- consume; it must not UPDATE/DELETE.
-        'zkverificationnonce'
+        'zkverificationnonce',
+        -- v9.125: the right-to-erasure log. polaris_app INSERTs an erasure
+        -- record (via uc_pseudonymize_individual) but must not edit or remove
+        -- one, or the erasure log could be made to lie about what happened.
+        'individualerasureevent'
     ];
 BEGIN
     FOREACH v_tbl IN ARRAY v_append_only_tables LOOP

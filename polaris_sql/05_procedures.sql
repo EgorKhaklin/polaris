@@ -1706,3 +1706,102 @@ COMMENT ON PROCEDURE uc_archive_purge IS
     'path for DELETE against audit tables. Enforces: cutoff-in-past + '
     'SHA-256 format + admin-role actor. Writes LifecycleArchiveCheckpoint '
     'in the same transaction. Reference: a recorded decision.';
+
+
+-- ============================================================================
+-- uc_pseudonymize_individual (v9.125): the right-to-erasure mechanism.
+--
+-- Polaris cannot DELETE a holder (C1 is non-negotiable; see PRIVACY.md "Right
+-- to erasure (limited)"). The supported erasure is to pseudonymize the holder's
+-- legal_name: the Individual row stays (so the audit trail and token bindings
+-- that reference individual_id remain whole and non-repudiable), the plaintext
+-- name is replaced by a deterministic 'PSEUDONYMIZED-<id>' marker, and the act
+-- is recorded in the append-only IndividualErasureEvent.
+--
+-- This is NOT SECURITY DEFINER: polaris_app legitimately holds UPDATE on the
+-- mutable Individual table and INSERT on the append-only event table, so no
+-- elevation is needed (unlike uc_archive_purge, which DELETEs append-only rows
+-- polaris_app cannot touch). The actor is still authenticated by parameter and
+-- must be an admin, as defense in depth. The procedure issues NO DELETE — it
+-- cannot be a covert deletion path.
+-- ============================================================================
+CREATE OR REPLACE PROCEDURE uc_pseudonymize_individual(
+    p_individual_id   INTEGER,
+    p_actor_user_id   INTEGER,
+    p_reason          VARCHAR(200)
+)
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_actor_role   VARCHAR(64);
+    v_actor_active BOOLEAN;
+    v_current_name VARCHAR(200);
+    v_already      INTEGER;
+    v_pseudonym    VARCHAR(200) := 'PSEUDONYMIZED-' || p_individual_id;
+BEGIN
+    -- 1. The individual must exist.
+    SELECT legal_name INTO v_current_name
+        FROM Individual WHERE individual_id = p_individual_id;
+    IF v_current_name IS NULL THEN
+        RAISE EXCEPTION 'uc_pseudonymize_individual: individual_id (%) does not exist.',
+            p_individual_id
+            USING ERRCODE = 'foreign_key_violation';
+    END IF;
+
+    -- 2. The actor must exist, be an admin, AND be active (a deactivated admin
+    --    account must not be able to erase).
+    SELECT role, is_active INTO v_actor_role, v_actor_active
+        FROM AppUser WHERE user_id = p_actor_user_id;
+    IF v_actor_role IS NULL THEN
+        RAISE EXCEPTION 'uc_pseudonymize_individual: actor_user_id (%) does not exist.',
+            p_actor_user_id
+            USING ERRCODE = 'foreign_key_violation';
+    END IF;
+    IF v_actor_role <> 'admin' THEN
+        RAISE EXCEPTION 'uc_pseudonymize_individual: actor_user_id (%) has role %, must be admin.',
+            p_actor_user_id, v_actor_role
+            USING ERRCODE = 'insufficient_privilege';
+    END IF;
+    IF v_actor_active IS NOT TRUE THEN
+        RAISE EXCEPTION 'uc_pseudonymize_individual: actor_user_id (%) is not an active account.',
+            p_actor_user_id
+            USING ERRCODE = 'insufficient_privilege';
+    END IF;
+
+    -- 3. A non-empty reason is required (the legal/policy basis).
+    IF p_reason IS NULL OR char_length(trim(p_reason)) = 0 THEN
+        RAISE EXCEPTION 'uc_pseudonymize_individual: a non-empty reason is required.'
+            USING ERRCODE = 'check_violation';
+    END IF;
+
+    -- 4. Refuse to double-erase. Check the AUTHORITATIVE log, not the current
+    --    name: legal_name has no format constraint beyond non-empty, so a
+    --    holder whose real name happens to equal the pseudonym template must
+    --    not be wrongly refused a first, legitimate erasure.
+    SELECT count(*) INTO v_already
+        FROM IndividualErasureEvent WHERE individual_id = p_individual_id;
+    IF v_already > 0 THEN
+        RAISE EXCEPTION 'uc_pseudonymize_individual: individual_id (%) is already pseudonymized (% prior record(s)).',
+            p_individual_id, v_already
+            USING ERRCODE = 'check_violation';
+    END IF;
+
+    -- 5. Pseudonymize the name (a legitimate UPDATE on the mutable Individual).
+    UPDATE Individual
+        SET legal_name = v_pseudonym
+        WHERE individual_id = p_individual_id;
+
+    -- 6. Record the act in the append-only erasure log (who/when/why, NOT what).
+    --    No RAISE NOTICE: the IndividualErasureEvent row is the authoritative
+    --    record; re-emitting id/actor/reason to the server log would write them
+    --    to a less-controlled sink, against the erasure intent.
+    INSERT INTO IndividualErasureEvent
+        (individual_id, pseudonym_assigned, erased_by_user_id, reason)
+    VALUES
+        (p_individual_id, v_pseudonym, p_actor_user_id, trim(p_reason));
+END$$;
+
+COMMENT ON PROCEDURE uc_pseudonymize_individual IS
+    'v9.125 right-to-erasure mechanism (PRIVACY.md). Pseudonymizes '
+    'Individual.legal_name to PSEUDONYMIZED-<id> and records the act in the '
+    'append-only IndividualErasureEvent. Admin-gated by parameter; issues no '
+    'DELETE; the row and all audit/token references survive (non-repudiation).';

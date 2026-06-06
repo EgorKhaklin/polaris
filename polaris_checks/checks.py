@@ -109,6 +109,9 @@ def check_aor_privilege_boundary(root: pathlib.Path) -> list[Finding]:
     base_tables = [
         "tokenlifecycleevent", "verificationevent", "enrollmentstatusevent",
         "anchorbatch", "tokenstateepochleaf", "duressevent", "authauditlog",
+        # v9.125: the right-to-erasure log is append-only (the record that an
+        # erasure happened must not be editable or removable).
+        "individualerasureevent",
     ]
     if not re.search(r"REVOKE\s+UPDATE\s*,\s*DELETE", grants, re.I):
         return _fail("c1_aor_priv",
@@ -900,6 +903,58 @@ def check_encryption_at_rest_posture(root: pathlib.Path) -> list[Finding]:
 
 
 # ---------------------------------------------------------------------------
+# Right-to-erasure mechanism (v9.125). Polaris cannot delete a holder (C1), so
+# erasure = pseudonymize Individual.legal_name and record the act in the
+# append-only IndividualErasureEvent. Two things must hold for this to respect
+# the audit: (1) the procedure must NOT issue a DELETE (it must not become a
+# covert deletion path around C1), and (2) the erasure log must be append-only
+# (its REVOKE is checked by check_aor_privilege_boundary; here we assert the
+# table + procedure + trigger exist and the PRIVACY doc points at the real
+# mechanism rather than describing a capability that does not ship).
+# ---------------------------------------------------------------------------
+def check_erasure_procedure(root: pathlib.Path) -> list[Finding]:
+    schema = _read(root, "polaris_sql/01_schema.sql")
+    proc = _read(root, "polaris_sql/05_procedures.sql")
+    triggers = _read(root, "polaris_sql/06_triggers.sql")
+    privacy = _read(root, "docs/operator/PRIVACY.md")
+    if not (schema and proc and triggers):
+        return _fail("erasure", "a SQL file for the erasure mechanism is missing")
+    if "IndividualErasureEvent" not in schema:
+        return _fail("erasure",
+                     "01_schema.sql must declare IndividualErasureEvent (the append-only erasure log)")
+    m = re.search(r"CREATE\s+OR\s+REPLACE\s+PROCEDURE\s+uc_pseudonymize_individual\b.*?END\$\$;",
+                  proc, re.I | re.S)
+    if not m:
+        return _fail("erasure", "05_procedures.sql must define uc_pseudonymize_individual")
+    body = m.group(0)
+    # The whole point: it pseudonymizes the NAME and must NOT delete anything.
+    if not (re.search(r"UPDATE\s+Individual", body, re.I) and "legal_name" in body):
+        return _fail("erasure",
+                     "uc_pseudonymize_individual must UPDATE Individual.legal_name (pseudonymize)")
+    if "INSERT INTO IndividualErasureEvent" not in body:
+        return _fail("erasure",
+                     "uc_pseudonymize_individual must record the act in IndividualErasureEvent")
+    if re.search(r"\bDELETE\b", body, re.I):
+        return _fail("erasure",
+                     "uc_pseudonymize_individual must issue NO DELETE — it must not be a covert "
+                     "deletion path around C1 (erasure pseudonymizes, it does not delete)")
+    if "must be admin" not in body:
+        return _fail("erasure", "uc_pseudonymize_individual must be admin-gated (actor role check)")
+    if "trg_erasure_append_only" not in triggers:
+        return _fail("erasure",
+                     "06_triggers.sql must attach the append-only trigger to IndividualErasureEvent")
+    # The PRIVACY doc must point at the real procedure, not just describe a policy.
+    if "uc_pseudonymize_individual" not in privacy:
+        return _fail("erasure",
+                     "PRIVACY.md must reference uc_pseudonymize_individual (the doc must point at the "
+                     "real mechanism, not describe a capability that does not ship)")
+    return _ok("erasure",
+               "right-to-erasure ships: uc_pseudonymize_individual pseudonymizes legal_name (admin-"
+               "gated, no DELETE) and records it in the append-only IndividualErasureEvent; PRIVACY.md "
+               "points at it")
+
+
+# ---------------------------------------------------------------------------
 # The connection pooler must not depend on a third-party image that can vanish.
 # bitnami/pgbouncer:1.22 was removed from Docker Hub when Bitnami retired their
 # free catalogue (Aug 2025), leaving the prod stack unable to pull its pooler.
@@ -1530,6 +1585,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_alert_rules,
     check_alert_runbooks,
     check_encryption_at_rest_posture,
+    check_erasure_procedure,
     check_pgbouncer_self_built,
     check_app_db_tls,
     check_correlation_id,

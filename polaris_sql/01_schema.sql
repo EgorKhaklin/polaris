@@ -747,6 +747,38 @@ COMMENT ON TABLE EnrollmentStatusEvent IS
   '(EXEMPT frictionless, NOT_ENROLLED-enumeration deliberate).';
 
 -- ----------------------------------------------------------------------------
+-- IndividualErasureEvent: append-only log of right-to-erasure pseudonymizations
+-- (v9.125 / PRODUCTION-READINESS Wave 3, docs/operator/PRIVACY.md "Right to
+-- erasure (limited)"). Polaris CANNOT delete a holder (C1 is non-negotiable);
+-- the supported erasure is to pseudonymize Individual.legal_name (the row stays,
+-- the name is replaced). The pseudonymization is itself an auditable act, so it
+-- is recorded here. This table deliberately stores NEITHER the prior name nor a
+-- hash of it: the record is THAT erasure happened (who, when, why), not WHAT was
+-- erased — storing the prior value (or a brute-forceable hash) would defeat the
+-- erasure. Append-only invariant enforced by extending reject_audit_modification
+-- (see 06_triggers.sql); polaris_app loses UPDATE/DELETE (09_grants.sql). The
+-- only writer is uc_pseudonymize_individual (05_procedures.sql).
+-- coverage:exempt — C1 AoR enforced by trg_erasure_append_only; tested in test_app.py::ErasureTests
+CREATE TABLE IndividualErasureEvent (
+    erasure_id          SERIAL       PRIMARY KEY,
+    individual_id       INTEGER      NOT NULL REFERENCES Individual(individual_id),
+    pseudonym_assigned  VARCHAR(200) NOT NULL,
+    erased_by_user_id   INTEGER      NOT NULL REFERENCES AppUser(user_id),
+    reason              VARCHAR(200) NOT NULL
+        CHECK (char_length(trim(reason)) >= 1),
+    event_timestamp     TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_erasure_individual ON IndividualErasureEvent(individual_id);
+
+COMMENT ON TABLE IndividualErasureEvent IS
+  'Append-only log of right-to-erasure pseudonymizations (v9.125). One row per '
+  'time an operator pseudonymizes an Individual.legal_name via '
+  'uc_pseudonymize_individual. Records who/when/why, NOT the prior name or a '
+  'hash of it (storing either would defeat the erasure). The append-only '
+  'invariant is enforced by reject_audit_modification; see PRIVACY.md.';
+
+-- ----------------------------------------------------------------------------
 -- RecoveryRequest: out-of-band recovery ceremony for catastrophic-loss
 -- scenarios (R11-2 / M2-7). When a holder loses ALL of their tokens AND
 -- devices simultaneously (the case PDF §9.1 names), this table records the

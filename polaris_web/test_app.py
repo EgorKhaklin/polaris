@@ -7153,6 +7153,128 @@ class CorrelationIdTests(UnauthenticatedTestCase):
                              'the correlation id must never reach the audit-of-record (vocation)')
 
 
+class ErasureTests(PolarisTestCase):
+    """v9.125 — right-to-erasure (uc_pseudonymize_individual).
+
+    Erasure pseudonymizes Individual.legal_name and records the act in the
+    append-only IndividualErasureEvent. It must respect C1: the append-only
+    audit and the token bindings survive, and the procedure must never delete.
+    """
+
+    def _ids(self):
+        conn = psycopg2.connect(**DB_CONFIG)
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT user_id FROM AppUser WHERE role='admin' ORDER BY user_id LIMIT 1")
+                admin = cur.fetchone()[0]
+                cur.execute("SELECT user_id FROM AppUser WHERE role<>'admin' ORDER BY user_id LIMIT 1")
+                nonadmin = cur.fetchone()[0]
+                cur.execute("SELECT individual_id FROM Individual ORDER BY individual_id LIMIT 1")
+                ind = cur.fetchone()[0]
+            return admin, nonadmin, ind
+        finally:
+            conn.close()
+
+    def test_pseudonymize_replaces_name_and_records_event(self):
+        admin, _, ind = self._ids()
+        conn = psycopg2.connect(**DB_CONFIG)
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT count(*) FROM TokenLifecycleEvent")
+                lifecycle_before = cur.fetchone()[0]
+                cur.execute("SELECT count(*) FROM IdentityToken WHERE individual_id=%s", (ind,))
+                tokens_before = cur.fetchone()[0]
+
+                cur.execute("CALL uc_pseudonymize_individual(%s, %s, %s)",
+                            (ind, admin, 'GDPR Art 17 request'))
+                conn.commit()
+
+                # The name is replaced by the deterministic marker.
+                cur.execute("SELECT legal_name FROM Individual WHERE individual_id=%s", (ind,))
+                self.assertEqual(cur.fetchone()[0], 'PSEUDONYMIZED-%d' % ind)
+                # The act is recorded, with the reason, NOT the prior name.
+                cur.execute("SELECT reason, pseudonym_assigned FROM IndividualErasureEvent "
+                            "WHERE individual_id=%s", (ind,))
+                row = cur.fetchone()
+                self.assertEqual(row[0], 'GDPR Art 17 request')
+                self.assertEqual(row[1], 'PSEUDONYMIZED-%d' % ind)
+                # C1: the append-only audit is UNTOUCHED.
+                cur.execute("SELECT count(*) FROM TokenLifecycleEvent")
+                self.assertEqual(cur.fetchone()[0], lifecycle_before,
+                                 'erasure must not touch the append-only audit')
+                # The holder row + its token bindings survive (non-repudiation).
+                cur.execute("SELECT count(*) FROM IdentityToken WHERE individual_id=%s", (ind,))
+                self.assertEqual(cur.fetchone()[0], tokens_before,
+                                 'erasure must not delete the holder or its tokens')
+        finally:
+            conn.close()
+
+    def test_erasure_log_is_append_only(self):
+        admin, _, ind = self._ids()
+        conn = psycopg2.connect(**DB_CONFIG)
+        try:
+            with conn.cursor() as cur:
+                cur.execute("CALL uc_pseudonymize_individual(%s, %s, %s)", (ind, admin, 'r'))
+                conn.commit()
+            # The erasure record cannot be edited...
+            with conn.cursor() as cur:
+                with self.assertRaises(psycopg2.Error):
+                    cur.execute("UPDATE IndividualErasureEvent SET reason='tamper' "
+                                "WHERE individual_id=%s", (ind,))
+            conn.rollback()
+            # ...nor removed.
+            with conn.cursor() as cur:
+                with self.assertRaises(psycopg2.Error):
+                    cur.execute("DELETE FROM IndividualErasureEvent WHERE individual_id=%s", (ind,))
+            conn.rollback()
+        finally:
+            conn.close()
+
+    def test_double_pseudonymize_rejected(self):
+        admin, _, ind = self._ids()
+        conn = psycopg2.connect(**DB_CONFIG)
+        try:
+            with conn.cursor() as cur:
+                cur.execute("CALL uc_pseudonymize_individual(%s, %s, %s)", (ind, admin, 'first'))
+                conn.commit()
+            with conn.cursor() as cur:
+                with self.assertRaises(psycopg2.Error):
+                    cur.execute("CALL uc_pseudonymize_individual(%s, %s, %s)", (ind, admin, 'again'))
+            conn.rollback()
+        finally:
+            conn.close()
+
+    def test_non_admin_actor_rejected(self):
+        _, nonadmin, ind = self._ids()
+        conn = psycopg2.connect(**DB_CONFIG)
+        try:
+            with conn.cursor() as cur:
+                with self.assertRaises(psycopg2.Error):
+                    cur.execute("CALL uc_pseudonymize_individual(%s, %s, %s)", (ind, nonadmin, 'x'))
+            conn.rollback()
+            # And the name was NOT changed (the failed CALL rolled back).
+            with conn.cursor() as cur:
+                cur.execute("SELECT legal_name FROM Individual WHERE individual_id=%s", (ind,))
+                self.assertNotEqual(cur.fetchone()[0], 'PSEUDONYMIZED-%d' % ind)
+        finally:
+            conn.close()
+
+    def test_inactive_admin_rejected(self):
+        # A deactivated admin account must not be able to erase (defense in depth).
+        admin, _, ind = self._ids()
+        conn = psycopg2.connect(**DB_CONFIG)
+        try:
+            with conn.cursor() as cur:
+                cur.execute("UPDATE AppUser SET is_active=FALSE WHERE user_id=%s", (admin,))
+                conn.commit()
+            with conn.cursor() as cur:
+                with self.assertRaises(psycopg2.Error):
+                    cur.execute("CALL uc_pseudonymize_individual(%s, %s, %s)", (ind, admin, 'x'))
+            conn.rollback()
+        finally:
+            conn.close()
+
+
 if __name__ == '__main__':
     # Pull in property-based invariant tests (C1, C2, C3) so they run as
     # part of the main suite. The import is at the bottom so test_app.py

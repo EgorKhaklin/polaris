@@ -243,7 +243,8 @@ def test_aor_privilege_boundary_check_discriminates(tmp_path):
     mig = sql / "migrations"
     mig.mkdir(parents=True)
     base_tables = ("tokenlifecycleevent verificationevent enrollmentstatusevent "
-                   "anchorbatch tokenstateepochleaf duressevent authauditlog")
+                   "anchorbatch tokenstateepochleaf duressevent authauditlog "
+                   "individualerasureevent")
 
     def write(grants, mig_revoke, proc_definer):
         (sql / "09_grants.sql").write_text(grants)
@@ -1137,6 +1138,64 @@ def test_encryption_at_rest_posture_check_discriminates(tmp_path):
     (op / "ENCRYPTION-AT-REST.md").unlink()
     assert checks.check_encryption_at_rest_posture(tmp_path)[0].level == "FAIL", \
         "must FAIL when the posture doc is absent"
+
+
+def test_erasure_procedure_check_discriminates(tmp_path):
+    sql = tmp_path / "polaris_sql"
+    op = tmp_path / "docs" / "operator"
+    sql.mkdir(parents=True)
+    op.mkdir(parents=True)
+    GOOD_SCHEMA = "CREATE TABLE IndividualErasureEvent (erasure_id SERIAL);\n"
+    GOOD_TRIG = "CREATE TRIGGER trg_erasure_append_only BEFORE UPDATE OR DELETE ON IndividualErasureEvent\n"
+    GOOD_PRIVACY = "Erasure is real: uc_pseudonymize_individual pseudonymizes legal_name.\n"
+    GOOD_PROC = (
+        "CREATE OR REPLACE PROCEDURE uc_pseudonymize_individual(p_id INTEGER, p_actor INTEGER, p_reason VARCHAR)\n"
+        "LANGUAGE plpgsql AS $$\n"
+        "BEGIN\n"
+        "    IF v_role <> 'admin' THEN RAISE EXCEPTION 'must be admin'; END IF;\n"
+        "    UPDATE Individual SET legal_name = 'PSEUDONYMIZED' WHERE individual_id = p_id;\n"
+        "    INSERT INTO IndividualErasureEvent (individual_id) VALUES (p_id);\n"
+        "END$$;\n"
+    )
+
+    def write(schema=GOOD_SCHEMA, proc=GOOD_PROC, trig=GOOD_TRIG, privacy=GOOD_PRIVACY):
+        (sql / "01_schema.sql").write_text(schema)
+        (sql / "05_procedures.sql").write_text(proc)
+        (sql / "06_triggers.sql").write_text(trig)
+        (op / "PRIVACY.md").write_text(privacy)
+
+    # 1. fully wired -> OK.
+    write()
+    assert checks.check_erasure_procedure(tmp_path)[0].level == "OK", \
+        "must PASS the complete erasure wiring"
+
+    # 2. no erasure-log table -> FAIL.
+    write(schema="-- no table here\n")
+    assert checks.check_erasure_procedure(tmp_path)[0].level == "FAIL", \
+        "must FAIL without the IndividualErasureEvent table"
+
+    # 3. procedure issues a DELETE (covert deletion path around C1) -> FAIL.
+    write(proc=GOOD_PROC.replace(
+        "INSERT INTO IndividualErasureEvent (individual_id) VALUES (p_id);",
+        "DELETE FROM Individual WHERE individual_id = p_id;\n"
+        "    INSERT INTO IndividualErasureEvent (individual_id) VALUES (p_id);"))
+    assert checks.check_erasure_procedure(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the procedure can DELETE (it must only pseudonymize)"
+
+    # 4. procedure is not admin-gated -> FAIL.
+    write(proc=GOOD_PROC.replace("must be admin", "anyone may"))
+    assert checks.check_erasure_procedure(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the procedure is not admin-gated"
+
+    # 5. the erasure log is not append-only (no trigger) -> FAIL.
+    write(trig="-- no erasure trigger\n")
+    assert checks.check_erasure_procedure(tmp_path)[0].level == "FAIL", \
+        "must FAIL when IndividualErasureEvent has no append-only trigger"
+
+    # 6. PRIVACY.md does not point at the real mechanism -> FAIL.
+    write(privacy="Erasure is theoretically possible.\n")
+    assert checks.check_erasure_procedure(tmp_path)[0].level == "FAIL", \
+        "must FAIL when PRIVACY.md does not reference uc_pseudonymize_individual"
 
 
 def test_prod_real_pqc_check_discriminates(tmp_path):

@@ -86,7 +86,7 @@ probe broadly.
   read identity records without leaving an AuditAccessLog row
 
 ### Database layer
-- All 27 tables
+- All 28 tables
 - All UC stored procedures
 - All triggers (especially append-only ones; adversary attempts
   to DELETE/UPDATE on `TokenLifecycleEvent`, `VerificationEvent`,

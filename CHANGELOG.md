@@ -5,6 +5,41 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.125 — 2026-06-05 (production-readiness: right-to-erasure that respects the audit)
+
+PRIVACY.md said pseudonymizing a holder's name was "operationally supported,"
+but nothing implemented it. This ships the mechanism, designed so erasure cannot
+become a path around C1 (the append-only audit) or around non-repudiation.
+
+- **`uc_pseudonymize_individual(individual_id, actor_user_id, reason)`.** Replaces
+  `Individual.legal_name` with a deterministic `PSEUDONYMIZED-<id>` marker. The
+  Individual row stays, so every audit and token reference to its `individual_id`
+  remains whole. It is gated to an ACTIVE admin by parameter and issues NO
+  `DELETE` (it is not SECURITY DEFINER and cannot be a covert deletion path). It
+  refuses to double-erase by consulting the authoritative `IndividualErasureEvent`
+  log (not the current name, which has no format constraint), and it writes no
+  server-log line about the holder (the DB row is the record).
+- **`IndividualErasureEvent`, append-only.** The pseudonymization is itself
+  audit-of-record: a row records who erased, when, and why — but deliberately
+  NOT the prior name or a hash of it (storing either would defeat the erasure).
+  The table joins the append-only set: the `reject_audit_modification` trigger
+  rejects UPDATE/DELETE, and `09_grants.sql` REVOKEs them from `polaris_app`
+  (the v9.85 boundary, so even the GUC carve-out cannot reach it).
+- **Operator entry point.** `scripts/polaris-pseudonymize-individual.sh`
+  validates argv (numeric ids; the reason is SQL-literal-escaped) and calls the
+  procedure. PRIVACY.md now points at the real mechanism.
+- **Proven + pinned.** `ErasureTests` (DB-backed) proves the name is replaced,
+  the act is recorded, the append-only audit and token bindings are untouched,
+  the erasure log rejects UPDATE/DELETE, and double-erase + non-admin are
+  refused. `check_erasure_procedure` (55th check) pins the wiring and that the
+  procedure never DELETEs; `check_aor_privilege_boundary` now covers the new
+  table. Schema is 28 tables (docs reconciled). A four-axis adversarial review
+  (C1-bypass, Vocation-leak, injection/privilege, correctness) hardened the
+  double-erase guard, added the active-admin check, and dropped the server-log
+  line before ship; its name-leak "blockers" were verified false (the marker
+  carries only the non-secret structural `individual_id`, and no table copies
+  `legal_name`).
+
 ## v9.124 — 2026-06-05 (production-readiness, wave 3: the at-rest posture, documented and pinned)
 
 The last agent-buildable Wave 3 item. Polaris encrypts backups (v9.102) and the

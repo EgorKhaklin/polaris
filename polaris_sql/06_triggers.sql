@@ -146,6 +146,16 @@ CREATE TRIGGER trg_enrollment_event_append_only
     FOR EACH ROW
     EXECUTE FUNCTION reject_audit_modification();
 
+-- v9.125 — extend the append-only invariant to IndividualErasureEvent. The
+-- record that a holder's name was pseudonymized is itself audit-of-record: if
+-- an erasure row could be edited or removed, the erasure log could be made to
+-- lie about whether (and by whom) an erasure happened. Once written, it stands.
+DROP TRIGGER IF EXISTS trg_erasure_append_only ON IndividualErasureEvent;
+CREATE TRIGGER trg_erasure_append_only
+    BEFORE UPDATE OR DELETE ON IndividualErasureEvent
+    FOR EACH ROW
+    EXECUTE FUNCTION reject_audit_modification();
+
 -- v8.21 / R10-2 / M2-2 — extend the append-only invariant to AnchorBatch.
 -- The Merkle-log commitment is by definition immutable: rewriting the
 -- merkle_root would break every inclusion proof issued against it.

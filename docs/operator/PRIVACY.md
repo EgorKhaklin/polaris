@@ -184,6 +184,16 @@ Polaris does NOT support deleting holder data. The audit invariant
 - Anonymize `Individual.legal_name` to a pseudonym (the row stays;
   the name is replaced) — this is operationally supported
 
+The pseudonymization is a real, shipped mechanism (v9.125): the stored
+procedure `uc_pseudonymize_individual(individual_id, actor_user_id, reason)`
+replaces `legal_name` with a `PSEUDONYMIZED-<id>` marker and records the act
+in the append-only `IndividualErasureEvent` (who, when, why — never the prior
+name or a hash of it, which would defeat the erasure). It is admin-gated and
+issues no `DELETE`, so it cannot become a path around C1. Operators invoke it
+via `scripts/polaris-pseudonymize-individual.sh`. The Individual row and every
+audit/token reference to its `individual_id` survive, preserving
+non-repudiation; only the plaintext name is gone.
+
 The architectural inability to delete is itself a privacy claim of
 a kind: Polaris cannot be coerced into "disappearing" a person's
 identity history. This is intentional; without it, the system
