@@ -36,11 +36,17 @@ invisible until the prod stack was booted as a whole.
   compose mounts file secrets with the source file's perms (it ignores the secret
   `mode`/`uid`), so on Linux the non-root app/pgbouncer containers (uid 1000)
   could not read a 0600 host-owned secret — pgbouncer exited "password file
-  unreadable" and crash-looped. The secrets a non-root container reads
-  (`polaris_secret_key`, `polaris_db_password`, `polaris_signing_key`) are now
-  0644 inside the 0700 dir (the dir is the host boundary, the same model v9.131
-  used for the pgbouncer key); the root-only secrets stay 0600. `SECRETS.md` is
-  corrected so an operator does not `chmod 0600 secrets/*` and re-break it.
+  unreadable" and crash-looped, and with that fixed postgres's docker-init (which
+  runs as the non-root postgres user) could not `cp` the 0600 server key
+  ("Permission denied") and silently skipped replication readiness. EVERY secret a
+  non-root container process reads is now 0644 inside the 0700 dir (the dir is the
+  host boundary, the same model v9.131 used for the pgbouncer key):
+  `polaris_secret_key`, `polaris_db_password`, `polaris_signing_key`,
+  `polaris_replicator_password`, and `postgres_server.key`. Only
+  `polaris_db_root_password` stays 0600 (the postgres entrypoint reads it as root).
+  `SECRETS.md` is corrected so an operator does not `chmod 0600 secrets/*` and
+  re-break it. macOS Docker Desktop uid-maps bind mounts, which hid all of this;
+  the Linux CI boot found each layer.
 - **Pinned.** `check_prod_stack_boot` (66th check) requires the boot harness
   (`Caddyfile.citest`, `docker-compose.citest.yml`) and a CI job that generates
   secrets, boots the full prod compose, and probes `/api/health`. Because the job

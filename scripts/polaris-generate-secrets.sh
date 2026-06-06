@@ -153,8 +153,14 @@ write_postgres_cert_if_missing() {
     ( umask 0077 && openssl req -new -x509 -days 825 -nodes \
         -subj "/CN=postgres" -out "${crt}" -keyout "${key}" >/dev/null 2>&1 )
     chmod 0644 "${crt}"
-    chmod 0600 "${key}"
-    echo "  ✓ postgres_server.crt/.key  (self-signed TLS cert generated; key 0600)"
+    # 0644: docker-init.sh runs as the NON-ROOT postgres user (uid 70) and must
+    # read this mounted key to copy it into the data dir (where it chmods the COPY
+    # 0600, the perms postgres requires for the ACTIVE key). On Linux a 0600
+    # host-owned mount source is unreadable by the postgres user, so docker-init's
+    # `cp` failed "Permission denied" and postgres crash-looped (found v9.140). The
+    # 0700 secrets dir is the host boundary; the live key in the data dir is 0600.
+    chmod 0644 "${key}"
+    echo "  ✓ postgres_server.crt/.key  (self-signed TLS cert generated; key 0644 mount / 0600 live)"
 }
 
 # v9.131 — a STABLE self-signed cert pgbouncer presents to the app, so the app
@@ -205,8 +211,10 @@ write_secret_if_missing polaris_db_root_password 24
 # v9.126 — the streaming-replication role password. Mounted at the postgres
 # container so docker-init.sh creates the polaris_replicator role and a standby
 # can clone with `pg_basebackup` (see docs/operator/FAILOVER.md). The standby
-# host itself is operator-supplied.
-write_secret_if_missing polaris_replicator_password 24
+# host itself is operator-supplied. 0644: docker-init.sh reads it as the non-root
+# postgres user; a 0600 host-owned mount source is unreadable on Linux, so the
+# replication-readiness block was silently skipped (the `-r` guard fails closed).
+write_secret_if_missing polaris_replicator_password 24 0644
 write_signing_key_if_missing
 write_postgres_cert_if_missing
 write_pgbouncer_cert_if_missing

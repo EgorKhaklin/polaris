@@ -98,9 +98,11 @@ After generation:
 ls -la secrets/
 # Directory should be drwx------ (0700, owner-only) — this is the host boundary.
 # 0644 (-rw-r--r--): polaris_secret_key, polaris_db_password, polaris_signing_key,
-#   and the TLS certs/keys — read by the non-root app/pgbouncer containers (uid 1000).
-# 0600 (-rw-------): polaris_db_root_password, polaris_replicator_password — read
-#   only by postgres as root during init.
+#   polaris_replicator_password, and the TLS certs/keys — read by NON-ROOT
+#   container processes (the app/pgbouncer at uid 1000; postgres's docker-init runs
+#   as the postgres user and reads the replicator password + copies the server key).
+# 0600 (-rw-------): polaris_db_root_password only — read by the postgres entrypoint
+#   as root before it drops privileges.
 
 stat -c '%a %n' secrets/* 2>/dev/null || stat -f '%A %N' secrets/*
 ```
@@ -111,8 +113,11 @@ and the stack will not boot):
 
 ```bash
 chmod 0700 secrets/
-chmod 0644 secrets/polaris_secret_key secrets/polaris_db_password secrets/polaris_signing_key
-chmod 0600 secrets/polaris_db_root_password secrets/polaris_replicator_password
+chmod 0644 secrets/polaris_secret_key secrets/polaris_db_password \
+           secrets/polaris_signing_key secrets/polaris_replicator_password \
+           secrets/postgres_server.crt secrets/postgres_server.key \
+           secrets/pgbouncer_server.crt secrets/pgbouncer_server.key
+chmod 0600 secrets/polaris_db_root_password
 # Or simply re-run ./scripts/polaris-generate-secrets.sh which sets them correctly.
 ```
 
