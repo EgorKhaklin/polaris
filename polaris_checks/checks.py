@@ -1214,13 +1214,31 @@ def check_app_db_tls(root: pathlib.Path) -> list[Finding]:
         return _fail("app_db_tls",
                      "DB_CONFIG must set a configurable sslmode (POLARIS_DB_SSLMODE) — psycopg2's "
                      "'prefer' default silently falls back to plaintext")
-    if not re.search(r"POLARIS_DB_SSLMODE:\s*require", compose):
+    # v9.131 — the app must support pinning the pgbouncer cert (sslrootcert) so a
+    # verify-ca/verify-full deployment can validate the peer, not just encrypt.
+    if "sslrootcert" not in app or "POLARIS_DB_SSLROOTCERT" not in app:
         return _fail("app_db_tls",
-                     "the prod compose must set POLARIS_DB_SSLMODE=require (encrypt app<->pgbouncer)")
-    if "PGBOUNCER_SERVER_TLS_SSLMODE" not in compose or "PGBOUNCER_CLIENT_TLS_SSLMODE" not in compose:
+                     "DB_CONFIG must support pinning the peer cert via POLARIS_DB_SSLROOTCERT "
+                     "(sslrootcert) — verify-ca needs the CA/cert, not just encryption")
+    # Both hops VERIFY the pinned self-signed certs (not merely encrypt): the app
+    # pins pgbouncer (verify-ca + sslrootcert), pgbouncer pins postgres
+    # (server_tls verify-ca + ca_file). 'require' (encrypt only) is the v9.121
+    # floor; v9.131 raised the prod default to verify-ca.
+    if not re.search(r"POLARIS_DB_SSLMODE:\s*verify-ca", compose):
         return _fail("app_db_tls",
-                     "the prod compose must enable pgbouncer server_tls + client_tls (both DB hops "
-                     "encrypted)")
+                     "the prod compose must set POLARIS_DB_SSLMODE=verify-ca (pin pgbouncer's cert, "
+                     "not just encrypt the app<->pgbouncer hop)")
+    if "POLARIS_DB_SSLROOTCERT" not in compose:
+        return _fail("app_db_tls",
+                     "the prod compose must set POLARIS_DB_SSLROOTCERT to pgbouncer's pinned cert")
+    if not re.search(r"PGBOUNCER_SERVER_TLS_SSLMODE:\s*verify-ca", compose):
+        return _fail("app_db_tls",
+                     "the prod compose must set PGBOUNCER_SERVER_TLS_SSLMODE=verify-ca (pin postgres's "
+                     "cert on the pgbouncer<->postgres hop)")
+    if "PGBOUNCER_SERVER_TLS_CA_FILE" not in compose or "PGBOUNCER_CLIENT_TLS_CERT_FILE" not in compose:
+        return _fail("app_db_tls",
+                     "the prod compose must wire the pinned CA (server_tls_ca_file) + a stable "
+                     "client cert (client_tls_cert_file) for verify-ca")
     if "ALTER SYSTEM SET ssl" not in init:
         return _fail("app_db_tls",
                      "docker-init.sh must enable Postgres TLS (ALTER SYSTEM SET ssl = on) from the "
@@ -1228,9 +1246,14 @@ def check_app_db_tls(root: pathlib.Path) -> list[Finding]:
     if "server_tls_sslmode" not in entry or "client_tls_sslmode" not in entry:
         return _fail("app_db_tls",
                      "pgbouncer-entrypoint.sh must wire server_tls + client_tls")
+    if "server_tls_ca_file" not in entry:
+        return _fail("app_db_tls",
+                     "pgbouncer-entrypoint.sh must wire server_tls_ca_file (the pinned postgres CA for "
+                     "verify-ca on the backend hop)")
     return _ok("app_db_tls",
-               "the app<->DB path is TLS-encrypted on both hops (app<->pgbouncer client_tls + "
-               "pgbouncer<->postgres server_tls); sslmode configurable, 'prefer' for dev")
+               "the app<->DB path is TLS on both hops AND verifies the pinned self-signed certs "
+               "(app verify-ca pins pgbouncer; pgbouncer server_tls verify-ca pins postgres) — a MITM "
+               "with a different cert is rejected; verify-full + a real CA stays the operator's upgrade")
 
 
 # ---------------------------------------------------------------------------

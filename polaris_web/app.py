@@ -288,11 +288,18 @@ DB_CONFIG = {
     ),
     # v9.121 — TLS on the app<->DB hop. psycopg2's own default is 'prefer',
     # which SILENTLY falls back to plaintext if the server lacks TLS — so we make
-    # it explicit + configurable. Production sets 'require' (encrypt; the prod
-    # stack's pgbouncer + postgres present self-signed certs) or, with an
-    # operator-supplied CA, 'verify-full'. Dev/CI keep 'prefer'.
+    # it explicit + configurable. Production sets 'verify-ca' (v9.131): the prod
+    # stack pins pgbouncer's stable self-signed cert via POLARIS_DB_SSLROOTCERT,
+    # so a MITM presenting a different cert is rejected (no real CA needed;
+    # 'verify-full' + hostname stays the operator's upgrade). Dev/CI keep 'prefer'.
     'sslmode': os.environ.get('POLARIS_DB_SSLMODE', 'prefer'),
 }
+# v9.131 — pin pgbouncer's cert for verify-ca/verify-full. Only added when set
+# (psycopg2 rejects an empty sslrootcert), so 'prefer'/'require' deployments and
+# dev are unaffected.
+_db_sslrootcert = os.environ.get('POLARIS_DB_SSLROOTCERT', '').strip()
+if _db_sslrootcert:
+    DB_CONFIG['sslrootcert'] = _db_sslrootcert
 
 
 def get_db():

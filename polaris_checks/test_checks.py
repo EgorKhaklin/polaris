@@ -1572,13 +1572,19 @@ def test_prometheus_multiprocess_check_discriminates(tmp_path):
 def test_app_db_tls_check_discriminates(tmp_path):
     web = tmp_path / "polaris_web"
     web.mkdir()
-    GOOD_APP = "DB_CONFIG = {'sslmode': os.environ.get('POLARIS_DB_SSLMODE', 'prefer')}\n"
-    GOOD_COMPOSE = ("services:\n  app:\n    environment:\n      POLARIS_DB_SSLMODE: require\n"
+    GOOD_APP = ("DB_CONFIG = {'sslmode': os.environ.get('POLARIS_DB_SSLMODE', 'prefer')}\n"
+                "if os.environ.get('POLARIS_DB_SSLROOTCERT'):\n"
+                "    DB_CONFIG['sslrootcert'] = os.environ['POLARIS_DB_SSLROOTCERT']\n")
+    GOOD_COMPOSE = ("services:\n  app:\n    environment:\n"
+                    "      POLARIS_DB_SSLMODE: verify-ca\n"
+                    "      POLARIS_DB_SSLROOTCERT: /etc/polaris-pgb-certs/pgbouncer.crt\n"
                     "  pgbouncer:\n    environment:\n"
-                    "      PGBOUNCER_SERVER_TLS_SSLMODE: require\n"
-                    "      PGBOUNCER_CLIENT_TLS_SSLMODE: require\n")
+                    "      PGBOUNCER_SERVER_TLS_SSLMODE: verify-ca\n"
+                    "      PGBOUNCER_SERVER_TLS_CA_FILE: /etc/polaris-pg-certs/postgres.crt\n"
+                    "      PGBOUNCER_CLIENT_TLS_SSLMODE: require\n"
+                    "      PGBOUNCER_CLIENT_TLS_CERT_FILE: /etc/polaris-pgb-certs/pgbouncer.crt\n")
     GOOD_INIT = "psql -c \"ALTER SYSTEM SET ssl = on;\"\n"
-    GOOD_ENTRY = "server_tls_sslmode = $X\nclient_tls_sslmode = $Y\n"
+    GOOD_ENTRY = "server_tls_sslmode = $X\nserver_tls_ca_file = $C\nclient_tls_sslmode = $Y\n"
 
     def write(app=GOOD_APP, compose=GOOD_COMPOSE, init=GOOD_INIT, entry=GOOD_ENTRY):
         (web / "app.py").write_text(app)
@@ -1591,25 +1597,35 @@ def test_app_db_tls_check_discriminates(tmp_path):
     assert checks.check_app_db_tls(tmp_path)[0].level == "FAIL", \
         "must FAIL when DB_CONFIG has no configurable sslmode"
 
-    # 2. prod compose does not require TLS on the app hop -> FAIL.
-    write(compose="services:\n  app:\n    environment:\n      POLARIS_ENV: production\n")
+    # 2. app cannot pin the peer cert (no sslrootcert) -> FAIL.
+    write(app="DB_CONFIG = {'sslmode': os.environ.get('POLARIS_DB_SSLMODE', 'prefer')}\n")
     assert checks.check_app_db_tls(tmp_path)[0].level == "FAIL", \
-        "must FAIL when the prod compose does not set POLARIS_DB_SSLMODE=require"
+        "must FAIL when DB_CONFIG cannot pin the peer cert (no POLARIS_DB_SSLROOTCERT/sslrootcert)"
 
-    # 3. pgbouncer TLS not enabled in compose -> FAIL.
-    write(compose="services:\n  app:\n    environment:\n      POLARIS_DB_SSLMODE: require\n")
+    # 3. compose only encrypts (require), does not verify-ca pin -> FAIL.
+    write(compose=GOOD_COMPOSE.replace("POLARIS_DB_SSLMODE: verify-ca", "POLARIS_DB_SSLMODE: require"))
     assert checks.check_app_db_tls(tmp_path)[0].level == "FAIL", \
-        "must FAIL without pgbouncer server_tls + client_tls in the compose"
+        "must FAIL when the app hop is only 'require' (encrypt), not verify-ca"
 
-    # 4. docker-init does not enable Postgres TLS -> FAIL.
+    # 4. pgbouncer backend hop not verify-ca / no CA file -> FAIL.
+    write(compose=GOOD_COMPOSE.replace("PGBOUNCER_SERVER_TLS_SSLMODE: verify-ca", "PGBOUNCER_SERVER_TLS_SSLMODE: require"))
+    assert checks.check_app_db_tls(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the pgbouncer<->postgres hop does not verify-ca pin"
+
+    # 5. entrypoint does not wire the server CA file -> FAIL.
+    write(entry="server_tls_sslmode = $X\nclient_tls_sslmode = $Y\n")
+    assert checks.check_app_db_tls(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the entrypoint does not wire server_tls_ca_file"
+
+    # 6. docker-init does not enable Postgres TLS -> FAIL.
     write(init="echo no tls\n")
     assert checks.check_app_db_tls(tmp_path)[0].level == "FAIL", \
         "must FAIL when docker-init does not enable Postgres ssl"
 
-    # 5. all wired -> OK.
+    # 7. all wired -> OK.
     write()
     assert checks.check_app_db_tls(tmp_path)[0].level == "OK", \
-        "must PASS with sslmode + compose TLS + postgres ssl + pgbouncer TLS"
+        "must PASS with verify-ca pinning on both hops + sslrootcert + CA file"
 
 
 def test_correlation_id_check_discriminates(tmp_path):

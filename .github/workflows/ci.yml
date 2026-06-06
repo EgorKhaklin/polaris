@@ -362,6 +362,69 @@ jobs:
           docker network rm pbci >/dev/null 2>&1 || true
           echo "self-built pgbouncer image OK (round-trip + fail-closed)"
 
+      # v9.131 — verify-ca cert PINNING round-trip. Proves both prod TLS hops
+      # VALIDATE the pinned self-signed certs (not merely encrypt): the app pins
+      # pgbouncer (sslmode=verify-ca + sslrootcert) and pgbouncer pins postgres
+      # (server_tls verify-ca + server_tls_ca_file). A correct pin connects and
+      # the backend hop is SSL; a WRONG cert is rejected. This is the Linux
+      # validation of the wiring check_app_db_tls asserts. The pgbouncer key is a
+      # 0644 :ro mount (the non-root pgbouncer user must read it on Linux).
+      - name: app<->DB verify-ca pinning round-trip
+        run: |
+          set -e
+          docker build -f polaris_web/Dockerfile.pgbouncer -t polaris-pgbouncer:vca polaris_web
+          mkdir -p /tmp/vca
+          openssl req -new -x509 -days 2 -nodes -subj "/CN=postgres"  -out /tmp/vca/pg.crt  -keyout /tmp/vca/pg.key  >/dev/null 2>&1
+          openssl req -new -x509 -days 2 -nodes -subj "/CN=pgbouncer" -out /tmp/vca/pgb.crt -keyout /tmp/vca/pgb.key >/dev/null 2>&1
+          chmod 644 /tmp/vca/*.crt /tmp/vca/*.key
+          docker network create vcanet
+          docker run -d --name vca-pg --network vcanet -e POSTGRES_PASSWORD=rootpw -e POSTGRES_DB=polaris postgres:16-alpine
+          for i in $(seq 1 60); do
+            docker exec -e PGPASSWORD=rootpw vca-pg psql -U postgres -d polaris -tAc 'SELECT 1' >/dev/null 2>&1 && break
+            sleep 1
+          done
+          docker cp /tmp/vca/pg.crt vca-pg:/tmp/pg.crt; docker cp /tmp/vca/pg.key vca-pg:/tmp/pg.key
+          docker exec -u root vca-pg sh -c 'cp /tmp/pg.crt /var/lib/postgresql/data/server.crt && cp /tmp/pg.key /var/lib/postgresql/data/server.key && chown postgres:postgres /var/lib/postgresql/data/server.* && chmod 600 /var/lib/postgresql/data/server.key'
+          docker exec -e PGPASSWORD=rootpw vca-pg psql -U postgres -q \
+            -c "ALTER SYSTEM SET ssl=on" -c "ALTER SYSTEM SET ssl_cert_file='server.crt'" \
+            -c "ALTER SYSTEM SET ssl_key_file='server.key'" -c "SELECT pg_reload_conf()" >/dev/null
+          sleep 2
+          APPPW='vca-App@Pw1'; printf '%s' "$APPPW" > /tmp/vca/secret
+          docker exec -e PGPASSWORD=rootpw vca-pg psql -U postgres -q \
+            -c "CREATE ROLE polaris_app LOGIN PASSWORD '$APPPW'; GRANT ALL ON DATABASE polaris TO polaris_app;"
+          docker run -d --name vca-pb --network vcanet \
+            -e POLARIS_DB_HOST=vca-pg -e POLARIS_DB_USER=polaris_app -e POLARIS_DB_NAME=polaris \
+            -e PGBOUNCER_SERVER_TLS_SSLMODE=verify-ca -e PGBOUNCER_SERVER_TLS_CA_FILE=/etc/polaris-pg-certs/postgres.crt \
+            -e PGBOUNCER_CLIENT_TLS_SSLMODE=require \
+            -e PGBOUNCER_CLIENT_TLS_CERT_FILE=/etc/polaris-pgb-certs/pgbouncer.crt \
+            -e PGBOUNCER_CLIENT_TLS_KEY_FILE=/etc/polaris-pgb-certs/pgbouncer.key \
+            -v /tmp/vca/secret:/run/secrets/polaris_db_password:ro \
+            -v /tmp/vca/pg.crt:/etc/polaris-pg-certs/postgres.crt:ro \
+            -v /tmp/vca/pgb.crt:/etc/polaris-pgb-certs/pgbouncer.crt:ro \
+            -v /tmp/vca/pgb.key:/etc/polaris-pgb-certs/pgbouncer.key:ro \
+            polaris-pgbouncer:vca
+          got=""
+          for i in $(seq 1 20); do
+            got=$(docker run --rm --network vcanet -e PGPASSWORD="$APPPW" -v /tmp/vca/pgb.crt:/c/pgb.crt:ro postgres:16-alpine \
+              psql "host=vca-pb port=6432 user=polaris_app dbname=polaris sslmode=verify-ca sslrootcert=/c/pgb.crt" -tAc "SELECT 'VCA-OK'" 2>&1 | tr -d '[:space:]')
+            [ "$got" = "VCA-OK" ] && break
+            sleep 1
+          done
+          backend=$(docker exec -e PGPASSWORD=rootpw vca-pg psql -U postgres -tAc \
+            "SELECT ssl FROM pg_stat_ssl s JOIN pg_stat_activity a USING(pid) WHERE a.usename='polaris_app'" 2>/dev/null | tr -d '[:space:]')
+          docker logs vca-pb | tail -5
+          echo "verify-ca correct-pin=$got backend_ssl=$backend"
+          [ "$got" = "VCA-OK" ] || { echo "::error::verify-ca pinned connection failed"; exit 1; }
+          [ "$backend" = "t" ] || { echo "::error::pgbouncer->postgres hop is not SSL"; exit 1; }
+          # The WRONG cert (postgres's, not pgbouncer's) must be rejected by verify-ca.
+          wrong=$(docker run --rm --network vcanet -e PGPASSWORD="$APPPW" -v /tmp/vca/pg.crt:/c/w.crt:ro postgres:16-alpine \
+            psql "host=vca-pb port=6432 user=polaris_app dbname=polaris sslmode=verify-ca sslrootcert=/c/w.crt" -tAc "SELECT 'NO'" 2>&1 || true)
+          echo "wrong-pin result: $wrong"
+          echo "$wrong" | grep -q "certificate verify failed" || { echo "::error::a WRONG pinned cert was NOT rejected (verify-ca not enforced)"; exit 1; }
+          docker rm -f vca-pg vca-pb >/dev/null 2>&1 || true
+          docker network rm vcanet >/dev/null 2>&1 || true
+          echo "app<->DB verify-ca pinning round-trip OK (correct pin connects, wrong pin rejected, backend SSL)"
+
       # v9.126 — streaming-replication round-trip. Proves the replication config
       # Polaris ships (wal_level=replica + a REPLICATION role + the pg_hba line,
       # see docker-init.sh / check_replication_scaffolding) actually produces a

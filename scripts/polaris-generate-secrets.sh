@@ -121,6 +121,35 @@ write_postgres_cert_if_missing() {
     echo "  ✓ postgres_server.crt/.key  (self-signed TLS cert generated; key 0600)"
 }
 
+# v9.131 — a STABLE self-signed cert pgbouncer presents to the app, so the app
+# can PIN it (sslmode=verify-ca, sslrootcert=this cert) and reject a MITM that
+# presents a different cert on the app<->pgbouncer hop. Stable (not regenerated
+# per pgbouncer start) precisely so it is pinnable. BOTH files are 0644: the
+# non-root pgbouncer container user must read the KEY across a plain Linux bind
+# mount (where perms are not uid-mapped), and the cert is public. The host-side
+# protection is the 0700 SECRETS_DIR above — a 0644 file inside an owner-only
+# directory is still reachable only by the owner; the dir, not the file mode, is
+# the boundary (the postgres key is 0600 only because root copies+chowns it into
+# the container, a path pgbouncer does not have).
+write_pgbouncer_cert_if_missing() {
+    local crt="${SECRETS_DIR}/pgbouncer_server.crt"
+    local key="${SECRETS_DIR}/pgbouncer_server.key"
+    if [[ -f "${crt}" && -f "${key}" ]]; then
+        echo "  ✓ pgbouncer_server.crt/.key  (exist; not overwriting)"
+        return 0
+    fi
+    if ! command -v openssl >/dev/null 2>&1; then
+        echo "  ! pgbouncer_server.{crt,key}  (NOT generated — needs openssl; the app<->pgbouncer" >&2
+        echo "      hop falls back to 'require' without a pinnable cert)" >&2
+        return 0
+    fi
+    ( umask 0077 && openssl req -new -x509 -days 825 -nodes \
+        -subj "/CN=pgbouncer" -out "${crt}" -keyout "${key}" >/dev/null 2>&1 )
+    chmod 0644 "${crt}"
+    chmod 0644 "${key}"   # readable by the non-root pgbouncer user; 0700 dir gates host access
+    echo "  ✓ pgbouncer_server.crt/.key  (self-signed TLS cert generated; in the 0700 secrets dir)"
+}
+
 cat <<'BANNER'
 
   Polaris — secret material generator
@@ -140,6 +169,7 @@ write_secret_if_missing polaris_db_root_password 24
 write_secret_if_missing polaris_replicator_password 24
 write_signing_key_if_missing
 write_postgres_cert_if_missing
+write_pgbouncer_cert_if_missing
 
 cat <<BANNER
 

@@ -114,18 +114,46 @@ TLS_INI=""
 if [ -n "$SERVER_TLS_SSLMODE" ]; then
     TLS_INI="${TLS_INI}server_tls_sslmode = ${SERVER_TLS_SSLMODE}
 "
-fi
-if [ -n "$CLIENT_TLS_SSLMODE" ]; then
-    CLIENT_CRT="$CONF_DIR/pgbouncer.crt"
-    CLIENT_KEY="$CONF_DIR/pgbouncer.key"
-    if [ ! -f "$CLIENT_CRT" ] || [ ! -f "$CLIENT_KEY" ]; then
-        if ! command -v openssl >/dev/null 2>&1; then
-            echo "pgbouncer: PGBOUNCER_CLIENT_TLS_SSLMODE is set but openssl is unavailable to mint a cert" >&2
+    # v9.131 — verify-ca/verify-full validate the postgres hop's certificate
+    # against this CA file. We pin the self-signed postgres server cert (a
+    # self-signed cert is its own CA), so a MITM presenting a different cert is
+    # rejected — without needing a real CA (verify-full + hostname stays the
+    # operator's upgrade). Required when server_tls_sslmode is verify-*.
+    SERVER_TLS_CA_FILE="${PGBOUNCER_SERVER_TLS_CA_FILE:-}"
+    if [ -n "$SERVER_TLS_CA_FILE" ]; then
+        if [ ! -r "$SERVER_TLS_CA_FILE" ]; then
+            echo "pgbouncer: PGBOUNCER_SERVER_TLS_CA_FILE '$SERVER_TLS_CA_FILE' is not readable" >&2
             exit 1
         fi
-        openssl req -new -x509 -days 825 -nodes -subj "/CN=pgbouncer" \
-            -out "$CLIENT_CRT" -keyout "$CLIENT_KEY" >/dev/null 2>&1
-        chmod 600 "$CLIENT_KEY"
+        TLS_INI="${TLS_INI}server_tls_ca_file = ${SERVER_TLS_CA_FILE}
+"
+    fi
+fi
+if [ -n "$CLIENT_TLS_SSLMODE" ]; then
+    # v9.131 — prefer a MOUNTED, STABLE cert (so the app can pin it as its
+    # sslrootcert for verify-ca; a regenerated-per-start cert cannot be pinned).
+    # Fall back to a per-start self-signed cert when none is mounted (dev).
+    MOUNTED_CRT="${PGBOUNCER_CLIENT_TLS_CERT_FILE:-}"
+    MOUNTED_KEY="${PGBOUNCER_CLIENT_TLS_KEY_FILE:-}"
+    if [ -n "$MOUNTED_CRT" ] && [ -n "$MOUNTED_KEY" ]; then
+        if [ ! -r "$MOUNTED_CRT" ] || [ ! -r "$MOUNTED_KEY" ]; then
+            echo "pgbouncer: the mounted client_tls cert/key ('$MOUNTED_CRT'/'$MOUNTED_KEY') is not readable" >&2
+            exit 1
+        fi
+        CLIENT_CRT="$MOUNTED_CRT"
+        CLIENT_KEY="$MOUNTED_KEY"
+    else
+        CLIENT_CRT="$CONF_DIR/pgbouncer.crt"
+        CLIENT_KEY="$CONF_DIR/pgbouncer.key"
+        if [ ! -f "$CLIENT_CRT" ] || [ ! -f "$CLIENT_KEY" ]; then
+            if ! command -v openssl >/dev/null 2>&1; then
+                echo "pgbouncer: PGBOUNCER_CLIENT_TLS_SSLMODE is set but openssl is unavailable to mint a cert" >&2
+                exit 1
+            fi
+            openssl req -new -x509 -days 825 -nodes -subj "/CN=pgbouncer" \
+                -out "$CLIENT_CRT" -keyout "$CLIENT_KEY" >/dev/null 2>&1
+            chmod 600 "$CLIENT_KEY"
+        fi
     fi
     TLS_INI="${TLS_INI}client_tls_sslmode = ${CLIENT_TLS_SSLMODE}
 client_tls_cert_file = ${CLIENT_CRT}

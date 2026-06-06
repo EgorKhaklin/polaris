@@ -5,6 +5,33 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.131 — 2026-06-06 (hardening: both DB hops now VERIFY the pinned certs, not just encrypt)
+
+The last review item: v9.121 encrypted both prod DB hops with `require`, which
+defeats passive sniffing but not an active in-network MITM (it does not validate
+the peer's cert). This raises both hops to verify-ca, pinning the self-signed
+certs — no real CA needed.
+
+- **The app pins pgbouncer.** `DB_CONFIG` gains `sslrootcert` from
+  `POLARIS_DB_SSLROOTCERT`, and the prod compose sets `POLARIS_DB_SSLMODE=verify-ca`
+  pointing at pgbouncer's cert. A MITM presenting a different cert on the
+  app->pgbouncer hop is rejected.
+- **pgbouncer pins postgres.** The entrypoint gains `server_tls_ca_file`; the
+  prod compose sets `PGBOUNCER_SERVER_TLS_SSLMODE=verify-ca` with postgres's cert
+  as the CA. The backend hop verifies, not just encrypts.
+- **A stable, pinnable pgbouncer cert.** pgbouncer's client cert was regenerated
+  per start (unpinnable). `polaris-generate-secrets.sh` now mints a STABLE
+  `pgbouncer_server.crt/.key`; the entrypoint uses the mounted cert when present.
+  Both files are 0644 inside the 0700 `secrets/` dir, so the non-root pgbouncer
+  user reads the key across a Linux bind mount while the directory gates host
+  access (a self-signed cert is its own CA for verify-ca, which skips hostname
+  checks; `verify-full` + a real CA + hostname stays the operator's upgrade).
+- **Proven on Linux in CI.** A new verify-ca pinning round-trip stands up
+  postgres(ssl) + the pooler with both hops verify-ca and asserts: the correct
+  pin connects, the backend hop is SSL (`pg_stat_ssl`), and a WRONG cert is
+  rejected (`certificate verify failed`). Validated locally end to end first.
+  `check_app_db_tls` now asserts verify-ca + the pinning wiring on both hops.
+
 ## v9.130 — 2026-06-06 (hardening: pgBackRest operational safety, from the v9.121-v9.128 review)
 
 Three concrete operational gaps the review found in the v9.127 pgBackRest ship:

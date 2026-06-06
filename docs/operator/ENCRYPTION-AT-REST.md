@@ -69,9 +69,10 @@ of the posture, not a footnote.
   dump with AES-256-CBC / PBKDF2 when `POLARIS_BACKUP_KEY_FILE` is set, and warns
   loudly when it is not; `polaris-restore.sh` fails closed without the key. A
   stolen backup tarball is ciphertext. See [`DR.md`](DR.md).
-- **Data in transit is encrypted (v9.121).** Both prod hops (app to pgbouncer,
-  pgbouncer to Postgres) run TLS, so the data does not travel the pod network in
-  the clear on its way to or from disk.
+- **Data in transit is encrypted and verified (v9.121 + v9.131).** Both prod
+  hops (app to pgbouncer, pgbouncer to Postgres) run TLS and verify-ca the pinned
+  self-signed certs, so the data does not travel the pod network in the clear and
+  a MITM presenting a different cert is rejected.
 - **Secrets are file-mounted, not in the image or environment**, and disk
   encryption for the secrets mount is already documented as the operator's
   responsibility in [`SECRETS.md`](SECRETS.md).

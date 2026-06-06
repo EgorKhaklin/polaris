@@ -98,12 +98,16 @@ left a real foundation. Genuinely sound today:
 - [x] **Reconciled `DR.md` (v9.102):** it no longer claims a wired ≤1-min RPO;
   the real RPO is the encrypted-`pg_dump` interval (~24h), and pgbackrest/WAL/S3
   is documented as the not-yet-configured target.
-- [x] **App<->DB TLS (v9.121).** Both hops of the prod path are encrypted:
-  `POLARIS_DB_SSLMODE=require` on the app->pgbouncer connection, `client_tls`
-  and `server_tls` on the pooler, and `ALTER SYSTEM SET ssl=on` on Postgres with
-  a self-signed cert minted at deploy time. `require` encrypts without CA
-  pinning; `verify-full` against a real CA stays operator-gated. CI runs a
-  `client_tls` round-trip; pinned by `check_app_db_tls`.
+- [x] **App<->DB TLS, both hops, with cert pinning (v9.121 + v9.131).** Both
+  prod hops are TLS (`ALTER SYSTEM SET ssl=on` on Postgres; `client_tls` +
+  `server_tls` on the pooler) AND, as of v9.131, VERIFY the pinned self-signed
+  certs rather than merely encrypting: the app pins pgbouncer
+  (`POLARIS_DB_SSLMODE=verify-ca` + `POLARIS_DB_SSLROOTCERT`) and pgbouncer pins
+  postgres (`server_tls` verify-ca + `server_tls_ca_file`), so a MITM presenting
+  a different cert on either hop is rejected — without needing a real CA.
+  `verify-full` + hostname against a real CA stays the operator's upgrade. CI
+  runs a verify-ca pinning round-trip (correct pin connects, wrong pin rejected,
+  backend SSL confirmed); pinned by `check_app_db_tls`.
 - [x] **At-rest encryption posture (v9.124).** `docs/operator/ENCRYPTION-AT-REST.md`
   enumerates the plaintext-sensitive surfaces (`Individual.legal_name` /
   `date_of_birth`, `TokenStateEpochLeaf.proof_path` — the one the schema itself

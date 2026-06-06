@@ -95,10 +95,12 @@ services:
       POLARIS_DB_NAME: polaris
       POLARIS_DB_USER: polaris_app
       POLARIS_DB_PASSWORD_FILE: /run/secrets/polaris_db_password
-      # v9.121 — encrypt the app<->pgbouncer hop. pgbouncer presents a self-signed
-      # cert (client_tls below), so 'require' encrypts without cert verification;
-      # an operator with a CA can raise this to 'verify-full'.
-      POLARIS_DB_SSLMODE: require
+      # v9.121/v9.131 — encrypt + VERIFY the app<->pgbouncer hop. pgbouncer
+      # presents its STABLE self-signed cert; the app pins it via verify-ca +
+      # POLARIS_DB_SSLROOTCERT, so a MITM presenting a different cert is rejected
+      # (no real CA needed). 'verify-full' + hostname stays the operator's upgrade.
+      POLARIS_DB_SSLMODE: verify-ca
+      POLARIS_DB_SSLROOTCERT: /etc/polaris-pgb-certs/pgbouncer.crt
       POLARIS_SECRET_KEY_FILE: /run/secrets/polaris_secret_key
       POLARIS_REDIS_HOST: redis
       POLARIS_REDIS_PORT: '6379'
@@ -132,6 +134,8 @@ services:
     volumes:
       - polaris_state:/var/lib/polaris/state
       - ./logs:/var/log/polaris
+      # v9.131 — pgbouncer's public cert, pinned as the app's sslrootcert (verify-ca).
+      - ./secrets/pgbouncer_server.crt:/etc/polaris-pgb-certs/pgbouncer.crt:ro
       - ../sanctum:/opt/polaris/sanctum:ro
       - ../journal:/opt/polaris/journal:ro
     networks:
@@ -193,12 +197,26 @@ services:
       PGBOUNCER_RESERVE_POOL_SIZE: '5'
       PGBOUNCER_MAX_CLIENT_CONN: '500'
       PGBOUNCER_MAX_DB_CONNECTIONS: '50'
-      # v9.121 — TLS on both hops: encrypt pgbouncer -> postgres (server_tls) and
-      # app -> pgbouncer (client_tls; the entrypoint mints a self-signed cert).
-      PGBOUNCER_SERVER_TLS_SSLMODE: require
+      # v9.121/v9.131 — TLS + VERIFICATION on both hops. server_tls verify-ca
+      # pins postgres's self-signed cert (server_tls_ca_file); client_tls presents
+      # pgbouncer's STABLE self-signed cert (mounted, so the app can pin it) and
+      # requires clients to use TLS. Both hops reject a MITM with a different cert.
+      PGBOUNCER_SERVER_TLS_SSLMODE: verify-ca
+      PGBOUNCER_SERVER_TLS_CA_FILE: /etc/polaris-pg-certs/postgres.crt
       PGBOUNCER_CLIENT_TLS_SSLMODE: require
+      PGBOUNCER_CLIENT_TLS_CERT_FILE: /etc/polaris-pgb-certs/pgbouncer.crt
+      PGBOUNCER_CLIENT_TLS_KEY_FILE: /etc/polaris-pgb-certs/pgbouncer.key
     secrets:
       - polaris_db_password
+    volumes:
+      # v9.131 — the certs pgbouncer needs: postgres's cert (to VERIFY the backend
+      # hop, server_tls verify-ca) and its own cert+key (to present to the app,
+      # client_tls). The key is 0644 inside the 0700 host secrets dir so the
+      # non-root pgbouncer user can read it across the bind mount (the dir gates
+      # host access; see polaris-generate-secrets.sh).
+      - ./secrets/postgres_server.crt:/etc/polaris-pg-certs/postgres.crt:ro
+      - ./secrets/pgbouncer_server.crt:/etc/polaris-pgb-certs/pgbouncer.crt:ro
+      - ./secrets/pgbouncer_server.key:/etc/polaris-pgb-certs/pgbouncer.key:ro
     healthcheck:
       # Cheap TCP liveness on the listen port (netcat is in the image).
       test: ["CMD", "nc", "-z", "127.0.0.1", "6432"]
