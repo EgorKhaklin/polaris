@@ -1,0 +1,28 @@
+# syntax=docker/dockerfile:1
+# ============================================================================
+# Dockerfile.postgres — Postgres 16 + pgBackRest for the Polaris prod stack
+#
+# v9.126+ (production-readiness, Wave 3): continuous WAL archiving needs
+# pgBackRest installed ON the database host, because the primary's
+# archive_command (`pgbackrest --stanza=polaris archive-push %p`) runs inside
+# the postgres process. The stock postgres:16-alpine image has no pgbackrest, so
+# we extend it. The base is digest-pinned (same digest the compose used as a
+# bare image) so a mutated/deleted upstream tag cannot change what runs;
+# Dependabot's docker ecosystem bumps it.
+#
+# Archiving is OPT-IN at runtime (docker-init.sh enables archive_mode +
+# archive_command only when POLARIS_PGBACKREST_ENABLED is set), so a deployment
+# that has not provisioned a repo does not accumulate WAL. The repo itself (an
+# offsite S3 bucket for real use) is operator-supplied; a local filesystem repo
+# is the default the CI round-trip exercises. See docs/operator/DR.md.
+#
+# Build context is polaris_web/ (see docker-compose.prod.yml).
+# ============================================================================
+FROM postgres:16-alpine@sha256:16bc17c64a573ef34162af9298258d1aec548232985b33ed7b1eac33ba35c229
+
+# pgbackrest is in the distro package set; the dirs are owned by the postgres
+# user so the archive_command (run as postgres) and stanza ops can write them.
+RUN apk add --no-cache pgbackrest \
+    && mkdir -p /var/lib/pgbackrest /etc/pgbackrest /var/log/pgbackrest \
+    && chown -R postgres:postgres /var/lib/pgbackrest /etc/pgbackrest /var/log/pgbackrest \
+    && rm -rf /var/cache/apk/*

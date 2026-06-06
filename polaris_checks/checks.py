@@ -1008,6 +1008,62 @@ def check_replication_scaffolding(root: pathlib.Path) -> list[Finding]:
 
 
 # ---------------------------------------------------------------------------
+# Continuous WAL archiving (pgBackRest, v9.126+). DR.md's ≤1-min-RPO path. The
+# scaffolding: a pgbackrest-enabled postgres image, a stanza config, the
+# docker-init archive wiring (opt-in), the restore runbook, and a CI round-trip
+# that archives + backs up + RESTORES with WAL replay. The offsite S3 repo is
+# operator-supplied. This pins the wiring + that the config stays honest that the
+# default filesystem repo is not offsite.
+# ---------------------------------------------------------------------------
+def check_pgbackrest_scaffolding(root: pathlib.Path) -> list[Finding]:
+    dockerfile = _read(root, "polaris_web/Dockerfile.postgres")
+    conf = _read(root, "polaris_web/pgbackrest.conf")
+    compose = _read(root, "polaris_web/docker-compose.prod.yml")
+    init = _read(root, "polaris_web/docker-init.sh")
+    dr = _read(root, "docs/operator/DR.md")
+    ci = _read(root, ".github/workflows/ci.yml")
+    if not (dockerfile and conf and compose and init and dr and ci):
+        return _fail("pgbackrest", "a pgBackRest-scaffolding file is missing")
+    # pgbackrest must be IN the postgres image (archive_command runs there), and
+    # the base must stay digest-pinned.
+    if "pgbackrest" not in dockerfile:
+        return _fail("pgbackrest",
+                     "Dockerfile.postgres must install pgbackrest (archive_command runs in the DB image)")
+    if "@sha256:" not in dockerfile:
+        return _fail("pgbackrest",
+                     "Dockerfile.postgres FROM must be digest-pinned (a mutated base must not change "
+                     "what runs)")
+    # The stanza config ships and stays honest about the local-vs-offsite repo.
+    if "[polaris]" not in conf or "pg1-path" not in conf:
+        return _fail("pgbackrest", "pgbackrest.conf must define the [polaris] stanza + pg1-path")
+    if "s3" not in conf.lower():
+        return _fail("pgbackrest",
+                     "pgbackrest.conf must document the offsite S3 repo swap (the local repo is not "
+                     "offsite) — no overclaiming durability")
+    # The compose builds the image + mounts the conf + the opt-in flag.
+    if "Dockerfile.postgres" not in compose or "pgbackrest.conf" not in compose:
+        return _fail("pgbackrest",
+                     "the prod compose must build Dockerfile.postgres and mount pgbackrest.conf")
+    if "POLARIS_PGBACKREST_ENABLED" not in compose or "POLARIS_PGBACKREST_ENABLED" not in init:
+        return _fail("pgbackrest",
+                     "archiving must be opt-in via POLARIS_PGBACKREST_ENABLED (wired in compose + "
+                     "docker-init) so a no-repo deployment does not accumulate WAL")
+    if "archive_mode" not in init or "archive-push" not in init:
+        return _fail("pgbackrest",
+                     "docker-init.sh must set archive_mode + the pgbackrest archive_command when enabled")
+    # The runbook documents stanza-create; the CI round-trip restores.
+    if "stanza-create" not in dr:
+        return _fail("pgbackrest", "DR.md must document `pgbackrest --stanza=polaris stanza-create`")
+    if "pgbackrest" not in ci or "restore" not in ci:
+        return _fail("pgbackrest",
+                     "ci.yml must run a pgBackRest archive+backup+RESTORE round-trip")
+    return _ok("pgbackrest",
+               "continuous WAL archiving ships: pgbackrest in the DB image (digest-pinned base) + the "
+               "[polaris] stanza, opt-in archive_mode/archive_command, a documented stanza-create + "
+               "restore, and a CI backup+restore round-trip; the offsite S3 repo stays operator-supplied")
+
+
+# ---------------------------------------------------------------------------
 # The connection pooler must not depend on a third-party image that can vanish.
 # bitnami/pgbouncer:1.22 was removed from Docker Hub when Bitnami retired their
 # free catalogue (Aug 2025), leaving the prod stack unable to pull its pooler.
@@ -1640,6 +1696,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_encryption_at_rest_posture,
     check_erasure_procedure,
     check_replication_scaffolding,
+    check_pgbackrest_scaffolding,
     check_pgbouncer_self_built,
     check_app_db_tls,
     check_correlation_id,

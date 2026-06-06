@@ -181,6 +181,23 @@ if [ -n "$REPL_PWFILE" ] && [ -r "$REPL_PWFILE" ]; then
     echo "Streaming-replication readiness enabled (standby host is operator-supplied; see FAILOVER.md)."
 fi
 
+# v9.126+ — continuous WAL archiving (pgBackRest). OFF unless the operator opts
+# in (after provisioning the repo + running stanza-create), so a deployment with
+# no repo does not pile up unarchivable WAL. Sets archive_mode (restart-only;
+# persisted via ALTER SYSTEM and applied on the real server start, like the TLS
+# block) + the archive_command that pushes WAL through the stanza config mounted
+# at /etc/pgbackrest/pgbackrest.conf. The stanza-create + scheduled backups are
+# the operator's steps (docs/operator/DR.md); the CI round-trip proves the path.
+if [ "${POLARIS_PGBACKREST_ENABLED:-0}" = "1" ]; then
+    echo "Enabling continuous WAL archiving via pgBackRest (archive_mode=on)..."
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" >/dev/null \
+        -c "ALTER SYSTEM SET archive_mode = on;" \
+        -c "ALTER SYSTEM SET archive_command = 'pgbackrest --stanza=polaris archive-push %p';" \
+        -c "ALTER SYSTEM SET wal_level = replica;" \
+        -c "ALTER SYSTEM SET max_wal_senders = 10;"
+    echo "WAL archiving enabled. Run 'pgbackrest --stanza=polaris stanza-create' + schedule backups (DR.md)."
+fi
+
 # Production hardening (BLOCKER): the SQL seed (10_auth.sql) loads three demo
 # accounts with PUBLICLY-KNOWN passwords (admin/Admin@123!, operator/Operator@123!,
 # auditor/Auditor@123!) — and 04_data.sql enrolls a demo duress code. Fine for

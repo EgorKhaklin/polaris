@@ -420,6 +420,71 @@ jobs:
           docker network rm repci >/dev/null 2>&1 || true
           echo "streaming-replication round-trip OK (live WAL streaming, post-clone write replicated)"
 
+      # v9.126+ — pgBackRest archive + backup + restore round-trip. Proves the
+      # pgbackrest-enabled postgres image (Dockerfile.postgres) + the shipped
+      # stanza config (polaris_web/pgbackrest.conf) archive WAL, take a full
+      # backup, and RESTORE it with WAL replay into a fresh data dir: a row
+      # written AFTER the backup must come back. Uses a local filesystem repo (a
+      # shared volume); the operator swaps repo1 for an offsite S3 bucket. Pinned
+      # by check_pgbackrest_scaffolding.
+      - name: pgBackRest archive + backup + restore round-trip
+        run: |
+          set -e
+          docker build -f polaris_web/Dockerfile.postgres -t polaris-postgres:ci polaris_web
+          docker volume create pgbrrepo
+          docker run -d --name pgbr-pri \
+            -e POSTGRES_PASSWORD=rootpw -e POSTGRES_DB=polaris \
+            -v pgbrrepo:/var/lib/pgbackrest \
+            -v "$PWD/polaris_web/pgbackrest.conf:/etc/pgbackrest/pgbackrest.conf:ro" \
+            polaris-postgres:ci \
+            -c wal_level=replica -c archive_mode=on \
+            -c "archive_command=pgbackrest --stanza=polaris archive-push %p" -c max_wal_senders=3
+          for i in $(seq 1 60); do
+            docker exec -e PGPASSWORD=rootpw pgbr-pri psql -U postgres -d polaris -tAc 'SELECT 1' >/dev/null 2>&1 && break
+            sleep 1
+          done
+          # stanza-create + check is pgBackRest's own end-to-end archive validation.
+          docker exec -u postgres pgbr-pri pgbackrest --stanza=polaris stanza-create
+          docker exec -u postgres pgbr-pri pgbackrest --stanza=polaris check
+          # A marker, a full backup, then a row AFTER the backup (recovered via WAL).
+          docker exec -e PGPASSWORD=rootpw pgbr-pri psql -U postgres -d polaris -q \
+            -c "CREATE TABLE m(x int); INSERT INTO m VALUES (4242);"
+          docker exec -u postgres pgbr-pri pgbackrest --stanza=polaris --type=full backup
+          # Row AFTER the backup, then WAIT for its WAL segment to be archived
+          # (last_archived_wal advances). Early archive failures before
+          # stanza-create existed are expected, so do NOT gate on last_failed_wal.
+          docker exec -e PGPASSWORD=rootpw pgbr-pri psql -U postgres -d polaris -q \
+            -c "INSERT INTO m VALUES (9999);"
+          before=$(docker exec -e PGPASSWORD=rootpw pgbr-pri psql -U postgres -tAc \
+            "SELECT coalesce(last_archived_wal,'none') FROM pg_stat_archiver" | tr -d '[:space:]')
+          docker exec -e PGPASSWORD=rootpw pgbr-pri psql -U postgres -q -c "SELECT pg_switch_wal();" >/dev/null
+          for i in $(seq 1 30); do
+            cur=$(docker exec -e PGPASSWORD=rootpw pgbr-pri psql -U postgres -tAc \
+              "SELECT coalesce(last_archived_wal,'none') FROM pg_stat_archiver" | tr -d '[:space:]')
+            [ "$cur" != "$before" ] && [ "$cur" != "none" ] && break
+            sleep 1
+          done
+          # Restore into a fresh container from the shared repo; postgres replays
+          # the archived WAL so the post-backup row (9999) comes back too.
+          docker run -d --name pgbr-res --user postgres \
+            -v pgbrrepo:/var/lib/pgbackrest \
+            -v "$PWD/polaris_web/pgbackrest.conf:/etc/pgbackrest/pgbackrest.conf:ro" \
+            polaris-postgres:ci \
+            sh -c 'rm -rf /var/lib/postgresql/data/* && pgbackrest --stanza=polaris restore && exec postgres'
+          got=""
+          for i in $(seq 1 90); do
+            got=$(docker exec pgbr-res psql -U postgres -d polaris -tAc \
+              "SELECT string_agg(x::text, ',' ORDER BY x) FROM m" 2>/dev/null | tr -d '[:space:]')
+            [ "$got" = "4242,9999" ] && break
+            sleep 1
+          done
+          docker logs pgbr-res 2>&1 | grep -iE 'archive recovery complete|ready to accept' | tail -2
+          echo "pgbackrest restore recovered rows: $got"
+          [ "$got" = "4242,9999" ] || { echo "::error::pgbackrest restore did not recover the backup + archived WAL"; exit 1; }
+          docker rm -f pgbr-pri pgbr-res >/dev/null 2>&1 || true
+          docker volume rm pgbrrepo >/dev/null 2>&1 || true
+          echo "pgBackRest archive + backup + restore round-trip OK"
+
   # --------------------------------------------------------------------------
   # Real post-quantum signing (ML-DSA-65 / FIPS 204) was previously untestable:
   # liboqs is not in the base image or the main test job, so the real signing

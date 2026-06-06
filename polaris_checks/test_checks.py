@@ -1267,6 +1267,67 @@ def test_replication_scaffolding_check_discriminates(tmp_path):
         "must FAIL when ci.yml has no replication round-trip"
 
 
+def test_pgbackrest_scaffolding_check_discriminates(tmp_path):
+    web = tmp_path / "polaris_web"
+    op = tmp_path / "docs" / "operator"
+    gh = tmp_path / ".github" / "workflows"
+    for d in (web, op, gh):
+        d.mkdir(parents=True)
+    GOOD_DF = "FROM postgres:16-alpine@sha256:abc\nRUN apk add --no-cache pgbackrest\n"
+    GOOD_CONF = "[global]\nrepo1-path=/var/lib/pgbackrest\n# swap repo1 for s3 for offsite\n[polaris]\npg1-path=/var/lib/postgresql/data\n"
+    GOOD_COMPOSE = ("services:\n  postgres:\n    build:\n      dockerfile: Dockerfile.postgres\n"
+                    "    environment:\n      POLARIS_PGBACKREST_ENABLED: \"0\"\n"
+                    "    volumes:\n      - ./pgbackrest.conf:/etc/pgbackrest/pgbackrest.conf:ro\n")
+    GOOD_INIT = ("if [ \"$POLARIS_PGBACKREST_ENABLED\" = \"1\" ]; then\n"
+                 "  psql -c \"ALTER SYSTEM SET archive_mode = on;\"\n"
+                 "  psql -c \"ALTER SYSTEM SET archive_command = 'pgbackrest --stanza=polaris archive-push %p';\"\nfi\n")
+    GOOD_DR = "Bootstrap: pgbackrest --stanza=polaris stanza-create\n"
+    GOOD_CI = "docker build Dockerfile.postgres\npgbackrest --stanza=polaris restore\n"
+
+    def write(df=GOOD_DF, conf=GOOD_CONF, compose=GOOD_COMPOSE, init=GOOD_INIT, dr=GOOD_DR, ci=GOOD_CI):
+        (web / "Dockerfile.postgres").write_text(df)
+        (web / "pgbackrest.conf").write_text(conf)
+        (web / "docker-compose.prod.yml").write_text(compose)
+        (web / "docker-init.sh").write_text(init)
+        (op / "DR.md").write_text(dr)
+        (gh / "ci.yml").write_text(ci)
+
+    # 1. fully wired -> OK.
+    write()
+    assert checks.check_pgbackrest_scaffolding(tmp_path)[0].level == "OK", \
+        "must PASS the complete pgBackRest scaffolding"
+
+    # 2. image does not install pgbackrest -> FAIL.
+    write(df="FROM postgres:16-alpine@sha256:abc\nRUN echo hi\n")
+    assert checks.check_pgbackrest_scaffolding(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the postgres image lacks pgbackrest"
+
+    # 3. base not digest-pinned -> FAIL.
+    write(df="FROM postgres:16-alpine\nRUN apk add --no-cache pgbackrest\n")
+    assert checks.check_pgbackrest_scaffolding(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the image base is not digest-pinned"
+
+    # 4. config does not document the offsite S3 swap -> FAIL (overclaiming).
+    write(conf="[global]\nrepo1-path=/var/lib/pgbackrest\n[polaris]\npg1-path=/var/lib/postgresql/data\n")
+    assert checks.check_pgbackrest_scaffolding(tmp_path)[0].level == "FAIL", \
+        "must FAIL when pgbackrest.conf does not document the offsite repo"
+
+    # 5. archiving is not opt-in (no POLARIS_PGBACKREST_ENABLED gate) -> FAIL.
+    write(init="psql -c \"ALTER SYSTEM SET archive_mode = on; archive-push\"\n")
+    assert checks.check_pgbackrest_scaffolding(tmp_path)[0].level == "FAIL", \
+        "must FAIL when archiving is not gated behind POLARIS_PGBACKREST_ENABLED"
+
+    # 6. DR.md does not document stanza-create -> FAIL.
+    write(dr="just restore somehow\n")
+    assert checks.check_pgbackrest_scaffolding(tmp_path)[0].level == "FAIL", \
+        "must FAIL when DR.md omits stanza-create"
+
+    # 7. no CI restore round-trip -> FAIL.
+    write(ci="echo no backup test\n")
+    assert checks.check_pgbackrest_scaffolding(tmp_path)[0].level == "FAIL", \
+        "must FAIL when ci.yml has no pgBackRest restore round-trip"
+
+
 def test_prod_real_pqc_check_discriminates(tmp_path):
     web = tmp_path / "polaris_web"
     gh = tmp_path / ".github" / "workflows"

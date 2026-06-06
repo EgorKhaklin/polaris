@@ -34,16 +34,28 @@ incident**, not for the engineer at design time.
 
 ## 1. Targets — RPO and RTO
 
-> **Honest status (v9.102):** what ships today is `polaris-backup.sh` — an
-> on-demand / scheduled **encrypted `pg_dump`** (AES-256 when
+> **Honest status (v9.126):** what ships unconditionally is `polaris-backup.sh` —
+> an on-demand / scheduled **encrypted `pg_dump`** (AES-256 when
 > `POLARIS_BACKUP_KEY_FILE` is set). With a daily schedule that is an **actual
 > RPO of ~24 hours** (worst case = the time since the last dump). The ≤1-minute
-> RPO below is the **TARGET**, reachable only by wiring continuous WAL archiving
-> (pgbackrest → S3), which is **not yet configured** — it requires an operator
-> to provision the WAL archive + offsite store (see
-> [`PRODUCTION-READINESS.md`](../PRODUCTION-READINESS.md), Wave 3 / the gated
-> "offsite backup target" decision). Do not quote the ≤1-min figure until
-> `pgbackrest --stanza=polaris check` actually passes.
+> RPO is reached by **continuous WAL archiving (pgBackRest)**, whose
+> **configuration now ships**: the postgres image carries pgBackRest
+> (`Dockerfile.postgres`), `polaris_web/pgbackrest.conf` defines the `polaris`
+> stanza, and `docker-init.sh` enables `archive_mode` + the `archive_command`
+> when `POLARIS_PGBACKREST_ENABLED=1`. A CI round-trip proves archive → backup →
+> restore (with WAL replay). What the **operator still supplies**: the offsite
+> **repo** (an S3 bucket; the default `repo1-path` is a LOCAL filesystem repo and
+> is NOT offsite), then the one-time bootstrap below. Do not quote the ≤1-min
+> figure until `pgbackrest --stanza=polaris check` actually passes against that
+> repo.
+>
+> Bootstrap (once, after pointing `pgbackrest.conf` at the offsite repo and
+> setting `POLARIS_PGBACKREST_ENABLED=1`):
+> ```bash
+> pgbackrest --stanza=polaris stanza-create
+> pgbackrest --stanza=polaris check
+> # then schedule: pgbackrest --stanza=polaris --type=full backup  (e.g. daily)
+> ```
 
 | Target | Value | Status / Mechanism |
 |---|---|---|

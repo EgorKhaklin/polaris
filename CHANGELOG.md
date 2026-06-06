@@ -5,6 +5,32 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.127 — 2026-06-06 (production-readiness: continuous WAL archiving with pgBackRest)
+
+DR.md named continuous WAL archiving (pgBackRest) as the path to the ≤1-min RPO
+but called it "not yet configured." This ships the configuration, leaving only
+the operator's offsite repo.
+
+- **pgBackRest in the DB image.** `Dockerfile.postgres` extends the
+  digest-pinned `postgres:16-alpine` with pgBackRest (the `archive_command` runs
+  inside the postgres process, so it must live on the DB host); the prod compose
+  builds it (`polaris-postgres:prod`).
+- **The stanza config.** `polaris_web/pgbackrest.conf` defines the `polaris`
+  stanza with a local filesystem repo by default and documents the S3 swap (the
+  keys stay in the environment, never the file). It is honest up front that a
+  local repo is not offsite.
+- **Opt-in archiving.** `docker-init.sh` enables `archive_mode` + the
+  `archive_command` only when `POLARIS_PGBACKREST_ENABLED=1`, so a deployment
+  with no provisioned repo never accumulates unarchivable WAL. `DR.md` is
+  reconciled (config ships; the operator points the repo at S3 and runs
+  `stanza-create`).
+- **Proven end to end in CI.** A new `pgBackRest archive + backup + restore`
+  round-trip builds the image, archives WAL, takes a full backup, then RESTORES
+  into a fresh container and asserts a row written AFTER the backup comes back
+  via WAL replay (the whole point of continuous archiving). Pinned by
+  `check_pgbackrest_scaffolding` (57th check), which also fails the build if the
+  config stops documenting the offsite repo or archiving stops being opt-in.
+
 ## v9.126 — 2026-06-05 (production-readiness: streaming-replication readiness + a failover runbook)
 
 The single Postgres node was an unmitigated SPOF. This ships the buildable HA
