@@ -118,13 +118,26 @@ if [ -n "$SERVER_TLS_SSLMODE" ]; then
     # against this CA file. We pin the self-signed postgres server cert (a
     # self-signed cert is its own CA), so a MITM presenting a different cert is
     # rejected — without needing a real CA (verify-full + hostname stays the
-    # operator's upgrade). Required when server_tls_sslmode is verify-*.
+    # operator's upgrade).
     SERVER_TLS_CA_FILE="${PGBOUNCER_SERVER_TLS_CA_FILE:-}"
+    # v9.132 — ENFORCE the pairing: verify-* without a CA cannot verify. Fail loud
+    # at startup rather than start and fail confusingly when postgres is reached.
+    case "$SERVER_TLS_SSLMODE" in
+        verify-ca|verify-full)
+            if [ -z "$SERVER_TLS_CA_FILE" ]; then
+                echo "pgbouncer: server_tls_sslmode=${SERVER_TLS_SSLMODE} requires PGBOUNCER_SERVER_TLS_CA_FILE (the pinned CA); without it the backend hop cannot be verified" >&2
+                exit 1
+            fi
+            ;;
+    esac
     if [ -n "$SERVER_TLS_CA_FILE" ]; then
         if [ ! -r "$SERVER_TLS_CA_FILE" ]; then
             echo "pgbouncer: PGBOUNCER_SERVER_TLS_CA_FILE '$SERVER_TLS_CA_FILE' is not readable" >&2
             exit 1
         fi
+        case "$SERVER_TLS_CA_FILE" in
+            *[![:print:]]*) echo "pgbouncer: PGBOUNCER_SERVER_TLS_CA_FILE has a control char (would corrupt the ini)" >&2; exit 1 ;;
+        esac
         TLS_INI="${TLS_INI}server_tls_ca_file = ${SERVER_TLS_CA_FILE}
 "
     fi
@@ -135,11 +148,22 @@ if [ -n "$CLIENT_TLS_SSLMODE" ]; then
     # Fall back to a per-start self-signed cert when none is mounted (dev).
     MOUNTED_CRT="${PGBOUNCER_CLIENT_TLS_CERT_FILE:-}"
     MOUNTED_KEY="${PGBOUNCER_CLIENT_TLS_KEY_FILE:-}"
+    # v9.132 — ENFORCE the pairing: a cert without its key (or vice versa) would
+    # silently fall back to a GENERATED cert the app cannot pin, defeating the
+    # pinning model. Demand both or neither.
+    if { [ -n "$MOUNTED_CRT" ] && [ -z "$MOUNTED_KEY" ]; } \
+       || { [ -z "$MOUNTED_CRT" ] && [ -n "$MOUNTED_KEY" ]; }; then
+        echo "pgbouncer: set BOTH PGBOUNCER_CLIENT_TLS_CERT_FILE and _KEY_FILE, or neither (a half-set pair would silently fall back to a generated cert the app cannot pin)" >&2
+        exit 1
+    fi
     if [ -n "$MOUNTED_CRT" ] && [ -n "$MOUNTED_KEY" ]; then
         if [ ! -r "$MOUNTED_CRT" ] || [ ! -r "$MOUNTED_KEY" ]; then
             echo "pgbouncer: the mounted client_tls cert/key ('$MOUNTED_CRT'/'$MOUNTED_KEY') is not readable" >&2
             exit 1
         fi
+        case "$MOUNTED_CRT$MOUNTED_KEY" in
+            *[![:print:]]*) echo "pgbouncer: a client_tls cert/key path has a control char (would corrupt the ini)" >&2; exit 1 ;;
+        esac
         CLIENT_CRT="$MOUNTED_CRT"
         CLIENT_KEY="$MOUNTED_KEY"
     else

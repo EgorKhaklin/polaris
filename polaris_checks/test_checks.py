@@ -1401,19 +1401,23 @@ def test_prod_fail_closed_check_discriminates(tmp_path):
         "_PRODUCTION = os.environ.get('POLARIS_ENV') == 'production'\n"
         "if _PRODUCTION:\n"
         "    m = os.environ.get('POLARIS_DB_SSLMODE', 'prefer')\n"
-        "    if m in ('disable', 'allow', 'prefer'):\n"
+        "    if m not in ('require', 'verify-ca', 'verify-full'):\n"
+        "        sys.exit(2)\n"
+        "    if m in ('verify-ca', 'verify-full') and not os.environ.get('POLARIS_DB_SSLROOTCERT'):\n"
         "        sys.exit(2)\n"
         "    if os.environ.get('POLARIS_DURESS_SYNC') == '1':\n"
         "        sys.exit(2)\n"
     )
+    # The 'prefer' token must appear (the message names the plaintext-capable modes).
+    GOOD = GOOD + "# rejects prefer/allow/disable\n"
 
     def write(app=GOOD):
         (web / "app.py").write_text(app)
 
-    # 1. both guards present -> OK.
+    # 1. all guards present -> OK.
     write()
     assert checks.check_prod_fail_closed(tmp_path)[0].level == "OK", \
-        "must PASS when both production fail-closed guards are present"
+        "must PASS when the production fail-closed guards are present"
 
     # 2. no _PRODUCTION flag -> FAIL.
     write(app=GOOD.replace("_PRODUCTION", "_prod_flag"))
@@ -1425,8 +1429,17 @@ def test_prod_fail_closed_check_discriminates(tmp_path):
     assert checks.check_prod_fail_closed(tmp_path)[0].level == "FAIL", \
         "must FAIL when the POLARIS_DB_SSLMODE guard is missing"
 
-    # 4. the duress-sync guard is gone -> FAIL.
-    write(app="_PRODUCTION = True\nif _PRODUCTION:\n    m = os.environ.get('POLARIS_DB_SSLMODE', 'prefer')\n    if m in ('disable', 'allow', 'prefer'):\n        sys.exit(2)\n")
+    # 4. verify-* does not require POLARIS_DB_SSLROOTCERT -> FAIL (v9.132).
+    write(app="_PRODUCTION = True\nif _PRODUCTION:\n    m = os.environ.get('POLARIS_DB_SSLMODE', 'prefer')\n"
+              "    if m not in ('require','verify-ca','verify-full'):\n        sys.exit(2)\n    # rejects prefer\n"
+              "    if os.environ.get('POLARIS_DURESS_SYNC') == '1':\n        sys.exit(2)\n")
+    assert checks.check_prod_fail_closed(tmp_path)[0].level == "FAIL", \
+        "must FAIL when verify-* does not require POLARIS_DB_SSLROOTCERT"
+
+    # 5. the duress-sync guard is gone -> FAIL.
+    write(app="_PRODUCTION = True\nif _PRODUCTION:\n    m = os.environ.get('POLARIS_DB_SSLMODE', 'prefer')\n"
+              "    if m not in ('require','verify-ca','verify-full'):\n        sys.exit(2)\n    # rejects prefer\n"
+              "    if not os.environ.get('POLARIS_DB_SSLROOTCERT'):\n        sys.exit(2)\n")
     assert checks.check_prod_fail_closed(tmp_path)[0].level == "FAIL", \
         "must FAIL when the POLARIS_DURESS_SYNC guard is missing"
 
@@ -1584,7 +1597,9 @@ def test_app_db_tls_check_discriminates(tmp_path):
                     "      PGBOUNCER_CLIENT_TLS_SSLMODE: require\n"
                     "      PGBOUNCER_CLIENT_TLS_CERT_FILE: /etc/polaris-pgb-certs/pgbouncer.crt\n")
     GOOD_INIT = "psql -c \"ALTER SYSTEM SET ssl = on;\"\n"
-    GOOD_ENTRY = "server_tls_sslmode = $X\nserver_tls_ca_file = $C\nclient_tls_sslmode = $Y\n"
+    GOOD_ENTRY = ("server_tls_sslmode = $X\nserver_tls_ca_file = $C\nclient_tls_sslmode = $Y\n"
+                  "case $S in verify-ca|verify-full) "
+                  "echo 'requires PGBOUNCER_SERVER_TLS_CA_FILE' >&2; exit 1;; esac\n")
 
     def write(app=GOOD_APP, compose=GOOD_COMPOSE, init=GOOD_INIT, entry=GOOD_ENTRY):
         (web / "app.py").write_text(app)

@@ -3946,7 +3946,8 @@ class F05_ProductionSecretGuardTests(unittest.TestCase):
                  # Start from a clean slate so a stray parent value does not trip
                  # a guard the test did not intend.
                  'os.environ.pop("POLARIS_DURESS_SYNC", None); '
-                 'os.environ.pop("POLARIS_DB_SSLMODE", None); ')
+                 'os.environ.pop("POLARIS_DB_SSLMODE", None); '
+                 'os.environ.pop("POLARIS_DB_SSLROOTCERT", None); ')
         for k, v in extra_env.items():
             setup += 'os.environ["%s"]="%s"; ' % (k, v)
         setup += 'import app'
@@ -3977,6 +3978,22 @@ class F05_ProductionSecretGuardTests(unittest.TestCase):
         proc = self._prod_import({'POLARIS_DB_SSLMODE': 'require'})
         self.assertNotIn('POLARIS_DB_SSLMODE', proc.stderr)
         self.assertNotIn('POLARIS_DURESS_SYNC', proc.stderr)
+
+    def test_verify_ca_without_sslrootcert_rejected_in_production(self):
+        """v9.132: verify-ca needs a pinned CA; without POLARIS_DB_SSLROOTCERT it
+        cannot verify the peer, so it must refuse to boot in production."""
+        proc = self._prod_import({'POLARIS_DB_SSLMODE': 'verify-ca'})
+        self.assertEqual(proc.returncode, 2, f"stderr: {proc.stderr[:400]}")
+        self.assertIn('FATAL', proc.stderr)
+        self.assertIn('POLARIS_DB_SSLROOTCERT', proc.stderr)
+
+    def test_typo_sslmode_rejected_in_production(self):
+        """v9.132: the whitelist rejects a typo'd mode ('verifyca') that the old
+        blacklist would have let through."""
+        proc = self._prod_import({'POLARIS_DB_SSLMODE': 'verifyca'})
+        self.assertEqual(proc.returncode, 2, f"stderr: {proc.stderr[:400]}")
+        self.assertIn('FATAL', proc.stderr)
+        self.assertIn('POLARIS_DB_SSLMODE', proc.stderr)
 
 
 class F06_CookieHardeningTests(PolarisTestCase):

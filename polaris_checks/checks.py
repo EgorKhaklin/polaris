@@ -900,6 +900,14 @@ def check_prod_fail_closed(root: pathlib.Path) -> list[Finding]:
     if not re.search(r"prefer", app):
         return _fail("prod_fail_closed",
                      "the sslmode guard must reject the plaintext-capable modes (prefer/allow/disable)")
+    # v9.132 — verify-ca/verify-full must require a pinned CA (sslrootcert) at
+    # startup, or a hand-rolled deploy boots and fails confusingly at first
+    # connect. The guard must tie POLARIS_DB_SSLROOTCERT to a sys.exit.
+    if not re.search(r"POLARIS_DB_SSLROOTCERT.{0,500}sys\.exit", app, re.S):
+        return _fail("prod_fail_closed",
+                     "app.py must refuse to start in production when sslmode is verify-ca/verify-full "
+                     "but POLARIS_DB_SSLROOTCERT is unset/missing (verify-* without a pinned CA cannot "
+                     "verify the peer)")
     # The duress-sync guard: POLARIS_DURESS_SYNC tied to a sys.exit.
     if not re.search(r"POLARIS_DURESS_SYNC.{0,500}sys\.exit", app, re.S):
         return _fail("prod_fail_closed",
@@ -1250,6 +1258,12 @@ def check_app_db_tls(root: pathlib.Path) -> list[Finding]:
         return _fail("app_db_tls",
                      "pgbouncer-entrypoint.sh must wire server_tls_ca_file (the pinned postgres CA for "
                      "verify-ca on the backend hop)")
+    # v9.132 — the entrypoint must ENFORCE the pairing: verify-* without a CA
+    # cannot verify, so it must fail fast rather than start unverified.
+    if not re.search(r"verify-ca\|verify-full", entry) or "requires PGBOUNCER_SERVER_TLS_CA_FILE" not in entry:
+        return _fail("app_db_tls",
+                     "pgbouncer-entrypoint.sh must REQUIRE the CA file when server_tls_sslmode is "
+                     "verify-* (fail fast, not start with verification effectively off)")
     return _ok("app_db_tls",
                "the app<->DB path is TLS on both hops AND verifies the pinned self-signed certs "
                "(app verify-ca pins pgbouncer; pgbouncer server_tls verify-ca pins postgres) — a MITM "

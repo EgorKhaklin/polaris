@@ -5,6 +5,31 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.132 — 2026-06-06 (hardening: ENFORCE verify-ca at startup, from a review of v9.131)
+
+A focused adversarial review of the v9.131 verify-ca ship found the pinning was
+not ENFORCED: a hand-rolled deploy that set `verify-ca` but forgot the cert would
+boot and fail confusingly at the first DB connection (it fails CLOSED — no
+plaintext leak — but late and cryptically). The review also confirmed the key
+posture is sound (the 0700 dir gates the 0644 key; no leak in logs/layers/git).
+This makes the misconfigurations fail loud and early, like the v9.129 guards.
+
+- **App: whitelist + require the pin.** The production startup guard now
+  WHITELISTS `POLARIS_DB_SSLMODE` (must be `require`/`verify-ca`/`verify-full` — a
+  typo like `verifyca` that the old blacklist let through is now rejected), and
+  when the mode is verify-*, REQUIRES `POLARIS_DB_SSLROOTCERT` to point at a
+  readable file. Refuses to start otherwise.
+- **pgbouncer: require the CA + pair the cert/key.** The entrypoint now refuses
+  to start when `server_tls_sslmode` is verify-* but no CA file is set, and when
+  the client cert/key are half-set (one without the other, which would silently
+  fall back to a generated cert the app cannot pin). Cert/CA paths are checked for
+  control chars (they are interpolated into pgbouncer.ini).
+- **Pinned + proven.** `check_prod_fail_closed` asserts the verify-* sslrootcert
+  guard; `check_app_db_tls` asserts the entrypoint's CA-required enforcement.
+  Subprocess tests prove the app refuses verify-ca-without-sslrootcert and a
+  typo'd mode; the entrypoint enforcement (verify-ca-without-CA, cert-without-key)
+  was proven against the built image.
+
 ## v9.131 — 2026-06-06 (hardening: both DB hops now VERIFY the pinned certs, not just encrypt)
 
 The last review item: v9.121 encrypted both prod DB hops with `require`, which

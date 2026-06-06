@@ -255,13 +255,28 @@ if app.secret_key in ('dev-key-change-in-production', 'dev-secret-rotate-in-prod
 #      operator's match becomes measurable in the response latency). Test-only.
 if _PRODUCTION:
     _db_sslmode = os.environ.get('POLARIS_DB_SSLMODE', 'prefer').lower()
-    if _db_sslmode in ('disable', 'allow', 'prefer'):
+    # WHITELIST (v9.132, hardened from the v9.129 blacklist): production must use
+    # an encrypting mode. A blacklist let a typo ('verifyca', 'verify_ca') slip
+    # through to an unintended/plaintext-capable mode; the whitelist rejects it.
+    if _db_sslmode not in ('require', 'verify-ca', 'verify-full'):
         sys.stderr.write(
-            "\n  FATAL: POLARIS_ENV=production but POLARIS_DB_SSLMODE is '" + _db_sslmode + "',\n"
-            "         which permits a silent plaintext fallback on the DB hop. Set it to\n"
-            "         'require' (or 'verify-ca'/'verify-full' with a CA). Refusing to start.\n\n"
+            "\n  FATAL: POLARIS_ENV=production but POLARIS_DB_SSLMODE is '" + _db_sslmode + "'.\n"
+            "         It must be one of: require, verify-ca, verify-full (anything else\n"
+            "         permits or risks a plaintext DB hop). Refusing to start.\n\n"
         )
         sys.exit(2)
+    # verify-* CANNOT validate the peer without a pinned cert. Require it HERE
+    # (fail loud at startup) rather than let a hand-rolled deploy boot and fail
+    # confusingly at the first DB connection. v9.132 (verify-ca review).
+    if _db_sslmode in ('verify-ca', 'verify-full'):
+        _rc = os.environ.get('POLARIS_DB_SSLROOTCERT', '').strip()
+        if not _rc or not os.path.isfile(_rc):
+            sys.stderr.write(
+                "\n  FATAL: POLARIS_DB_SSLMODE=" + _db_sslmode + " needs a pinned CA, but\n"
+                "         POLARIS_DB_SSLROOTCERT is unset or does not point at a readable file\n"
+                "         ('" + (_rc or '') + "'). verify-* without a CA cannot verify the peer.\n\n"
+            )
+            sys.exit(2)
     if os.environ.get('POLARIS_DURESS_SYNC') == '1':
         sys.stderr.write(
             "\n  FATAL: POLARIS_DURESS_SYNC=1 in production reintroduces the duress\n"
