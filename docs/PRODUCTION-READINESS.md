@@ -154,6 +154,14 @@ posture audit's migration roadmap.
   (S3 bucket + credentials) and the backup schedule remain operator-supplied.
 
 ### Wave 4 — deploy/ops/reliability/observability (HIGH/MEDIUM)
+- [x] **Container runtime hardening (v9.141).** Every prod-compose service drops
+  ALL Linux capabilities + forbids privilege escalation (`no-new-privileges`),
+  adding back only what each entrypoint needs: the app + pgbouncer run with ZERO
+  caps (verified `CapEff: 0`), Caddy keeps only `NET_BIND_SERVICE`, postgres/redis
+  keep only the five their root-then-drop init needs. Proven to still serve by the
+  `prod-stack-boot` job (an early `cap_drop: ALL`-with-no-add draft crashed redis,
+  caught by the boot test). Pinned by `check_container_hardening`. Full non-root
+  `USER` for the Caddy edge is a noted follow-up.
 - [x] **Full prod compose boots + serves end to end (v9.140).** CI booted only the
   dev compose; booting the real prod stack for the first time found it had never
   come up: `09_grants.sql` hardcoded the test DB name `polaris_test`, so prod init

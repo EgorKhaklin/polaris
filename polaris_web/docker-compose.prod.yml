@@ -42,6 +42,15 @@ services:
         max-file: '5'
     container_name: polaris-caddy
     restart: unless-stopped
+    # v9.141 — container hardening (CIS Docker 5.x): drop every Linux capability,
+    # keep only NET_BIND_SERVICE so the public edge can bind :80/:443, and forbid
+    # privilege escalation. (Process-count caps live in deploy.resources.)
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
     ports:
       - "80:80"
       - "443:443"
@@ -84,6 +93,12 @@ services:
       dockerfile: polaris_web/Dockerfile.prod
     container_name: polaris-app
     restart: unless-stopped
+    # v9.141 — container hardening. The app already runs non-root (USER polaris,
+    # uid 1000) and binds :8000 (>1024), so it needs no capabilities at all.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     depends_on:
       pgbouncer:
         condition: service_healthy
@@ -183,6 +198,12 @@ services:
         max-file: '5'
     container_name: polaris-pgbouncer
     restart: unless-stopped
+    # v9.141 — container hardening. pgbouncer runs non-root (USER pgbouncer) and
+    # binds :6432 (>1024); no capabilities needed.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
     depends_on:
       postgres:
         condition: service_healthy
@@ -257,6 +278,21 @@ services:
         max-file: '5'
     container_name: polaris-postgres
     restart: unless-stopped
+    # v9.141 — container hardening. The postgres image starts as root, fixes the
+    # data-dir ownership, then drops to the postgres user via gosu. Drop all caps
+    # but keep the ones that init + the privilege drop need: CHOWN/DAC_OVERRIDE/
+    # FOWNER (data-dir perms) and SETUID/SETGID (gosu's drop to the postgres user).
+    # The server process itself runs unprivileged as postgres.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
     environment:
       POSTGRES_DB: polaris
       POSTGRES_USER: postgres
@@ -325,6 +361,21 @@ services:
         max-file: '5'
     container_name: polaris-redis
     restart: unless-stopped
+    # v9.141 — container hardening. Like postgres, the redis image starts as root,
+    # chowns /data, then drops to the redis user via setpriv — so it needs the
+    # same minimal caps for that drop (CHOWN/DAC_OVERRIDE/FOWNER for /data,
+    # SETGID/SETUID for setpriv). The redis server then runs unprivileged.
+    # Internal-network-only (no published ports).
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
     command: >
       redis-server
       --appendonly yes

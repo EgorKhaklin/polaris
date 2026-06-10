@@ -1108,6 +1108,51 @@ def test_prod_stack_boot_check_discriminates(tmp_path):
         "must PASS for a full prod-compose boot that generates secrets and probes /api/health"
 
 
+def test_container_hardening_check_discriminates(tmp_path):
+    web = tmp_path / "polaris_web"
+    web.mkdir()
+    gh = tmp_path / ".github" / "workflows"
+    gh.mkdir(parents=True)
+    (gh / "ci.yml").write_text("jobs:\n  prod-stack-boot:\n    steps:\n      run: echo boot\n")
+    compose = web / "docker-compose.prod.yml"
+
+    def svc(name, hardened=True):
+        block = f"  {name}:\n    image: x:1\n"
+        if hardened:
+            block += ("    security_opt:\n      - no-new-privileges:true\n"
+                      "    cap_drop:\n      - ALL\n")
+        return block
+
+    TWO_HARDENED = "services:\n" + svc("a") + svc("b")
+
+    # 1. Two services, neither hardened -> FAIL.
+    compose.write_text("services:\n" + svc("a", False) + svc("b", False))
+    assert checks.check_container_hardening(tmp_path)[0].level == "FAIL", \
+        "must FAIL when services lack no-new-privileges + cap_drop"
+
+    # 2. One hardened, one not -> FAIL (not all services).
+    compose.write_text("services:\n" + svc("a", True) + svc("b", False))
+    assert checks.check_container_hardening(tmp_path)[0].level == "FAIL", \
+        "must FAIL when only some services are hardened"
+
+    # 3. Has cap_drop ALL but no no-new-privileges -> FAIL.
+    compose.write_text("services:\n  a:\n    image: x:1\n    cap_drop:\n      - ALL\n"
+                       "  b:\n    image: x:1\n    cap_drop:\n      - ALL\n")
+    assert checks.check_container_hardening(tmp_path)[0].level == "FAIL", \
+        "must FAIL when privilege-escalation is not forbidden"
+
+    # 4. All hardened but CI lacks the prod-stack-boot validator -> FAIL.
+    compose.write_text(TWO_HARDENED)
+    (gh / "ci.yml").write_text("jobs:\n  x:\n    steps:\n      run: echo nothing\n")
+    assert checks.check_container_hardening(tmp_path)[0].level == "FAIL", \
+        "must FAIL when CI does not boot the hardened stack to prove it still serves"
+
+    # 5. All hardened + the boot validator present -> OK.
+    (gh / "ci.yml").write_text("jobs:\n  prod-stack-boot:\n    steps:\n      run: echo boot\n")
+    assert checks.check_container_hardening(tmp_path)[0].level == "OK", \
+        "must PASS when every service drops caps + forbids escalation, validated by the boot job"
+
+
 def test_edge_pq_kex_check_discriminates(tmp_path):
     ref = tmp_path / "docs" / "reference"
     ref.mkdir(parents=True)

@@ -973,6 +973,45 @@ def check_compose_resource_limits(root: pathlib.Path) -> list[Finding]:
 
 
 # ---------------------------------------------------------------------------
+# Container runtime hardening (v9.141, CIS Docker 5.x). Every prod-compose
+# service must drop ALL Linux capabilities (adding back only the few its
+# entrypoint genuinely needs) and forbid privilege escalation
+# (no-new-privileges). The app + pgbouncer then run with ZERO capabilities; the
+# public Caddy edge keeps only NET_BIND_SERVICE; postgres/redis keep only the
+# caps their root-then-drop init needs. Proven to still boot + serve by the
+# prod-stack-boot CI job (cap_drop ALL would otherwise silently break an
+# entrypoint). A service that ships without these is the un-hardened default.
+# ---------------------------------------------------------------------------
+def check_container_hardening(root: pathlib.Path) -> list[Finding]:
+    text = _read(root, "polaris_web/docker-compose.prod.yml")
+    if not text:
+        return _fail("container_hardening", "polaris_web/docker-compose.prod.yml is missing")
+    services = len(re.findall(r"(?m)^\s+image:\s", text))
+    if services == 0:
+        return _fail("container_hardening", "could not find any services in the prod compose")
+    nnp = len(re.findall(r"no-new-privileges:\s*true", text))
+    cap_drop_all = len(re.findall(r"(?m)cap_drop:\s*\n\s+-\s*ALL\b", text))
+    if nnp < services:
+        return _fail("container_hardening",
+                     f"only {nnp}/{services} prod-compose services set "
+                     "security_opt no-new-privileges:true — a service can still escalate privileges")
+    if cap_drop_all < services:
+        return _fail("container_hardening",
+                     f"only {cap_drop_all}/{services} prod-compose services cap_drop ALL — a "
+                     "service runs with the full default Linux capability set")
+    # The boot test must prove the hardened stack still serves (cap_drop can break
+    # an entrypoint that needs a capability — e.g. gosu/setpriv's SETUID).
+    ci = _read(root, ".github/workflows/ci.yml")
+    if not ci or "prod-stack-boot" not in ci:
+        return _fail("container_hardening",
+                     "the prod-stack-boot CI job must boot the HARDENED stack so cap_drop cannot "
+                     "silently break a service's entrypoint")
+    return _ok("container_hardening",
+               f"all {services} prod-compose services drop ALL caps (adding back only what their "
+               "entrypoint needs) + forbid privilege escalation; proven to still serve by CI")
+
+
+# ---------------------------------------------------------------------------
 # Third-party images in the PROD compose must be pinned by digest (@sha256), not
 # just a mutable tag. A tag can be repointed at different content upstream (or, as
 # bitnami/pgbouncer showed, deleted); a digest is immutable, so the deploy runs
@@ -2151,6 +2190,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_pgbouncer_self_built,
     check_caddy_self_built,
     check_prod_stack_boot,
+    check_container_hardening,
     check_app_db_tls,
     check_correlation_id,
     check_dockerfile_copies_app_modules,

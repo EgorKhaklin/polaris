@@ -5,6 +5,33 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.141 — 2026-06-09 (container hardening: every prod service drops all Linux capabilities)
+
+With the prod-stack-boot job now able to prove the stack still serves, the prod
+containers can be hardened safely. Every service in `docker-compose.prod.yml` now
+drops ALL Linux capabilities and forbids privilege escalation
+(`security_opt: no-new-privileges:true`), adding back only the few capabilities
+each entrypoint genuinely needs.
+
+- **The app + pgbouncer run with ZERO capabilities** (verified at runtime:
+  `CapEff: 0000000000000000`). They are non-root and bind ports above 1024, so
+  they need nothing.
+- **The public Caddy edge** keeps only `NET_BIND_SERVICE` (to bind :80/:443) and
+  drops everything else, so even though it is uid 0 it can do nothing but bind
+  ports.
+- **postgres and redis** keep only the five capabilities their root-then-drop
+  init needs (`CHOWN`, `DAC_OVERRIDE`, `FOWNER` for the data dir, `SETGID`,
+  `SETUID` for the gosu/setpriv drop to the unprivileged service user). Getting
+  this wrong is silent: an early draft with `cap_drop: ALL` and no add crashed
+  redis with `setpriv: setresuid failed: Operation not permitted` — caught by
+  booting the hardened stack, not by reading the compose.
+- **Proven, not asserted.** The `prod-stack-boot` CI job boots the HARDENED stack
+  and asserts it still serves `/api/health` end to end. `check_container_hardening`
+  (67th check) requires every service to drop ALL caps + forbid escalation, and
+  requires the boot job to exist so a capability mistake fails CI, not production.
+  (Full non-root `USER` for the Caddy edge, which needs careful volume-ownership
+  handling the citest boot would not fully exercise, is a noted follow-up.)
+
 ## v9.140 — 2026-06-06 (the full production stack now boots end to end, and a prod-down init bug it found)
 
 Booting the FULL production compose for the first time (only the dev compose and
