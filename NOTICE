@@ -19,8 +19,8 @@ Built as the portfolio piece for SCS-230 (Database Management Systems) at
 Seton Hill University, Spring 2026. The course is the occasion; the
 engineering bar is production-grade.
 
-The constitution, including the ten hard constraints C1–C10 and the
-CM meta-constraint, lives in MISSION.md. The audit-of-record principle —
+The constitution (the ten hard constraints C1–C10 plus the Vocation)
+lives in MISSION.md. The audit-of-record principle —
 that every state-changing decision in the system has a schema element or
 equivalent artifact reconstructing operation history — lives in
 DEVNOTES/audit-of-record.md.
@@ -55,11 +55,12 @@ Attribution
 ================================================================================
 
 If you build on Polaris — code, schema, architectural patterns
-(audit-of-record discipline, constraint lattice, cognitive substrate),
+(audit-of-record discipline, constraint lattice),
 or the post-v2 strategic moment framing — please retain the LICENSE +
 NOTICE files and the author attribution per Apache 2.0 §4.
 
 The audit-of-record discipline is the project's central methodological
-contribution: state-changing decisions are recorded in the schema (eight
-schema instances) and on the filesystem (sanctum/*.md sessions). The same
-discipline applies at the license level: provenance is preserved.
+contribution: state-changing decisions are recorded in the schema (nine
+append-only trigger instances) and on the filesystem (CHANGELOG.md plus
+git history). The same discipline applies at the license level:
+provenance is preserved.

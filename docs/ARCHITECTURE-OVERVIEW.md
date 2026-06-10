@@ -298,7 +298,7 @@ Three deployment paths (see `docs/DEPLOYMENT.md`):
 
 For each path: TLS via Caddy + Let's Encrypt; secrets via
 `polaris-generate-secrets.sh`; backup via `polaris-backup.sh`;
-restore via `polaris-restore.sh` (see `DR-SINGLE-REGION.md`).
+restore via `polaris-restore.sh` (see `docs/operator/DR.md`).
 
 Production checklist:
 - Change all demo passwords
@@ -365,6 +365,6 @@ requirement, or a large jump in verification volume.
 - `DEVNOTES/style.md` — VANTA's standing instructions
 - `DEVNOTES/threat-model.md` — schema/runtime STRIDE model
 - `docs/operator/OPERATIONS.md` — day-2 runbook
-- `docs/operator/DR-SINGLE-REGION.md` (v9.23) — disaster recovery
+- `docs/operator/DR.md` (v9.23) — disaster recovery
 - `docs/operator/WEBAUTHN-ROLLOUT.md` (v9.23) — WebAuthn rollout
 - `docs/RED-TEAM-SCOPE.md` (v9.23) — external red-team scope

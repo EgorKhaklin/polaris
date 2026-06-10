@@ -20,30 +20,46 @@ polaris/                          ← repo root
 ├── ROADMAP.md                    ← prioritized backlog (R-* items)
 ├── CHANGELOG.md                  ← audit-of-record (every ship)
 ├── CLAUDE.md                     ← agent runbook
+├── CONTRIBUTING.md / SECURITY.md ← contributor guide + vulnerability disclosure
 ├── LICENSE / NOTICE              ← legal
 │
 ├── Polaris.command               ← double-click launcher (macOS)
 ├── polaris_mac_launch.sh         ← launcher logic
 │
 ├── polaris_web/        ← Flask app (app.py + WebAuthn + ZK wrapper)
+│   ├── Dockerfile / docker-compose.yml            ← dev image + dev stack
+│   ├── Dockerfile.prod / docker-compose.prod.yml  ← prod image + full prod stack
+│   ├── Dockerfile.caddy / Caddyfile               ← self-built TLS edge (rate_limit compiled in)
+│   ├── Dockerfile.pgbouncer / pgbouncer.ini       ← self-built connection pooler
+│   ├── Dockerfile.postgres / pgbackrest.conf      ← DB image + WAL-archiving config
+│   └── gunicorn.conf.py                           ← prod WSGI config
 ├── polaris_sql/        ← schema, procedures, triggers, atlas, migrations
 ├── polaris_zk/         ← Plonky2 ZK-SNARK Rust crate + witness2/ second witness
 ├── polaris_cli/        ← CLI utilities
 ├── polaris_checks/     ← flat C1-C10 invariant layer
 │
-├── docs/               ← all documentation (operator + reference + story + paper)
+├── deploy/             ← observability configs (prometheus.yml + polaris-alerts.yml)
+├── docs/               ← all documentation (operator runbooks + reference + story + paper + PRODUCTION-READINESS.md)
 ├── meta/               ← structural records (constraint lattice, redaction proof, TLA+)
 ├── DEVNOTES/           ← informal developer notes
 ├── scripts/            ← operator (polaris-*) + workflow (ai-*) scripts
 ├── assets/             ← branding (logo)
 │
 ├── .git/               ← genesis 2026-05-15
-├── .github/workflows/  ← CI (Postgres-16 service container; full suite)
+├── .github/workflows/  ← CI (ci.yml; 7 jobs, named below)
 ├── .gitignore          ← venv, caches, secrets, .DS_Store, .hypothesis
 └── .pre-commit-config.yaml  ← local hooks (link-check, invariants)
 ```
 
-**Every load-bearing top-level directory has a README** (enforced by `test_every_top_level_dir_has_readme`).
+**CI jobs** ([`.github/workflows/ci.yml`](../../.github/workflows/ci.yml)):
+
+- `test`: the product suite against Postgres 16; checks layer, DB suites, ZK build + prove-verify roundtrip, encrypted backup/restore round-trip.
+- `docker-image`: builds + smoke-boots the dev and prod images; pgbouncer, verify-ca pinning, streaming-replication, and pgBackRest round-trips.
+- `caddy-edge`: builds the self-built Caddy image, validates the real prod Caddyfile, proves the X25519MLKEM768 post-quantum hybrid KEX.
+- `pqc-real`: real ML-DSA-65 sign + verify (liboqs), cross-checked by the cryptography second witness.
+- `cve-scan`: dependency CVE audit (pip-audit) + SAST (bandit).
+- `image-cve-scan`: Trivy scan of the self-built prod images; gates on fixable CRITICALs.
+- `prod-stack-boot`: boots the full prod compose end to end on Linux and asserts `/api/health` serves through the TLS edge.
 
 ---
 
@@ -79,8 +95,8 @@ What the operator + developer + auditor needs to read.
 
 | Layer-3 dir | What |
 |---|---|
-| [`docs/operator/`](../operator/) | Runbooks (INSTALL, DEPLOYMENT, OPERATIONS, DR, SECRETS, SECURITY, PRIVACY) |
-| [`docs/reference/`](../reference/) | Technical reference (API, DATA-MODEL, GLOSSARY, SCALING, **this SYSTEM-MAP**) |
+| [`docs/operator/`](../operator/) | Runbooks (INSTALL, DEPLOYMENT, OPERATIONS, DR, FAILOVER, SECRETS, SECURITY, PRIVACY, RUNBOOKS, SLOS, ENCRYPTION-AT-REST, WEBAUTHN-ROLLOUT) |
+| [`docs/reference/`](../reference/) | Technical reference (API, DATA-MODEL, GLOSSARY, SCALING, PQC-POSTURE, **this SYSTEM-MAP**) |
 | [`docs/story/`](../story/) | Principles (PRINCIPLES) |
 | [`docs/paper/`](../paper/) | Academic write-up |
 | [`DEVNOTES/`](../../DEVNOTES/) | Informal developer notes (cross-cutting + per-ship in `ships/`) |
@@ -148,4 +164,4 @@ here for self-contained navigation):
 document that, if read in full, gives a complete sense of how
 Polaris's many parts fit together.
 
-Last refreshed: 2026-05-15 (v9.08 — showroom polish).
+Last refreshed: 2026-06-10 (v9.142, production-surface refresh).

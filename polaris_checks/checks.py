@@ -1936,20 +1936,24 @@ def check_table_count_matches_doc(root: pathlib.Path) -> list[Finding]:
     # Every doc that states a schema-table count must match the real schema. Both
     # ARCHITECTURE-OVERVIEW.md ("N tables") and README.md ("N schema tables")
     # carry one; the README's drifted to 26 while the schema reached 27 (v9.89)
-    # because only the architecture doc was guarded. Guard both.
+    # because only the architecture doc was guarded. Guard both — and check
+    # EVERY occurrence, not just the first: v9.141 shipped a README whose first
+    # count was right while three later "26 tables" instances had drifted
+    # (re.search only validated the first match).
     docs = [
-        ("docs/ARCHITECTURE-OVERVIEW.md", r"(\d+)\s+tables"),
-        ("README.md", r"(\d+)\s+schema tables"),
+        ("docs/ARCHITECTURE-OVERVIEW.md", r"(\d+)\s+(?:schema )?tables"),
+        ("README.md", r"(\d+)\s+(?:schema )?tables"),
     ]
     for rel, pat in docs:
-        m = re.search(pat, _read(root, rel))
-        if not m:
+        stated_counts = [int(s) for s in re.findall(pat, _read(root, rel))]
+        if not stated_counts:
             return _fail("table_count", f"{rel} states no schema-table count")
-        stated = int(m.group(1))
-        if stated != n:
+        wrong = sorted(set(s for s in stated_counts if s != n))
+        if wrong:
             return _fail("table_count",
-                         f"{rel} says {stated} tables but the schema defines {n}")
-    return _ok("table_count", f"doc table counts match the schema ({n})")
+                         f"{rel} says {wrong} tables somewhere but the schema "
+                         f"defines {n} (every stated count must match)")
+    return _ok("table_count", f"doc table counts match the schema ({n}, all instances)")
 
 
 # ---------------------------------------------------------------------------
@@ -2016,10 +2020,14 @@ def check_c6_atlas_redacts_zk_location(root: pathlib.Path) -> list[Finding]:
     if "THEN NULL ELSE tv.latitude" not in atlas:
         return _fail("c6_atlas_zk",
                      "atlas_recent_events must NULL lat/lon for ZERO_KNOWLEDGE rows (C6)")
+    # v9.142: the /atlas HTML route no longer reads requestor_location at all
+    # (its inline globe-node query was dead code, removed; the globe fetches
+    # via /api/atlas/*, whose SQL functions exclude ZK rows entirely, asserted
+    # above). The one remaining app.py HTML read path is /verifications.
     app = _read(root, "polaris_web/app.py")
-    if app.count("THEN NULL ELSE ve.requestor_location") < 2:
+    if app.count("THEN NULL ELSE ve.requestor_location") < 1:
         return _fail("c6_atlas_zk",
-                     "app.py /verifications + /atlas must redact requestor_location "
+                     "app.py /verifications must redact requestor_location "
                      "for ZERO_KNOWLEDGE (C6)")
     return _ok("c6_atlas_zk",
                "ZK verification location is excluded/redacted at the atlas + list read paths (C6)")

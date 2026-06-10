@@ -915,6 +915,14 @@ def webauthn_delete_credential(credential_id):
     return redirect(url_for('webauthn_settings'))
 
 
+@app.errorhandler(400)
+def bad_request(e):
+    return render_template('error.html',
+                           code=400,
+                           message=getattr(e, 'description', None)
+                                   or 'Bad request.'), 400
+
+
 @app.errorhandler(403)
 def forbidden(e):
     return render_template('error.html',
@@ -1207,199 +1215,6 @@ def atlas():
         FROM VerificationEvent
     """, fetch='one')
 
-    # --- Predecessor lookup so each globe node can show its lineage chain --
-    pred_rows = query("""
-        SELECT t1.token_id   AS current_id,
-               t1.activation_sequence,
-               t2.token_id   AS pred_id,
-               t2.status     AS pred_status
-        FROM IdentityToken t1
-        LEFT JOIN IdentityToken t2 ON t1.predecessor_token_id = t2.token_id
-        WHERE t1.predecessor_token_id IS NOT NULL
-    """)
-    pred_map = {r['current_id']: r for r in pred_rows}
-
-    # --- Live event stream: verifications + recent lifecycle events --------
-    globe_events = query("""
-        SELECT ve.event_id, ve.event_timestamp, ve.outcome, ve.disclosure_level,
-               -- C6: redact location for ZERO_KNOWLEDGE verifications. With this
-               -- NULL, _coords() falls back to a non-identifying (jurisdiction /
-               -- context) position and the subtitle shows the region, so a ZK
-               -- event is never plotted at — or labelled with — its real place.
-               CASE WHEN ve.disclosure_level = 'ZERO_KNOWLEDGE'
-                    THEN NULL ELSE ve.requestor_location END AS requestor_location,
-               vc.context_type,
-               t.token_id, t.status, t.activation_sequence,
-               i.legal_name, i.jurisdiction,
-               alg.name AS algorithm_name, alg.quantum_resistant,
-               ag.name AS agency_name
-        FROM VerificationEvent ve
-        JOIN VerificationContext vc ON ve.context_id = vc.context_id
-        LEFT JOIN IdentityToken t ON ve.token_id = t.token_id
-        LEFT JOIN Individual i ON t.individual_id = i.individual_id
-        LEFT JOIN CryptographicAlgorithm alg ON t.algorithm_id = alg.algorithm_id
-        LEFT JOIN Agency ag ON ve.requesting_agency_id = ag.agency_id
-        ORDER BY ve.event_timestamp DESC, ve.event_id DESC
-        LIMIT 14
-    """)
-
-    recent_lifecycle = query("""
-        SELECT le.event_id, le.event_type, le.event_timestamp,
-               le.token_id, le.reason_code,
-               i.legal_name, i.jurisdiction,
-               alg.name AS algorithm_name, alg.quantum_resistant,
-               ag.name AS actor_name
-        FROM TokenLifecycleEvent le
-        JOIN IdentityToken t ON le.token_id = t.token_id
-        JOIN Individual i ON t.individual_id = i.individual_id
-        LEFT JOIN CryptographicAlgorithm alg ON t.algorithm_id = alg.algorithm_id
-        LEFT JOIN Agency ag ON le.actor_agency_id = ag.agency_id
-        ORDER BY le.event_timestamp DESC
-        LIMIT 12
-    """)
-
-    # --- Geographic projection (city → context → jurisdiction fallback) ----
-    location_points = [
-        ('San Francisco', (-122.4194, 37.7749, 'San Francisco')),
-        ('New York',      (-74.0060, 40.7128, 'New York')),
-        ('JFK Airport',   (-73.7781, 40.6413, 'JFK Airport')),
-        ('Houston',       (-95.3698, 29.7604, 'Houston')),
-        ('Philadelphia',  (-75.1652, 39.9526, 'Philadelphia')),
-        ('Pittsburgh',    (-79.9959, 40.4406, 'Pittsburgh')),
-        ('Los Angeles',   (-118.2437, 34.0522, 'Los Angeles')),
-        ('Miami',         (-80.1918, 25.7617, 'Miami')),
-    ]
-    jurisdiction_points = {
-        'US-CA': (-119.4179, 36.7783, 'California'),
-        'US-NY': (-75.0000, 43.0000, 'New York'),
-        'US-PA': (-77.1945, 41.2033, 'Pennsylvania'),
-        'US-TX': (-99.9018, 31.9686, 'Texas'),
-        'US-FL': (-81.5158, 27.6648, 'Florida'),
-        'US':    (-98.5795, 39.8283, 'United States'),
-    }
-    context_points = {
-        'BANKING':             (-74.0060, 40.7128, 'Banking rail'),
-        'EMPLOYMENT':          (-122.4194, 37.7749, 'Employment rail'),
-        'HEALTHCARE':          (-87.6298, 41.8781, 'Healthcare rail'),
-        'TRAVEL':              (-73.7781, 40.6413, 'Travel rail'),
-        'VOTING':              (-77.0369, 38.9072, 'Voting rail'),
-        'MOTOR_VEHICLE':       (-89.3985, 40.6331, 'Motor vehicle rail'),
-        'GOVERNMENT_BENEFITS': (-95.3698, 29.7604, 'Benefits rail'),
-    }
-
-    def _coords(location, jurisdiction, context_type, offset=0):
-        lon, lat, region = context_points.get(context_type, (-98.5795, 39.8283, 'United States'))
-        loc_lc = (location or '').lower()
-        for needle, point in location_points:
-            if needle.lower() in loc_lc:
-                lon, lat, region = point
-                break
-        else:
-            if jurisdiction in jurisdiction_points:
-                lon, lat, region = jurisdiction_points[jurisdiction]
-        lon += ((offset % 3) - 1) * 1.4
-        lat += (((offset // 3) % 3) - 1) * 0.9
-        return lon, lat, region
-
-    def _context_label(raw):
-        return (raw or '').replace('GOVERNMENT_BENEFITS', 'GOV_BENEFITS')
-
-    def _tone(outcome=None, disclosure=None, event_type=None):
-        if outcome and outcome != 'SUCCESS':
-            return 'alert'
-        if event_type in ('REVOKED', 'LOST', 'EXPIRED', 'DEVICE_REVOKED'):
-            return 'alert'
-        if event_type in ('ACTIVATED', 'DEVICE_BOUND'):
-            return 'zk'
-        return {
-            'ZERO_KNOWLEDGE': 'zk',
-            'SELECTIVE': 'selective',
-            'FULL': 'full',
-        }.get(disclosure, 'full' if event_type == 'ISSUED' else 'selective')
-
-    def _pred_for(token_id):
-        p = pred_map.get(token_id)
-        if not p:
-            return None
-        return {
-            'predecessorId': p['pred_id'],
-            'predecessorStatus': p['pred_status'],
-            'sequence': p['activation_sequence'],
-        }
-
-    globe_nodes = []
-    for idx, ev in enumerate(globe_events):
-        lon, lat, region = _coords(
-            ev.get('requestor_location'),
-            ev.get('jurisdiction'),
-            ev.get('context_type'),
-            idx,
-        )
-        ctx = _context_label(ev['context_type'])
-        node = {
-            'id': f"verif-{ev['event_id']}",
-            'kind': 'verification',
-            'lon': lon, 'lat': lat,
-            'tone': _tone(ev.get('outcome'), ev.get('disclosure_level')),
-            'title': f"{ctx} verification",
-            'subtitle': ev.get('requestor_location') or region,
-            'context': ctx,
-            'tokenId': ev.get('token_id'),
-            'holder': ev.get('legal_name'),
-            'agency': ev.get('agency_name'),
-            'algorithm': ev.get('algorithm_name'),
-            'algorithmPq': bool(ev.get('quantum_resistant')),
-            'outcome': ev.get('outcome'),
-            'disclosure': ev.get('disclosure_level'),
-            'href': url_for('tokens_detail', tok_id=ev['token_id']) if ev.get('token_id') else '',
-            'timestamp': ev['event_timestamp'].strftime('%Y-%m-%d %H:%M'),
-            'pq': bool(ev.get('quantum_resistant')),
-            'filterKeys': ['verification']
-                          + (['tokens'] if ev.get('token_id') else [])
-                          + (['pq'] if ev.get('quantum_resistant') else [])
-                          + (['failure'] if ev.get('outcome') and ev.get('outcome') != 'SUCCESS' else []),
-            'lineage': _pred_for(ev.get('token_id')),
-        }
-        globe_nodes.append(node)
-
-    for idx, ev in enumerate(recent_lifecycle):
-        lon, lat, region = _coords(None, ev.get('jurisdiction'), 'BANKING', idx + 4)
-        node = {
-            'id': f"life-{ev['event_id']}",
-            'kind': 'lifecycle',
-            'lon': lon, 'lat': lat,
-            'tone': _tone(event_type=ev['event_type']),
-            'title': f"{ev['event_type']} token #{ev['token_id']}",
-            'subtitle': ev.get('legal_name') or region,
-            'context': 'LIFECYCLE',
-            'tokenId': ev['token_id'],
-            'holder': ev.get('legal_name'),
-            'agency': ev.get('actor_name'),
-            'algorithm': ev.get('algorithm_name'),
-            'algorithmPq': bool(ev.get('quantum_resistant')),
-            'outcome': None,
-            'disclosure': None,
-            'eventType': ev['event_type'],
-            'reason': ev.get('reason_code'),
-            'href': url_for('tokens_detail', tok_id=ev['token_id']),
-            'timestamp': ev['event_timestamp'].strftime('%Y-%m-%d %H:%M'),
-            'pq': bool(ev.get('quantum_resistant')),
-            'filterKeys': ['tokens', 'lifecycle']
-                          + (['pq'] if ev.get('quantum_resistant') else []),
-            'lineage': _pred_for(ev['token_id']),
-        }
-        globe_nodes.append(node)
-
-    globe_notifications = []
-    for ev in recent_lifecycle[:8]:
-        globe_notifications.append({
-            'nodeId': f"life-{ev['event_id']}",
-            'tone': _tone(event_type=ev['event_type']),
-            'eventType': ev['event_type'],
-            'title': f"token #{ev['token_id']} / {ev['legal_name']}",
-            'time': ev['event_timestamp'].strftime('%m-%d %H:%M'),
-        })
-
     health = {
         'tokens_total':       table_counts['IdentityToken'],
         'tokens_active':      state_pop.get('ACTIVE', 0),
@@ -1418,10 +1233,9 @@ def atlas():
         'full_disclosures':   int(anomalies['full_n'] or 0),
     }
 
-    return render_template('atlas.html',
-                           globe_nodes=globe_nodes,
-                           globe_notifications=globe_notifications,
-                           health=health)
+    # The globe is data-driven via /api/atlas/* (clusters, points, events);
+    # the page itself ships only the health snapshot for the HUD.
+    return render_template('atlas.html', health=health)
 
 
 # ============================================================================
@@ -1542,6 +1356,19 @@ def _parse_cursor_int(val):
         return int(val)
     except (ValueError, TypeError):
         return None
+
+
+def _int_arg(name, default):
+    """Parse an integer query param on an HTML route.
+
+    Non-numeric input (?page=abc) is a client error, not a server error:
+    abort(400) instead of letting int() raise and render the 500 page.
+    The JSON atlas routes already follow this pattern with try/except."""
+    raw = request.args.get(name, default)
+    try:
+        return int(raw)
+    except (ValueError, TypeError):
+        abort(400, description=f'{name} must be an integer')
 
 
 def _parse_cursor_composite(val):
@@ -2985,8 +2812,8 @@ def individuals_list():
     """List of individuals with pagination. At national scale (millions of
     holders) the unpaginated list would crash any browser; the (individual_id)
     primary key already serves the ORDER BY here, so paging is O(1)."""
-    page      = max(1, int(request.args.get('page',     '1')))
-    page_size = min(500, max(10, int(request.args.get('page_size', '100'))))
+    page      = max(1, _int_arg('page', '1'))
+    page_size = min(500, max(10, _int_arg('page_size', '100')))
     offset    = (page - 1) * page_size
     rows = query(
         'SELECT * FROM Individual ORDER BY individual_id LIMIT %s OFFSET %s',
@@ -3210,7 +3037,7 @@ def tokens_list():
     # Page size: hard cap at 500 (browser OOM); floor at 1 (clamping below
     # protects against negative or zero values that would corrupt OFFSET
     # arithmetic, but does not punish legitimate small-page requests).
-    page_size = min(500, max(1, int(request.args.get('page_size', '100'))))
+    page_size = min(500, max(1, _int_arg('page_size', '100')))
 
     cursor_raw      = request.args.get('cursor')
     prev_cursor_raw = request.args.get('prev_cursor')
@@ -3224,8 +3051,12 @@ def tokens_list():
         where_sql += ' AND t.status = %s'
         params.append(status_filter)
     if individual_filter:
+        try:
+            individual_id = int(individual_filter)
+        except (ValueError, TypeError):
+            abort(400, description='individual_id must be an integer')
         where_sql += ' AND t.individual_id = %s'
-        params.append(int(individual_filter))
+        params.append(individual_id)
 
     base_select = """
         SELECT t.*, i.legal_name, ag.name AS issuer_name, alg.name AS alg_name
@@ -3284,7 +3115,7 @@ def tokens_list():
                                has_next=has_next,
                                has_prev=has_prev)
 
-    page   = max(1, int(request.args.get('page', '1')))
+    page   = max(1, _int_arg('page', '1'))
     offset = (page - 1) * page_size
     sql = base_select + where_sql + " ORDER BY t.token_id ASC LIMIT %s OFFSET %s"
     rows = query(sql, params + [page_size + 1, offset])
@@ -3451,8 +3282,10 @@ def investigate_token(tok_id):
 
     Renders the token's full chronological timeline (lifecycle + verification
     events unioned via v_ontology_token_timeline) alongside the token's
-    semantic record (v_ontology_token) and the holding individual's
-    semantic record (v_ontology_individual). Single-entity focused.
+    semantic record (v_ontology_token). Single-entity focused. The holder
+    link renders from v_ontology_token's individual_* columns; the heavier
+    v_ontology_individual view (correlated count subqueries) belongs to
+    investigate_individual only.
     """
     token = query(
         "SELECT * FROM v_ontology_token WHERE token_id = %s",
@@ -3460,11 +3293,6 @@ def investigate_token(tok_id):
     )
     if not token:
         abort(404)
-
-    individual = query(
-        "SELECT * FROM v_ontology_individual WHERE individual_id = %s",
-        (token['individual_id'],), fetch='one',
-    )
 
     # Timeline: lifecycle + verification events chronologically.
     timeline = query("""
@@ -3509,7 +3337,7 @@ def investigate_token(tok_id):
 
     return render_template(
         'investigate_token.html',
-        token=token, individual=individual, timeline=timeline,
+        token=token, timeline=timeline,
         predecessor=predecessor, successor=successor,
     )
 
@@ -4135,7 +3963,7 @@ def verifications_list():
     outcome    = request.args.get('outcome', '')
     disclosure = request.args.get('disclosure', '')
     # See note on tokens_list: floor=1, cap=500.
-    page_size  = min(500, max(1, int(request.args.get('page_size', '100'))))
+    page_size  = min(500, max(1, _int_arg('page_size', '100')))
 
     cursor_raw      = request.args.get('cursor')
     prev_cursor_raw = request.args.get('prev_cursor')
@@ -4248,7 +4076,7 @@ def verifications_list():
                                has_next=has_next,
                                has_prev=has_prev)
 
-    page   = max(1, int(request.args.get('page', '1')))
+    page   = max(1, _int_arg('page', '1'))
     offset = (page - 1) * page_size
     sql = base_select + where_sql + (
         " ORDER BY ve.event_timestamp DESC, ve.event_id DESC LIMIT %s OFFSET %s")

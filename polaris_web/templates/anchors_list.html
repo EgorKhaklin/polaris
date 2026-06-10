@@ -36,7 +36,8 @@
     </thead>
     <tbody>
         {% for r in rows %}
-        <tr>
+        {# id anchors serve the #batch-N deep links from tokens_detail #}
+        <tr id="batch-{{ r.batch_id }}">
             <td class="mono">#{{ r.batch_id }}</td>
             <td>
                 <span class="pill {% if r.quantum_resistant %}pill-success{% else %}pill-warn{% endif %}">

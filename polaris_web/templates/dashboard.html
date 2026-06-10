@@ -1,6 +1,9 @@
 {# AI-context: 6 panels, server-side data aggregation. CSP-safe: no inline scripts. See DEVNOTES/atlas-scaling.md (analytics queries follow same patterns). #}
 {% extends "base.html" %}
 {% block title %}Dashboard{% endblock %}
+{# body-dashboard scopes the boot overlay + staggered reveal; pre-v9.142 the
+   stagger leaked onto every page and made list pages feel sluggish. #}
+{% block body_class %} body-dashboard{% endblock %}
 {% block content %}
 <h1>System Dashboard</h1>
 <p class="subtitle">Schema-wide row counts, the analytical breakdown of the Polaris infrastructure, and the active-token roster. Live operational investigation lives on the <a href="{{ url_for('atlas') }}">Atlas</a>.</p>

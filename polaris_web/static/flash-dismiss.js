@@ -1,7 +1,11 @@
 /* v8.14 — Auto-dismiss flash messages after ~4.5s (CSP-compliant).
    CSS animations are unreliable under prefers-reduced-motion; this JS
    actually removes the .flash element from the DOM after the dismiss
-   period so its space collapses cleanly. */
+   period so its space collapses cleanly.
+
+   Scoped to .flash-region: several UC templates reuse the .flash classes
+   for *permanent* prerequisite notices (e.g. "every individual already has
+   an ACTIVE token") that must not vanish out from under the operator. */
 
 (function () {
     'use strict';
@@ -9,7 +13,7 @@
     var DISMISS_MS = 4500;
     var FADE_MS    = 600;
 
-    var flashes = document.querySelectorAll('.flash');
+    var flashes = document.querySelectorAll('.flash-region .flash');
     flashes.forEach(function (el) {
         setTimeout(function () {
             el.style.transition =

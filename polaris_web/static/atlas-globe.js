@@ -726,38 +726,30 @@
         loadTimeline();
     }
     function refreshFilterUI() {
-        // View chips
+        // View chips (role=radio: keep aria-checked in sync for AT users)
         document.querySelectorAll('[data-atlas-view]').forEach(function (b) {
-            b.classList.toggle('toolbar-chip-active',
-                b.dataset.atlasView === filterState.view);
+            var on = b.dataset.atlasView === filterState.view;
+            b.classList.toggle('toolbar-chip-active', on);
+            b.setAttribute('aria-checked', on ? 'true' : 'false');
         });
-        // Window chips
+        // Window chips (role=radio)
         document.querySelectorAll('[data-atlas-window]').forEach(function (b) {
-            b.classList.toggle('toolbar-chip-active',
-                b.dataset.atlasWindow === filterState.window);
+            var on = b.dataset.atlasWindow === filterState.window;
+            b.classList.toggle('toolbar-chip-active', on);
+            b.setAttribute('aria-checked', on ? 'true' : 'false');
         });
-        // Modifier chips
+        // Modifier chips (independent toggles: aria-pressed)
         document.querySelectorAll('[data-atlas-modifier]').forEach(function (b) {
-            var name = b.dataset.atlasModifier;
-            b.classList.toggle('toolbar-chip-active',
-                Boolean(filterState.modifiers[name]));
+            var on = Boolean(filterState.modifiers[b.dataset.atlasModifier]);
+            b.classList.toggle('toolbar-chip-active', on);
+            b.setAttribute('aria-pressed', on ? 'true' : 'false');
         });
-        // Context multi-select pills
+        // Context multi-select pills (independent toggles: aria-pressed)
         document.querySelectorAll('[data-atlas-context]').forEach(function (b) {
-            var ctx = b.dataset.atlasContext;
-            b.classList.toggle('toolbar-chip-active',
-                filterState.contexts.indexOf(ctx) >= 0);
+            var on = filterState.contexts.indexOf(b.dataset.atlasContext) >= 0;
+            b.classList.toggle('toolbar-chip-active', on);
+            b.setAttribute('aria-pressed', on ? 'true' : 'false');
         });
-    }
-
-    // Pre-v8.3 callers used setFilter('pq'|'failures'|'tokens'|'verification'|'lifecycle')
-    // as a single switch. The compatibility shim translates to the new
-    // structured setters so any in-flight handlers continue to work.
-    function setFilter(name) {
-        if (name === 'lifecycle')      setView('lifecycle');
-        else if (name === 'verification' || name === 'tokens') setView('verification');
-        else if (name === 'pq')        toggleModifier('pq');
-        else if (name === 'failures')  toggleModifier('anomalies');
     }
 
     function updateSpinButton() {
@@ -906,7 +898,6 @@
             if (el) el.textContent = String(val);
         };
         setText('[data-atlas-active-tokens]', stats.n_active_tokens);
-        setText('[data-atlas-anomalies]', stats.n_anomalies);
         setText('[data-atlas-pq-pct]', stats.pq_pct + '%');
         setText('[data-atlas-zk-pct]', stats.zk_pct + '%');
         setText('[data-atlas-failures]', stats.n_failures);
@@ -962,7 +953,12 @@
                 }
             })
             .catch(function (err) {
-                if (err.name !== 'AbortError') console.warn('Atlas fetch failed:', err);
+                if (err.name !== 'AbortError') {
+                    console.warn('Atlas fetch failed:', err);
+                    // Drop the dedupe key so the next scheduleFetch for this
+                    // viewport retries instead of short-circuiting forever.
+                    lastFetchKey = null;
+                }
             });
 
         // HUD signals — independent fetch, doesn't block reticles
@@ -1159,6 +1155,9 @@
                 });
                 eventFeedCursor = data.next_cursor;
                 eventFeedLoading = false;
+                // Keep the rail-heading counter honest: rows loaded so far.
+                var countEl = document.querySelector('[data-atlas-feed-count]');
+                if (countEl) countEl.textContent = String(eventFeedEl.children.length);
             })
             .catch(function (err) {
                 eventFeedLoading = false;
@@ -1198,21 +1197,6 @@
     document.querySelectorAll('[data-atlas-context]').forEach(function (b) {
         b.addEventListener('click', function () { toggleContext(b.dataset.atlasContext); });
     });
-    // Legacy handler — pre-v8.3 chip markup. The compatibility shim above
-    // routes these to the new state model.
-    document.querySelectorAll('[data-atlas-filter]').forEach(function (button) {
-        button.addEventListener('click', function () {
-            setFilter(button.dataset.atlasFilter);
-        });
-    });
-
-    document.querySelectorAll('[data-atlas-node]').forEach(function (button) {
-        button.addEventListener('click', function () {
-            focusNode(button.dataset.atlasNode, true);
-            container.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        });
-    });
-
     var spinButton = document.querySelector('[data-atlas-spin]');
     if (spinButton) {
         spinButton.addEventListener('click', function () {

@@ -6,10 +6,16 @@
 # docker-compose stack expects under polaris_web/secrets/. Refuses to
 # overwrite existing files (rotation lives in polaris-rotate-secret.sh).
 #
-# Files generated (all mode 0600):
-#   secrets/polaris_secret_key          — Flask session signing key (64 hex)
-#   secrets/polaris_db_password         — Postgres polaris_app password (32+ chars)
-#   secrets/polaris_db_root_password    — Postgres superuser password (32+ chars)
+# Files generated (most are mode 0644 inside the 0700 secrets dir: non-root
+# containers cannot read host-owned 0600 bind-mounts on Linux, so the dir,
+# not the file mode, is the host-side boundary; see v9.140 notes below):
+#   secrets/polaris_secret_key            Flask session signing key, 64 hex (0644)
+#   secrets/polaris_db_password           Postgres polaris_app password (0644)
+#   secrets/polaris_db_root_password      Postgres superuser password (0600; root-read only)
+#   secrets/polaris_replicator_password   streaming-replication role password (0644)
+#   secrets/polaris_signing_key           ML-DSA-65 signing keypair JSON (0644)
+#   secrets/postgres_server.crt/.key      Postgres TLS cert + key (0644 mount; live copy 0600)
+#   secrets/pgbouncer_server.crt/.key     pinnable pgbouncer TLS cert + key (0644)
 #
 # G28 enforced: nothing here echoes secrets to stdout. The file mode is
 # verified after write.
@@ -203,8 +209,9 @@ BANNER
 
 # 0644: the app (non-root) reads the Flask secret key; the app AND pgbouncer
 # (both non-root) read the DB password. 0600 would be unreadable by the container
-# user on Linux (see write_secret_if_missing). The root + replicator passwords
-# stay 0600 (postgres reads them as root during init).
+# user on Linux (see write_secret_if_missing). Only the root password stays
+# 0600 (postgres reads it as root during init); the replicator password is
+# 0644 because docker-init.sh reads it as the non-root postgres user (v9.140).
 write_secret_if_missing polaris_secret_key       32 0644
 write_secret_if_missing polaris_db_password      24 0644
 write_secret_if_missing polaris_db_root_password 24

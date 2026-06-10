@@ -224,7 +224,8 @@ violations informationally.
 **Allowed exceptions:**
 - CHANGELOG entries (audit-of-record; can't be retroactively
   edited per v8.20)
-- journal/ entries (already-shipped historical record)
+- Historical journal entries (pruned from the tree in v9.57; the
+  shipped record lives in git history)
 - Direct quotes from VANTA / external sources
 
 **Substitutes:** `:` (colon), `,` (comma), `(` `)` (parens),

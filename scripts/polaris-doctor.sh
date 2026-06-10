@@ -3,7 +3,7 @@
 # scripts/polaris-doctor.sh — read-only diagnostic wrapper
 #
 # Forwards to `polaris_mac_launch.sh doctor` for the actual diagnostic logic.
-# Exists so that operator runbooks (DR-SINGLE-REGION.md, polaris-oracle-runner.sh)
+# Exists so that operator runbooks (docs/operator/DR.md, polaris-oracle-runner.sh)
 # can invoke `polaris-doctor.sh` as a standalone command without coupling to
 # the launcher path.
 #

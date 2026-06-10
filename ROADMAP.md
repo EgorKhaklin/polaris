@@ -31,7 +31,10 @@ not an agent's to make. Wave 1 shipped in v9.101.
 (Backlog is operator-gated from here. The next agent-buildable ship is a new
 feature or a maintainer-green-lit gated item; see the migration roadmap in
 [`docs/reference/PQC-POSTURE.md`](docs/reference/PQC-POSTURE.md) for the
-third-party-gated PQC items, hybrid TLS KEX first.)
+third-party-gated PQC items. The client-to-edge hybrid TLS KEX shipped in
+v9.136; the still-open gated items are the internal-hop hybrid KEX (app to
+pgbouncer, pgbouncer to postgres), gated on OpenSSL 3.5 reaching those
+images.)
 
 ---
 

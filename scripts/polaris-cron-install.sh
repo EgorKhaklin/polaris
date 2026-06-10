@@ -99,7 +99,7 @@ ${MARKER_BEGIN}
 # Installed by ${SCRIPT_DIR}/$(basename "$0") on $(date -u +%Y-%m-%dT%H:%M:%SZ)
 # Manage via polaris-cron-install.sh; do not edit between markers.
 
-# Daily backup at 03:00 UTC — RPO target 24h per DR-SINGLE-REGION.md
+# Daily backup at 03:00 UTC — RPO target 24h per docs/operator/DR.md
 0 3 * * *   ${SCRIPTS_DIR}/polaris-backup.sh --dest ${BACKUP_DEST} 2>&1 | logger -t polaris-backup
 
 # Weekly backup verification at 04:00 Sun — manifest + SHA-256 cross-check

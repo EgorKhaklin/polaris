@@ -68,7 +68,7 @@ severity):
 - name: polaris-stack-down
   condition: request_rate_per_minute == 0 for 5m
   severity: warning
-  runbook: docs/operator/DR-SINGLE-REGION.md
+  runbook: docs/operator/DR.md
 
 - name: polaris-error-spike
   condition: error_rate_per_minute > 1 for 5m

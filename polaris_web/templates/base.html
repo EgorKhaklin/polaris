@@ -4,12 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Polaris{% endblock %} | Identity Token System</title>
-    {# Bump ?v= when editing CSS so dev browsers don't serve stale styles. #}
-    <link rel="stylesheet" href="{{ url_for('static', filename='polaris.css') }}?v=h63a7fbcc">
-    {# v8.14 — sci-fi HD skin layer, loaded after polaris.css. Removing this <link> reverts. #}
-    <link rel="stylesheet" href="{{ url_for('static', filename='polaris-scifi.css') }}?v=hd06c18a0">
+    {# Bump ?v= when editing CSS so dev browsers don't serve stale styles.
+       v9.142 — one unified stylesheet; the former polaris-scifi.css skin
+       layer was merged into polaris.css (single dark design system). #}
+    <link rel="stylesheet" href="{{ url_for('static', filename='polaris.css') }}?v=v9142a">
+    <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
 </head>
-<body class="theme-scifi{% block body_class %}{% endblock %}">
+<body class="{% block body_class %}{% endblock %}">
     <header class="masthead">
         <div class="masthead-inner">
             <div class="brand">

@@ -28,7 +28,7 @@ Polaris does **not** require:
 
 ## First run
 
-1. Either `git clone https://github.com/EgorKhaklin/polaris.git` OR
+1. Either `git clone https://github.com/EgorKhaklin/polaris-id.git` OR
    download a release zip from the GitHub Releases page and double-
    click to extract. macOS will produce a `polaris/` folder.
 

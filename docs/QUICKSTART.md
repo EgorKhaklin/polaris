@@ -35,8 +35,12 @@ the SQL schema), additionally:
 ## The 90-second path
 
 ```bash
-git clone https://github.com/EgorKhaklin/polaris.git && cd polaris
-./scripts/polaris-generate-secrets.sh        # writes polaris_web/secrets/ (3 files, mode 0600)
+git clone https://github.com/EgorKhaklin/polaris-id.git && cd polaris-id
+./scripts/polaris-generate-secrets.sh        # writes polaris_web/secrets/: up to 9 files (app secret key,
+                                             # app/root/replicator DB passwords, ML-DSA-65 signing keypair,
+                                             # postgres + pgbouncer TLS cert/key pairs); most are 0644 inside
+                                             # the 0700 dir because non-root containers cannot read host-owned
+                                             # 0600 bind-mounts on Linux; only the root DB password is 0600
 export POLARIS_DOMAIN=localhost              # for local-only; production uses your real domain
 ./scripts/polaris-deploy.sh prod             # brings up Caddy + Postgres + Redis + gunicorn
 curl -fsS http://localhost/api/health | jq .
@@ -169,10 +173,10 @@ surveillance primitive and is structurally refused).
 
 The Polaris codebase has three layers:
 
-1. **Governance layer** (root + `meta/` + `journal/`): the
-   constitution (`MISSION.md`), the active backlog (`ROADMAP.md`), the
-   agent runbook (`CLAUDE.md`), and the C1-C10 invariant checks
-   (`polaris_checks/`). If you're going to operate Polaris, read
+1. **Governance layer** (root docs + `meta/`): the constitution
+   (`MISSION.md`), the active backlog (`ROADMAP.md`), the ship history
+   (`CHANGELOG.md`), the agent runbook (`CLAUDE.md`), and the C1-C10
+   invariant checks (`polaris_checks/`). If you're going to operate Polaris, read
    `CLAUDE.md` first; it's the agent runbook, but doubles as a
    developer onboarding doc.
 2. **Knowledge layer** (`DEVNOTES/`, `meta/`): durable memory, what
@@ -192,7 +196,7 @@ hold against the current tree.
 | Need                                        | Run                                          |
 |---------------------------------------------|----------------------------------------------|
 | Daily backup                                | `polaris-backup.sh` (or cron — see polaris-cron-install.sh) |
-| Restore from backup                         | `polaris-restore.sh` (see DR-SINGLE-REGION.md) |
+| Restore from backup                         | `polaris-restore.sh` (see DR.md) |
 | Unlock a locked-out admin                   | `polaris-recover-admin.sh` (see WEBAUTHN-ROLLOUT.md) |
 | Set WebAuthn enforcement deadline           | `polaris-set-webauthn-deadline.sh` (v9.23)  |
 | Rotate secrets                              | `polaris-rotate-secret.sh`                  |
@@ -241,7 +245,7 @@ has hit; check there before assuming a new bug.
   (v9.23 companion to this document)
 - **Constitutional design:** `MISSION.md`
 - **Operator runbook in depth:** `docs/operator/OPERATIONS.md`
-- **Backup/restore:** `docs/operator/DR-SINGLE-REGION.md`
+- **Backup/restore:** `docs/operator/DR.md`
 - **WebAuthn rollout:** `docs/operator/WEBAUTHN-ROLLOUT.md`
 - **Security disclosure:** `SECURITY.md`
 - **Contributing:** `CONTRIBUTING.md`

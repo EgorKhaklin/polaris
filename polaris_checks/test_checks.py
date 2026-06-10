@@ -232,6 +232,14 @@ def test_table_count_check_fails_on_doc_drift(tmp_path):
     assert checks.check_table_count_matches_doc(tmp_path)[0].level == "OK", \
         "must PASS when both docs match the schema"
 
+    # 4. First README count right, a LATER instance drifted -> FAIL.
+    #    (v9.141 shipped exactly this: line 42 said 28, three later mentions
+    #    said 26, and the old re.search-based check validated only the first.)
+    readme.write_text("implementation: 2 schema tables.\n"
+                      "... the diagram shows 26 tables in the schema box.\n")
+    assert checks.check_table_count_matches_doc(tmp_path)[0].level == "FAIL", \
+        "must FAIL when any later table-count instance drifts, not just the first"
+
 
 def test_local_clock_check_fails_on_utcnow(tmp_path):
     (tmp_path / "polaris_web").mkdir()

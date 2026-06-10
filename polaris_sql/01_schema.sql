@@ -45,6 +45,7 @@
 -- idempotent against a non-empty polaris_test — operators had to
 -- dropdb+createdb before re-running. Filed against v8.99 → v8.100
 -- → v9.01; closed v9.02.
+DROP TABLE IF EXISTS IndividualErasureEvent CASCADE;
 DROP TABLE IF EXISTS OperatorWebauthnCredential CASCADE;
 DROP TABLE IF EXISTS LifecycleArchiveCheckpoint CASCADE;
 DROP TABLE IF EXISTS DuressEvent            CASCADE;

@@ -163,7 +163,7 @@
 
     <ul class="cognitive-list">
         <li><strong>Schema-level enforcement</strong> — C1-C10 live in the database, not in policy. A reviewer can read the triggers and indexes and see each guarantee directly.</li>
-        <li><strong>polaris_checks</strong> — one plain function per constitutional constraint, gating CI in ~350 legible lines. Each check provably fails on a broken fixture.</li>
+        <li><strong>polaris_checks</strong> — a flat layer of plain check functions: one per constitutional constraint plus production-posture pins, each provably able to catch its violation, gating CI on every run.</li>
         <li><strong>Independent second witness</strong> — the zero-knowledge epoch root is recomputed by a separate Python implementation and checked bit-for-bit against the Rust prover. No single implementation is trusted alone.</li>
         <li><strong>Append-only audit-of-record</strong> — every state change leaves a row the system can reconstruct; UPDATE and DELETE are rejected by trigger.</li>
     </ul>

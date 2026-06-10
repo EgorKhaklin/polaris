@@ -53,12 +53,14 @@
                         <td>{{ c.enrolled_at.strftime('%Y-%m-%d %H:%M') if c.enrolled_at else '—' }}</td>
                         <td>{{ c.last_used_at.strftime('%Y-%m-%d %H:%M') if c.last_used_at else '(never)' }}</td>
                         <td>
+                            {# data-confirm lives on the <form> — confirm-submit.js
+                               binds form[data-confirm], not buttons. #}
                             <form method="post"
                                   action="{{ url_for('webauthn_delete_credential', credential_id=c.credential_id) }}"
-                                  style="display:inline;">
+                                  class="inline-form"
+                                  data-confirm="Remove this credential? You will need to re-enroll the device to use it again.">
                                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                                <button type="submit" class="btn btn-danger btn-small"
-                                        data-confirm="Remove this credential? You will need to re-enroll the device to use it again.">
+                                <button type="submit" class="btn btn-danger btn-small">
                                     Remove
                                 </button>
                             </form>

@@ -18,20 +18,22 @@
         in</a>.
     </p>
 
-    <div class="demo-stepnav" role="tablist" aria-label="Demo steps">
-        <a href="#step-issue" class="demo-stepnav-link" role="tab" data-step="1">
+    {# Plain in-page nav — these are fragment links, not tabs; tab/tablist
+       roles promise aria-selected + tabpanel semantics that don't exist. #}
+    <nav class="demo-stepnav" aria-label="Demo steps">
+        <a href="#step-issue" class="demo-stepnav-link" data-step="1">
             <span class="step-num">1</span><span class="step-name">Issue</span>
         </a>
-        <a href="#step-activate" class="demo-stepnav-link" role="tab" data-step="2">
+        <a href="#step-activate" class="demo-stepnav-link" data-step="2">
             <span class="step-num">2</span><span class="step-name">Activate</span>
         </a>
-        <a href="#step-verify" class="demo-stepnav-link" role="tab" data-step="3">
+        <a href="#step-verify" class="demo-stepnav-link" data-step="3">
             <span class="step-num">3</span><span class="step-name">Verify</span>
         </a>
-        <a href="#step-revoke" class="demo-stepnav-link" role="tab" data-step="4">
+        <a href="#step-revoke" class="demo-stepnav-link" data-step="4">
             <span class="step-num">4</span><span class="step-name">Revoke</span>
         </a>
-    </div>
+    </nav>
 </section>
 
 <!-- STEP 1 — ISSUE -->

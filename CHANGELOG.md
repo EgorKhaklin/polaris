@@ -5,6 +5,72 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.142 — 2026-06-10 (full UI redesign, README rewrite, GitHub Pages site, and an 11-bug fix sweep)
+
+The whole presentation layer, rebuilt, plus every confirmed finding from a
+26-agent discovery sweep fixed. Verified by the full suites (498 web + 64 CLI,
+green), all 67 checks, and a 12-surface visual pass in a real browser.
+
+- **One unified stylesheet.** The two-layer CSS stack (light `polaris.css` +
+  the v8.14 `polaris-scifi.css` skin, ~6.5k lines of override-the-override)
+  is replaced by ONE dark mission-console design system (`polaris.css`,
+  ~3.3k lines): deep-navy surfaces, gold command accents, cyan live data,
+  per the DEVNOTES/style.md visual contract. The battle-tested Atlas globe
+  internals carried over re-tokenized; everything else (masthead, nav,
+  buttons, forms, tables, pills, cards, login, landing, demo, errors) is
+  fresh. Coverage proven mechanically: every class referenced by templates/JS
+  resolves in the new sheet. A11y: `:focus-visible` rings everywhere,
+  `aria-checked`/`aria-pressed` on the atlas chips, reduced-motion kills all
+  animation, print styles for warrant audits, responsive breakpoints (the
+  old UI had none). The dashboard boot overlay + staggered reveal are now
+  scoped to the dashboard (`body-dashboard`); pre-v9.142 they leaked onto
+  every page. New SVG favicon. Every test-pinned selector and string survived:
+  the full app suite passed unchanged.
+- **Recovery queue state is finally readable**: `.channel-tick` (B/S/W
+  out-of-band channels), `.pill-warn/-pending/-approved/-rejected`, and the
+  `.info-panel`/`.kv`/`.muted`/`.footnote` structural classes had NO rule in
+  either old stylesheet; an admin could not read the three-channel state. All
+  styled now.
+- **Bug sweep (19 confirmed findings + 1 loader bug, all fixed):** static UC
+  prerequisite notices no longer vanish after 4.5s (flash dismisser scoped to
+  `.flash-region`); the WebAuthn credential Remove button's `data-confirm`
+  actually fires (moved to the form, matching every other destructive form);
+  `/atlas` dropped ~190 lines of dead per-request work (3 queries + node
+  assembly for a JSON island the v6 architecture never reads — and the C6
+  check now reflects that the strongest redaction is not reading location at
+  all); non-numeric `?page=`/`?page_size=`/`?individual_id=` on the HTML list
+  routes return a styled 400 instead of a 500 (new `_int_arg` + 400 handler);
+  the atlas fetch dedupe key resets on failure so a transient error no longer
+  freezes the globe for a viewport; the event-feed counter populates; three
+  dead JS hooks deleted; `#batch-N` deep links from token detail now land on
+  an anchored row; demo step nav dropped bogus tab roles;
+  `investigate_token` stopped fetching a 4-subquery ontology row it never
+  rendered; and `01_schema.sql` gained the missing
+  `DROP TABLE IF EXISTS IndividualErasureEvent`, which broke `00_load_all.sql`
+  re-loads on any DB that had applied the erasure migration.
+- **README rewritten** against ground truth: 28 tables / 11 procedures /
+  70 routes / 67 checks / 562 tests (the old one said 26/14/67/17 in various
+  places, claimed "current as of v9.63", and never mentioned the entire
+  production arc: prod stack, PQ TLS edge, two-witness signing, CVE gates,
+  pgBackRest DR). New "Production posture" section; quickstart now covers the
+  prod deploy path. `check_table_count_matches_doc` hardened to validate EVERY
+  stated table count (re.findall), with a detection test for the
+  first-right-later-drifted case that v9.141 actually shipped.
+- **GitHub Pages site** (`site/` + `.github/workflows/pages.yml`):
+  a single-page project site in the same design language at
+  https://egorkhaklin.github.io/polaris-id/. Pages enabled
+  (build_type=workflow), repo homepage set, stale `swarm-intelligence` topic
+  removed (dead since the v9.55 apparatus cut).
+- **Doc rot fixed** (all adversarially verified first): dead
+  `DR-SINGLE-REGION.md` references → `DR.md` (7 files); QUICKSTART/generator
+  header no longer describe the pre-v9.140 "3 files, 0600" secrets posture
+  that would re-break a Linux prod boot if "restored"; SYSTEM-MAP refreshed
+  from its v9.08 freeze (deploy/, prod Dockerfiles, all 7 CI jobs, false
+  test claim removed); NOTICE corrected (CM cut in v9.55, nine AoR triggers
+  not eight, no more empty-sanctum citation); ROADMAP's PQC pointer updated
+  (client-to-edge hybrid KEX shipped v9.136); landing page's "~350 legible
+  lines" check-layer claim was 6x stale, reworded without rot-prone counts.
+
 ## v9.141 — 2026-06-09 (container hardening: every prod service drops all Linux capabilities)
 
 With the prod-stack-boot job now able to prove the stack still serves, the prod
