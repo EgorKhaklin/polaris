@@ -587,10 +587,25 @@
     }
 
     // ============================================================
-    // Detail panel
+    // Detail panel (v9.144: lives in the dock; selecting a node
+    // switches the dock to the Node Console tab so the inspection
+    // never covers the globe)
     // ============================================================
+    function activateDockTab(name) {
+        document.querySelectorAll('[data-dock-tab]').forEach(function (b) {
+            b.classList.toggle('dock-tab-active', b.dataset.dockTab === name);
+        });
+        document.querySelectorAll('[data-dock-panel]').forEach(function (p) {
+            p.classList.toggle('dock-panel-active', p.dataset.dockPanel === name);
+        });
+    }
+    document.querySelectorAll('[data-dock-tab]').forEach(function (b) {
+        b.addEventListener('click', function () { activateDockTab(b.dataset.dockTab); });
+    });
+
     function setDetail(d) {
         if (!detail) return;
+        activateDockTab('console');
         detail.replaceChildren();
 
         var kicker = document.createElement('span');
@@ -1398,4 +1413,18 @@
         });
 
     window.addEventListener('resize', resize);
+    // v9.144 console shell: the stage box also changes without a window
+    // resize (dock stacking at breakpoints, flash messages above the bar).
+    // Re-measure whenever the container box itself changes.
+    if (typeof ResizeObserver !== 'undefined') {
+        var lastBox = null;
+        new ResizeObserver(function (entries) {
+            var b = entries[0].contentRect;
+            if (lastBox && Math.abs(b.width - lastBox.width) < 2 &&
+                Math.abs(b.height - lastBox.height) < 2) return;
+            lastBox = b;
+            resize();
+            scheduleFetch();
+        }).observe(container);
+    }
 })();

@@ -1963,34 +1963,6 @@ textarea.sql {
 
 /* --- Atlas god view --- */
 
-.atlas-god-view {
-    position: relative;
-    overflow: hidden;
-    isolation: isolate;
-    background:
-        linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px),
-        linear-gradient(180deg, rgba(255,255,255,0.03) 1px, transparent 1px),
-        linear-gradient(140deg, #07101e 0%, #08182b 42%, #050912 100%);
-    background-size: 72px 72px, 72px 72px, auto;
-    color: #edf5ff;
-    border: 1px solid rgba(153, 184, 217, 0.22);
-    border-top: 3px solid var(--gold);
-    margin-bottom: 24px;
-    padding: 22px 24px 24px;
-    box-shadow: 0 18px 48px rgba(6, 26, 48, 0.18);
-}
-
-.god-view-shell {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 350px;
-    gap: 18px;
-    align-items: stretch;
-}
-
-.globe-command {
-    min-width: 0;
-}
-
 .globe-toolbar {
     display: flex;
     flex-wrap: wrap;
@@ -2193,30 +2165,6 @@ textarea.sql {
     background-size: 64px 64px;
     pointer-events: none;
     z-index: 0;
-}
-
-.globe-classification {
-    position: absolute;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    z-index: 8;
-    padding: 6px 14px;
-    display: flex;
-    justify-content: space-between;
-    gap: 14px;
-    background: rgba(2, 6, 12, 0.7);
-    border-top: 1px solid rgba(120, 170, 210, 0.18);
-    color: rgba(200, 220, 240, 0.5);
-    font-family: 'SF Mono', 'Berkeley Mono', Monaco, Consolas, monospace;
-    font-size: 10px;
-    letter-spacing: 1.4px;
-    text-transform: uppercase;
-    pointer-events: none;
-}
-
-.globe-classification .cls-tag {
-    color: rgba(255, 255, 255, 0.78);
 }
 
 .atlas-globe {
@@ -2718,45 +2666,6 @@ textarea.sql {
 
 /* Fullbleed Atlas: tighter outer rhythm and a slightly narrower right
    rail so the globe stage gets the dominant share of the viewport. */
-.atlas-fullbleed {
-    margin-top: -8px;
-}
-.atlas-fullbleed .god-view-shell {
-    grid-template-columns: minmax(0, 1fr) 320px;
-    gap: 14px;
-}
-
-.god-rail {
-    border-left: 1px solid rgba(153, 184, 217, 0.18);
-    padding-left: 18px;
-    min-width: 0;
-}
-
-.notification-rail {
-    margin-top: 14px;
-    border: 1px solid rgba(153, 184, 217, 0.22);
-    background: rgba(3, 10, 19, 0.48);
-}
-
-.rail-heading {
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
-    align-items: center;
-    padding: 11px 12px;
-    border-bottom: 1px solid rgba(153, 184, 217, 0.16);
-    color: #ffffff;
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 1.4px;
-    font-weight: 700;
-}
-
-.rail-heading span:last-child {
-    color: var(--gold-bright);
-    font-variant-numeric: tabular-nums;
-}
-
 .god-notice-feed {
     display: flex;
     flex-direction: column;
@@ -2837,43 +2746,7 @@ textarea.sql {
     white-space: nowrap;
 }
 
-@media (max-width: 1120px) {
-    .god-view-shell {
-        grid-template-columns: 1fr;
-    }
 
-    .god-rail {
-        border-left: none;
-        border-top: 1px solid rgba(153, 184, 217, 0.18);
-        padding-left: 0;
-        padding-top: 16px;
-    }
-}
-
-@media (max-width: 720px) {
-    .atlas-god-view {
-        padding: 16px 14px 18px;
-    }
-
-    .god-status-cluster {
-        justify-content: flex-start;
-    }
-
-    .atlas-god-view h1 {
-        font-size: 28px;
-    }
-
-    .globe-stage {
-        display: grid;
-        justify-items: center;
-        gap: 10px;
-        min-height: 0;
-    }
-
-    .atlas-globe {
-        width: min(86vw, 430px);
-    }
-}
 
 @media (prefers-reduced-motion: reduce) {
     .d3-globe-rim-layer { filter: none; }
@@ -3464,3 +3337,228 @@ textarea.sql {
     box-shadow: 0 10px 30px rgba(2, 8, 18, 0.6);
 }
 .atlas-empty-chip[hidden] { display: none; }
+
+/* ============================================================================
+   22 ATLAS CONSOLE SHELL (v9.144)
+   Full-viewport rework: the atlas is a command surface, not a widget in the
+   content column. Layout: command bar / stage + dock / status bar. The page
+   does not scroll; the globe is sized by its stage box (no pixel cap); the
+   node console docks beside the feed instead of floating over the globe.
+   Rules below intentionally override the carried v8-era atlas layout.
+   ============================================================================ */
+
+/* Full bleed: the atlas escapes the content column; the status bar replaces
+   the footer; the document itself must not scroll. */
+.body-atlas { height: 100vh; overflow: hidden; }
+.body-atlas .content {
+    max-width: none;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+.body-atlas .page-footer { display: none; }
+.body-atlas .flash-region { padding: 10px 14px 0; margin: 0; }
+
+.atlas-shell {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    background:
+        linear-gradient(90deg, rgba(255,255,255,0.028) 1px, transparent 1px),
+        linear-gradient(180deg, rgba(255,255,255,0.024) 1px, transparent 1px),
+        linear-gradient(140deg, #07101e 0%, #08182b 42%, #050912 100%);
+    background-size: 72px 72px, 72px 72px, auto;
+}
+
+/* ----- Command bar ----- */
+.atlas-commandbar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px 14px;
+    border-bottom: 1px solid rgba(153, 184, 217, 0.22);
+    background: rgba(3, 10, 19, 0.6);
+}
+
+.cmd-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    color: var(--ink-faint);
+    margin: 0 2px 0 4px;
+}
+
+.atlas-commandbar .toolbar-live { margin-left: 6px; }
+
+/* ----- Main: stage + dock ----- */
+.atlas-main {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    align-items: stretch;
+}
+
+/* Stage fills everything the dock does not take; the globe container is the
+   whole stage box, so baseRadius = min(w, h)/2 grows with the display. */
+.atlas-shell .globe-stage {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    min-height: 0;
+    height: auto;
+    border: 0;
+    border-right: 1px solid rgba(153, 184, 217, 0.18);
+    overflow: hidden;
+}
+
+.atlas-shell .atlas-globe {
+    position: absolute;
+    inset: 10px;
+    width: auto;
+    aspect-ratio: auto;
+    z-index: 2;
+}
+
+/* ----- Dock: event feed / node console ----- */
+.atlas-dock {
+    flex: 0 0 clamp(320px, 24vw, 460px);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    background: rgba(3, 10, 19, 0.55);
+}
+
+.dock-tabs {
+    display: flex;
+    border-bottom: 1px solid rgba(153, 184, 217, 0.18);
+}
+
+.dock-tab {
+    flex: 1;
+    padding: 11px 12px;
+    background: none;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    color: var(--ink-faint);
+    font-family: var(--font-ui);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+.dock-tab:hover { color: var(--ink); background: rgba(93, 214, 255, 0.05); }
+.dock-tab-active {
+    color: var(--gold-bright);
+    border-bottom-color: var(--gold);
+}
+
+.dock-tab-count {
+    color: var(--gold-bright);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    margin-left: 4px;
+}
+
+.dock-panel {
+    display: none;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+.dock-panel-active { display: flex; flex-direction: column; }
+
+/* Feed fills and scrolls inside the dock */
+.atlas-dock .god-notice-feed {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+}
+
+/* Node console as a dock panel: a static block, not a floating overlay. */
+.atlas-dock .globe-detail {
+    position: static;
+    width: auto;
+    flex: 1;
+    overflow-y: auto;
+    border: 0;
+    border-left: 2px solid rgba(126, 196, 232, 0.85);
+    background: transparent;
+    backdrop-filter: none;
+    box-shadow: none;
+    padding: 14px 16px;
+}
+
+/* ----- Status bar ----- */
+.atlas-statusbar {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    padding: 6px 14px;
+    border-top: 1px solid rgba(153, 184, 217, 0.22);
+    background: rgba(2, 6, 12, 0.8);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: rgba(200, 220, 240, 0.5);
+    min-height: 34px;
+}
+
+.atlas-statusbar .cls-tag { color: rgba(255, 255, 255, 0.74); white-space: nowrap; }
+
+.atlas-statusbar .atlas-timeline-strip {
+    flex: 1;
+    min-width: 80px;
+    height: 22px;
+    margin: 0 6px;
+}
+
+.statusbar-readouts {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    white-space: nowrap;
+}
+.sb-key { color: var(--ink-faint); }
+.sb-val { color: #eaf4ff; font-weight: 700; }
+.sb-clock { color: rgba(200, 220, 240, 0.65); }
+
+/* HUD spacing without inline styles */
+.hud-stack-gap { margin-top: 14px; }
+.hud-label-tight { margin-top: 1px; letter-spacing: 1.2px; }
+
+/* Legend sits inside the stage above the bottom edge (no classification
+   strip in the stage anymore; the status bar carries it). */
+.atlas-shell .globe-legend { bottom: 0; }
+
+/* ----- Console responsive ----- */
+@media (max-width: 1100px) {
+    /* Stack: stage on top, dock below; restore page scroll. */
+    .body-atlas { height: auto; overflow: auto; }
+    .atlas-main { flex-direction: column; }
+    .atlas-shell .globe-stage {
+        flex: 0 0 auto;
+        height: min(72vh, 560px);
+        border-right: 0;
+        border-bottom: 1px solid rgba(153, 184, 217, 0.18);
+    }
+    .atlas-dock { flex: 0 0 auto; max-height: 420px; }
+    .atlas-statusbar { flex-wrap: wrap; min-height: 0; }
+    .atlas-statusbar .atlas-timeline-strip { order: 3; flex-basis: 100%; }
+}
+
+@media (max-width: 640px) {
+    .atlas-commandbar { padding: 8px 10px; }
+    .atlas-shell .globe-stage { height: min(60vh, 420px); }
+    .globe-hud-tl, .globe-hud-br { transform: scale(0.85); transform-origin: top left; }
+    .globe-hud-br { transform-origin: bottom right; }
+}
+
+/* Full-bleed pages align the masthead with the console edges */
+.body-atlas .masthead-inner { max-width: none; }

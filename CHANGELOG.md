@@ -5,6 +5,42 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.144 — 2026-06-11 (Atlas console rework: full-viewport command surface)
+
+The Atlas was a 700px-capped globe widget floating inside the 1480px content
+column; on a large display most of the screen was empty page background. It
+is now a true full-viewport console. Lighthouse (desktop): a perfect
+100 perf / 100 a11y / 100 best-practices / 100 SEO with CLS 0 (up from 98
+perf); 503 web + 64 CLI green; verified in the browser at 2560, 1440, and
+390 widths.
+
+- **Layout: command bar / stage + dock / status bar.** `body-atlas` unlocks
+  full bleed (no content max-width, footer hidden, page does not scroll;
+  the masthead widens to align with the console edges). All controls
+  consolidate into ONE command-bar row (view, window, modifiers, context,
+  zoom, spin/reset, LIVE) instead of two stacked toolbar rows.
+- **The globe is sized by its stage box, no pixel cap.** The stage is
+  flex:1 of the viewport; `baseRadius = min(w,h)/2` so a 5K display gets a
+  display-sized globe, not a 700px disc. A ResizeObserver re-measures and
+  refetches when the stage box changes (dock stacking, flash messages),
+  not just on window resize.
+- **The node console no longer covers the globe.** It docks beside the
+  event feed in a tabbed right dock (Event Feed / Node Console); selecting
+  a reticle auto-switches the dock to the console. The feed gets real
+  width (clamp 320px..460px) instead of a cramped 320px rail.
+- **Heading/pitch/zoom readouts and the activity histogram move to a
+  bottom status bar** alongside the classification banner and the Z-clock;
+  the stage keeps only the two HUD clusters that matter at a glance
+  (tokens/anomalies, PQ/ZK). Inline style attributes on the HUD are gone
+  (hud-stack-gap / hud-label-tight classes).
+- **Dead v8-era layout CSS removed** (god-view shell, god-rail,
+  notification-rail, globe-command, the old fullbleed negative margins and
+  their media queries); responsive now stacks stage-over-dock below 1100px
+  and restores page scroll there.
+- All pinned markup survives (atlas-id-strip OPERATIONAL, atlas-fullbleed,
+  atlas-globe-data, HUD signal texts, Event Feed, OPERATIONAL ATLAS), every
+  data-atlas-* hook is unchanged, and the role-crawler suite stays green.
+
 ## v9.143 — 2026-06-11 (the Atlas becomes fully operational + a role-gate/alignment sweep, proven by crawler tests and Lighthouse)
 
 A production-grade pass over the whole UI with the proof to back the words.
