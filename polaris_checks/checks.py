@@ -2152,6 +2152,45 @@ def check_operator_scripts_validate_argv(root: pathlib.Path) -> list[Finding]:
                "operator scripts regex-validate SQL-bound argv (recover/purge/migrate/archive)")
 
 
+# ---------------------------------------------------------------------------
+# Template/route integrity — every url_for('name') in a template must name a
+# function that actually carries an @app.route in app.py. A renamed or deleted
+# route otherwise becomes a BuildError 500 on whichever page links to it, and
+# nothing static catches it until a user clicks. (v9.143; the same sweep found
+# role-gated buttons rendered for roles that 403 on click, which the
+# UiLinkIntegrityTests crawler in test_app.py now guards dynamically.)
+# ---------------------------------------------------------------------------
+def check_template_endpoints_resolve(root: pathlib.Path) -> list[Finding]:
+    app_src = _read(root, "polaris_web/app.py")
+    # Collect the function name following each @app.route decorator stack.
+    endpoints: set[str] = set()
+    pending_route = False
+    for line in app_src.splitlines():
+        if line.startswith("@app.route("):
+            pending_route = True
+        elif pending_route and line.startswith("def "):
+            m = re.match(r"def ([A-Za-z_][A-Za-z_0-9]*)\(", line)
+            if m:
+                endpoints.add(m.group(1))
+            pending_route = False
+    endpoints.add("static")  # Flask built-in
+    missing = []
+    tpl_dir = root / "polaris_web" / "templates"
+    if tpl_dir.is_dir():
+        for tpl in sorted(tpl_dir.glob("*.html")):
+            names = re.findall(r"url_for\(\s*'([A-Za-z_][A-Za-z_0-9]*)'",
+                               tpl.read_text(encoding="utf-8"))
+            for name in names:
+                if name not in endpoints:
+                    missing.append(f"{tpl.name} -> {name}")
+    if missing:
+        return _fail("template_endpoints",
+                     "template url_for() names no @app.route function: "
+                     + ", ".join(sorted(set(missing))))
+    return _ok("template_endpoints",
+               f"every template url_for() resolves to a real route ({len(endpoints) - 1} endpoints)")
+
+
 CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_csp_forbids_unsafe_inline,
     check_one_active_token_index,
@@ -2220,6 +2259,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_zk_verify_anti_replay,
     check_no_migration_column_drift,
     check_operator_scripts_validate_argv,
+    check_template_endpoints_resolve,
 ]
 
 

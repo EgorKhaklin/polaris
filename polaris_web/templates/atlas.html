@@ -44,23 +44,32 @@
                     </div>
                 </details>
                 <span class="toolbar-spacer"></span>
+                <div class="chip-group" aria-label="Zoom controls">
+                    <button class="toolbar-chip toolbar-chip-zoom" type="button"
+                            data-atlas-zoom-out aria-label="Zoom out">−</button>
+                    <button class="toolbar-chip toolbar-chip-zoom" type="button"
+                            data-atlas-zoom-in aria-label="Zoom in">+</button>
+                </div>
                 <button class="toolbar-chip toolbar-spin" type="button" data-atlas-spin>Spin</button>
                 <button class="toolbar-chip" type="button" data-atlas-reset>Reset</button>
             </div>
 
             <div class="globe-toolbar globe-toolbar-time" aria-label="Time window">
                 <span class="atlas-id-strip atlas-id-strip-secondary">WINDOW</span>
+                {# Default window is ALL: with notional/seed data the recent
+                   windows are empty and the globe rendered blank on first
+                   load (v9.143). Live deployments narrow it as needed. #}
                 <div class="chip-group" role="radiogroup" aria-label="Time window">
                     <button class="toolbar-chip" type="button"
                             role="radio" aria-checked="false" data-atlas-window="1h">1h</button>
-                    <button class="toolbar-chip toolbar-chip-active" type="button"
-                            role="radio" aria-checked="true" data-atlas-window="24h">24h</button>
+                    <button class="toolbar-chip" type="button"
+                            role="radio" aria-checked="false" data-atlas-window="24h">24h</button>
                     <button class="toolbar-chip" type="button"
                             role="radio" aria-checked="false" data-atlas-window="7d">7d</button>
                     <button class="toolbar-chip" type="button"
                             role="radio" aria-checked="false" data-atlas-window="30d">30d</button>
-                    <button class="toolbar-chip" type="button"
-                            role="radio" aria-checked="false" data-atlas-window="all">All</button>
+                    <button class="toolbar-chip toolbar-chip-active" type="button"
+                            role="radio" aria-checked="true" data-atlas-window="all">All</button>
                 </div>
                 <div class="atlas-timeline-strip" data-atlas-timeline
                      aria-label="Activity histogram for selected window"></div>
@@ -118,15 +127,38 @@
                 </div>
 
                 <div class="atlas-globe" data-world-url="{{ url_for('static', filename='data/countries-110m.json') }}">
+                    {# tabindex makes the globe keyboard-operable: arrows rotate,
+                       +/- zoom, space toggles spin (handled in atlas-globe.js). #}
                     <svg id="atlas-globe-svg"
                          class="atlas-globe-svg"
-                         role="img"
-                         aria-label="Interactive globe of Polaris token and verification activity"></svg>
+                         role="application"
+                         tabindex="0"
+                         aria-label="Interactive globe of Polaris token and verification activity. Arrow keys rotate, plus and minus zoom, space toggles spin."></svg>
                     <div class="globe-detail" id="atlas-globe-detail" aria-live="polite">
                         <span class="detail-kicker">Node Console</span>
-                        <strong>Drag to rotate. Scroll to zoom.</strong>
-                        <span>Click any reticle or feed entry to inspect token, lifecycle, and verification context.</span>
+                        <strong>Drag to rotate. Scroll or +/− to zoom.</strong>
+                        <span>Click any reticle or feed entry to inspect token, lifecycle, and verification context. Clusters zoom in on click.</span>
                     </div>
+                </div>
+
+                {# Tone legend — operators should not have to guess the color code. #}
+                <div class="globe-legend" aria-label="Reticle color legend">
+                    <span class="legend-item"><span class="legend-dot legend-zk"></span>zero-knowledge</span>
+                    <span class="legend-item"><span class="legend-dot legend-selective"></span>selective</span>
+                    <span class="legend-item"><span class="legend-dot legend-full"></span>full disclosure</span>
+                    <span class="legend-item"><span class="legend-dot legend-alert"></span>failure / revocation</span>
+                    <span class="legend-item legend-cluster-note">⊕ n = cluster · click to zoom</span>
+                </div>
+
+                {# Fetch-failure chip: hidden until a non-abort atlas fetch error. #}
+                <div class="atlas-error-chip" data-atlas-error hidden>
+                    <span>ATLAS FEED INTERRUPTED</span>
+                    <button type="button" class="toolbar-chip" data-atlas-retry>Retry</button>
+                </div>
+
+                {# Empty-viewport hint: a blank globe should explain itself. #}
+                <div class="atlas-empty-chip" data-atlas-empty hidden>
+                    <span>NO EVENTS IN THIS VIEW — widen the time window, clear filters, or rotate to another region</span>
                 </div>
 
                 <div class="globe-classification">
@@ -163,5 +195,5 @@
     <script src="{{ url_for('static', filename='vendor/topojson-client.min.js') }}"></script>
     {# Cache-bust the atlas script on each visual revision. Bump ?v= when
        editing atlas-globe.js so the browser picks up the new file in dev. #}
-    <script src="{{ url_for('static', filename='atlas-globe.js') }}?v=hdccdf104"></script>
+    <script src="{{ url_for('static', filename='atlas-globe.js') }}?v=v9143b"></script>
 {% endblock %}

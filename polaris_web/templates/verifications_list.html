@@ -40,7 +40,10 @@
 </form>
 
 <div class="actions-bar">
+    {# verifications_new requires admin/operator; auditors would 403 #}
+    {% if current_user.role in ('admin', 'operator') %}
     <a href="{{ url_for('verifications_new') }}" class="btn btn-gold">+ Record Verification</a>
+    {% endif %}
     <span class="record-count">{{ rows|length }} events</span>
 </div>
 

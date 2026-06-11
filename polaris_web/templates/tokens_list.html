@@ -27,7 +27,10 @@
 </form>
 
 <div class="actions-bar">
+    {# uc1_issue requires admin/operator; auditors would 403 #}
+    {% if current_user.role in ('admin', 'operator') %}
     <a href="{{ url_for('uc1_issue') }}" class="btn btn-gold">+ Issue New Token (UC-1)</a>
+    {% endif %}
     <span class="record-count">{{ rows|length }} tokens</span>
 </div>
 
@@ -50,6 +53,8 @@
             <td>{{ r.issued_date.strftime('%Y-%m-%d') }}</td>
             <td class="actions">
                 <a href="{{ url_for('tokens_detail', tok_id=r.token_id) }}" class="btn btn-sm btn-secondary">Detail</a>
+                <a href="{{ url_for('investigate_token', tok_id=r.token_id) }}" class="btn btn-sm btn-secondary"
+                   title="Full chronological timeline: lifecycle + verification events">Investigate</a>
             </td>
         </tr>
         {% else %}

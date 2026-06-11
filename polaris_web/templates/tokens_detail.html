@@ -24,6 +24,9 @@
     {% endif %}
 </dl>
 
+{# Role-gated: tokens_transition requires admin/operator. Showing the form to
+   an auditor only manufactures a 403 error page on submit. #}
+{% if current_user.role in ('admin', 'operator') %}
 <h2>State Transition</h2>
 <form method="post" action="{{ url_for('tokens_transition', tok_id=token.token_id) }}" class="standard">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -44,6 +47,7 @@
         <button type="submit" class="btn">Apply Transition</button>
     </div>
 </form>
+{% endif %}
 
 <h2>Lifecycle History ({{ lifecycle|length }} event{{ '' if lifecycle|length == 1 else 's' }})</h2>
 <table class="data">
@@ -325,11 +329,15 @@
 
 <div class="footer-actions">
     <a href="{{ url_for('tokens_list') }}" class="btn btn-secondary">← Back to Token List</a>
+    <a href="{{ url_for('investigate_token', tok_id=token.token_id) }}" class="btn btn-secondary"
+       title="Full chronological timeline: lifecycle + verification events">Investigate Timeline</a>
     <span class="filler"></span>
-    <form method="post" action="{{ url_for('tokens_delete', tok_id=token.token_id) }}" style="display:inline;"
+    {% if current_user.role == 'admin' %}
+    <form method="post" action="{{ url_for('tokens_delete', tok_id=token.token_id) }}" class="inline-form"
           data-confirm="Delete token #{{ token.token_id }}? This will FAIL because of FK constraints from lifecycle events. Tokens are normally never deleted (audit invariant).">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button type="submit" class="btn btn-danger">Delete Token</button>
     </form>
+    {% endif %}
 </div>
 {% endblock %}

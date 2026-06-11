@@ -81,6 +81,25 @@ html, body {
     margin: 0;
     padding: 0;
     font-family: var(--font-ui);
+    color: var(--ink);
+    line-height: 1.5;
+    font-size: 14px;
+}
+
+/* The html background is the browser CANVAS color: it is what rubber-band
+   overscroll reveals above the masthead. A solid tone matching the masthead
+   top removes the seam that a gradient restart painted there (v9.143 fix).
+   overscroll-behavior stops the bounce outright where supported. */
+html {
+    background: #0c1929;
+    overscroll-behavior-y: none;
+}
+
+body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overscroll-behavior-y: none;
     background:
         radial-gradient(ellipse 120% 700px at 50% -90px,
                         rgba(93, 214, 255, 0.05) 0%, transparent 55%),
@@ -88,15 +107,6 @@ html, body {
     /* No background-attachment: fixed — it janks scrolling on low-end GPUs
        and breaks stitched full-page captures. Pixel-based stops keep the
        top glow identical without it. */
-    color: var(--ink);
-    line-height: 1.5;
-    font-size: 14px;
-}
-
-body {
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
 }
 
 code, pre, kbd, .mono,
@@ -405,6 +415,7 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 22px 0; }
     flex-direction: column;
     align-items: center;
     justify-content: center;
+    vertical-align: middle;
     gap: 1px;
     padding: 9px 18px;
     font-family: var(--font-ui);
@@ -658,7 +669,7 @@ td.empty, .empty {
 .token-id-link { font-family: var(--font-mono); font-weight: 700; }
 
 /* Toolbar above tables */
-.actions-bar, .actions {
+.actions-bar {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
@@ -666,6 +677,17 @@ td.empty, .empty {
     margin: 14px 0;
 }
 .actions-bar .filler, .filler { flex: 1; }
+
+/* Action cells inside tables must STAY table-cells: display:flex on a <td>
+   detaches it from the row's border/baseline grid and visibly misaligns the
+   actions column (v9.143 fix). Buttons and inline forms align inline instead. */
+td.actions { white-space: nowrap; }
+td.actions .btn,
+td.actions form { display: inline-flex; vertical-align: middle; }
+td.actions .btn + .btn,
+td.actions .btn + form,
+td.actions form + .btn,
+td.actions form + form { margin-left: 6px; }
 
 .filter-row {
     display: flex;
@@ -733,6 +755,7 @@ td.empty, .empty {
 
 .pill {
     display: inline-block;
+    vertical-align: middle;
     padding: 2.5px 9px;
     font-size: 10px;
     font-weight: 700;
@@ -3338,3 +3361,106 @@ textarea.sql {
     padding-top: 18px;
     border-top: 1px solid var(--line);
 }
+
+/* ----- 21 Atlas v9.143 additions: legend, error chip, zoom chips, kbd focus -- */
+
+.globe-legend {
+    /* Pinned to the stage bottom (above the classification strip); in normal
+       flow it sat beside the globe and shoved it off-center. */
+    position: absolute;
+    left: 0;
+    bottom: 30px;
+    max-width: min(620px, 68%);   /* stays clear of the bottom-right HUD */
+    z-index: 8;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 4px 14px;
+    padding: 6px 14px;
+    background: rgba(2, 6, 12, 0.55);
+    border-top: 1px solid rgba(120, 170, 210, 0.12);
+    border-right: 1px solid rgba(120, 170, 210, 0.12);
+    pointer-events: none;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-dim);
+}
+
+.legend-item { display: inline-flex; align-items: center; gap: 6px; }
+
+.legend-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+}
+.legend-zk        { background: var(--cyan);  box-shadow: 0 0 6px rgba(93, 214, 255, 0.7); }
+.legend-selective { background: #b094eb;      box-shadow: 0 0 6px rgba(176, 148, 235, 0.7); }
+.legend-full      { background: var(--amber); box-shadow: 0 0 6px rgba(255, 200, 97, 0.7); }
+.legend-alert     { background: var(--red);   box-shadow: 0 0 6px rgba(255, 116, 120, 0.7); }
+.legend-cluster-note { color: var(--ink-faint); }
+
+.atlas-error-chip {
+    position: absolute;
+    top: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 9;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 10px 8px 16px;
+    background: rgba(38, 13, 15, 0.92);
+    border: 1px solid rgba(255, 116, 120, 0.55);
+    border-radius: 4px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    color: #ffc9cb;
+    box-shadow: 0 10px 30px rgba(2, 8, 18, 0.6);
+}
+.atlas-error-chip[hidden] { display: none; }
+
+/* The error chip anchors to the globe stage */
+.globe-stage { position: relative; }
+
+.toolbar-chip-zoom {
+    min-width: 30px;
+    font-size: 14px;
+    line-height: 1;
+    padding-top: 4px;
+    padding-bottom: 4px;
+}
+
+/* Keyboard focus on the globe itself */
+.atlas-globe-svg:focus-visible {
+    outline: 2px solid var(--cyan);
+    outline-offset: -2px;
+    border-radius: 4px;
+}
+
+/* Empty-viewport hint (success with zero nodes — distinct from the error chip) */
+.atlas-empty-chip {
+    position: absolute;
+    top: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 9;
+    max-width: 86%;
+    padding: 8px 16px;
+    background: rgba(8, 20, 33, 0.92);
+    border: 1px solid rgba(255, 200, 97, 0.45);
+    border-radius: 4px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    color: #f3e3bd;
+    text-align: center;
+    box-shadow: 0 10px 30px rgba(2, 8, 18, 0.6);
+}
+.atlas-empty-chip[hidden] { display: none; }

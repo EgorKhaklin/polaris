@@ -5,8 +5,12 @@
 
 <p class="help" style="max-width: 720px;">
     Investigation surface — single-individual view of holding history +
-    recent verifications. Distinct from the operational view at
+    recent verifications. Distinct from the operational record at
+    {% if current_user.role == 'admin' %}
     <a href="{{ url_for('individuals_edit', ind_id=individual.individual_id) }}">/individuals/{{ individual.individual_id }}/edit</a>.
+    {% else %}
+    <a href="{{ url_for('individuals_list') }}">/individuals</a>.
+    {% endif %}
     Per v9.18 anti-coercion vocation: single-individual focused; no
     cross-individual aggregation exists in Polaris by design.
 </p>

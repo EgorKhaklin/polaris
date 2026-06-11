@@ -6,7 +6,10 @@
 <p class="subtitle">Natural persons enrolled in the system. Each individual may hold one ACTIVE token plus any number of RESERVE/DORMANT/terminal tokens.</p>
 
 <div class="actions-bar">
+    {# individuals_new is admin-only; hide it from roles that would 403 #}
+    {% if current_user.role == 'admin' %}
     <a href="{{ url_for('individuals_new') }}" class="btn btn-gold">+ New Individual</a>
+    {% endif %}
     <a href="{{ url_for('enrollment_summary') }}" class="btn btn-secondary">Enrollment Summary</a>
     <span class="record-count">{{ rows|length }} on this page</span>
 </div>
@@ -28,12 +31,16 @@
             <td>{{ r.enrollment_date.strftime('%Y-%m-%d') }}</td>
             <td class="actions">
                 <a href="{{ url_for('tokens_list', individual_id=r.individual_id) }}" class="btn btn-sm btn-secondary">Tokens</a>
+                <a href="{{ url_for('investigate_individual', ind_id=r.individual_id) }}" class="btn btn-sm btn-secondary"
+                   title="Semantic record: every token held + verification history">Investigate</a>
+                {% if current_user.role == 'admin' %}
                 <a href="{{ url_for('individuals_edit', ind_id=r.individual_id) }}" class="btn btn-sm btn-secondary">Edit</a>
-                <form method="post" action="{{ url_for('individuals_delete', ind_id=r.individual_id) }}" style="display:inline;"
+                <form method="post" action="{{ url_for('individuals_delete', ind_id=r.individual_id) }}" class="inline-form"
                       data-confirm="Delete individual #{{ r.individual_id }}? This will fail if any tokens reference them.">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button type="submit" class="btn btn-sm btn-danger">Delete</button>
                 </form>
+                {% endif %}
             </td>
         </tr>
         {% else %}

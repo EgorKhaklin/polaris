@@ -5,6 +5,53 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.143 — 2026-06-11 (the Atlas becomes fully operational + a role-gate/alignment sweep, proven by crawler tests and Lighthouse)
+
+A production-grade pass over the whole UI with the proof to back the words.
+Lighthouse (desktop): landing 100/100/100/100, dashboard 100/100/100/100,
+atlas 98 perf / 100 a11y / 100 best-practices / 100 SEO. Suites: 503 web +
+64 CLI green, 68 checks, 65 detection tests.
+
+- **The Atlas now ships data on first load.** The default time window was
+  24H, but the notional events are months old, so the globe rendered EMPTY
+  on every first visit; the default is now ALL (live deployments narrow it).
+  An empty viewport explains itself with a hint chip instead of silently
+  showing nothing, and a fetch failure raises an ATLAS FEED INTERRUPTED chip
+  with a Retry control (a console.warn is invisible to an operator).
+- **The globe is operable, not just watchable.** Clusters actually zoom in on
+  click (their tooltip promised it; the handler never did it); +/− zoom chips
+  join Spin/Reset; the globe is keyboard-operable (tabindex + arrows rotate,
+  Shift accelerates, +/− zoom, space toggles spin); a tone legend names the
+  color code (zero-knowledge / selective / full / alert) instead of making
+  operators guess; LIVE means live: reticles, HUD stats, and the histogram
+  refresh every 60s while the tab is visible and immediately on tab return.
+  One setZoom() now serves wheel, chips, keyboard, and cluster drill-down.
+- **Role-gate sweep (the "buttons lead to error pages" class).** A
+  three-role crawl found controls rendered for roles that 403 on click:
+  operator/auditor-visible New-Agency/New-Individual/Edit/Delete buttons,
+  auditor-visible Record-Verification and Issue-Token buttons, the
+  state-transition form and Delete Token on token detail, and an edit link
+  on the investigate page. Every control now sits behind the same role gate
+  its route enforces.
+- **Orphaned pages wired in.** /investigate/token/N and
+  /investigate/individual/N were reachable only from each other; Investigate
+  buttons now exist on the tokens list, token detail, and individuals list.
+- **Overscroll seam fixed.** Rubber-banding past the top showed a visible
+  border: the browser canvas (html background) restarted the body gradient.
+  The canvas is now a solid tone matched to the masthead, and
+  overscroll-behavior stops the bounce where supported.
+- **Alignment fixes.** td.actions used display:flex, which detaches a table
+  cell from the row border/baseline grid and visibly misaligned every
+  actions column; buttons/pills now align inline (vertical-align: middle).
+- **Proof, permanent:** (1) UiLinkIntegrityTests crawls every <a href>
+  reachable as EACH role and fails if anything a user can see renders an
+  error page — it caught a leak (investigate-page edit link) on its first
+  run; plus pinned tests for the investigate navigation and each role-gated
+  control. (2) check_template_endpoints_resolve (68th check) statically
+  verifies every url_for() in templates names a real @app.route function,
+  with detection tests. (3) A meta description fixed the one failing
+  Lighthouse SEO audit.
+
 ## v9.142 — 2026-06-10 (full UI redesign, README rewrite, GitHub Pages site, and an 11-bug fix sweep)
 
 The whole presentation layer, rebuilt, plus every confirmed finding from a

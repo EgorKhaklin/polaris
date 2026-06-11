@@ -2133,3 +2133,38 @@ def test_correlation_id_check_discriminates(tmp_path):
 
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-v"]))
+
+
+def test_template_endpoint_check_fails_on_unknown_endpoint(tmp_path):
+    web = tmp_path / "polaris_web"
+    (web / "templates").mkdir(parents=True)
+    (web / "app.py").write_text(
+        "@app.route('/x')\n"
+        "@security.login_required\n"
+        "def x_page():\n    pass\n")
+
+    # 1. Template referencing a non-route name -> FAIL.
+    (web / "templates" / "t.html").write_text(
+        '<a href="{{ url_for(\'nonexistent_page\') }}">x</a>\n')
+    out = checks.check_template_endpoints_resolve(tmp_path)
+    assert out[0].level == "FAIL", \
+        "must FAIL when a template url_for() names no @app.route function"
+
+    # 2. Decorator stacks between @app.route and def must still resolve.
+    (web / "templates" / "t.html").write_text(
+        '<a href="{{ url_for(\'x_page\') }}">x</a>\n'
+        '<img src="{{ url_for(\'static\', filename=\'a.css\') }}">\n')
+    out = checks.check_template_endpoints_resolve(tmp_path)
+    assert out[0].level == "OK", \
+        "must PASS when every url_for() resolves (static is built-in)"
+
+    # 3. A function WITHOUT @app.route is not an endpoint -> FAIL.
+    (web / "app.py").write_text(
+        "def helper_not_a_route():\n    pass\n"
+        "@app.route('/x')\n"
+        "def x_page():\n    pass\n")
+    (web / "templates" / "t.html").write_text(
+        '<a href="{{ url_for(\'helper_not_a_route\') }}">x</a>\n')
+    out = checks.check_template_endpoints_resolve(tmp_path)
+    assert out[0].level == "FAIL", \
+        "must FAIL when url_for() names a function that has no @app.route"

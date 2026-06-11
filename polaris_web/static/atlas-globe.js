@@ -104,7 +104,9 @@
     //   contexts — multi-select VerificationContext values. Empty = all.
     var filterState = {
         view:      'verification',
-        window:    '24h',
+        // 'all' by default: the seed data's events are historical, so the
+        // narrow windows render an empty globe on first load (v9.143).
+        window:    'all',
         modifiers: { pq: false, anomalies: false, full: false },
         contexts:  []
     };
@@ -377,16 +379,22 @@
     );
 
     // ============================================================
-    // Wheel zoom
+    // Zoom — one setter serves wheel, +/- buttons, keyboard, and
+    // cluster drill-down so the clamp/HUD/refetch logic lives once.
     // ============================================================
-    svg.on('wheel', function (event) {
-        event.preventDefault();
-        var dz = event.deltaY > 0 ? -0.08 : 0.08;
-        zoom = Math.max(0.7, Math.min(2.6, zoom + dz));
+    function setZoom(z) {
+        var next = Math.max(0.7, Math.min(2.6, z));
+        if (next === zoom) return;
+        zoom = next;
         projection.scale(baseRadius * zoom);
         if (zoomEl) zoomEl.textContent = zoom.toFixed(2) + 'x';
         redraw();
         scheduleFetch();
+    }
+
+    svg.on('wheel', function (event) {
+        event.preventDefault();
+        setZoom(zoom + (event.deltaY > 0 ? -0.08 : 0.08));
     }, { passive: false });
 
     // ============================================================
@@ -669,7 +677,7 @@
         setDetail(d);
         var target = [-d.lon, -d.lat, 0];
         d3.transition()
-            .duration(820)
+            .duration(reducedMotion ? 0 : 820)
             .ease(d3.easeCubicInOut)
             .tween('rotate-globe', function () {
                 var interpolator = d3.interpolate(projection.rotate(), target);
@@ -677,6 +685,12 @@
                     projection.rotate(interpolator(t));
                     redraw();
                 };
+            })
+            .on('end', function () {
+                // Clusters promise "click to zoom in" in their subtitle —
+                // honor it: step the zoom once centered on the cluster, which
+                // refetches and resolves it into points or finer clusters.
+                if (d.isCluster) setZoom(zoom + 0.5);
             });
     }
 
@@ -945,12 +959,18 @@
                                    '&kind=' + kind + '&limit=500&' + filterQS, signal)
                         .then(function (pts) {
                             renderMode = 'point';
-                            renderNodes((pts.points || []).map(function (p) { return pointToNode(p, kind); }));
+                            var pNodes = (pts.points || []).map(function (p) { return pointToNode(p, kind); });
+                            renderNodes(pNodes);
+                            toggleEmptyHint(pNodes.length === 0);
+                            hideAtlasError();
                         });
                 } else {
                     renderMode = 'cluster';
-                    renderNodes((data.clusters || []).map(function (c) { return clusterToNode(c, kind); }));
+                    var cNodes = (data.clusters || []).map(function (c) { return clusterToNode(c, kind); });
+                    renderNodes(cNodes);
+                    toggleEmptyHint(cNodes.length === 0);
                 }
+                hideAtlasError();
             })
             .catch(function (err) {
                 if (err.name !== 'AbortError') {
@@ -958,6 +978,7 @@
                     // Drop the dedupe key so the next scheduleFetch for this
                     // viewport retries instead of short-circuiting forever.
                     lastFetchKey = null;
+                    showAtlasError();
                 }
             });
 
@@ -969,6 +990,52 @@
                 if (err.name !== 'AbortError') console.warn('Atlas stats fetch failed:', err);
             });
     }
+
+    // ============================================================
+    // Fetch-failure surfacing — a console.warn is invisible to an
+    // operator. A non-abort failure raises a small chip over the
+    // stage with a Retry control; any subsequent success clears it.
+    // ============================================================
+    var errorChip = document.querySelector('[data-atlas-error]');
+    var emptyChip = document.querySelector('[data-atlas-empty]');
+
+    function showAtlasError() { if (errorChip) errorChip.hidden = false; }
+    function hideAtlasError() { if (errorChip) errorChip.hidden = true; }
+
+    // A blank globe must explain itself: surfaced when a successful fetch
+    // legitimately returns zero nodes for the current viewport + filters.
+    function toggleEmptyHint(isEmpty) {
+        if (emptyChip) emptyChip.hidden = !isEmpty;
+    }
+
+    var retryBtn = document.querySelector('[data-atlas-retry]');
+    if (retryBtn) {
+        retryBtn.addEventListener('click', function () {
+            hideAtlasError();
+            lastFetchKey = null;
+            scheduleFetch();
+            loadTimeline();
+        });
+    }
+
+    // ============================================================
+    // LIVE refresh — the LIVE chip used to be decorative; data only
+    // refetched on viewport/filter changes. Refresh the reticles,
+    // HUD stats, and histogram every 60s while the tab is visible,
+    // and immediately when the operator returns to the tab.
+    // ============================================================
+    var LIVE_REFRESH_MS = 60000;
+
+    function liveRefresh() {
+        if (document.hidden) return;
+        lastFetchKey = null;
+        scheduleFetch();
+        loadTimeline();
+    }
+    setInterval(liveRefresh, LIVE_REFRESH_MS);
+    document.addEventListener('visibilitychange', function () {
+        if (!document.hidden) liveRefresh();
+    });
 
     // ============================================================
     // v8.3 / A — histogram strip below the toolbar
@@ -1209,12 +1276,45 @@
     var resetZoomBtn = document.querySelector('[data-atlas-reset]');
     if (resetZoomBtn) {
         resetZoomBtn.addEventListener('click', function () {
-            zoom = 1;
-            projection.scale(baseRadius);
-            if (zoomEl) zoomEl.textContent = '1.00x';
-            redraw();
+            setZoom(1);
         });
     }
+
+    var zoomInBtn = document.querySelector('[data-atlas-zoom-in]');
+    var zoomOutBtn = document.querySelector('[data-atlas-zoom-out]');
+    if (zoomInBtn)  zoomInBtn.addEventListener('click', function () { setZoom(zoom + 0.25); });
+    if (zoomOutBtn) zoomOutBtn.addEventListener('click', function () { setZoom(zoom - 0.25); });
+
+    // ============================================================
+    // Keyboard operation — the globe is focusable (tabindex=0):
+    // arrows rotate, +/- zoom, space toggles spin.
+    // ============================================================
+    svgEl.addEventListener('keydown', function (event) {
+        var step = event.shiftKey ? 18 : 6;
+        var r = projection.rotate();
+        switch (event.key) {
+            case 'ArrowLeft':  r[0] -= step; break;
+            case 'ArrowRight': r[0] += step; break;
+            case 'ArrowUp':    r[1] += step; break;
+            case 'ArrowDown':  r[1] -= step; break;
+            case '+': case '=': setZoom(zoom + 0.25); event.preventDefault(); return;
+            case '-': case '_': setZoom(zoom - 0.25); event.preventDefault(); return;
+            case ' ':
+                spinning = !spinning;
+                if (spinning) velocity = [0, 0];
+                updateSpinButton();
+                event.preventDefault();
+                return;
+            default: return;
+        }
+        event.preventDefault();
+        spinning = false;
+        updateSpinButton();
+        r[1] = Math.max(-80, Math.min(80, r[1]));
+        projection.rotate(r);
+        redraw();
+        scheduleFetch();
+    });
 
     // ============================================================
     // Z-time ticker

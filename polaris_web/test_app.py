@@ -7366,6 +7366,113 @@ class ErasureTests(PolarisTestCase):
             conn.close()
 
 
+# ============================================================================
+# UI LINK INTEGRITY (v9.143)
+#
+# A crawl of the rendered UI found two real defect classes the suite never
+# covered: role-gated controls rendered for roles that 403 on click
+# (operator-visible Edit on /agencies, auditor-visible "+ Record
+# Verification"), and orphaned pages (/investigate/*) reachable from nowhere.
+# This crawler makes the class structurally regression-proof: as EACH role,
+# walk every internal <a href> reachable from the dashboard and assert that
+# nothing a user can see and click renders an error page.
+# ============================================================================
+
+class UiLinkIntegrityTests(PolarisTestCase):
+    DEFAULT_ROLE = None          # each test logs in as its own role
+
+    HREF_RE = re.compile(r'<a\s[^>]*?href="([^"]+)"')
+    CRAWL_CAP = 250              # safety valve; the real surface is ~80 URLs
+
+    def _crawl_as(self, role):
+        self._login(role)
+        seen, broken = set(), []
+        queue = ['/dashboard', '/']
+        while queue and len(seen) < self.CRAWL_CAP:
+            path = queue.pop()
+            if path in seen:
+                continue
+            seen.add(path)
+            r = self.client.get(path, follow_redirects=True)
+            if r.status_code >= 400:
+                broken.append((path, r.status_code))
+                continue
+            ctype = r.headers.get('Content-Type', '')
+            if 'text/html' not in ctype:
+                continue
+            for href in self.HREF_RE.findall(r.get_data(as_text=True)):
+                if href.startswith(('http://', 'https://', 'mailto:',
+                                    'javascript:', '#')):
+                    continue
+                target = href.split('#')[0]
+                if not target or target.startswith('/static'):
+                    continue
+                if target not in seen:
+                    queue.append(target)
+        return seen, broken
+
+    def _assert_no_broken(self, role):
+        seen, broken = self._crawl_as(role)
+        self.assertGreater(
+            len(seen), 20,
+            f"{role} crawl saw only {len(seen)} URLs; crawler is broken")
+        self.assertEqual(
+            broken, [],
+            f"{role}-visible links render error pages: {broken}. A link the "
+            f"{role} role can see must never 4xx/5xx: hide it behind the "
+            "same role gate the route enforces.")
+
+    def test_admin_visible_links_all_resolve(self):
+        self._assert_no_broken('admin')
+
+    def test_operator_visible_links_all_resolve(self):
+        self._assert_no_broken('operator')
+
+    def test_auditor_visible_links_all_resolve(self):
+        self._assert_no_broken('auditor')
+
+    def test_investigate_pages_are_reachable_from_the_ui(self):
+        """/investigate/* were orphans (linked only from each other) until
+        v9.143. Pin the navigation: tokens list, token detail, and the
+        individuals list must link into the investigate surfaces."""
+        self._login('admin')
+        r = self.client.get('/tokens')
+        self.assertIn('/investigate/token/', r.get_data(as_text=True))
+        r = self.client.get('/tokens/2')
+        self.assertIn('/investigate/token/2', r.get_data(as_text=True))
+        r = self.client.get('/individuals')
+        self.assertIn('/investigate/individual/', r.get_data(as_text=True))
+
+    def test_role_gated_controls_hidden_from_unauthorized_roles(self):
+        """The concrete v9.143 findings, pinned individually."""
+        self._login('auditor')
+        r = self.client.get('/verifications')
+        self.assertNotIn('+ Record Verification', r.get_data(as_text=True))
+        r = self.client.get('/tokens')
+        self.assertNotIn('Issue New Token', r.get_data(as_text=True))
+        r = self.client.get('/tokens/2')
+        body = r.get_data(as_text=True)
+        self.assertNotIn('Apply Transition', body)
+        self.assertNotIn('Delete Token', body)
+
+        self._login('operator')
+        r = self.client.get('/agencies')
+        body = r.get_data(as_text=True)
+        self.assertNotIn('+ New Agency', body)
+        self.assertNotIn('/agencies/1/edit', body)
+        r = self.client.get('/individuals')
+        body = r.get_data(as_text=True)
+        self.assertNotIn('+ New Individual', body)
+        self.assertNotIn('/individuals/1/edit', body)
+
+        # Admin keeps every control.
+        self._login('admin')
+        r = self.client.get('/agencies')
+        self.assertIn('+ New Agency', r.get_data(as_text=True))
+        r = self.client.get('/tokens/2')
+        self.assertIn('Apply Transition', r.get_data(as_text=True))
+
+
 if __name__ == '__main__':
     # Pull in property-based invariant tests (C1, C2, C3) so they run as
     # part of the main suite. The import is at the bottom so test_app.py

@@ -5,7 +5,10 @@
 <p class="subtitle">Federal, state, county, or private authorities. The same agency may act as issuer, verifier, witness, revoker, or lifecycle-event actor.</p>
 
 <div class="actions-bar">
+    {# agencies_new is admin-only; hide it from roles that would 403 #}
+    {% if current_user.role == 'admin' %}
     <a href="{{ url_for('agencies_new') }}" class="btn btn-gold">+ New Agency</a>
+    {% endif %}
     <span class="record-count">{{ rows|length }} agencies</span>
 </div>
 
@@ -22,12 +25,16 @@
             <td class="mono">{{ r.jurisdiction }}</td>
             <td>{{ r.authorization_level }} / 5</td>
             <td class="actions">
+                {% if current_user.role == 'admin' %}
                 <a href="{{ url_for('agencies_edit', ag_id=r.agency_id) }}" class="btn btn-sm btn-secondary">Edit</a>
-                <form method="post" action="{{ url_for('agencies_delete', ag_id=r.agency_id) }}" style="display:inline;"
+                <form method="post" action="{{ url_for('agencies_delete', ag_id=r.agency_id) }}" class="inline-form"
                       data-confirm="Delete agency #{{ r.agency_id }}? This will fail if any tokens, lifecycle events, verifications, or revocations reference it.">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <button type="submit" class="btn btn-sm btn-danger">Delete</button>
                 </form>
+                {% else %}
+                <span class="muted">admin only</span>
+                {% endif %}
             </td>
         </tr>
         {% else %}
