@@ -1990,6 +1990,31 @@ def check_launcher_current(root: pathlib.Path) -> list[Finding]:
 
 
 # ---------------------------------------------------------------------------
+# Code-object currency (v9.152) — the launcher preserves DATA across launches
+# (it skips the schema reload when the core tables already exist), so a change
+# to a function/trigger/view SIGNATURE in the repo does NOT reach an existing
+# database through that path. Migrations cover schema/data deltas; CODE objects
+# (procedures, triggers, atlas functions, ontology views) must be re-applied on
+# every launch or a stale function 500s the app (the "ATLAS FEED INTERRUPTED"
+# bug: v9.146 changed the atlas function signatures and old DBs kept the old
+# ones). Pin that the launcher re-applies the atlas function file every launch.
+# ---------------------------------------------------------------------------
+def check_launcher_refreshes_code(root: pathlib.Path) -> list[Finding]:
+    sh = _read(root, "polaris_mac_launch.sh")
+    if not sh:
+        return _fail("launcher_code", "polaris_mac_launch.sh is missing")
+    # The atlas function file must be re-applied on every launch. It is the file
+    # whose v9.146 signature change caused the drift bug; if the launcher
+    # re-applies it, the whole code-object class is covered alongside it.
+    if "11_atlas.sql" not in sh:
+        return _fail("launcher_code",
+                     "the launcher never re-applies 11_atlas.sql; a changed atlas function "
+                     "signature would not reach an existing DB (the ATLAS-FEED-INTERRUPTED bug)")
+    return _ok("launcher_code",
+               "the launcher re-applies idempotent code objects (atlas functions etc.) on every launch")
+
+
+# ---------------------------------------------------------------------------
 # Local-wall-clock convention — the DB stores TIMESTAMP-without-zone and app+DB
 # are co-located, so every Python boundary compares against datetime.now().
 # A datetime.utcnow() would silently shift the boundary by the server's UTC
@@ -2253,6 +2278,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_backup_encryption,
     check_table_count_matches_doc,
     check_launcher_current,
+    check_launcher_refreshes_code,
     check_local_clock_convention,
     check_c6_atlas_redacts_zk_location,
     check_coercion_evidence_retained,

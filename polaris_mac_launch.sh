@@ -700,6 +700,25 @@ launch_native() {
     }
     ok "Migrations applied"
 
+    # v9.152 — re-apply idempotent CODE objects (procedures, triggers, views,
+    # grants, atlas functions) on every launch. They are CREATE OR REPLACE /
+    # DROP+CREATE / GRANT, so re-running touches no data — but it is necessary:
+    # when a function/view/trigger signature changes in the repo (e.g. the
+    # v9.146 atlas agency-filter parameter), that change does NOT reach an
+    # existing database through the data-preserving "skip reload" path above,
+    # and the stale function then 500s — the "ATLAS FEED INTERRUPTED" class of
+    # bug. Migrations cover schema/data deltas; this covers code drift.
+    log "Refreshing procedures, triggers, views (idempotent code objects)"
+    for _codef in 05_procedures.sql 06_triggers.sql 09_grants.sql 11_atlas.sql 15_ontology.sql; do
+        if [[ -f "$SQL_DIR/$_codef" ]]; then
+            (cd "$SQL_DIR" && psql -d polaris_test -v ON_ERROR_STOP=1 -f "$_codef" >/dev/null 2>&1) || {
+                err "Code-object refresh failed on $_codef. Inspect: psql -d polaris_test -f $SQL_DIR/$_codef"
+                exit 1
+            }
+        fi
+    done
+    ok "Code objects current"
+
     cd "$WEB_DIR"
     # Require a Python 3.12 venv. requirements.txt pins versions (cryptography,
     # Flask 3.1, etc.) that an older interpreter cannot install — and an existing

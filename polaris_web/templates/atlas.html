@@ -175,10 +175,15 @@
                 <span class="legend-item legend-cluster-note">⊕ n = cluster · click to zoom</span>
             </div>
 
-            {# Fetch-failure chip: hidden until a non-abort atlas fetch error. #}
+            {# Fetch-failure chip: hidden until a non-abort atlas fetch error.
+               The detail line names the likely cause (a 500 usually means the
+               DB's atlas functions are stale) so the failure is self-diagnosing. #}
             <div class="atlas-error-chip" data-atlas-error hidden>
-                <span>ATLAS FEED INTERRUPTED</span>
-                <button type="button" class="toolbar-chip" data-atlas-retry>Retry</button>
+                <div class="atlas-error-head">
+                    <span>ATLAS FEED INTERRUPTED</span>
+                    <button type="button" class="toolbar-chip" data-atlas-retry>Retry</button>
+                </div>
+                <span class="atlas-error-detail" data-atlas-error-detail></span>
             </div>
 
             {# Empty-viewport hint: a blank globe should explain itself. #}
@@ -240,5 +245,5 @@
        relaxation for those origins is scoped to this endpoint only. #}
     <link rel="stylesheet" href="{{ url_for('static', filename='vendor/maplibre-gl.css') }}">
     <script src="{{ url_for('static', filename='vendor/maplibre-gl.js') }}"></script>
-    <script src="{{ url_for('static', filename='atlas-map.js') }}?v=v9151a"></script>
+    <script src="{{ url_for('static', filename='atlas-map.js') }}?v=v9152a"></script>
 {% endblock %}

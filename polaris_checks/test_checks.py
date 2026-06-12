@@ -524,6 +524,22 @@ def test_launcher_current_check_discriminates(tmp_path):
         "must PASS when deps come from requirements.txt, the suite is canonical, and ZK is built"
 
 
+def test_launcher_refreshes_code_check_discriminates(tmp_path):
+    sh = tmp_path / "polaris_mac_launch.sh"
+    # No re-apply of the atlas function file -> FAIL (a changed signature would
+    # never reach an existing DB: the ATLAS-FEED-INTERRUPTED drift bug).
+    sh.write_text('load_schema() { psql -f 00_load_all.sql; }\n'
+                  'apply_migrations() { polaris-migrate.sh --up; }\n')
+    assert checks.check_launcher_refreshes_code(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the launcher never re-applies 11_atlas.sql on an existing DB"
+
+    # Re-applies the atlas function file every launch -> OK.
+    sh.write_text('apply_migrations() { polaris-migrate.sh --up; }\n'
+                  'for f in 05_procedures.sql 06_triggers.sql 11_atlas.sql; do psql -f "$f"; done\n')
+    assert checks.check_launcher_refreshes_code(tmp_path)[0].level == "OK", \
+        "must PASS when the launcher re-applies the atlas code objects"
+
+
 def test_dockerfile_copies_app_modules_check_discriminates(tmp_path):
     web = tmp_path / "polaris_web"
     web.mkdir()

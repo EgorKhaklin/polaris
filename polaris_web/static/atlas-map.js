@@ -265,7 +265,7 @@
                 setFeatures((data.clusters || []).map(function (c) { return clusterFeature(c, kind); }));
             })
             .catch(function (err) {
-                if (err.name !== 'AbortError') { lastFetchKey = null; showAtlasError(); }
+                if (err.name !== 'AbortError') { lastFetchKey = null; showAtlasError(err); }
             });
 
         apiCall('/api/atlas/stats?bbox=' + encodeURIComponent(bboxParam) + '&' + filterQS, signal)
@@ -440,7 +440,22 @@
     // =========================================================================
     var errorChip = document.querySelector('[data-atlas-error]');
     var emptyChip = document.querySelector('[data-atlas-empty]');
-    function showAtlasError() { if (errorChip) errorChip.hidden = false; }
+    function showAtlasError(err) {
+        if (!errorChip) return;
+        errorChip.hidden = false;
+        var detail = errorChip.querySelector('[data-atlas-error-detail]');
+        if (detail) {
+            var msg = (err && err.message) || '';
+            // A 500 from /api/atlas/* almost always means the database's atlas
+            // functions are out of date (a signature changed in the repo but the
+            // running DB still has the old one). Tell the operator how to fix it.
+            detail.textContent = /HTTP 5\d\d/.test(msg)
+                ? 'server error (' + msg + '). The atlas database functions may be '
+                  + 'out of date — reload the schema (./polaris_mac_launch.sh up, or '
+                  + 'reset to fully reload).'
+                : (msg ? 'network or server problem (' + msg + ').' : 'connection problem.');
+        }
+    }
     function hideAtlasError() { if (errorChip) errorChip.hidden = true; }
     function toggleEmptyHint(isEmpty) { if (emptyChip) emptyChip.hidden = !isEmpty; }
 

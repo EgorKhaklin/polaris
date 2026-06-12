@@ -5,6 +5,35 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.152 — 2026-06-12 (Fix "ATLAS FEED INTERRUPTED": the launcher now refreshes code objects on every launch)
+
+Root-caused a real operator report. The atlas error chip fires when
+`/api/atlas/clusters` returns a 500, and reproducing it showed the cause: in
+v9.146 the atlas SQL function signatures changed (the agency-filter param),
+but the launcher only loads the schema on a *fresh* database (to preserve
+data) and otherwise applies migrations — and no migration updated the atlas
+functions. So an existing database kept the old function signatures while the
+new app called them with the extra argument: a 500, every time. Simulated a
+stale 9-arg function against the current app and got the exact failure.
+
+- **The fix: the launcher re-applies idempotent code objects every launch.**
+  After migrations, `polaris_mac_launch.sh` now re-runs 05_procedures.sql,
+  06_triggers.sql, 09_grants.sql, 11_atlas.sql, and 15_ontology.sql — all
+  CREATE OR REPLACE / DROP+CREATE / GRANT, so they touch no data but bring the
+  database's functions, triggers, views, and grants current. Migrations cover
+  schema/data deltas; this covers code drift. (All five verified to re-run
+  clean on a loaded DB.)
+- **The error chip is now self-diagnosing.** A 500 from the atlas feed shows a
+  detail line naming the likely cause and the fix ("the atlas database
+  functions may be out of date — reload the schema") instead of a bare
+  "ATLAS FEED INTERRUPTED".
+- **Pinned against regression.** `check_launcher_refreshes_code` (69th check)
+  fails if the launcher stops re-applying 11_atlas.sql, with a detection test.
+
+Immediate fix for an already-broken instance: `./polaris_mac_launch.sh up`
+(now refreshes the functions), or `reset` to fully reload. 572 web + 64 CLI
+green, 69 checks.
+
 ## v9.151 — 2026-06-12 (Subject-focus bug fix + activation events on the map + token data export + richer node detail)
 
 Four things from a real bug report, all browser-verified.
