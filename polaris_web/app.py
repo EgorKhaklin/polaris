@@ -1180,6 +1180,16 @@ def atlas():
     exists to drive selection and explain a single event when the operator
     clicks one. Aggregate analytics live on the dashboard."""
 
+    # v9.146: opt this one page into the MapLibre tile-basemap CSP relaxation
+    # (apply_security_headers reads g.atlas_tiles). Every other page stays
+    # strict self-only. ZERO_KNOWLEDGE events are never plotted (C6).
+    g.atlas_tiles = True
+
+    # --- Agency roster for the operational agency filter (v9.146). ---------
+    # Plotting/filtering is by issuing/acting AGENCY, an operational pivot,
+    # never by any attribute of a person.
+    agencies = query('SELECT agency_id, name, agency_type FROM Agency ORDER BY name')
+
     # --- Health snapshot for HUD chrome -----------------------------------
     table_counts = {}
     for tbl in ['Individual', 'Agency', 'IdentityToken',
@@ -1235,7 +1245,7 @@ def atlas():
 
     # The globe is data-driven via /api/atlas/* (clusters, points, events);
     # the page itself ships only the health snapshot for the HUD.
-    return render_template('atlas.html', health=health)
+    return render_template('atlas.html', health=health, agencies=agencies)
 
 
 # ============================================================================
@@ -1489,6 +1499,19 @@ def _parse_atlas_filters(args):
             if v.strip() not in valid:
                 raise ValueError(f"unknown event_type: {v!r}")
 
+    # v9.146 operational agency filter — CSV of agency_id integers. Validated
+    # as integers (defence in depth; the value is passed as a single bound
+    # param to ANY(string_to_array(...)) so it cannot smuggle SQL). This is an
+    # operational pivot (which issuer/actor), never an attribute of a person.
+    agencies_raw = (args.get('agencies') or '').strip()
+    agencies = None
+    if agencies_raw:
+        ids = [a.strip() for a in agencies_raw.split(',') if a.strip()]
+        for a in ids:
+            if not a.isdigit():
+                raise ValueError(f"agency id must be an integer: {a!r}")
+        agencies = ','.join(ids) or None
+
     return {
         'window': window,
         'since': since,
@@ -1496,13 +1519,14 @@ def _parse_atlas_filters(args):
         'disclosure': disclosure,
         'contexts': contexts,
         'event_types': event_types,
+        'agencies': agencies,
     }
 
 
 def _filter_cache_key(filters):
     """Reduce a filter dict to a hashable cache key fragment."""
     return (filters['window'], filters['outcomes'], filters['disclosure'],
-            filters['contexts'], filters['event_types'])
+            filters['contexts'], filters['event_types'], filters.get('agencies'))
 
 
 @app.route('/api/atlas/clusters')
@@ -1537,18 +1561,18 @@ def api_atlas_clusters():
     if kind == 'verification':
         rows = query("""
             SELECT lat, lon, n_total, n_failure, n_pq, n_zk, n_full
-            FROM atlas_clusters_verifications(%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            FROM atlas_clusters_verifications(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             LIMIT %s
         """, (min_lat, min_lon, max_lat, max_lon, grid,
-              f['since'], f['outcomes'], f['disclosure'], f['contexts'],
+              f['since'], f['outcomes'], f['disclosure'], f['contexts'], f['agencies'],
               _ATLAS_MAX_CLUSTERS))
     else:
         rows = query("""
             SELECT lat, lon, n_total, n_revoked, n_lost, n_issued, n_activated
-            FROM atlas_clusters_lifecycles(%s, %s, %s, %s, %s, %s, %s)
+            FROM atlas_clusters_lifecycles(%s, %s, %s, %s, %s, %s, %s, %s)
             LIMIT %s
         """, (min_lat, min_lon, max_lat, max_lon, grid,
-              f['since'], f['event_types'],
+              f['since'], f['event_types'], f['agencies'],
               _ATLAS_MAX_CLUSTERS))
 
     payload = dict(
@@ -1587,18 +1611,18 @@ def api_atlas_points():
                    to_char(event_timestamp, 'YYYY-MM-DD HH24:MI') AS event_timestamp,
                    token_id, holder_name, agency_name, context_type,
                    outcome, disclosure_level, algorithm_name, pq, requestor_location
-            FROM atlas_points_verifications(%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            FROM atlas_points_verifications(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (min_lat, min_lon, max_lat, max_lon, limit,
-              f['since'], f['outcomes'], f['disclosure'], f['contexts']))
+              f['since'], f['outcomes'], f['disclosure'], f['contexts'], f['agencies']))
     else:
         rows = query("""
             SELECT event_id, lat, lon,
                    to_char(event_timestamp, 'YYYY-MM-DD HH24:MI') AS event_timestamp,
                    token_id, event_type, reason_code, holder_name,
                    agency_name, algorithm_name, pq
-            FROM atlas_points_lifecycles(%s, %s, %s, %s, %s, %s, %s)
+            FROM atlas_points_lifecycles(%s, %s, %s, %s, %s, %s, %s, %s)
         """, (min_lat, min_lon, max_lat, max_lon, limit,
-              f['since'], f['event_types']))
+              f['since'], f['event_types'], f['agencies']))
 
     return jsonify(
         kind=kind,
@@ -1632,8 +1656,8 @@ def api_atlas_stats():
     row = query("""
         SELECT n_active_tokens, n_anomalies, n_failures, n_full,
                pq_pct, zk_pct, n_verifs, n_lifecycles
-        FROM atlas_stats(%s, %s, %s, %s, %s)
-    """, (min_lat, min_lon, max_lat, max_lon, f['since']), fetch='one')
+        FROM atlas_stats(%s, %s, %s, %s, %s, %s)
+    """, (min_lat, min_lon, max_lat, max_lon, f['since'], f['agencies']), fetch='one')
 
     payload = dict(
         bbox=[min_lat, min_lon, max_lat, max_lon],
@@ -1688,10 +1712,10 @@ def api_atlas_timeline():
     rows = query("""
         SELECT to_char(bucket_ts, 'YYYY-MM-DD"T"HH24:MI:SS') AS ts,
                n_total, n_anomaly
-        FROM atlas_timeline(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        FROM atlas_timeline(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ORDER BY bucket_ts
     """, (min_lat, min_lon, max_lat, max_lon, since, buckets, kind,
-          f['outcomes'], f['disclosure'], f['contexts']))
+          f['outcomes'], f['disclosure'], f['contexts'], f['agencies']))
 
     payload = dict(
         bbox=[min_lat, min_lon, max_lat, max_lon],

@@ -857,13 +857,29 @@ def apply_security_headers(response):
     # (COOP/COEP/CORP) for cross-origin defense-in-depth against Spectre-class
     # side-channel + cross-origin object leaks.
     hsts_active = os.environ.get('POLARIS_HSTS', '').lower() in ('1', 'true', 'yes')
+
+    # v9.146: the Atlas page renders a MapLibre GL street-level basemap from
+    # CARTO's free dark-matter vector tiles. That requires reaching exactly
+    # two external origins (style, glyphs, sprite, vector tiles) and a blob:
+    # web worker. This relaxation is scoped to the atlas endpoint ONLY via the
+    # `g.atlas_tiles` flag the view sets; every other response keeps the strict
+    # self-only CSP. The MapLibre JS itself is self-hosted (static/vendor), so
+    # script-src stays 'self'. ZERO_KNOWLEDGE events are never plotted (C6), so
+    # the basemap is cartography, not new exposure.
+    from flask import g as _g
+    _TILE = "https://basemaps.cartocdn.com https://*.basemaps.cartocdn.com"
+    atlas_tiles = bool(getattr(_g, 'atlas_tiles', False))
+    img_extra     = (" blob: " + _TILE) if atlas_tiles else ""
+    connect_extra = (" " + _TILE)        if atlas_tiles else ""
+
     csp_parts = [
         "default-src 'self'",
         "script-src 'self'",
         "style-src 'self' 'unsafe-inline'",
-        "img-src 'self' data:",
+        "img-src 'self' data:" + img_extra,
         "font-src 'self' data:",
-        "connect-src 'self'",
+        "connect-src 'self'" + connect_extra,
+        "worker-src 'self' blob:" if atlas_tiles else "worker-src 'self'",
         "frame-ancestors 'none'",
         "form-action 'self'",
         "base-uri 'self'",

@@ -5,6 +5,45 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.146 — 2026-06-12 (Atlas becomes a real street-level map: MapLibre globe→street, OpenStreetMap basemap, operational agency filter)
+
+Learning from the ADL Global A.T.L.A.S. (which is Mapbox GL + OpenStreetMap),
+the Polaris Atlas is rebuilt on a real tile-map engine: a MapLibre GL globe
+that flattens into a street-level map with buildings as you zoom. Verified in
+the browser: globe sphere at world view, 116 building features at zoom 16 over
+Houston with the event reticle on its exact coordinate, agency filter cutting
+5 events to 2, ZERO ZK rows ever returned to the spatial layer, bad agency id
+→ 400. 503 web + 64 CLI green, 68 checks.
+
+- **MapLibre GL, self-hosted, no Mapbox token.** maplibre-gl v5.24 is vendored
+  in static/vendor (like d3/topojson). The basemap is CARTO's free dark-matter
+  vector tiles (OpenStreetMap data, no API key), which match the console
+  palette. The new atlas-map.js replaces the bespoke D3 globe's rendering;
+  the per-viewport fetch architecture is unchanged, so it scales the same way
+  (the browser only ever holds the aggregates for the visible viewport, C8).
+- **Globe → street.** A 3D globe projection at world view that zooms down to
+  streets and 3D building footprints; pan/zoom/pitch/rotate are MapLibre-
+  native; the +/- chips, Reset, Spin, Fullscreen (F), and the live CUR lat/lon
+  readout all wire to the map. This is the "zoom to street view, see buildings"
+  ask, done properly.
+- **CSP scoped to the one page.** apply_security_headers relaxes img/connect to
+  the two CARTO tile origins and allows a blob: worker ONLY when the atlas view
+  sets g.atlas_tiles; every other response keeps the strict self-only CSP, and
+  script-src stays 'self' (the engine is self-hosted). C5 still passes.
+- **Privacy held constant.** ZERO_KNOWLEDGE verifications are never plotted on
+  any spatial layer (C6, enforced server-side in 11_atlas.sql); the prettier
+  basemap is cartography, not new exposure. Confirmed: the points endpoint
+  returns zero ZK and zero null-token rows.
+- **Operational AGENCY filter** (the v9.146 SQL groundwork): all six atlas
+  functions (clusters/points/stats/timeline, verification + lifecycle) gained
+  a p_agencies CSV param; _parse_atlas_filters validates agency ids as integers
+  and threads them through every call site and the cluster cache key; a new
+  Agency chip picker drives it. This is an operational pivot (which issuer/
+  actor), never an attribute of a person — the demographic/name surveillance
+  filtering remains declined on constitutional grounds.
+- NOTICE updated for MapLibre (BSD-3-Clause) + CARTO/OpenStreetMap (ODbL)
+  attribution; the on-map attribution control credits both.
+
 ## v9.145 — 2026-06-12 (Atlas futurization: fullscreen, ultra zoom to 40x, pinpoint coordinates)
 
 The console becomes a real targeting surface. Lighthouse atlas 96 perf /

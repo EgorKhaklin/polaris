@@ -3609,3 +3609,55 @@ textarea.sql {
 /* Crosshair over the globe: this is a targeting surface. */
 .atlas-globe-svg { cursor: crosshair; }
 .atlas-globe-svg:active { cursor: grabbing; }
+
+/* ----- 24 Atlas MapLibre basemap (v9.146) --------------------------------- */
+
+#atlas-map {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    background: #050a12;
+}
+.atlas-shell .atlas-globe { inset: 0; }   /* map fills the stage edge-to-edge */
+
+/* MapLibre chrome tuned to the console palette */
+.maplibregl-ctrl-group {
+    background: rgba(8, 16, 28, 0.9) !important;
+    border: 1px solid var(--line-strong) !important;
+    box-shadow: 0 6px 18px rgba(2, 8, 18, 0.5) !important;
+}
+.maplibregl-ctrl-group button + button { border-top: 1px solid var(--line) !important; }
+.maplibregl-ctrl button .maplibregl-ctrl-icon { filter: invert(0.85) hue-rotate(170deg); }
+.maplibregl-ctrl-attrib {
+    background: rgba(5, 10, 18, 0.7) !important;
+    color: var(--ink-faint) !important;
+    font-size: 9px !important;
+}
+.maplibregl-ctrl-attrib a { color: var(--ink-dim) !important; }
+.maplibregl-popup { display: none; }   /* selection drives the dock console, not popups */
+
+/* Node-console detail rows */
+.detail-row {
+    display: grid;
+    grid-template-columns: 92px 1fr;
+    gap: 4px 12px;
+    padding: 4px 0;
+    border-bottom: 1px solid rgba(141, 166, 196, 0.08);
+    font-size: 12.5px;
+}
+.detail-k {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    padding-top: 1px;
+}
+.detail-v { color: var(--ink); word-break: break-word; }
+.detail-link {
+    display: inline-block;
+    margin-top: 12px;
+    font-size: 12.5px;
+    font-weight: 650;
+}

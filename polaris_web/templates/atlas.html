@@ -66,6 +66,21 @@
             </div>
         </details>
 
+        {# v9.146 operational AGENCY filter — pivot the map by issuing/acting
+           agency. Operational, never demographic. (At national scale this
+           becomes a typeahead; a chip flyout is right for the demo roster.) #}
+        <details class="chip-context-picker">
+            <summary class="toolbar-chip toolbar-chip-context-summary"
+                     aria-label="Agency filter">Agency ▾</summary>
+            <div class="chip-context-menu" role="group" aria-label="Issuing or acting agencies">
+                {% for ag in agencies %}
+                <button class="toolbar-chip toolbar-chip-context" type="button"
+                        data-atlas-agency="{{ ag.agency_id }}" aria-pressed="false"
+                        title="{{ ag.agency_type }}">{{ ag.name }}</button>
+                {% endfor %}
+            </div>
+        </details>
+
         <span class="toolbar-spacer"></span>
 
         <div class="chip-group" aria-label="Zoom controls">
@@ -119,14 +134,15 @@
                 </div>
             </div>
 
-            <div class="atlas-globe" data-world-url="{{ url_for('static', filename='data/countries-110m.json') }}">
-                {# tabindex makes the globe keyboard-operable: arrows rotate,
-                   +/- zoom, space toggles spin (handled in atlas-globe.js). #}
-                <svg id="atlas-globe-svg"
-                     class="atlas-globe-svg"
+            {# v9.146 — MapLibre GL globe→street basemap (CARTO dark-matter,
+               free vector tiles). Events fetched per-viewport from
+               /api/atlas/* and plotted as a GeoJSON source; ZERO_KNOWLEDGE
+               events are never plotted (C6, enforced server-side). #}
+            <div class="atlas-globe">
+                <div id="atlas-map"
+                     class="atlas-map"
                      role="application"
-                     tabindex="0"
-                     aria-label="Interactive globe of Polaris token and verification activity. Arrow keys rotate, plus and minus zoom, space toggles spin."></svg>
+                     aria-label="Interactive map of Polaris token and verification activity. Drag to pan, scroll to zoom from globe to street level."></div>
             </div>
 
             {# Tone legend — operators should not have to guess the color code. #}
@@ -167,8 +183,8 @@
             <div class="dock-panel" data-dock-panel="console">
                 <div class="globe-detail" id="atlas-globe-detail" aria-live="polite">
                     <span class="detail-kicker">Node Console</span>
-                    <strong>Drag to rotate. Scroll or +/− to zoom, up to 40x.</strong>
-                    <span>Click any reticle or feed entry to inspect token, lifecycle, and verification context. Clusters zoom in on click; at depth, reticles sit on exact event coordinates (read them off CUR in the status bar). F for fullscreen.</span>
+                    <strong>Drag to pan. Scroll to zoom from globe to street level.</strong>
+                    <span>Click any reticle or feed entry to inspect token, lifecycle, and verification context. Clusters zoom in on click; zoom all the way down to streets and buildings. Read the exact coordinate under the cursor off CUR in the status bar. F for fullscreen.</span>
                 </div>
             </div>
         </aside>
@@ -198,9 +214,10 @@
 {% endblock %}
 
 {% block scripts %}
-    <script src="{{ url_for('static', filename='vendor/d3.min.js') }}"></script>
-    <script src="{{ url_for('static', filename='vendor/topojson-client.min.js') }}"></script>
-    {# Cache-bust the atlas script on each visual revision. Bump ?v= when
-       editing atlas-globe.js so the browser picks up the new file in dev. #}
-    <script src="{{ url_for('static', filename='atlas-globe.js') }}?v=v9145a"></script>
+    {# MapLibre GL — self-hosted (static/vendor), no Mapbox token. The dark
+       basemap tiles come from CARTO's free dark-matter vector tiles; the CSP
+       relaxation for those origins is scoped to this endpoint only. #}
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/maplibre-gl.css') }}">
+    <script src="{{ url_for('static', filename='vendor/maplibre-gl.js') }}"></script>
+    <script src="{{ url_for('static', filename='atlas-map.js') }}?v=v9146b"></script>
 {% endblock %}

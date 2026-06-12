@@ -33,10 +33,15 @@ The Rust prover/verifier in polaris_zk/ depends on the Plonky2 library
 (https://github.com/0xPolygonZero/plonky2), used here unmodified. Plonky2
 is dual-licensed under MIT/Apache-2.0.
 
-The Atlas globe in polaris_web/static/atlas-globe.js depends on D3.js and
-TopoJSON (vendored under polaris_web/static/vendor/). D3 is BSD-3-Clause;
-TopoJSON is BSD-3-Clause. Original copyright notices preserved in the
-vendored source.
+The Atlas (polaris_web/static/atlas-map.js) renders with MapLibre GL JS
+(vendored under polaris_web/static/vendor/maplibre-gl.js), 3-Clause BSD,
+copyright MapLibre contributors; original license header preserved in the
+vendored source. The street-level basemap uses CARTO's free dark-matter
+vector tiles, which are derived from OpenStreetMap data (© OpenStreetMap
+contributors, ODbL) and served by CARTO (© CARTO); both are attributed in
+the on-map attribution control. The earlier D3/TopoJSON globe
+(polaris_web/static/atlas-globe.js, both BSD-3-Clause, vendored) is retained
+for reference; original copyright notices preserved in the vendored source.
 
 The web application uses Flask, Werkzeug, psycopg2, and redis-py. Each
 retains its own license; consult requirements.txt for versions and the

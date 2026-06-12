@@ -55,9 +55,12 @@
 -- v8.3 (A+C): bin function gained four optional filters used by the v8.3
 -- temporal/filter UI. Each is NULL = "no filter" so existing callers that
 -- still pass 5 positional args work unchanged via DEFAULT NULL.
+-- v9.146 added p_agencies, changing the signature. DROP the pre-v9.146 full
+-- signature so an in-place reload replaces it cleanly instead of leaving an
+-- ambiguous overload (a bare name has two arities otherwise).
 DROP FUNCTION IF EXISTS atlas_clusters_verifications(
     DOUBLE PRECISION, DOUBLE PRECISION, DOUBLE PRECISION, DOUBLE PRECISION,
-    DOUBLE PRECISION);
+    DOUBLE PRECISION, TIMESTAMP, TEXT, TEXT, TEXT);
 
 CREATE OR REPLACE FUNCTION atlas_clusters_verifications(
     p_min_lat   DOUBLE PRECISION,
@@ -68,7 +71,8 @@ CREATE OR REPLACE FUNCTION atlas_clusters_verifications(
     p_since     TIMESTAMP DEFAULT NULL,        -- only events ≥ this time
     p_outcomes  TEXT      DEFAULT NULL,         -- CSV: 'FAILURE,UNAUTHORIZED'
     p_disclosure TEXT     DEFAULT NULL,         -- CSV: 'FULL'
-    p_contexts  TEXT      DEFAULT NULL          -- CSV: 'BANKING,TRAVEL'
+    p_contexts  TEXT      DEFAULT NULL,         -- CSV: 'BANKING,TRAVEL'
+    p_agencies  TEXT      DEFAULT NULL          -- CSV of agency_id, e.g. '1,4'
 ) RETURNS TABLE (
     lat        DOUBLE PRECISION,
     lon        DOUBLE PRECISION,
@@ -110,6 +114,7 @@ AS $$
       AND (p_outcomes   IS NULL OR ve.outcome         = ANY(string_to_array(p_outcomes, ',')))
       AND (p_disclosure IS NULL OR ve.disclosure_level = ANY(string_to_array(p_disclosure, ',')))
       AND (p_contexts   IS NULL OR vc.context_type     = ANY(string_to_array(p_contexts, ',')))
+      AND (p_agencies   IS NULL OR ve.requesting_agency_id::text = ANY(string_to_array(p_agencies, ',')))
     GROUP BY floor(ve.latitude  / p_grid),
              floor(ve.longitude / p_grid);
 $$;
@@ -131,7 +136,7 @@ COMMENT ON FUNCTION atlas_clusters_verifications IS
 
 DROP FUNCTION IF EXISTS atlas_clusters_lifecycles(
     DOUBLE PRECISION, DOUBLE PRECISION, DOUBLE PRECISION, DOUBLE PRECISION,
-    DOUBLE PRECISION);
+    DOUBLE PRECISION, TIMESTAMP, TEXT);
 
 CREATE OR REPLACE FUNCTION atlas_clusters_lifecycles(
     p_min_lat     DOUBLE PRECISION,
@@ -140,7 +145,8 @@ CREATE OR REPLACE FUNCTION atlas_clusters_lifecycles(
     p_max_lon     DOUBLE PRECISION,
     p_grid        DOUBLE PRECISION,
     p_since       TIMESTAMP DEFAULT NULL,
-    p_event_types TEXT      DEFAULT NULL    -- CSV: 'REVOKED,LOST'
+    p_event_types TEXT      DEFAULT NULL,   -- CSV: 'REVOKED,LOST'
+    p_agencies    TEXT      DEFAULT NULL    -- CSV of agency_id (actor agency)
 ) RETURNS TABLE (
     lat          DOUBLE PRECISION,
     lon          DOUBLE PRECISION,
@@ -171,6 +177,7 @@ AS $$
       )
       AND (p_since       IS NULL OR event_timestamp >= p_since)
       AND (p_event_types IS NULL OR event_type      = ANY(string_to_array(p_event_types, ',')))
+      AND (p_agencies    IS NULL OR actor_agency_id::text = ANY(string_to_array(p_agencies, ',')))
     GROUP BY floor(latitude  / p_grid),
              floor(longitude / p_grid);
 $$;
@@ -189,7 +196,8 @@ COMMENT ON FUNCTION atlas_clusters_lifecycles IS
 -- ----------------------------------------------------------------------------
 
 DROP FUNCTION IF EXISTS atlas_points_verifications(
-    DOUBLE PRECISION, DOUBLE PRECISION, DOUBLE PRECISION, DOUBLE PRECISION, INTEGER);
+    DOUBLE PRECISION, DOUBLE PRECISION, DOUBLE PRECISION, DOUBLE PRECISION,
+    INTEGER, TIMESTAMP, TEXT, TEXT, TEXT);
 
 CREATE OR REPLACE FUNCTION atlas_points_verifications(
     p_min_lat   DOUBLE PRECISION,
@@ -200,7 +208,8 @@ CREATE OR REPLACE FUNCTION atlas_points_verifications(
     p_since     TIMESTAMP DEFAULT NULL,
     p_outcomes  TEXT      DEFAULT NULL,
     p_disclosure TEXT     DEFAULT NULL,
-    p_contexts  TEXT      DEFAULT NULL
+    p_contexts  TEXT      DEFAULT NULL,
+    p_agencies  TEXT      DEFAULT NULL          -- CSV of agency_id, e.g. '1,4'
 ) RETURNS TABLE (
     event_id          INTEGER,
     lat               DOUBLE PRECISION,
@@ -257,6 +266,7 @@ AS $$
       AND (p_outcomes   IS NULL OR ve.outcome         = ANY(string_to_array(p_outcomes, ',')))
       AND (p_disclosure IS NULL OR ve.disclosure_level = ANY(string_to_array(p_disclosure, ',')))
       AND (p_contexts   IS NULL OR vc.context_type     = ANY(string_to_array(p_contexts, ',')))
+      AND (p_agencies   IS NULL OR ve.requesting_agency_id::text = ANY(string_to_array(p_agencies, ',')))
     ORDER BY ve.event_timestamp DESC
     LIMIT p_limit;
 $$;
@@ -267,7 +277,8 @@ $$;
 -- ----------------------------------------------------------------------------
 
 DROP FUNCTION IF EXISTS atlas_points_lifecycles(
-    DOUBLE PRECISION, DOUBLE PRECISION, DOUBLE PRECISION, DOUBLE PRECISION, INTEGER);
+    DOUBLE PRECISION, DOUBLE PRECISION, DOUBLE PRECISION, DOUBLE PRECISION,
+    INTEGER, TIMESTAMP, TEXT);
 
 CREATE OR REPLACE FUNCTION atlas_points_lifecycles(
     p_min_lat     DOUBLE PRECISION,
@@ -276,7 +287,8 @@ CREATE OR REPLACE FUNCTION atlas_points_lifecycles(
     p_max_lon     DOUBLE PRECISION,
     p_limit       INTEGER,
     p_since       TIMESTAMP DEFAULT NULL,
-    p_event_types TEXT      DEFAULT NULL
+    p_event_types TEXT      DEFAULT NULL,
+    p_agencies    TEXT      DEFAULT NULL          -- CSV of agency_id (actor agency)
 ) RETURNS TABLE (
     event_id        INTEGER,
     lat             DOUBLE PRECISION,
@@ -319,6 +331,7 @@ AS $$
       )
       AND (p_since       IS NULL OR le.event_timestamp >= p_since)
       AND (p_event_types IS NULL OR le.event_type      = ANY(string_to_array(p_event_types, ',')))
+      AND (p_agencies    IS NULL OR le.actor_agency_id::text = ANY(string_to_array(p_agencies, ',')))
     ORDER BY le.event_timestamp DESC
     LIMIT p_limit;
 $$;
@@ -333,14 +346,16 @@ $$;
 -- ----------------------------------------------------------------------------
 
 DROP FUNCTION IF EXISTS atlas_stats(
-    DOUBLE PRECISION, DOUBLE PRECISION, DOUBLE PRECISION, DOUBLE PRECISION);
+    DOUBLE PRECISION, DOUBLE PRECISION, DOUBLE PRECISION, DOUBLE PRECISION,
+    TIMESTAMP);
 
 CREATE OR REPLACE FUNCTION atlas_stats(
     p_min_lat DOUBLE PRECISION,
     p_min_lon DOUBLE PRECISION,
     p_max_lat DOUBLE PRECISION,
     p_max_lon DOUBLE PRECISION,
-    p_since   TIMESTAMP DEFAULT NULL
+    p_since   TIMESTAMP DEFAULT NULL,
+    p_agencies TEXT     DEFAULT NULL          -- CSV of agency_id (operational filter)
 ) RETURNS TABLE (
     n_active_tokens BIGINT,
     n_anomalies     BIGINT,
@@ -379,6 +394,7 @@ AS $$
          OR (p_min_lon  > p_max_lon AND (ve.longitude >= p_min_lon OR ve.longitude <= p_max_lon))
       )
           AND (p_since IS NULL OR ve.event_timestamp >= p_since)
+          AND (p_agencies IS NULL OR ve.requesting_agency_id::text = ANY(string_to_array(p_agencies, ',')))
     ),
     l_agg AS (
         SELECT count(*) AS total
@@ -391,6 +407,7 @@ AS $$
          OR (p_min_lon  > p_max_lon AND (longitude >= p_min_lon OR longitude <= p_max_lon))
       )
           AND (p_since IS NULL OR event_timestamp >= p_since)
+          AND (p_agencies IS NULL OR actor_agency_id::text = ANY(string_to_array(p_agencies, ',')))
     )
     SELECT
         (SELECT count(*) FROM IdentityToken WHERE status = 'ACTIVE')::BIGINT AS n_active_tokens,
@@ -562,6 +579,7 @@ COMMENT ON FUNCTION atlas_recent_events IS
 DROP FUNCTION IF EXISTS atlas_timeline(
     DOUBLE PRECISION, DOUBLE PRECISION, DOUBLE PRECISION, DOUBLE PRECISION,
     TIMESTAMP, INTEGER, TEXT, TEXT, TEXT, TEXT);
+-- (pre-v9.146 timeline signature; the CREATE below adds p_agencies)
 
 CREATE OR REPLACE FUNCTION atlas_timeline(
     p_min_lat   DOUBLE PRECISION,
@@ -573,7 +591,8 @@ CREATE OR REPLACE FUNCTION atlas_timeline(
     p_kind      TEXT      DEFAULT 'verification',  -- or 'lifecycle'
     p_outcomes  TEXT      DEFAULT NULL,
     p_disclosure TEXT     DEFAULT NULL,
-    p_contexts  TEXT      DEFAULT NULL
+    p_contexts  TEXT      DEFAULT NULL,
+    p_agencies  TEXT      DEFAULT NULL          -- CSV of agency_id (operational filter)
 ) RETURNS TABLE (
     bucket_ts   TIMESTAMP,
     n_total     BIGINT,
@@ -618,6 +637,7 @@ AS $$
           AND (p_outcomes   IS NULL OR ve.outcome         = ANY(string_to_array(p_outcomes, ',')))
           AND (p_disclosure IS NULL OR ve.disclosure_level = ANY(string_to_array(p_disclosure, ',')))
           AND (p_contexts   IS NULL OR vc.context_type     = ANY(string_to_array(p_contexts, ',')))
+          AND (p_agencies   IS NULL OR ve.requesting_agency_id::text = ANY(string_to_array(p_agencies, ',')))
         GROUP BY 1
     ),
     bucketed_l AS (
@@ -641,6 +661,7 @@ AS $$
           )
           AND le.event_timestamp >= params.t_start
           AND le.event_timestamp <  params.t_end
+          AND (p_agencies IS NULL OR le.actor_agency_id::text = ANY(string_to_array(p_agencies, ',')))
         GROUP BY 1
     )
     SELECT bucket_ts, n_total, n_anomaly FROM bucketed_v
