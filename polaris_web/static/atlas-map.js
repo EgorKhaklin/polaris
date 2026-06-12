@@ -43,17 +43,27 @@
     // =========================================================================
     // Map init
     // =========================================================================
+    // Default view: centered on the data, not the empty mid-Atlantic. The
+    // notional events are US-based, so opening over North America at a
+    // continent zoom means the verification clusters are visible on load
+    // instead of sitting at the globe's limb. (HOME is also the Reset target.)
+    var HOME = { center: [-96, 39], zoom: 3.2, bearing: 0, pitch: 0 };
+
     var map = new maplibregl.Map({
         container: 'atlas-map',
         style: STYLE_URL,
-        center: [-40, 28],
-        zoom: 1.5,
+        center: HOME.center,
+        zoom: HOME.zoom,
         minZoom: 0.4,
         maxZoom: 18,
         dragRotate: true,
-        attributionControl: { compact: true }
+        attributionControl: false
     });
-    map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'bottom-right');
+    // OSM/CARTO attribution (ODbL requires it) goes top-right, the one stage
+    // corner with no HUD, so it never overlaps the PQ/ZK readout bottom-right.
+    map.addControl(new maplibregl.AttributionControl({ compact: true }), 'top-right');
+    // No NavigationControl: the command bar already carries zoom +/- / Reset /
+    // Spin / Fullscreen, and the control was overlapping the bottom-right HUD.
     // Expose the map for ops/debug console use (read-only basemap object; the
     // data layers are driven by the fetch coordinator, not this handle).
     try { window.atlasMap = map; } catch (e) { /* noop */ }
@@ -80,8 +90,11 @@
     });
 
     map.on('error', function (e) {
-        // Basemap/tile errors should not kill the data layer; surface a chip.
-        if (e && e.error) showAtlasError();
+        // Basemap/tile/glyph errors are non-fatal and often transient (a single
+        // tile 404, a font-range miss). They must NOT raise the data-feed chip,
+        // which is reserved for actual /api/atlas fetch failures — otherwise a
+        // momentary CARTO hiccup reads as "ATLAS FEED INTERRUPTED". Log only.
+        if (e && e.error) console.warn('Atlas basemap warning:', e.error.message || e.error);
     });
 
     // =========================================================================
@@ -569,7 +582,7 @@
 
     var resetBtn = document.querySelector('[data-atlas-reset]');
     if (resetBtn) resetBtn.addEventListener('click', function () {
-        map.flyTo({ center: [-40, 28], zoom: 1.5, bearing: 0, pitch: 0, speed: 1.1 });
+        map.flyTo({ center: HOME.center, zoom: HOME.zoom, bearing: 0, pitch: 0, speed: 1.1 });
     });
 
     // Spin: slowly rotate the globe by easing the center longitude. Off by

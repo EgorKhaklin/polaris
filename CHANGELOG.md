@@ -5,6 +5,25 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.147 — 2026-06-12 (Atlas fixes: open over the data, no false "feed interrupted", no HUD overlap)
+
+Three issues in the v9.146 MapLibre atlas, all fixed and browser-verified.
+
+- **Verifications now show on load.** The default view was centered on the
+  empty mid-Atlantic, so the US-only notional events sat at the globe's limb
+  and looked absent. The view now opens over North America (center ≈ US, zoom
+  3.2), where the verification clusters are immediately visible. Reset returns
+  to the same HOME view.
+- **No spurious "ATLAS FEED INTERRUPTED".** The MapLibre `error` handler was
+  raising the data-feed error chip on any basemap hiccup (a single tile 404, a
+  font-range miss), so a momentary CARTO hiccup read as a data failure. Basemap
+  errors are now logged only; the chip is reserved for actual /api/atlas fetch
+  failures.
+- **Bottom-right no longer overlaps.** The MapLibre NavigationControl was
+  dropped at bottom-right, on top of the PQ/ZK HUD readout. Removed it (the
+  command bar already has zoom +/- / Reset / Spin / Fullscreen), and moved the
+  required OSM/CARTO attribution to the free top-right corner.
+
 ## v9.146 — 2026-06-12 (Atlas becomes a real street-level map: MapLibre globe→street, OpenStreetMap basemap, operational agency filter)
 
 Learning from the ADL Global A.T.L.A.S. (which is Mapbox GL + OpenStreetMap),
