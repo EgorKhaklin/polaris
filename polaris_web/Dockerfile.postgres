@@ -18,7 +18,7 @@
 #
 # Build context is polaris_web/ (see docker-compose.prod.yml).
 # ============================================================================
-FROM postgres:16-alpine@sha256:16bc17c64a573ef34162af9298258d1aec548232985b33ed7b1eac33ba35c229
+FROM postgres:18-alpine@sha256:96d56f7f57c6aacd1fcb908bc83b345ec5f83231ee486dd66a1baadce274db88
 
 # v9.138 — apk upgrade pulls patched apk packages on top of the pinned base
 # (clears fixable apk-package CVEs; the one residual fixable CRITICAL is a Go
