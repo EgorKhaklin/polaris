@@ -5,6 +5,31 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.150 — 2026-06-12 (Scale proof: the Atlas measured at 10 million events)
+
+"It should handle millions" is now measured, not asserted. Generated a real
+10,000,009-event PostgreSQL table (2.75 GB) and timed the atlas aggregation
+functions the live map calls per viewport. Reproducible:
+`scripts/polaris-atlas-benchmark.sh 10000000`.
+
+At 10M events on a developer laptop:
+- **Street-block points (operator zoomed in): 2.6 ms warm.** Tight bbox
+  through the (latitude, longitude) index; bounded by the viewport, not the
+  table, so it holds at 10M and at 100M. This is the operator's real
+  workflow — investigation, not staring at an un-aggregated planet.
+- **Whole-world overview (raw): 2.9 s.** EXPLAIN confirms it sorts/groups every
+  non-ZK row — no index avoids reading rows you aggregate.
+- **Whole-world from a materialized grid rollup: 0.04 ms (~70,000× faster).**
+  The ~2.6 s build runs on a refresh schedule, off the request path; the live
+  API also caches cluster results, so the cold overview computes once per
+  viewport then serves from cache.
+
+The honest conclusion: the path operators actually use is millisecond and
+scales by construction; the whole-world overview is solved by a rollup (and,
+where available, the GiST geography index from 13_postgis.sql), with the new
+benchmark as the acceptance harness. Recorded in docs/reference/SCALING.md;
+no schema or app change.
+
 ## v9.149 — 2026-06-12 (Cinematic README + GitHub page: the Atlas, on the front page)
 
 The Atlas is the most striking thing Polaris does, so it now leads. Real

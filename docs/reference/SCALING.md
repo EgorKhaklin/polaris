@@ -11,6 +11,46 @@ pooling, and HTTP-layer caching will be substantially faster.
 
 ---
 
+## Measured at 10 million events (v9.150)
+
+Re-run on a developer laptop against a single PostgreSQL 16 with
+**10,000,009 verification events** (a 2.75 GB table), reproducible with
+[`scripts/polaris-atlas-benchmark.sh`](../../scripts/polaris-atlas-benchmark.sh)
+(`scripts/polaris-atlas-benchmark.sh 10000000`):
+
+| Atlas query (per viewport) | Latency @ 10M | What it is |
+|---|---:|---|
+| Street-block points (`atlas_points_*`, tight bbox, limit 500) | **2.6 ms** (warm) | The operator zoomed in to a block. The common case. |
+| Regional clusters (CONUS bbox, 1° grid) | 2.7 s | Full aggregation of the ~9M rows inside the bbox. |
+| Whole-world clusters (10° grid) | 2.9 s | The heaviest path: aggregate the entire table. |
+| Whole-world from a materialized rollup | **0.04 ms** | Pre-computed grid cells, refreshed on a schedule. |
+
+Two facts decide whether this scales, and both are measured above:
+
+1. **The operator's real workflow is index-served and bbox-bounded.** Zooming
+   to a region, a city, a street, or one subject reads a tight bounding box
+   through the `(latitude, longitude)` partial index and returns in single-digit
+   milliseconds — at 10M events, and at 100M, because the bbox bounds the scan,
+   not the table size. This is the path that matters: nobody investigates by
+   staring at an un-aggregated planet.
+
+2. **The whole-world overview is a full aggregation, and the remedy is a
+   rollup, not an index.** `EXPLAIN` shows the overview sorting and grouping
+   every non-ZK row (no index can avoid reading rows you are aggregating). At
+   10M that is ~2.9 s cold. A materialized grid rollup pre-computes those cells;
+   reading the overview from it is **0.04 ms — roughly 70,000× faster** — and
+   the ~2.6 s build runs on a refresh schedule, off the request path. The live
+   API also caches cluster results (`_atlas_cache`), so even without the rollup
+   the cold overview is computed once per viewport and then served from cache.
+
+The architecture below already delivers (1). Wiring the atlas overview onto a
+materialized rollup (and, where PostGIS is available, the GiST geography index
+from [`13_postgis.sql`](../../polaris_sql/13_postgis.sql)) is the standing
+upgrade for instant whole-world rendering at hundreds of millions of rows; the
+benchmark above is the acceptance harness for it.
+
+---
+
 ## The problem
 
 The original Atlas inlined every event as JSON in the page template:
