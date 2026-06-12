@@ -380,26 +380,46 @@
             : (pr.context || 'Verification') + ' verification';
         detail.appendChild(title);
 
+        var c = (f.geometry && f.geometry.coordinates) || null;
+        var coordText = c
+            ? Math.abs(c[1]).toFixed(4) + '°' + (c[1] >= 0 ? 'N' : 'S') + '  '
+              + Math.abs(c[0]).toFixed(4) + '°' + (c[0] >= 0 ? 'E' : 'W')
+            : null;
         [
+            row('Event', pr.kind === 'lifecycle' ? (pr.eventType || 'lifecycle') : (pr.context || 'verification')),
+            row('Event ID', pr.event_id),
+            row('Token', pr.token_id ? '#' + pr.token_id : null),
             row('Holder', pr.holder),
             row('Agency', pr.agency),
-            row('Algorithm', pr.algorithm ? pr.algorithm + (pr.pq ? '  (PQ)' : '  (classical)') : null),
+            row('Algorithm', pr.algorithm ? pr.algorithm + (pr.pq ? '  · PQ' : '  · classical') : null),
             row('Outcome', pr.outcome),
             row('Disclosure', pr.disclosure),
             row('Reason', pr.reason),
             row('Location', pr.location),
+            row('Coordinates', coordText),
             row('When', pr.timestamp)
         ].forEach(function (r) { if (r) detail.appendChild(r); });
 
         if (pr.token_id) {
+            var actions = document.createElement('div');
+            actions.className = 'detail-actions';
             var link = document.createElement('a');
             link.className = 'detail-link';
             link.href = '/tokens/' + pr.token_id;
             link.textContent = 'Open token detail →';
-            detail.appendChild(link);
+            actions.appendChild(link);
+            // Download everything the operator may see for this token (gated +
+            // audit-logged server-side; ZK verifications carry no token link so
+            // they are not in the export).
+            var dl = document.createElement('a');
+            dl.className = 'detail-link';
+            dl.href = '/api/tokens/' + pr.token_id + '/export';
+            dl.setAttribute('download', '');
+            dl.textContent = '⤓ Download token data (JSON)';
+            actions.appendChild(dl);
+            detail.appendChild(actions);
         }
-        var coords = f.geometry && f.geometry.coordinates;
-        if (coords) map.flyTo({ center: coords, zoom: Math.max(map.getZoom(), 9), speed: 0.9 });
+        if (c) map.flyTo({ center: c, zoom: Math.max(map.getZoom(), 9), speed: 0.9 });
     }
 
     // =========================================================================
@@ -647,14 +667,21 @@
             .then(function (data) {
                 focusedSubject = data.individual;
                 if (inflight) inflight.abort();
-                // Verifications first (the "movement"), then lifecycle, time-ordered.
-                var feats = [], coords = [];
-                (data.verifications || []).forEach(function (ev) {
-                    feats.push(subjectFeature(ev, 'verification', feats.length + 1));
-                    coords.push([ev.lon, ev.lat]);
+                // Combine verifications AND lifecycle events (issuance/activation/
+                // revocation), ordered in time — the real "what they did" path. A
+                // subject may have only a lifecycle event (e.g. just an ISSUED
+                // activation and no verifications yet); it must still plot and the
+                // map must still zoom to it.
+                var all = []
+                    .concat((data.verifications || []).map(function (ev) { return { ev: ev, kind: 'verification' }; }))
+                    .concat((data.lifecycle || []).map(function (ev) { return { ev: ev, kind: 'lifecycle' }; }));
+                all.sort(function (a, b) {
+                    return (a.ev.event_timestamp || '') < (b.ev.event_timestamp || '') ? -1 : 1;
                 });
-                (data.lifecycle || []).forEach(function (ev) {
-                    feats.push(subjectFeature(ev, 'lifecycle', feats.length + 1));
+                var feats = [], coords = [];
+                all.forEach(function (item, i) {
+                    feats.push(subjectFeature(item.ev, item.kind, i + 1));
+                    coords.push([item.ev.lon, item.ev.lat]);
                 });
                 map.getSource('atlas-subject').setData({ type: 'FeatureCollection', features: feats });
                 map.getSource('atlas-subject-path').setData(coords.length >= 2
@@ -662,31 +689,34 @@
                         geometry: { type: 'LineString', coordinates: coords }, properties: {} }] }
                     : { type: 'FeatureCollection', features: [] });
                 setOperationalLayers(false);
+                // In focus mode the banner is the single source of truth; the
+                // separate empty-hint chip stays hidden so the two never overlap.
                 toggleEmptyHint(false);
 
-                // Banner
+                // Banner — accurate count, ZK note. "located" counts what is on
+                // the map (non-ZK verifications + lifecycle events).
                 if (bannerEl) {
                     bannerEl.hidden = false;
                     var nm = document.querySelector('[data-atlas-subject-name]');
                     var st = document.querySelector('[data-atlas-subject-stats]');
                     if (nm) nm.textContent = data.individual.legal_name + '  #' + data.individual.individual_id
                                              + '  · ' + (data.individual.jurisdiction || '');
-                    if (st) st.textContent = data.located + ' disclosed event'
-                        + (data.located === 1 ? '' : 's')
-                        + ' · zero-knowledge activity is unattributable (C2)';
+                    if (st) {
+                        st.textContent = data.located === 0
+                            ? '0 located events · activity is entirely zero-knowledge (C2)'
+                            : (data.located + ' located event' + (data.located === 1 ? '' : 's')
+                               + ' · zero-knowledge activity is unattributable (C2)');
+                    }
                 }
-                // Fit to the subject's events
-                if (coords.length) {
+
+                // Frame the subject's events.
+                if (coords.length === 1) {
+                    map.flyTo({ center: coords[0], zoom: 12, duration: 900 });
+                    selectFeature(feats[0]);   // a single event: open its details immediately
+                } else if (coords.length > 1) {
                     var b = coords.reduce(function (bb, c) { return bb.extend(c); },
                         new maplibregl.LngLatBounds(coords[0], coords[0]));
                     map.fitBounds(b, { padding: 90, maxZoom: 14, duration: 900 });
-                } else {
-                    // All their activity is zero-knowledge — nothing to plot.
-                    if (emptyChip) {
-                        emptyChip.hidden = false;
-                        emptyChip.querySelector('span').textContent =
-                            'NO LOCATABLE EVENTS — this subject’s activity is entirely zero-knowledge (locations withheld by C2/C6)';
-                    }
                 }
                 hideResults();
                 if (searchInput) searchInput.value = name || data.individual.legal_name;

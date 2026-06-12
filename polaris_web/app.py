@@ -57,6 +57,7 @@ import os
 import sys
 import time
 import shutil
+import json
 import pathlib
 import subprocess
 from datetime import datetime, timedelta, timezone
@@ -3385,6 +3386,115 @@ def tokens_detail(tok_id):
                            v2_anchor_batches=v2_anchor_batches,
                            v2_epoch_leaves=v2_epoch_leaves,
                            duress_enrolled=duress_enrolled)
+
+
+def _jsonable(value):
+    """Make a query result JSON-safe: dates → ISO-8601, Decimal → float, raw
+    bytes dropped (never serialize signature/key material)."""
+    import datetime as _dt
+    import decimal as _dec
+    if isinstance(value, (_dt.datetime, _dt.date)):
+        return value.isoformat()
+    if isinstance(value, _dec.Decimal):
+        return float(value)
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return None
+    return value
+
+
+def _jsonable_rows(rows):
+    out = []
+    for r in rows:
+        d = dict(r)
+        out.append({k: _jsonable(v) for k, v in d.items()})
+    return out
+
+
+@app.route('/api/tokens/<int:tok_id>/export')
+@security.login_required
+def tokens_export(tok_id):
+    """Download everything the operator may already see for one token, as a
+    JSON file. This is an export of the token-detail view, not new access: it
+    is login-gated like that page, audit-logged, and carries no secret material
+    (duress hash → boolean; signature/key bytes dropped). C6 holds for free —
+    ZERO_KNOWLEDGE verifications carry no token_id, so a token's verification
+    set never contains one."""
+    token = query("""
+        SELECT t.*, i.legal_name AS holder_name, i.jurisdiction,
+               ag.name AS issuer_name, alg.name AS algorithm_name,
+               alg.quantum_resistant
+          FROM IdentityToken t
+          JOIN Individual i ON t.individual_id = i.individual_id
+          JOIN Agency     ag ON t.issuing_agency_id = ag.agency_id
+          JOIN CryptographicAlgorithm alg ON t.algorithm_id = alg.algorithm_id
+         WHERE t.token_id = %s
+    """, (tok_id,), fetch='one')
+    if not token:
+        abort(404)
+
+    token = dict(token)
+    token['duress_enrolled'] = token.get('duress_code_hash') is not None
+    token.pop('duress_code_hash', None)   # never export the secret
+
+    lifecycle = query("""
+        SELECT le.*, ag.name AS actor_name FROM TokenLifecycleEvent le
+        LEFT JOIN Agency ag ON le.actor_agency_id = ag.agency_id
+        WHERE le.token_id = %s ORDER BY le.event_timestamp
+    """, (tok_id,))
+    verifications = query("""
+        SELECT ve.*, vc.context_type, ag.name AS verifier_name
+          FROM VerificationEvent ve
+          JOIN VerificationContext vc ON ve.context_id = vc.context_id
+          JOIN Agency ag ON ve.requesting_agency_id = ag.agency_id
+         WHERE ve.token_id = %s ORDER BY ve.event_timestamp DESC
+    """, (tok_id,))
+    devices = query('SELECT * FROM DeviceBinding WHERE token_id=%s ORDER BY binding_id', (tok_id,))
+    anchors = query('SELECT * FROM BlockchainAnchor WHERE token_id=%s', (tok_id,))
+    revocations = query("""
+        SELECT rl.*, ag.name AS revoker_name FROM RevocationList rl
+        JOIN Agency ag ON rl.revoked_by_agency_id = ag.agency_id
+        WHERE rl.token_id = %s
+    """, (tok_id,))
+    permissions = query("""
+        SELECT tp.*, vc.context_type FROM TokenPermission tp
+        JOIN VerificationContext vc ON tp.context_id = vc.context_id
+        WHERE tp.token_id = %s ORDER BY vc.context_type
+    """, (tok_id,))
+    signatures = query("""
+        SELECT s.signature_id, s.signed_at, s.deprecation_date,
+               alg.name AS algorithm_name, alg.quantum_resistant
+          FROM TokenSignature s
+          JOIN CryptographicAlgorithm alg ON s.algorithm_id = alg.algorithm_id
+         WHERE s.token_id = %s ORDER BY s.signed_at DESC
+    """, (tok_id,))
+
+    # Bulk read of a token's record — write the audit-of-record row. The export
+    # reads the sensitive lifecycle + verification tables; log against the
+    # tracked VerificationEvent table (record_audit_access only accepts the
+    # AUDIT_TABLES_TRACKED set).
+    security.record_audit_access(
+        get_db, 'VerificationEvent',
+        filter_criteria={'route': '/api/tokens/export', 'token_id': tok_id},
+        result_row_count=len(lifecycle) + len(verifications),
+    )
+
+    payload = {
+        'token': {k: _jsonable(v) for k, v in token.items()},
+        'lifecycle_events': _jsonable_rows(lifecycle),
+        'verification_events': _jsonable_rows(verifications),
+        'device_bindings': _jsonable_rows(devices),
+        'blockchain_anchors': _jsonable_rows(anchors),
+        'revocations': _jsonable_rows(revocations),
+        'permissions': _jsonable_rows(permissions),
+        'signatures': _jsonable_rows(signatures),
+        'exported_by': (security.current_user() or {}).get('username'),
+        'note': 'Export of operator-viewable token data. No secret material; '
+                'ZERO_KNOWLEDGE verifications are unlinkable to a token by C2.',
+    }
+    resp = make_response(json.dumps(payload, indent=2))
+    resp.headers['Content-Type'] = 'application/json'
+    resp.headers['Content-Disposition'] = f'attachment; filename="polaris-token-{tok_id}.json"'
+    return resp
 
 
 # ============================================================================

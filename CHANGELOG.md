@@ -5,6 +5,39 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.151 — 2026-06-12 (Subject-focus bug fix + activation events on the map + token data export + richer node detail)
+
+Four things from a real bug report, all browser-verified.
+
+- **Bug fixed: a subject with only an activation event read as empty.** Egor
+  Khaklin has zero verifications and one ISSUED (activation) lifecycle event;
+  the focus view built its zoom and its empty-hint only from VERIFICATION
+  coordinates, so his activation event plotted but the map never framed it,
+  the banner said "1 event" while a "nothing here / zero-knowledge" chip
+  fired on top of it, and the two overlapped. Now: verification AND lifecycle
+  events are combined in time order, the map frames all of them, a single
+  event auto-opens its node console, and in focus mode the banner is the sole
+  status line (the empty chip never shows), so nothing overlaps. Banner count
+  and wording corrected ("N located events").
+- **Activation (and all lifecycle) events appear on the map.** The same fix
+  makes a token's issuance/activation/revocation events plot at their exact
+  location and the map zoom to them — verified on Egor's ISSUED event at
+  Pittsburgh (40.4406°N, 79.9959°W).
+- **Download all viewable token data.** A new `/api/tokens/<id>/export`
+  endpoint (and ⤓ buttons on the token-detail page and the map node console)
+  downloads everything the operator can already see for a token as a JSON
+  file: token record, lifecycle, verifications, devices, anchors, revocations,
+  permissions, signatures. Login-gated like the detail page, audit-logged, and
+  carries no secret material (duress hash → boolean; signature/key bytes
+  dropped). C2 holds for free: a token's verification set never contains a
+  ZERO_KNOWLEDGE row. New TokenExportTests pin all of this.
+- **Richer node console.** Selecting a reticle now shows event type, event id,
+  token, agency, algorithm (PQ/classical), outcome, disclosure, reason, the
+  free-text location AND the exact coordinates, and the timestamp — every
+  field available, none that breaks a rule (ZK events are still never plotted).
+
+572 web + 64 CLI green (4 new export tests), 68 checks.
+
 ## v9.150 — 2026-06-12 (Scale proof: the Atlas measured at 10 million events)
 
 "It should handle millions" is now measured, not asserted. Generated a real

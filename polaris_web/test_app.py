@@ -7447,6 +7447,54 @@ class AtlasSubjectFocusTests(PolarisTestCase):
             conn.close()
 
 
+class TokenExportTests(PolarisTestCase):
+    """/api/tokens/<id>/export downloads what the operator can already see on
+    the token-detail page. It must be an attachment, must NOT leak secret
+    material (duress hash, signature/key bytes), must be audit-logged, and
+    (free from C2) must never contain a ZERO_KNOWLEDGE verification."""
+
+    def test_export_is_attachment_json(self):
+        r = self.client.get('/api/tokens/2/export')
+        self.assertEqual(r.status_code, 200)
+        self.assertIn('application/json', r.headers.get('Content-Type', ''))
+        self.assertIn('attachment', r.headers.get('Content-Disposition', ''))
+        self.assertIn('polaris-token-2.json', r.headers.get('Content-Disposition', ''))
+
+    def test_export_carries_no_secret_material(self):
+        data = self.client.get('/api/tokens/2/export').get_json()
+        # The duress secret is reduced to a boolean; the hash never ships.
+        self.assertNotIn('duress_code_hash', data['token'])
+        self.assertIn('duress_enrolled', data['token'])
+        # Signature/key bytes are never serialized.
+        for s in data['signatures']:
+            self.assertNotIn('signature_bytes', s)
+            self.assertNotIn('signing_public_key_hex', s)
+        # C2: a token's verification set cannot contain a ZK row (NULL token_id).
+        for v in data['verification_events']:
+            self.assertNotEqual(v['disclosure_level'], 'ZERO_KNOWLEDGE')
+
+    def _export_audit_count(self):
+        # Fresh connection each call so it sees the request's committed write.
+        conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT count(*) AS n FROM AuditAccessLog "
+                            "WHERE filter_criteria_jsonb::text LIKE %s",
+                            ('%/api/tokens/export%',))
+                return cur.fetchone()['n']
+        finally:
+            conn.close()
+
+    def test_export_audit_logged(self):
+        before = self._export_audit_count()
+        self.client.get('/api/tokens/2/export')
+        self.assertGreater(self._export_audit_count(), before,
+                           "token export must write an audit-of-record row")
+
+    def test_export_404_for_missing_token(self):
+        self.assertEqual(self.client.get('/api/tokens/999999/export').status_code, 404)
+
+
 class UiLinkIntegrityTests(PolarisTestCase):
     DEFAULT_ROLE = None          # each test logs in as its own role
 

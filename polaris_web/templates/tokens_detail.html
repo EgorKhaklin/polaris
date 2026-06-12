@@ -331,6 +331,8 @@
     <a href="{{ url_for('tokens_list') }}" class="btn btn-secondary">← Back to Token List</a>
     <a href="{{ url_for('investigate_token', tok_id=token.token_id) }}" class="btn btn-secondary"
        title="Full chronological timeline: lifecycle + verification events">Investigate Timeline</a>
+    <a href="{{ url_for('tokens_export', tok_id=token.token_id) }}" class="btn btn-secondary" download
+       title="Download all operator-viewable data for this token as JSON (audit-logged; no secret material)">⤓ Download data (JSON)</a>
     <span class="filler"></span>
     {% if current_user.role == 'admin' %}
     <form method="post" action="{{ url_for('tokens_delete', tok_id=token.token_id) }}" class="inline-form"
