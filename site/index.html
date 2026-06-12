@@ -7,7 +7,7 @@
 <meta name="description" content="Post-quantum signed, zero-knowledge by default, compulsion-resistant by design. A working reference implementation of a national identity-token system.">
 <meta property="og:title" content="Polaris — a working national identity infrastructure">
 <meta property="og:description" content="Post-quantum signed. Audit-of-record by construction. Compulsion-resistant by design. It is not a slide deck; it runs.">
-<meta property="og:image" content="https://egorkhaklin.github.io/polaris-id/polaris_logo_clean.png">
+<meta property="og:image" content="https://egorkhaklin.github.io/polaris-id/atlas-globe.png">
 <meta property="og:url" content="https://egorkhaklin.github.io/polaris-id/">
 <meta property="og:type" content="website">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
@@ -52,6 +52,20 @@ h1{font-size:clamp(44px,7vw,78px);font-weight:750;letter-spacing:.3em;margin:0 0
 .btn-ghost:hover{background:rgba(93,214,255,.1);border-color:var(--cyan)}
 .strip{font-family:var(--mono);font-size:11px;letter-spacing:.05em;color:var(--faint);line-height:1.9;max-width:660px;margin:0 auto}
 .strip strong{color:var(--gold)}
+
+/* atlas showcase */
+.atlas-showcase{max-width:1180px;margin:0 auto 90px;padding:0 22px}
+.atlas-hero{margin:0 0 18px}
+.atlas-hero img,.atlas-pair img{width:100%;height:auto;display:block;border:1px solid var(--line-strong);
+    border-radius:8px;box-shadow:0 30px 80px rgba(2,8,18,.7)}
+.atlas-hero figcaption,.atlas-pair figcaption{color:var(--dim);margin:12px auto 0;line-height:1.6;
+    text-align:center;max-width:760px}
+.atlas-hero figcaption{font-size:13.5px}
+.ag-kicker{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:.2em;color:var(--gold-b);margin-right:8px}
+.atlas-pair{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:18px}
+.atlas-pair figure{margin:0}
+.atlas-pair figcaption{font-size:12px}
+@media(max-width:760px){.atlas-pair{grid-template-columns:1fr}}
 
 /* sections */
 section{max-width:1060px;margin:0 auto 80px;padding:0 22px}
@@ -118,13 +132,30 @@ footer a{color:var(--dim)}
         <a class="btn btn-ghost" href="https://github.com/EgorKhaklin/polaris-id/blob/main/MISSION.md">Read the constitution</a>
     </div>
     <p class="strip">
-        <strong>28</strong> schema tables · <strong>70</strong> routes ·
-        <strong>67</strong> machine-checked invariants ·
+        <strong>28</strong> schema tables · <strong>72</strong> routes ·
+        <strong>68</strong> machine-checked invariants ·
         <strong>ML-DSA-65</strong> signing default ·
         <strong>X25519MLKEM768</strong> TLS edge ·
         <strong>Plonky2</strong> ZK + second witness
     </p>
 </div>
+
+<section class="atlas-showcase">
+    <figure class="atlas-hero">
+        <img src="atlas-globe.png" alt="The Polaris Atlas: a dark operational globe with live verification clusters over North America" loading="lazy">
+        <figcaption><span class="ag-kicker">THE ATLAS</span> An operational globe that zooms from orbit to the street. Every reticle is a verification or lifecycle event, plotted where it happened. Zero-knowledge verifications never appear: they carry no location, by construction.</figcaption>
+    </figure>
+    <div class="atlas-pair">
+        <figure>
+            <img src="atlas-street.png" alt="The Atlas zoomed to street level with 3D buildings and an event on its exact coordinate" loading="lazy">
+            <figcaption><b>Zoom to the street.</b> The globe flattens into a 3D street map; an event sits on its exact coordinate. Fetched per-viewport, so the browser holds only what is on screen — a thousand events or a hundred million.</figcaption>
+        </figure>
+        <figure>
+            <img src="atlas-subject.png" alt="Subject-focus investigation drawing one individual's disclosed events as a gold path" loading="lazy">
+            <figcaption><b>Signal in the noise.</b> Warrant-grade subject focus (admin/auditor, audit-logged) isolates one named subject and draws a path of what they did. Their zero-knowledge verifications cannot be plotted, or even attributed — the privacy default survives the investigation.</figcaption>
+        </figure>
+    </div>
+</section>
 
 <section>
     <h2>The hard parts</h2>
@@ -165,14 +196,14 @@ footer a{color:var(--dim)}
         where the next caller can bypass them. Polaris puts them in Postgres:
         a partial unique index for one-active-token-per-person, append-only triggers
         for the audit-of-record, a CHECK constraint that refuses to store a token id
-        on a zero-knowledge verification. A flat layer of 67 plain check functions
+        on a zero-knowledge verification. A flat layer of 68 plain check functions
         re-verifies all of it on every CI run, and each check provably fails on a
         broken fixture.</p>
     <div class="numbers">
         <div class="num"><b>28</b><span>schema tables</span></div>
         <div class="num"><b>9</b><span>append-only AoR triggers</span></div>
-        <div class="num"><b>67</b><span>machine-checked invariants</span></div>
-        <div class="num"><b>562</b><span>product tests</span></div>
+        <div class="num"><b>68</b><span>machine-checked invariants</span></div>
+        <div class="num"><b>572</b><span>product tests</span></div>
         <div class="num"><b>7</b><span>CI jobs</span></div>
         <div class="num"><b>1</b><span>double-click to launch</span></div>
     </div>

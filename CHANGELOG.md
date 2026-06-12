@@ -5,6 +5,27 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.149 — 2026-06-12 (Cinematic README + GitHub page: the Atlas, on the front page)
+
+The Atlas is the most striking thing Polaris does, so it now leads. Real
+hero captures (committed under assets/): the dark globe with live clusters,
+the 3D street view with buildings, and the subject-focus gold path.
+
+- **README** opens with the globe hero, then a new "The Atlas" section pairing
+  the street and subject shots with the three things that make it more than
+  eye candy: it scales by construction (C8 viewport aggregation), the privacy
+  default is visible in the cartography (ZK events never appear, C2/C6), and
+  investigation is governed not casual (subject focus is UC-7, the schema
+  carries no attribute to profile by).
+- **GitHub Pages site** (site/) gains the same Atlas showcase (globe hero +
+  street/subject two-up), and the social-preview image (og:image) is now the
+  globe, so shared links render the console instead of the logo.
+- **Counts refreshed** everywhere to the current build: 72 routes (the two
+  subject endpoints), 68 checks, 572 product tests. A duplicated opening
+  paragraph in the README was removed.
+
+No code change; checks + link integrity green.
+
 ## v9.148 — 2026-06-12 (Subject-focus: single-subject investigation on the map, and the privacy guarantee it demonstrates)
 
 "Signal in the noise" for an operator with cause: search a specific subject

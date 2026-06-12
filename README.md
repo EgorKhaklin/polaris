@@ -27,7 +27,13 @@ _Post-quantum signed. Audit-of-record by construction. Compulsion-resistant by d
 
 **The system** &nbsp; [The hard parts](#the-hard-parts) · [Token model](#the-token-model) · [Architecture](#architecture) · [Cryptography](#cryptography) · [Production posture](#production-posture) · [How it differs](#how-it-differs-from-existing-identity-systems)
 
-**Proof of life** &nbsp; [Quickstart](#quickstart) · [What you get](#what-you-get) · [The trick](#the-trick) · [Tour](#tour) · [Tests](#tests) · [License](#license)
+**Proof of life** &nbsp; [The Atlas](#the-atlas) · [Quickstart](#quickstart) · [What you get](#what-you-get) · [The trick](#the-trick) · [Tour](#tour) · [Tests](#tests) · [License](#license)
+
+<br>
+
+<img src="assets/atlas-globe.png" alt="The Polaris Atlas: a dark operational globe with live verification clusters over North America" width="900">
+
+<sub>**The Atlas** — an operational globe that zooms from orbit to the street. Every reticle is a verification or lifecycle event. Zero-knowledge verifications never appear: they carry no location, by construction.</sub>
 
 </div>
 
@@ -39,11 +45,30 @@ Americans currently carry six to eight credentials that do not talk to each othe
 
 Polaris consolidates them into **one physical token per person**, signed under post-quantum cryptography, with **context-scoped verification** (banking versus voting versus healthcare are different events with different disclosure rules) and **zero-knowledge defaults** (the typical verification stores no token identifier at all).
 
-This repository is a **working reference implementation**: 28 schema tables, 11 stored procedures, a Flask application with 70 routes that exercises every use case, a Plonky2 ZK-SNARK prover in Rust with an independent second witness, WebAuthn-MFA operator authentication, an operational atlas with a live globe, a production container stack behind a post-quantum TLS edge, and a self-healing macOS launcher that gets all of it running from a single double-click.
+This repository is a **working reference implementation**: 28 schema tables, 11 stored procedures, a Flask application with 72 routes that exercises every use case, a Plonky2 ZK-SNARK prover in Rust with an independent second witness, WebAuthn-MFA operator authentication, a MapLibre operational atlas that zooms from a globe to street level, a production container stack behind a post-quantum TLS edge, and a self-healing macOS launcher that gets all of it running from a single double-click.
 
 It is not a slide deck. It runs; CI boots the full production stack end to end on every push.
 
 The system lives in [`polaris_sql`](polaris_sql/), [`polaris_web`](polaris_web/), [`polaris_cli`](polaris_cli/), [`polaris_zk`](polaris_zk/). Its C1-C10 invariants are machine-checked by [`polaris_checks`](polaris_checks/), a flat layer of plain check functions.
+
+---
+
+## The Atlas
+
+The operational surface is a console, not a dashboard. It is a MapLibre globe that zooms continuously from orbit down to individual buildings, with every verification and lifecycle event plotted on the ground where it happened, fetched per-viewport so it stays fast whether the ledger holds a thousand events or a hundred million.
+
+<table>
+<tr>
+<td width="50%"><img src="assets/atlas-street.png" alt="The Atlas zoomed to street level, 3D buildings, an event reticle on its exact coordinate"><br><sub><b>Zoom to the street.</b> The globe flattens into a 3D street map. An event sits on its exact coordinate; the live <code>CUR</code> readout streams the latitude and longitude under the cursor.</sub></td>
+<td width="50%"><img src="assets/atlas-subject.png" alt="Subject-focus investigation: one individual's disclosed events drawn as a gold path"><br><sub><b>Signal in the noise.</b> Warrant-grade subject focus (admin/auditor, audit-logged) isolates one named subject and draws a path of what they did. Their zero-knowledge verifications cannot be plotted, or even attributed: the privacy default survives the investigation.</sub></td>
+</tr>
+</table>
+
+Three things make the Atlas more than eye candy:
+
+- **It scales by construction.** The browser never receives the whole dataset. It computes the visible viewport, asks the server for per-cell aggregates, and renders those. Payload is proportional to what is on screen, never to the size of the ledger. That is constraint **C8**: every `/api/atlas/*` endpoint returns a bounded result set.
+- **The privacy default is visible in the cartography.** A `ZERO_KNOWLEDGE` verification stores no token id and no location (C2), and is excluded from every spatial layer (C6). On the map, the privacy guarantee is not a footnote; it is the reason a whole class of events never appears.
+- **Investigation is governed, not casual.** You can isolate one *known* subject (warrant-audit, UC-7, admin/auditor-only, every access written to the audit-of-record). You cannot filter the population by attribute, because the schema carries no attribute to filter by. The line between investigating a subject and profiling a people is drawn in the data model, not in a policy document.
 
 ---
 
@@ -103,7 +128,7 @@ Four layers. The check layer reads but never writes the operational layer. The Z
 ```
         ┌─────────────────────────────────────────────────────────────┐
         │                       CHECK LAYER                           │
-        │   polaris_checks — 67 flat invariant checks                 │
+        │   polaris_checks — 68 flat invariant checks                 │
         │   (C1-C10 · CSP · secrets posture · PQC wiring · CI proof   │
         │    pins · doc/schema drift · ZK two-witness · …)            │
         │   plain check_*(repo_root) functions; `run` gates CI        │
@@ -111,7 +136,7 @@ Four layers. The check layer reads but never writes the operational layer. The Z
                                   │   reads (no writes)
         ┌─────────────────────────▼───────────────────────────────────┐
         │                       APPLICATION                           │
-        │     Flask (70 routes)  ·  Atlas globe  ·  WebAuthn MFA      │
+        │     Flask (72 routes)  ·  Atlas globe  ·  WebAuthn MFA      │
         │     Dashboard  ·  /sql console  ·  structured /api/health   │
         └──────────┬──────────────────────────┬───────────────────────┘
                    │                          │
@@ -256,12 +281,12 @@ If anything looks wrong, the launcher carries a read-only diagnostic: `./polaris
 ```
                  ┌──────────────────────────────────────────────────┐
                  │              Polaris in numbers                  │
-                 │             (current as of v9.142)               │
+                 │             (current as of v9.148)               │
                  ├──────────────────────────────────────────────────┤
                  │  28 schema tables · 11 stored procedures         │
-                 │  70 HTTP routes (incl. /auth/webauthn/*)         │
-                 │  67 machine-checked invariants (C1-C10 + pins)   │
-                 │  562 product tests · 10 property suites          │
+                 │  72 HTTP routes (incl. /auth/webauthn/*)         │
+                 │  68 machine-checked invariants (C1-C10 + pins)   │
+                 │  572 product tests · 10 property suites          │
                  │  Plonky2 ZK + an independent second witness      │
                  │  7 CI jobs, incl. full prod-stack boot           │
                  │  1 double-click to launch                        │
@@ -284,7 +309,7 @@ Most reference implementations of an identity system put their rules in applicat
 - **The audit-of-record** is a trigger that raises `insufficient_privilege` on any `UPDATE`/`DELETE` of a lifecycle-event table, not a logging convention.
 - **Zero-knowledge** is a CHECK constraint that refuses to store a token id on a `ZERO_KNOWLEDGE` verification, not an application policy.
 
-Those rules are then machine-checked by [`polaris_checks`](polaris_checks/): 67 plain `check_*(repo_root)` functions covering the C1-C10 constraints plus the production-posture pins (CSP, secrets permissions, PQC wiring, CI-proof currency, doc/schema drift), each with *tested detection correctness*. Every check provably fails on a broken fixture; `python3 -m polaris_checks.run` gates CI directly. A check is a check: no framework, no mythology.
+Those rules are then machine-checked by [`polaris_checks`](polaris_checks/): 68 plain `check_*(repo_root)` functions covering the C1-C10 constraints plus the production-posture pins (CSP, secrets permissions, PQC wiring, CI-proof currency, doc/schema drift), each with *tested detection correctness*. Every check provably fails on a broken fixture; `python3 -m polaris_checks.run` gates CI directly. A check is a check: no framework, no mythology.
 
 > Earlier versions carried an elaborate "cognitive substrate": an introspection swarm, a simulated Roman economy, a self-governance apparatus meant to let an AI agent maintain the system. **v9.55 removed it**, replacing ~18k LOC of apparatus with the flat check layer above. The development record of that arc is preserved in the CHANGELOG and the git history. The principles it served (the constitution) are unchanged; the implementation is simply honest now.
 
@@ -320,7 +345,7 @@ Four layers of verification. CI runs all of them on every push, across seven job
 │  test_check_constraints      │         │  atlas API, R6 anti-revealing posture, ZK.   │
 │  Property tests (Hypothesis) │    10   │  Adversarial inputs against C1, C2, C3 and   │
 │                              │         │  the M2-12 redaction proof.                  │
-│  polaris_checks              │    67   │  C1-C10 + production-posture pins; tested    │
+│  polaris_checks              │    68   │  C1-C10 + production-posture pins; tested    │
 │                              │         │  detection correctness; `run` gates CI.      │
 │  CI jobs                     │     7   │  test · docker-image · caddy-edge (PQ KEX    │
 │                              │         │  proof) · pqc-real · cve-scan ·              │
