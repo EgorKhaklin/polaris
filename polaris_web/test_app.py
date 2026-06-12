@@ -7378,6 +7378,75 @@ class ErasureTests(PolarisTestCase):
 # nothing a user can see and click renders an error page.
 # ============================================================================
 
+class AtlasSubjectFocusTests(PolarisTestCase):
+    """Subject-focus is single-subject warrant-audit investigation (UC-7), not
+    population profiling. Pin the three guarantees that keep it on the right
+    side of the constitution: it is governed (admin/auditor only), it is
+    audit-logged, and C6 holds — a ZERO_KNOWLEDGE verification is never
+    returned for any subject (it carries no token link, C2, so it cannot be
+    attributed at all)."""
+
+    DEFAULT_ROLE = None
+
+    def test_subject_endpoints_deny_operator(self):
+        self._login('operator')
+        self.assertEqual(self.client.get('/api/atlas/subject?individual_id=2').status_code, 403)
+        self.assertEqual(self.client.get('/api/atlas/subjects/search?q=ma').status_code, 403)
+
+    def test_subject_endpoints_deny_anonymous(self):
+        # No login: login_required redirects (302) or 401/403, never 200.
+        self.assertNotEqual(self.client.get('/api/atlas/subject?individual_id=2').status_code, 200)
+
+    def test_subject_search_and_focus_for_admin(self):
+        self._login('admin')
+        r = self.client.get('/api/atlas/subjects/search?q=Maria')
+        self.assertEqual(r.status_code, 200)
+        names = [x['legal_name'] for x in r.get_json()['results']]
+        self.assertIn('Maria Santos', names)
+
+        # Short query returns nothing (no full-table dump on a single char).
+        self.assertEqual(self.client.get('/api/atlas/subjects/search?q=m').get_json()['results'], [])
+
+        # Non-integer id is a 400, not a 500.
+        self.assertEqual(self.client.get('/api/atlas/subject?individual_id=abc').status_code, 400)
+
+    def test_subject_focus_never_returns_zero_knowledge(self):
+        """The C6 guarantee for the subject view: not one plotted event may be
+        ZERO_KNOWLEDGE, for ANY subject. ZK verifications have token_id NULL and
+        cannot be attributed to an individual at all."""
+        self._login('admin')
+        for iid in range(1, 9):
+            r = self.client.get(f'/api/atlas/subject?individual_id={iid}')
+            if r.status_code != 200:
+                continue
+            data = r.get_json()
+            for v in data['verifications']:
+                self.assertNotEqual(
+                    v['disclosure_level'], 'ZERO_KNOWLEDGE',
+                    f"subject {iid} leaked a ZERO_KNOWLEDGE verification onto the map")
+                self.assertIsNotNone(v['lat'])
+                self.assertIsNotNone(v['lon'])
+
+    def test_subject_focus_audit_logged(self):
+        """Every subject access is warrant-grade and writes an AuditAccessLog
+        row naming the individual investigated."""
+        self._login('admin')
+        before = self._audit_count()
+        self.client.get('/api/atlas/subject?individual_id=2')
+        self.assertGreater(self._audit_count(), before,
+                           "subject focus must write an audit-of-record row")
+
+    def _audit_count(self):
+        conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT count(*) AS n FROM AuditAccessLog "
+                            "WHERE filter_criteria_jsonb::text LIKE %s", ('%/api/atlas/subject%',))
+                return cur.fetchone()['n']
+        finally:
+            conn.close()
+
+
 class UiLinkIntegrityTests(PolarisTestCase):
     DEFAULT_ROLE = None          # each test logs in as its own role
 

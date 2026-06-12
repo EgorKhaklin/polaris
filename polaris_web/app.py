@@ -1734,6 +1734,115 @@ def api_atlas_timeline():
     return jsonify(payload)
 
 
+# ----------------------------------------------------------------------------
+# SUBJECT FOCUS (v9.148) — single-subject investigation on the map.
+#
+# This is the warrant-audit use case (UC-7), not population profiling. The
+# distinction is hard-enforced:
+#   - You reach a subject by IDENTITY (a specific individual_id), never by a
+#     protected attribute. There is no "filter the population by X" path; the
+#     schema carries no gender/ethnicity/religion/politics to filter on.
+#   - Gated to admin/auditor (operators are denied — an operator must not be
+#     able to pull a holder's movement map).
+#   - Every access is written to the audit-of-record (record_audit_access).
+#   - C6 HOLDS even here: ZERO_KNOWLEDGE verifications are never located. The
+#     subject map shows only the events the holder already chose to disclose;
+#     the ZK ones are returned as a withheld COUNT. The privacy default
+#     survives the investigation, which is the whole point.
+# ----------------------------------------------------------------------------
+
+@app.route('/api/atlas/subjects/search')
+@security.login_required
+@security.require_role('admin', 'auditor')
+def api_atlas_subject_search():
+    """Typeahead for the subject-focus picker. Name search only; returns the
+    individual_id the caller then focuses. At national scale this wants a
+    trigram index on Individual.legal_name (pg_trgm) — see docs/reference/
+    SCALING.md; ILIKE is fine for the demo roster."""
+    q = (request.args.get('q') or '').strip()
+    if len(q) < 2:
+        return jsonify(results=[])
+    rows = query("""
+        SELECT individual_id, legal_name, jurisdiction
+        FROM Individual
+        WHERE legal_name ILIKE %s
+        ORDER BY legal_name
+        LIMIT 20
+    """, ('%' + q + '%',))
+    return jsonify(results=[dict(r) for r in rows])
+
+
+@app.route('/api/atlas/subject')
+@security.login_required
+@security.require_role('admin', 'auditor')
+def api_atlas_subject():
+    """Return ONE subject's located events for the focused map view.
+
+    Warrant-grade: admin/auditor only, audit-logged. C6: ZERO_KNOWLEDGE
+    verifications are excluded from the plotted points and returned only as a
+    withheld count — even the investigator cannot place them."""
+    try:
+        iid = int(request.args.get('individual_id', ''))
+    except (ValueError, TypeError):
+        abort(400, description='individual_id must be an integer')
+
+    ind = query(
+        "SELECT individual_id, legal_name, jurisdiction FROM Individual WHERE individual_id = %s",
+        (iid,), fetch='one')
+    if not ind:
+        abort(404)
+
+    # Disclosed verification events (NON-ZK) with a location — "what they did".
+    verifs = query("""
+        SELECT ve.event_id, ve.latitude AS lat, ve.longitude AS lon,
+               to_char(ve.event_timestamp, 'YYYY-MM-DD HH24:MI') AS event_timestamp,
+               ve.token_id, vc.context_type, ve.outcome::TEXT AS outcome,
+               ve.disclosure_level::TEXT AS disclosure_level,
+               ag.name AS agency_name, ve.requestor_location
+          FROM VerificationEvent ve
+          JOIN IdentityToken         t  ON ve.token_id = t.token_id
+          JOIN VerificationContext   vc ON ve.context_id = vc.context_id
+          LEFT JOIN Agency           ag ON ve.requesting_agency_id = ag.agency_id
+         WHERE t.individual_id = %s
+           AND ve.disclosure_level <> 'ZERO_KNOWLEDGE'
+           AND ve.latitude IS NOT NULL AND ve.longitude IS NOT NULL
+         ORDER BY ve.event_timestamp
+    """, (iid,))
+
+    # Lifecycle events for the subject's tokens (issued/activated/revoked …).
+    lifecycle = query("""
+        SELECT le.event_id, le.latitude AS lat, le.longitude AS lon,
+               to_char(le.event_timestamp, 'YYYY-MM-DD HH24:MI') AS event_timestamp,
+               le.token_id, le.event_type::TEXT AS event_type,
+               le.reason_code::TEXT AS reason_code, ag.name AS agency_name
+          FROM TokenLifecycleEvent le
+          JOIN IdentityToken     t  ON le.token_id = t.token_id
+          LEFT JOIN Agency       ag ON le.actor_agency_id = ag.agency_id
+         WHERE t.individual_id = %s
+           AND le.latitude IS NOT NULL AND le.longitude IS NOT NULL
+         ORDER BY le.event_timestamp
+    """, (iid,))
+
+    # Audit-of-record: this access is warrant-grade and must leave a row.
+    security.record_audit_access(
+        get_db, 'VerificationEvent',
+        filter_criteria={'route': '/api/atlas/subject', 'individual_id': iid},
+        result_row_count=len(verifs),
+    )
+
+    # Note on zero-knowledge: a ZK verification carries token_id = NULL (C2), so
+    # it cannot be joined to ANY individual. The subject's ZK activity is not
+    # merely location-withheld; it is unattributable to them by construction.
+    # The investigation can only ever see what the holder chose to disclose.
+    return jsonify(
+        individual=dict(ind),
+        verifications=[dict(r) for r in verifs],
+        lifecycle=[dict(r) for r in lifecycle],
+        located=len(verifs) + len(lifecycle),
+        zk_note='Zero-knowledge verifications carry no token link (C2) and cannot be attributed to any subject.',
+    )
+
+
 @app.route('/api/atlas/cache-stats')
 @security.login_required
 def api_atlas_cache_stats():

@@ -5,6 +5,39 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.148 — 2026-06-12 (Subject-focus: single-subject investigation on the map, and the privacy guarantee it demonstrates)
+
+"Signal in the noise" for an operator with cause: search a specific subject
+and the map drops everything else, plotting only that person's disclosed
+events as a gold path of "what they did". This is the warrant-audit use case
+(UC-7), NOT population profiling — and it is built to demonstrate the
+constitution rather than breach it. Browser-verified focusing James Chen (4
+disclosed events on a connected path, operational clusters hidden); 5 new
+governance tests green, 68 checks.
+
+The line, enforced in code:
+- **By identity, never by attribute.** You reach a subject by their specific
+  individual_id (found via a name typeahead), never by filtering the
+  population. The schema carries no gender/ethnicity/religion/politics to
+  filter on, and none was added.
+- **Governed.** `/api/atlas/subject` and `/api/atlas/subjects/search` are
+  admin/auditor only (operators are denied — an operator must not be able to
+  pull a holder's movement map). Verified: operator → 403.
+- **Audit-logged.** Every focus writes an AuditAccessLog row naming the
+  individual investigated (record_audit_access) — warrant-grade access leaves
+  a trace.
+- **C6 holds, and is shown.** A ZERO_KNOWLEDGE verification carries
+  token_id = NULL (C2), so it cannot be joined to any individual at all: the
+  subject's zero-knowledge activity is not merely location-withheld, it is
+  *unattributable*. The map shows only what the holder chose to disclose; the
+  banner states it plainly. A test asserts no subject ever returns a ZK row.
+
+Implementation: two read-only endpoints over existing tables (no schema
+change), a gold trajectory line + sequence-numbered reticles layer in
+atlas-map.js, an admin/auditor-gated subject search box, and an INVESTIGATING
+banner. The operational viewport fetch stands down while a subject is focused;
+Reset or Clear exits. AtlasSubjectFocusTests pins the four guarantees above.
+
 ## v9.147 — 2026-06-12 (Atlas fixes: open over the data, no false "feed interrupted", no HUD overlap)
 
 Three issues in the v9.146 MapLibre atlas, all fixed and browser-verified.

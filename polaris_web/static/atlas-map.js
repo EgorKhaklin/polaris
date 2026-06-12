@@ -151,6 +151,36 @@
             map.on('mouseenter', id, function () { map.getCanvas().style.cursor = 'pointer'; });
             map.on('mouseleave', id, function () { map.getCanvas().style.cursor = ''; });
         });
+
+        // --- Subject-focus layers (v9.148): one investigated subject's path ---
+        // A gold trajectory connecting their disclosed events in time order, on
+        // top of (and replacing) the operational clusters. ZK events are never
+        // here — the server withholds them.
+        map.addSource('atlas-subject', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+        map.addSource('atlas-subject-path', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+        map.addLayer({
+            id: 'atlas-subject-line', type: 'line', source: 'atlas-subject-path',
+            paint: { 'line-color': '#e8be64', 'line-width': 2, 'line-opacity': 0.7, 'line-dasharray': [2, 1.5] }
+        });
+        map.addLayer({
+            id: 'atlas-subject-points', type: 'circle', source: 'atlas-subject',
+            paint: {
+                'circle-radius': ['interpolate', ['linear'], ['zoom'], 3, 6, 14, 11],
+                'circle-color': ['match', ['get', 'tone'],
+                    'alert', TONE_COLORS.alert, 'full', TONE_COLORS.full,
+                    'selective', TONE_COLORS.selective, '#e8be64'],
+                'circle-stroke-width': 2.5, 'circle-stroke-color': '#e8be64', 'circle-opacity': 0.95
+            }
+        });
+        map.addLayer({
+            id: 'atlas-subject-seq', type: 'symbol', source: 'atlas-subject',
+            layout: { 'text-field': ['get', 'seq'], 'text-size': 10, 'text-font': ['Open Sans Bold'],
+                      'text-offset': [0, -1.3], 'text-allow-overlap': true },
+            paint: { 'text-color': '#ffe9b0', 'text-halo-color': '#050a12', 'text-halo-width': 1 }
+        });
+        map.on('click', 'atlas-subject-points', function (e) { selectFeature(e.features[0]); });
+        map.on('mouseenter', 'atlas-subject-points', function () { map.getCanvas().style.cursor = 'pointer'; });
+        map.on('mouseleave', 'atlas-subject-points', function () { map.getCanvas().style.cursor = ''; });
     }
 
     // =========================================================================
@@ -204,6 +234,7 @@
 
     function fetchData() {
         if (!map.getSource || !map.getSource('atlas-events')) return;
+        if (focusedSubject) return;   // subject-focus owns the map; no operational fetch
         var bbox = currentBbox();
         var grid = chooseGrid(map.getZoom());
         var kind = apiKind();
@@ -573,6 +604,147 @@
     });
 
     // =========================================================================
+    // Subject focus (v9.148) — single-subject investigation (admin/auditor).
+    // Search a person, drop everything else, plot only their disclosed events
+    // as a gold path of "what they did". ZK verifications are withheld by the
+    // server and reported as a count. This is governed (gated + audit-logged
+    // server-side), not population profiling.
+    // =========================================================================
+    var focusedSubject = null;
+    var searchInput = document.querySelector('[data-atlas-subject-search]');
+    var resultsEl = document.querySelector('[data-atlas-subject-results]');
+    var bannerEl = document.querySelector('[data-atlas-subject-banner]');
+
+    function setOperationalLayers(visible) {
+        ['atlas-clusters', 'atlas-cluster-count', 'atlas-points'].forEach(function (id) {
+            if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none');
+        });
+    }
+
+    function subjectFeature(ev, kind, seq) {
+        var tone;
+        if (kind === 'verification') {
+            tone = ev.outcome && ev.outcome !== 'SUCCESS' ? 'alert'
+                 : (ev.disclosure_level === 'FULL' ? 'full' : 'selective');
+        } else {
+            tone = ['REVOKED', 'LOST', 'EXPIRED'].indexOf(ev.event_type) >= 0 ? 'alert' : 'selective';
+        }
+        return {
+            type: 'Feature', geometry: { type: 'Point', coordinates: [ev.lon, ev.lat] },
+            properties: {
+                isCluster: false, kind: kind, tone: tone, seq: String(seq),
+                event_id: ev.event_id, token_id: ev.token_id || null,
+                agency: ev.agency_name || null, context: ev.context_type || null,
+                outcome: ev.outcome || null, disclosure: ev.disclosure_level || null,
+                eventType: ev.event_type || null, reason: ev.reason_code || null,
+                timestamp: ev.event_timestamp || null, location: ev.requestor_location || null
+            }
+        };
+    }
+
+    function focusSubject(id, name) {
+        apiCall('/api/atlas/subject?individual_id=' + encodeURIComponent(id))
+            .then(function (data) {
+                focusedSubject = data.individual;
+                if (inflight) inflight.abort();
+                // Verifications first (the "movement"), then lifecycle, time-ordered.
+                var feats = [], coords = [];
+                (data.verifications || []).forEach(function (ev) {
+                    feats.push(subjectFeature(ev, 'verification', feats.length + 1));
+                    coords.push([ev.lon, ev.lat]);
+                });
+                (data.lifecycle || []).forEach(function (ev) {
+                    feats.push(subjectFeature(ev, 'lifecycle', feats.length + 1));
+                });
+                map.getSource('atlas-subject').setData({ type: 'FeatureCollection', features: feats });
+                map.getSource('atlas-subject-path').setData(coords.length >= 2
+                    ? { type: 'FeatureCollection', features: [{ type: 'Feature',
+                        geometry: { type: 'LineString', coordinates: coords }, properties: {} }] }
+                    : { type: 'FeatureCollection', features: [] });
+                setOperationalLayers(false);
+                toggleEmptyHint(false);
+
+                // Banner
+                if (bannerEl) {
+                    bannerEl.hidden = false;
+                    var nm = document.querySelector('[data-atlas-subject-name]');
+                    var st = document.querySelector('[data-atlas-subject-stats]');
+                    if (nm) nm.textContent = data.individual.legal_name + '  #' + data.individual.individual_id
+                                             + '  · ' + (data.individual.jurisdiction || '');
+                    if (st) st.textContent = data.located + ' disclosed event'
+                        + (data.located === 1 ? '' : 's')
+                        + ' · zero-knowledge activity is unattributable (C2)';
+                }
+                // Fit to the subject's events
+                if (coords.length) {
+                    var b = coords.reduce(function (bb, c) { return bb.extend(c); },
+                        new maplibregl.LngLatBounds(coords[0], coords[0]));
+                    map.fitBounds(b, { padding: 90, maxZoom: 14, duration: 900 });
+                } else {
+                    // All their activity is zero-knowledge — nothing to plot.
+                    if (emptyChip) {
+                        emptyChip.hidden = false;
+                        emptyChip.querySelector('span').textContent =
+                            'NO LOCATABLE EVENTS — this subject’s activity is entirely zero-knowledge (locations withheld by C2/C6)';
+                    }
+                }
+                hideResults();
+                if (searchInput) searchInput.value = name || data.individual.legal_name;
+            })
+            .catch(function (err) {
+                if (err.name !== 'AbortError') console.warn('Subject focus failed:', err);
+            });
+    }
+
+    function clearFocus() {
+        focusedSubject = null;
+        if (map.getSource('atlas-subject')) map.getSource('atlas-subject').setData({ type: 'FeatureCollection', features: [] });
+        if (map.getSource('atlas-subject-path')) map.getSource('atlas-subject-path').setData({ type: 'FeatureCollection', features: [] });
+        setOperationalLayers(true);
+        if (bannerEl) bannerEl.hidden = true;
+        if (searchInput) searchInput.value = '';
+        if (emptyChip) emptyChip.hidden = true;
+        lastFetchKey = null;
+        scheduleFetch();
+    }
+
+    function hideResults() { if (resultsEl) { resultsEl.hidden = true; resultsEl.replaceChildren(); } }
+
+    var searchTimer = null;
+    if (searchInput) {
+        searchInput.addEventListener('input', function () {
+            var q = searchInput.value.trim();
+            if (searchTimer) clearTimeout(searchTimer);
+            if (q.length < 2) { hideResults(); return; }
+            searchTimer = setTimeout(function () {
+                apiCall('/api/atlas/subjects/search?q=' + encodeURIComponent(q))
+                    .then(function (data) {
+                        if (!resultsEl) return;
+                        resultsEl.replaceChildren();
+                        (data.results || []).forEach(function (r) {
+                            var b = document.createElement('button');
+                            b.type = 'button';
+                            b.className = 'subject-result';
+                            b.textContent = r.legal_name + '  · ' + (r.jurisdiction || '') + '  #' + r.individual_id;
+                            b.addEventListener('click', function () { focusSubject(r.individual_id, r.legal_name); });
+                            resultsEl.appendChild(b);
+                        });
+                        if (!(data.results || []).length) {
+                            var none = document.createElement('div');
+                            none.className = 'subject-result subject-result-none';
+                            none.textContent = 'no match';
+                            resultsEl.appendChild(none);
+                        }
+                        resultsEl.hidden = false;
+                    }).catch(function () { hideResults(); });
+            }, 220);
+        });
+        searchInput.addEventListener('keydown', function (e) { if (e.key === 'Escape') hideResults(); });
+    }
+    var clearBtn = document.querySelector('[data-atlas-subject-clear]');
+    if (clearBtn) clearBtn.addEventListener('click', clearFocus);
+
+    // =========================================================================
     // Controls — zoom / reset / spin / fullscreen
     // =========================================================================
     var zin = document.querySelector('[data-atlas-zoom-in]');
@@ -582,6 +754,7 @@
 
     var resetBtn = document.querySelector('[data-atlas-reset]');
     if (resetBtn) resetBtn.addEventListener('click', function () {
+        if (focusedSubject) clearFocus();   // Reset also exits subject focus
         map.flyTo({ center: HOME.center, zoom: HOME.zoom, bearing: 0, pitch: 0, speed: 1.1 });
     });
 

@@ -81,6 +81,19 @@
             </div>
         </details>
 
+        {# Subject focus — single-subject warrant-audit investigation (UC-7).
+           Admin/auditor only; the endpoints enforce the same gate and audit-log
+           every access. This isolates ONE named subject, never filters the
+           population by attribute. ZK events stay withheld even here. #}
+        {% if current_user.role in ('admin', 'auditor') %}
+        <div class="atlas-subject-search">
+            <input type="search" class="subject-search-input" data-atlas-subject-search
+                   placeholder="🔎 Focus subject…" maxlength="100" autocomplete="off"
+                   aria-label="Search a subject to investigate on the map">
+            <div class="subject-search-results" data-atlas-subject-results role="listbox" hidden></div>
+        </div>
+        {% endif %}
+
         <span class="toolbar-spacer"></span>
 
         <div class="chip-group" aria-label="Zoom controls">
@@ -143,6 +156,14 @@
                      class="atlas-map"
                      role="application"
                      aria-label="Interactive map of Polaris token and verification activity. Drag to pan, scroll to zoom from globe to street level."></div>
+            </div>
+
+            {# Subject-focus banner — shown while one subject is isolated. #}
+            <div class="atlas-subject-banner" data-atlas-subject-banner role="status" hidden>
+                <span class="subject-banner-label">INVESTIGATING</span>
+                <span class="subject-banner-name" data-atlas-subject-name></span>
+                <span class="subject-banner-stats" data-atlas-subject-stats></span>
+                <button type="button" class="subject-banner-clear" data-atlas-subject-clear>✕ Clear focus</button>
             </div>
 
             {# Tone legend — operators should not have to guess the color code. #}
@@ -219,5 +240,5 @@
        relaxation for those origins is scoped to this endpoint only. #}
     <link rel="stylesheet" href="{{ url_for('static', filename='vendor/maplibre-gl.css') }}">
     <script src="{{ url_for('static', filename='vendor/maplibre-gl.js') }}"></script>
-    <script src="{{ url_for('static', filename='atlas-map.js') }}?v=v9146c"></script>
+    <script src="{{ url_for('static', filename='atlas-map.js') }}?v=v9148a"></script>
 {% endblock %}
