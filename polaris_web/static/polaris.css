@@ -2185,7 +2185,10 @@ textarea.sql {
     height: 100%;
     cursor: grab;
     touch-action: none;
-    overflow: visible;
+    /* v9.145: hidden, not visible — at ultra zoom the projected world is
+       enormous and unclipped paint bounds stall the compositor. The stage
+       is the console boundary; clipping at it is correct. */
+    overflow: hidden;
 }
 
 .atlas-globe-svg:active {
@@ -3562,3 +3565,47 @@ textarea.sql {
 
 /* Full-bleed pages align the masthead with the console edges */
 .body-atlas .masthead-inner { max-width: none; }
+
+/* ----- 23 Atlas futurization (v9.145): sweep, fullscreen, cursor ----------- */
+
+/* Radar sweep: a slow conic wash rotating behind the globe. GPU-cheap
+   (transform-only animation); killed by the global reduced-motion rule. */
+.atlas-shell .globe-stage::after {
+    content: '';
+    position: absolute;
+    inset: -25%;
+    z-index: 1;
+    pointer-events: none;
+    background: conic-gradient(
+        from 0deg,
+        transparent 0deg,
+        transparent 318deg,
+        rgba(93, 214, 255, 0.05) 348deg,
+        rgba(93, 214, 255, 0.09) 359deg,
+        transparent 360deg);
+    animation: atlas-radar-sweep 16s linear infinite;
+}
+
+@keyframes atlas-radar-sweep {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+}
+
+/* Fullscreen: the shell owns the whole display; paint a solid backdrop. */
+.atlas-shell:fullscreen,
+.atlas-shell:-webkit-full-screen {
+    background-color: var(--void);
+}
+
+.toolbar-chip-fullscreen { white-space: nowrap; }
+
+/* Cursor coordinates: the pinpoint readout gets the live-data color. */
+.sb-cursor {
+    color: var(--cyan);
+    min-width: 150px;
+    display: inline-block;
+}
+
+/* Crosshair over the globe: this is a targeting surface. */
+.atlas-globe-svg { cursor: crosshair; }
+.atlas-globe-svg:active { cursor: grabbing; }

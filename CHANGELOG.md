@@ -5,6 +5,37 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.145 — 2026-06-12 (Atlas futurization: fullscreen, ultra zoom to 40x, pinpoint coordinates)
+
+The console becomes a real targeting surface. Lighthouse atlas 96 perf /
+100 a11y / 100 best-practices / 100 SEO (the 4-point perf dip is d3 bootup
+under simulated throttle; TBT is 10ms). 503 web + 64 CLI green;
+browser-verified drilling a cluster to 40x and reading exact coordinates.
+
+- **Fullscreen.** A ⛶ command-bar chip and the `F` key take the whole
+  console fullscreen via the Fullscreen API; the ResizeObserver re-measures
+  the globe when the box jumps. The chip reflects state (⛶ Full / ✕ Exit).
+- **Ultra zoom to 40x** with frame-eased motion. setZoom() now sets a
+  TARGET that the animate loop approaches exponentially each frame, so
+  wheel, +/- chips, keyboard, and cluster drill-down all glide instead of
+  stepping. Wheel and buttons step multiplicatively (uniform feel across
+  the whole 0.7x-40x range); clusters double the zoom on click. The fetch
+  fires once when the zoom settles, not every frame.
+- **Pinpoint locations.** chooseGrid() extends to 0.01-degree (~1 km) cells
+  at depth so the cluster pipeline hands over to exact-position point
+  reticles; a live CUR lat/lon readout in the status bar streams the
+  coordinate under the cursor (inverts the projection; 4-decimal precision
+  past 8x). This is how an operator reads the exact location of an event.
+- **Smoothness + scale hygiene.** projection.clipExtent() clips paint to
+  the viewport (at 40x the projected world is hundreds of thousands of
+  pixels wide; without it d3 paths every offscreen arc); the globe SVG
+  clips at its box (overflow hidden) so deep zoom never stalls the
+  compositor; the ultra-zoom bbox clamps at the antimeridian instead of
+  bailing to a heavy whole-world fetch.
+- **Future-tech ambience.** A slow conic radar sweep behind the globe
+  (transform-only, GPU-cheap, killed by reduced-motion) and a crosshair
+  cursor mark the stage as a targeting surface.
+
 ## v9.144 — 2026-06-11 (Atlas console rework: full-viewport command surface)
 
 The Atlas was a 700px-capped globe widget floating inside the 1480px content

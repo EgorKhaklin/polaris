@@ -76,6 +76,9 @@
         </div>
         <button class="toolbar-chip toolbar-spin" type="button" data-atlas-spin>Spin</button>
         <button class="toolbar-chip" type="button" data-atlas-reset>Reset</button>
+        <button class="toolbar-chip toolbar-chip-fullscreen" type="button"
+                data-atlas-fullscreen aria-pressed="false"
+                title="Fullscreen console (F)">⛶ Full</button>
         <span class="toolbar-live"><span class="live-dot"></span>LIVE</span>
     </div>
 
@@ -164,8 +167,8 @@
             <div class="dock-panel" data-dock-panel="console">
                 <div class="globe-detail" id="atlas-globe-detail" aria-live="polite">
                     <span class="detail-kicker">Node Console</span>
-                    <strong>Drag to rotate. Scroll or +/− to zoom.</strong>
-                    <span>Click any reticle or feed entry to inspect token, lifecycle, and verification context. Clusters zoom in on click.</span>
+                    <strong>Drag to rotate. Scroll or +/− to zoom, up to 40x.</strong>
+                    <span>Click any reticle or feed entry to inspect token, lifecycle, and verification context. Clusters zoom in on click; at depth, reticles sit on exact event coordinates (read them off CUR in the status bar). F for fullscreen.</span>
                 </div>
             </div>
         </aside>
@@ -177,6 +180,7 @@
         <div class="atlas-timeline-strip" data-atlas-timeline
              aria-label="Activity histogram for selected window"></div>
         <div class="statusbar-readouts">
+            <span class="sb-item"><span class="sb-key">CUR</span> <span class="sb-val sb-cursor" id="atlas-hud-cursor">— —</span></span>
             <span class="sb-item"><span class="sb-key">HDG</span> <span class="sb-val" id="atlas-hud-heading">000°</span></span>
             <span class="sb-item"><span class="sb-key">PIT</span> <span class="sb-val" id="atlas-hud-pitch">+0°</span></span>
             <span class="sb-item"><span class="sb-key">ZM</span> <span class="sb-val" id="atlas-hud-zoom">1.00x</span></span>
@@ -198,5 +202,5 @@
     <script src="{{ url_for('static', filename='vendor/topojson-client.min.js') }}"></script>
     {# Cache-bust the atlas script on each visual revision. Bump ?v= when
        editing atlas-globe.js so the browser picks up the new file in dev. #}
-    <script src="{{ url_for('static', filename='atlas-globe.js') }}?v=v9144a"></script>
+    <script src="{{ url_for('static', filename='atlas-globe.js') }}?v=v9145a"></script>
 {% endblock %}

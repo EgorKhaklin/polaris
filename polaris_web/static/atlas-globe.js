@@ -379,22 +379,43 @@
     );
 
     // ============================================================
-    // Zoom — one setter serves wheel, +/- buttons, keyboard, and
-    // cluster drill-down so the clamp/HUD/refetch logic lives once.
+    // Zoom — v9.144b ultra-zoom with frame easing.
+    //
+    // setZoom() sets a TARGET; the animate loop eases the actual zoom
+    // toward it each frame (exponential approach), so wheel, chips,
+    // keyboard, and cluster drill-down all feel fluid instead of
+    // stepping. The ceiling is 40x: deep enough that the cluster
+    // pipeline hands over to exact-position point reticles and the
+    // operator can read pinpoint event locations. The fetch fires once
+    // when the zoom settles, not on every animation frame.
     // ============================================================
-    function setZoom(z) {
-        var next = Math.max(0.7, Math.min(2.6, z));
-        if (next === zoom) return;
-        zoom = next;
+    var ZOOM_MIN = 0.7, ZOOM_MAX = 40;
+    var targetZoom = zoom;
+    var zoomSettled = true;
+
+    function applyZoom(z) {
+        zoom = z;
         projection.scale(baseRadius * zoom);
-        if (zoomEl) zoomEl.textContent = zoom.toFixed(2) + 'x';
+        if (zoomEl) {
+            zoomEl.textContent = (zoom >= 10 ? zoom.toFixed(1) : zoom.toFixed(2)) + 'x';
+        }
         redraw();
-        scheduleFetch();
+    }
+
+    function setZoom(z) {
+        targetZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z));
+        if (reducedMotion) {
+            applyZoom(targetZoom);
+            scheduleFetch();
+            return;
+        }
+        zoomSettled = false;   // the animate loop takes it from here
     }
 
     svg.on('wheel', function (event) {
         event.preventDefault();
-        setZoom(zoom + (event.deltaY > 0 ? -0.08 : 0.08));
+        // Multiplicative steps feel uniform across the whole 0.7x-40x range.
+        setZoom(targetZoom * (event.deltaY > 0 ? 1 / 1.16 : 1.16));
     }, { passive: false });
 
     // ============================================================
@@ -408,6 +429,10 @@
 
         svg.attr('viewBox', '0 0 ' + width + ' ' + height);
         projection.translate([width / 2, height / 2]).scale(baseRadius * zoom);
+        // Viewport clipping: at ultra zoom the projected world is hundreds of
+        // thousands of pixels across; without a clip extent d3 paths every
+        // offscreen arc. With it, deep zoom stays cheap.
+        projection.clipExtent([[0, 0], [width, height]]);
 
         // Position rim halos and limb at globe center
         rimHaloOuter.attr('cx', width / 2).attr('cy', height / 2);
@@ -703,9 +728,9 @@
             })
             .on('end', function () {
                 // Clusters promise "click to zoom in" in their subtitle —
-                // honor it: step the zoom once centered on the cluster, which
+                // honor it: double the zoom centered on the cluster, which
                 // refetches and resolves it into points or finer clusters.
-                if (d.isCluster) setZoom(zoom + 0.5);
+                if (d.isCluster) setZoom(targetZoom * 2);
             });
     }
 
@@ -813,9 +838,13 @@
         var span = 90 / Math.max(1, zoom * 0.7);
         var minLat = Math.max(-90,  centerLat - span);
         var maxLat = Math.min( 90,  centerLat + span);
-        var minLon = centerLon - span;
-        var maxLon = centerLon + span;
-        if (minLon < -180 || maxLon > 180 || minLon > maxLon) {
+        // Clamp at the antimeridian instead of bailing to a whole-world
+        // fetch: at ultra zoom a world fetch at a 0.01-degree grid would
+        // be needlessly heavy. (A box straddling the seam loses the far
+        // sliver; the demo data is nowhere near the dateline.)
+        var minLon = Math.max(-180, centerLon - span);
+        var maxLon = Math.min( 180, centerLon + span);
+        if (minLon >= maxLon) {
             return [-89.9, -179.9, 89.9, 179.9];
         }
         return [minLat, minLon, maxLat, maxLon];
@@ -825,6 +854,8 @@
     // means tighter grid means more clusters. The cluster→point switchover
     // happens when n_clusters ≤ 30 (visually clean to draw individuals).
     function chooseGrid(z) {
+        if (z >= 20) return 0.01;   /* ~1 km cells: street-level pinpointing */
+        if (z >= 10) return 0.02;
         if (z >= 6) return 0.05;
         if (z >= 4) return 0.2;
         if (z >= 3) return 0.5;
@@ -1297,8 +1328,72 @@
 
     var zoomInBtn = document.querySelector('[data-atlas-zoom-in]');
     var zoomOutBtn = document.querySelector('[data-atlas-zoom-out]');
-    if (zoomInBtn)  zoomInBtn.addEventListener('click', function () { setZoom(zoom + 0.25); });
-    if (zoomOutBtn) zoomOutBtn.addEventListener('click', function () { setZoom(zoom - 0.25); });
+    if (zoomInBtn)  zoomInBtn.addEventListener('click', function () { setZoom(targetZoom * 1.6); });
+    if (zoomOutBtn) zoomOutBtn.addEventListener('click', function () { setZoom(targetZoom / 1.6); });
+
+    // ============================================================
+    // Fullscreen — the console takes the whole display ('f' or the
+    // command-bar chip). The ResizeObserver re-measures the globe
+    // when the stage box jumps.
+    // ============================================================
+    var shellEl = document.querySelector('.atlas-shell');
+    var fsBtn = document.querySelector('[data-atlas-fullscreen]');
+
+    function toggleFullscreen() {
+        if (!shellEl) return;
+        if (document.fullscreenElement || document.webkitFullscreenElement) {
+            (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+        } else {
+            (shellEl.requestFullscreen || shellEl.webkitRequestFullscreen).call(shellEl);
+        }
+    }
+
+    function syncFullscreenChip() {
+        if (!fsBtn) return;
+        var on = Boolean(document.fullscreenElement || document.webkitFullscreenElement);
+        fsBtn.classList.toggle('toolbar-chip-active', on);
+        fsBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+        fsBtn.textContent = on ? '✕ Exit' : '⛶ Full';
+    }
+
+    if (fsBtn) fsBtn.addEventListener('click', toggleFullscreen);
+    document.addEventListener('fullscreenchange', syncFullscreenChip);
+    document.addEventListener('webkitfullscreenchange', syncFullscreenChip);
+
+    // ============================================================
+    // Cursor coordinates — invert the projection under the pointer
+    // and stream LAT/LON to the status bar. This is the pinpoint
+    // readout: at ultra zoom the operator reads the exact position
+    // of an event off the cursor.
+    // ============================================================
+    var cursorEl = document.getElementById('atlas-hud-cursor');
+
+    function fmtCoord(v, posChar, negChar) {
+        var hemi = v >= 0 ? posChar : negChar;
+        return Math.abs(v).toFixed(zoom >= 8 ? 4 : 2) + '°' + hemi;
+    }
+
+    if (cursorEl) {
+        svgEl.addEventListener('mousemove', function (event) {
+            var pt = d3.pointer(event, svgEl);
+            // Only meaningful inside the projected disc.
+            var dx = pt[0] - width / 2, dy = pt[1] - height / 2;
+            if (Math.sqrt(dx * dx + dy * dy) > baseRadius * zoom) {
+                cursorEl.textContent = '— —';
+                return;
+            }
+            var geo = projection.invert(pt);
+            if (!geo || isNaN(geo[0]) || isNaN(geo[1])) {
+                cursorEl.textContent = '— —';
+                return;
+            }
+            cursorEl.textContent =
+                fmtCoord(geo[1], 'N', 'S') + ' ' + fmtCoord(geo[0], 'E', 'W');
+        });
+        svgEl.addEventListener('mouseleave', function () {
+            cursorEl.textContent = '— —';
+        });
+    }
 
     // ============================================================
     // Keyboard operation — the globe is focusable (tabindex=0):
@@ -1312,8 +1407,9 @@
             case 'ArrowRight': r[0] += step; break;
             case 'ArrowUp':    r[1] += step; break;
             case 'ArrowDown':  r[1] -= step; break;
-            case '+': case '=': setZoom(zoom + 0.25); event.preventDefault(); return;
-            case '-': case '_': setZoom(zoom - 0.25); event.preventDefault(); return;
+            case '+': case '=': setZoom(targetZoom * 1.6); event.preventDefault(); return;
+            case '-': case '_': setZoom(targetZoom / 1.6); event.preventDefault(); return;
+            case 'f': case 'F': toggleFullscreen(); event.preventDefault(); return;
             case ' ':
                 spinning = !spinning;
                 if (spinning) velocity = [0, 0];
@@ -1351,6 +1447,18 @@
     // Animate loop
     // ============================================================
     function animate() {
+        // Frame-eased zoom: approach the target exponentially; snap and
+        // fetch once within a quarter-percent of it.
+        if (!zoomSettled) {
+            var diff = targetZoom - zoom;
+            if (Math.abs(diff) > Math.max(0.002, targetZoom * 0.0025)) {
+                applyZoom(zoom + diff * 0.16);
+            } else {
+                applyZoom(targetZoom);
+                zoomSettled = true;
+                scheduleFetch();
+            }
+        }
         var r = projection.rotate();
         if (spinning && !dragging) {
             r[0] += 0.045;
