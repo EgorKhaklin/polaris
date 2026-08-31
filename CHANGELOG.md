@@ -5,6 +5,16 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.164 — 2026-09-01 (Wave four: one floor line, and the tide goes out)
+
+Dependabot's fourth wave was a single PR: the prometheus-client floor to
+>=0.26.0, chasing the range v9.161 set. Applied per policy (import verified,
+pip-audit clean). Floors have now converged on current across every range in
+both requirements files, so there is nothing left for the throttle to release:
+the queue is empty by exhaustion, not by snapshot.
+
+---
+
 ## v9.163 — 2026-09-01 (P0.3 closed for real: the queue drains to structural zero)
 
 The v9.162 closes opened a third wave from behind the 5-PR throttle, so this
