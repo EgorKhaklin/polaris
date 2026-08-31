@@ -2408,6 +2408,32 @@ def check_ci_does_not_duplicate_pins(root: pathlib.Path) -> list[Finding]:
                "that could drift from the runtime surface")
 
 
+# pg_stat_ssl returns one row per backend, and PgBouncer legitimately holds a
+# variable number of pooled server connections at any snapshot. A CI step that
+# selects the raw per-row `ssl` column and compares the concatenated output to
+# a scalar is a coin flip: it failed a healthy v9.156 push when two SSL
+# backends concatenated to "tt". Any workflow probe of pg_stat_ssl must
+# aggregate to a single value (bool_and) before the shell compares it.
+def check_ci_ssl_probe_aggregated(root: pathlib.Path) -> list[Finding]:
+    wfdir = root / ".github" / "workflows"
+    offenders = []
+    if wfdir.is_dir():
+        for wf in sorted(wfdir.glob("*.yml")):
+            text = wf.read_text(encoding="utf-8", errors="replace")
+            for num, line in enumerate(text.splitlines(), 1):
+                if "pg_stat_ssl" not in line or line.lstrip().startswith("#"):
+                    continue
+                if "bool_and" not in line:
+                    offenders.append(f"{wf.name}:{num}")
+    if offenders:
+        return _fail("ci_ssl_probe",
+                     "a workflow queries pg_stat_ssl without aggregating (bool_and); "
+                     "per-row output concatenates across pooled backends and breaks "
+                     "scalar comparison nondeterministically: " + ", ".join(offenders))
+    return _ok("ci_ssl_probe",
+               "every workflow pg_stat_ssl probe aggregates to one boolean before comparing")
+
+
 CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_csp_forbids_unsafe_inline,
     check_one_active_token_index,
@@ -2478,6 +2504,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_recover_admin_refuses_self_pairing,
     check_test_reload_fails_loudly,
     check_ci_does_not_duplicate_pins,
+    check_ci_ssl_probe_aggregated,
     check_local_clock_convention,
     check_c6_atlas_redacts_zk_location,
     check_coercion_evidence_retained,

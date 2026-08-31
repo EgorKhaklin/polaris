@@ -2378,3 +2378,31 @@ def test_ci_pin_drift_check_discriminates(tmp_path):
                   "      - run: pip install -r polaris_web/requirements.txt\n")
     assert checks.check_ci_does_not_duplicate_pins(tmp_path)[0].level == "OK", \
         "must PASS when the literal appears only in a comment"
+
+
+def test_ci_ssl_probe_check_discriminates(tmp_path):
+    wf = tmp_path / ".github" / "workflows"
+    wf.mkdir(parents=True)
+    ci = wf / "ci.yml"
+
+    # The real defect: per-row ssl output concatenates across pooled backends
+    # ("tt" on a healthy stack) and the scalar compare fails nondeterministically.
+    ci.write_text("jobs:\n  t:\n    steps:\n"
+                  "      - run: psql -tAc \"SELECT ssl FROM pg_stat_ssl "
+                  "s JOIN pg_stat_activity a USING(pid)\"\n")
+    assert checks.check_ci_ssl_probe_aggregated(tmp_path)[0].level == "FAIL", \
+        "must FAIL when a workflow selects raw per-row ssl from pg_stat_ssl"
+
+    # Aggregated to a single boolean: immune to the pool's connection count.
+    ci.write_text("jobs:\n  t:\n    steps:\n"
+                  "      - run: psql -tAc \"SELECT COALESCE(bool_and(ssl), false) "
+                  "FROM pg_stat_ssl s JOIN pg_stat_activity a USING(pid)\"\n")
+    assert checks.check_ci_ssl_probe_aggregated(tmp_path)[0].level == "OK", \
+        "must PASS when the probe aggregates with bool_and"
+
+    # A commented-out example of the old form must not trip the check.
+    ci.write_text("jobs:\n  t:\n    steps:\n"
+                  "      # SELECT ssl FROM pg_stat_ssl is the broken form\n"
+                  "      - run: echo ok\n")
+    assert checks.check_ci_ssl_probe_aggregated(tmp_path)[0].level == "OK", \
+        "must PASS when pg_stat_ssl appears only in a comment"

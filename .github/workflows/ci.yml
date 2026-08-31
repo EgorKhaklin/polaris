@@ -410,12 +410,18 @@ jobs:
             [ "$got" = "VCA-OK" ] && break
             sleep 1
           done
+          # pg_stat_ssl returns ONE ROW PER BACKEND, and PgBouncer may hold
+          # several pooled server connections at snapshot time. This step once
+          # failed on a healthy stack when two SSL backends concatenated to
+          # "tt" and the scalar compare against "t" broke. Aggregate in SQL:
+          # a single boolean, true iff at least one polaris_app backend exists
+          # and every one of them is SSL.
           backend=$(docker exec -e PGPASSWORD=rootpw vca-pg psql -U postgres -tAc \
-            "SELECT ssl FROM pg_stat_ssl s JOIN pg_stat_activity a USING(pid) WHERE a.usename='polaris_app'" 2>/dev/null | tr -d '[:space:]')
+            "SELECT COALESCE(bool_and(ssl), false) AND count(*) >= 1 FROM pg_stat_ssl s JOIN pg_stat_activity a USING(pid) WHERE a.usename='polaris_app'" 2>/dev/null | tr -d '[:space:]')
           docker logs vca-pb | tail -5
-          echo "verify-ca correct-pin=$got backend_ssl=$backend"
+          echo "verify-ca correct-pin=$got backend_all_ssl=$backend"
           [ "$got" = "VCA-OK" ] || { echo "::error::verify-ca pinned connection failed"; exit 1; }
-          [ "$backend" = "t" ] || { echo "::error::pgbouncer->postgres hop is not SSL"; exit 1; }
+          [ "$backend" = "t" ] || { echo "::error::pgbouncer->postgres hop is not SSL (or no polaris_app backend visible)"; exit 1; }
           # The WRONG cert (postgres's, not pgbouncer's) must be rejected by verify-ca.
           wrong=$(docker run --rm --network vcanet -e PGPASSWORD="$APPPW" -v /tmp/vca/pg.crt:/c/w.crt:ro postgres:16-alpine \
             psql "host=vca-pb port=6432 user=polaris_app dbname=polaris sslmode=verify-ca sslrootcert=/c/w.crt" -tAc "SELECT 'NO'" 2>&1 || true)

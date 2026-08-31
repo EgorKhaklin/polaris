@@ -5,6 +5,31 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.157 — 2026-08-31 (A nondeterministic CI assertion: the verify-ca probe lost a coin flip on a healthy stack)
+
+The v9.156 push went red on `docker-image` while every other job stayed green,
+and the failing step's own log showed the property under test holding:
+`SSL established: TLSv1.3` on the pgbouncer-to-postgres hop, twice.
+
+The probe queried `SELECT ssl FROM pg_stat_ssl ... WHERE usename='polaris_app'`
+and compared the whitespace-stripped output against the literal `t`. That query
+returns one row per backend, and PgBouncer legitimately holds a variable number
+of pooled server connections at snapshot time. This run held two, both SSL; the
+rows concatenated to `tt`; the scalar compare failed a healthy stack. Every
+prior green run of this step had simply rolled a single connection.
+
+The fix aggregates in SQL, so the shell sees exactly one boolean regardless of
+pool size: `COALESCE(bool_and(ssl), false) AND count(*) >= 1`, true iff at
+least one polaris_app backend exists and every one is SSL. Verified against all
+three cardinalities (two SSL rows, a mixed pair, zero rows) before pushing.
+
+`check_ci_ssl_probe_aggregated` pins the class: any workflow probe of
+`pg_stat_ssl` must aggregate with `bool_and` before comparing. The front-page
+counts stamped at v9.156 move to 77 checks, measured at v9.157. 77 checks,
+74 check-layer tests.
+
+---
+
 ## v9.156 — 2026-08-31 (Front-page redesign: the README and the site now lead with the macro)
 
 Full rewrite of the two surfaces an outside observer sees first: `README.md`

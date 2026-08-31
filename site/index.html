@@ -143,7 +143,7 @@ footer a{color:var(--dim)}
     </div>
     <p class="strip">
         <strong>28</strong> schema tables · <strong>72</strong> routes ·
-        <strong>76</strong> machine-checked invariants ·
+        <strong>77</strong> machine-checked invariants ·
         <strong>ML-DSA-65</strong> signing default ·
         <strong>X25519MLKEM768</strong> TLS edge ·
         <strong>Plonky2</strong> ZK + second witness
@@ -226,18 +226,18 @@ footer a{color:var(--dim)}
     <div class="numbers">
         <div class="num"><b>571</b><span>product tests, live DB</span></div>
         <div class="num"><b>50</b><span>crypto-witness tests</span></div>
-        <div class="num"><b>76</b><span>invariant checks</span></div>
+        <div class="num"><b>77</b><span>invariant checks</span></div>
         <div class="num"><b>7</b><span>CI jobs</span></div>
         <div class="num"><b>5</b><span>services booted in CI</span></div>
         <div class="num"><b>1</b><span>double-click to launch</span></div>
     </div>
-    <p class="asof">measured at v9.156</p>
+    <p class="asof">measured at v9.157</p>
     <ul class="prodlist">
         <li><strong>The production stack boots in CI.</strong> Five services behind a self-built TLS edge come up end to end on every push, and health is asserted through the edge. Building that job surfaced four prod-down bugs the day it landed, which is the point.</li>
         <li><strong>Backups restore, provably.</strong> An encrypted backup and restore round-trip runs in CI with a fail-closed negative check, plus streaming replication and a failover runbook.</li>
         <li><strong>The post-quantum handshake is proven, not claimed.</strong> CI negotiates X25519MLKEM768 against a real certificate on every push, and signs with real ML-DSA-65 inside the production image.</li>
         <li><strong>CVEs gate the build.</strong> Both the dependency surface and all four self-built container images are scanned on every push; a fixable CRITICAL fails CI.</li>
-        <li><strong>Every check can prove it works.</strong> Each of the 76 invariant checks is paired with a detection test showing it fails on a broken fixture. A check that cannot detect its own violation is treated as broken.</li>
+        <li><strong>Every check can prove it works.</strong> Each of the 77 invariant checks is paired with a detection test showing it fails on a broken fixture. A check that cannot detect its own violation is treated as broken.</li>
     </ul>
 </section>
 
