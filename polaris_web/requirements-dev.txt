@@ -18,15 +18,15 @@
 -r requirements.txt
 
 # ---- Test-only: property testing (10 Hypothesis tests) ----
-hypothesis>=6.0,<7.0
+hypothesis>=6.155.1,<7.0
 
 # ---- Test-only: pytest (ZK two-witness suites, v9.44/v9.46) ----
 # polaris_zk/witness2/test_witness2.py and polaris_web/test_zk_second_witness.py
 # are pytest-style (functions + pytest.mark); they ImportError without this.
-pytest>=7.0,<9.0
+pytest>=9.0.3,<10.0
 
 # ---- Test-only: Playwright (v9.33 Atlas-globe E2E) ----
 # After installing this package, run `playwright install chromium` once
 # to download the browser binary (~250MB). polaris_web/test_e2e_atlas.py
 # gracefully skips if either the package OR the browser is unavailable.
-playwright>=1.40,<2.0
+playwright>=1.60.0,<2.0

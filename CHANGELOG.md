@@ -5,6 +5,40 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.161 — 2026-08-31 (Roadmap P0.3: nineteen Dependabot PRs resolved, fifteen taken, four declined on the record)
+
+The backlog had accumulated since June across four ecosystems. Blind-merging
+would have meant nineteen sequential CI runs and at least three breakages, so
+the split was decided per PR and everything landed as one verified batch.
+
+**Fifteen taken** (patch, minor, actions majors, same-tag digest refreshes):
+anyhow 1.0.104, serde 1.0.229, serde_json 1.0.151 (Cargo.lock, precise);
+click 8.4.1 and the prometheus-client floor on the runtime surface; the
+hypothesis, pytest 9, and playwright floors on the dev surface;
+actions/checkout 7, setup-python 7, configure-pages 6, deploy-pages 5,
+upload-pages-artifact 5 across both workflows; the caddy 2.11.4
+builder+runtime digest refreshes; alpine 3.24 for the self-built pgbouncer.
+Verified before pushing: cargo build + tests on the pinned nightly, the
+64-test CLI suite (click's biggest consumer), pip-audit strict clean, both
+container images rebuilt locally (the caddy rate-limit assert and the
+x/crypto floor still hold on the new digests), all three YAMLs parse, 80
+checks READY.
+
+**Four declined, with the reasons recorded where they gate:** postgres
+16→18-alpine (the entire stack, CI, and docs pin PostgreSQL 16; a database
+major is a migration project, not a Tuesday merge; revisit in the P2 scale
+phase), python 3.12→3.14-slim (runtime pinned and tested on 3.12), and
+plonky2 + plonky2_field 0.2→1.x (the proving system itself: proof-format
+compatibility and two-witness revalidation required, folded into P0.7's ZK
+production profile, whose roadmap row was amended accordingly).
+
+**The policy is now config, not memory.** dependabot.yml documents the merge
+policy and carries `ignore` blocks for the declined majors so they are not
+re-proposed weekly; removing an ignore block is the decision record for
+taking that major. ROADMAP P0.3 is done at v9.161.
+
+---
+
 ## v9.160 — 2026-08-31 (Roadmap P0.1 + P0.2: the dated nightly, and the e2e suite that rotted because it never ran)
 
 The first two deployment-roadmap items, shipped together as the S-sized batch

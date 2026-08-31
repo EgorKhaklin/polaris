@@ -4,6 +4,20 @@
 # job in ci.yml: pip-audit GATES the build on a known CVE in the runtime
 # surface; Dependabot proactively opens PRs to bump packages when a new
 # advisory lands, so the fix is one review away rather than a manual sweep.
+#
+# MERGE POLICY (P0.3 / v9.161). Patch and minor bumps, GitHub Actions majors,
+# and same-tag digest refreshes are batch-applied directly to main by the
+# maintaining agent and validated by one full CI run; Dependabot then closes
+# its PRs on its next scan. Majors of FOUNDATION dependencies are never
+# auto-taken: they are deliberate roadmap work, and the `ignore` blocks below
+# keep Dependabot from re-proposing them every week. Currently ignored:
+#   - postgres major (the entire stack, CI, and docs pin PostgreSQL 16; a PG
+#     major is a migration project, revisited in the P2 scale phase)
+#   - python base-image major (runtime is pinned and tested on 3.12)
+#   - plonky2 / plonky2_field major (the proving system itself; requires
+#     proof-format compatibility study + two-witness revalidation, folded
+#     into roadmap P0.7's ZK production profile)
+# Removing an ignore block IS the decision record for taking that major.
 version: 2
 updates:
   # Python runtime + dev dependencies (both requirements files live here).
@@ -27,6 +41,11 @@ updates:
       - dependencies
     commit-message:
       prefix: deps
+    ignore:
+      - dependency-name: "plonky2"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "plonky2_field"
+        update-types: ["version-update:semver-major"]
 
   # GitHub Actions used by the CI workflow.
   - package-ecosystem: github-actions
@@ -50,3 +69,8 @@ updates:
       - dependencies
     commit-message:
       prefix: docker
+    ignore:
+      - dependency-name: "postgres"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "python"
+        update-types: ["version-update:semver-major"]
