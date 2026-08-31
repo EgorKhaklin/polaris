@@ -5,6 +5,44 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.158 — 2026-08-31 (The deployment roadmap: a recorded decision opening the path to national scale)
+
+ROADMAP.md is rewritten as the complete build plan from the current reference
+implementation to real national deployment. This is a recorded owner decision:
+VANTA directed the plan on 2026-08-31, which is the named operator trigger the
+v9.32 freeze line required to open a new arc. The constitution is not softened;
+every phase carries C1-C10 and the vocation as hard gates.
+
+The plan is eight phases with 69 work items, each carrying a size, a delivery
+risk, explicit blockers, and a verifiable definition of done. P0 closes the
+known debt ledger (floating nightly, un-run e2e suite, Dependabot backlog, the
+four still-unswept operator tools, SBOM/signing/provenance, ZK production
+profile). P1 makes a single authority able to run Polaris on Linux without the
+author (systemd deployment, HSM/KMS custody, zero-downtime deploys, pen test).
+P2 is state scale: partitioning, HA automation, multi-region DR, and a
+10M-person load certification with published numbers. P3 is federation and the
+relying-party ecosystem: the inter-authority protocol, a transparency service,
+SDKs with a conformance suite, and offline verification. P4, parallel from P1,
+is the physical layer: card profile, emulator, personalization, the enrollment
+station, and the honest constraint that ML-DSA on secure elements arrives via
+the schema's own UC-6 dual-signature migration. P5 through P7 are the
+institutionally gated phases (pilots, certification, national rollout), each
+listing the buildable readiness artifact so no external gate ever waits on us.
+
+Three earlier scope decisions are handled explicitly rather than silently:
+Linux deployment and narrow relying-party API authentication are reopened with
+reasons recorded inline (the retirements were about demo scope; deployment
+changes the question), and banking/payments is made a permanent non-goal
+(C10 is not a phase). The old roadmap's operator-gated ledger, deferred items,
+and PQC gate all map into P0-P2 rows; nothing was dropped.
+
+The file ends with the execution protocol: how a fresh session picks the next
+item, what marks mean, and the standing rules (constitution gates everything;
+exercise, never just read; numbers carry stamps; every capability ships with a
+detection-tested check). 77 checks, READY; all 296 cross-references resolve.
+
+---
+
 ## v9.157 — 2026-08-31 (A nondeterministic CI assertion: the verify-ca probe lost a coin flip on a healthy stack)
 
 The v9.156 push went red on `docker-image` while every other job stayed green,
