@@ -526,18 +526,76 @@ def test_launcher_current_check_discriminates(tmp_path):
 
 def test_launcher_refreshes_code_check_discriminates(tmp_path):
     sh = tmp_path / "polaris_mac_launch.sh"
-    # No re-apply of the atlas function file -> FAIL (a changed signature would
-    # never reach an existing DB: the ATLAS-FEED-INTERRUPTED drift bug).
-    sh.write_text('load_schema() { psql -f 00_load_all.sql; }\n'
-                  'apply_migrations() { polaris-migrate.sh --up; }\n')
-    assert checks.check_launcher_refreshes_code(tmp_path)[0].level == "FAIL", \
-        "must FAIL when the launcher never re-applies 11_atlas.sql on an existing DB"
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    mig = scripts / "polaris-migrate.sh"
 
-    # Re-applies the atlas function file every launch -> OK.
-    sh.write_text('apply_migrations() { polaris-migrate.sh --up; }\n'
-                  'for f in 05_procedures.sql 06_triggers.sql 11_atlas.sql; do psql -f "$f"; done\n')
+    GOOD_SYNC = ('sync_db_docker() {\n'
+                 '    polaris-migrate.sh --target=dev-stack --up\n'
+                 '    polaris-migrate.sh --target=dev-stack --sync-objects\n'
+                 '}\n')
+    GOOD_NATIVE = 'launch_native() {\n    polaris-migrate.sh --sync-objects\n}\n'
+    GOOD_MIG = 'OBJECT_FILES=(\n    05_procedures.sql\n    11_atlas.sql\n)\n'
+
+    # The v9.159 regression: the string "11_atlas.sql" present (native path),
+    # but launch_docker never syncs. The old presence-grep passed this for
+    # months while the default path shipped stale functions.
+    mig.write_text(GOOD_MIG)
+    sh.write_text(GOOD_SYNC + GOOD_NATIVE +
+                  'launch_docker() {\n    docker compose up -d\n}\n')
+    assert checks.check_launcher_refreshes_code(tmp_path)[0].level == "FAIL", \
+        "must FAIL when launch_docker never calls sync_db_docker"
+
+    # Docker path syncs but only ONE half (objects without migrations).
+    sh.write_text('sync_db_docker() {\n'
+                  '    polaris-migrate.sh --target=dev-stack --sync-objects\n'
+                  '}\n' + GOOD_NATIVE +
+                  'launch_docker() {\n    sync_db_docker\n}\n')
+    assert checks.check_launcher_refreshes_code(tmp_path)[0].level == "FAIL", \
+        "must FAIL when sync_db_docker skips the migration half"
+
+    # The migrate tool itself lost the atlas file from its object list.
+    mig.write_text('OBJECT_FILES=(\n    05_procedures.sql\n)\n')
+    sh.write_text(GOOD_SYNC + GOOD_NATIVE +
+                  'launch_docker() {\n    sync_db_docker\n}\n')
+    assert checks.check_launcher_refreshes_code(tmp_path)[0].level == "FAIL", \
+        "must FAIL when --sync-objects no longer covers 11_atlas.sql"
+
+    # Both paths sync through the one tool, and the tool covers the atlas -> OK.
+    mig.write_text(GOOD_MIG)
     assert checks.check_launcher_refreshes_code(tmp_path)[0].level == "OK", \
-        "must PASS when the launcher re-applies the atlas code objects"
+        "must PASS when both launcher paths sync migrations + objects via the migrate tool"
+
+
+def test_migrate_docker_stdin_check_discriminates(tmp_path):
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    mig = scripts / "polaris-migrate.sh"
+
+    # The real defect: docker compose exec -T drains the caller's stdin, so a
+    # while-read loop calling this sees its input swallowed and pending
+    # migrations report as applied.
+    mig.write_text('run_psql() {\n'
+                   '    if [[ "${USE_DEV_STACK}" -eq 1 ]]; then\n'
+                   '        docker compose -f "${DEV_COMPOSE_FILE}" exec -T db \\\n'
+                   '            psql -U postgres -d polaris_test -tA "$@"\n'
+                   '    else\n'
+                   '        psql -h localhost -tA "$@"\n'
+                   '    fi\n'
+                   '}\n')
+    assert checks.check_migrate_docker_stdin_safe(tmp_path)[0].level == "FAIL", \
+        "must FAIL when a docker-exec psql leaves stdin attached"
+
+    mig.write_text('run_psql() {\n'
+                   '    if [[ "${USE_DEV_STACK}" -eq 1 ]]; then\n'
+                   '        docker compose -f "${DEV_COMPOSE_FILE}" exec -T db \\\n'
+                   '            psql -U postgres -d polaris_test -tA "$@" < /dev/null\n'
+                   '    else\n'
+                   '        psql -h localhost -tA "$@"\n'
+                   '    fi\n'
+                   '}\n')
+    assert checks.check_migrate_docker_stdin_safe(tmp_path)[0].level == "OK", \
+        "must PASS when every docker-exec psql redirects stdin from /dev/null"
 
 
 def test_dockerfile_copies_app_modules_check_discriminates(tmp_path):

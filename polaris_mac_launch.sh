@@ -419,6 +419,28 @@ wait_for_url() {
 # -----------------------------------------------------------------------------
 # Docker path
 # -----------------------------------------------------------------------------
+
+# v9.159 — sync the CONTAINER database on every Docker launch. The v9.152
+# code-object refresh only ever existed on the native path (host psql against
+# localhost), so launch_docker never applied pending migrations or refreshed
+# code objects: a persistent dev volume kept pre-v9.146 atlas function
+# signatures and the app 500d with the exact ATLAS-FEED-INTERRUPTED failure
+# v9.152 was shipped to fix, on the launcher's DEFAULT path. Both halves go
+# through polaris-migrate.sh (--target=dev-stack) so the object-file list
+# lives in exactly one place and cannot drift between paths.
+sync_db_docker() {
+    log "Syncing container database (migrations + code objects)"
+    "$SCRIPT_DIR/scripts/polaris-migrate.sh" --target=dev-stack --up >/dev/null || {
+        err "Migration apply failed (docker). Inspect: scripts/polaris-migrate.sh --target=dev-stack --status"
+        exit 1
+    }
+    "$SCRIPT_DIR/scripts/polaris-migrate.sh" --target=dev-stack --sync-objects >/dev/null || {
+        err "Code-object sync failed (docker). Inspect: scripts/polaris-migrate.sh --target=dev-stack --sync-objects"
+        exit 1
+    }
+    ok "Container database current (migrations + code objects)"
+}
+
 launch_docker() {
     require_layout
     cd "$WEB_DIR"
@@ -440,6 +462,7 @@ launch_docker() {
             # so re-running Polaris.command without an explicit logout left
             # the prior session cookie valid → user landed on the dashboard.
             ok "Polaris stack already running and up-to-date"
+            sync_db_docker
             rotate_session_secret_if_unset
             log "Recreating app container so the rotated secret takes effect"
             POLARIS_HOST_PORT="$PORT" docker compose up -d --force-recreate --no-deps app
@@ -459,6 +482,7 @@ launch_docker() {
 
     rotate_session_secret_if_unset
     docker_compose_up_with_heal
+    sync_db_docker
     ok "Polaris is LIVE at http://localhost:$PORT"
     print_credentials
     open_browser "http://localhost:$PORT/"
@@ -708,15 +732,16 @@ launch_native() {
     # existing database through the data-preserving "skip reload" path above,
     # and the stale function then 500s — the "ATLAS FEED INTERRUPTED" class of
     # bug. Migrations cover schema/data deltas; this covers code drift.
+    # v9.159 — one list, one tool: the object-file list lives in
+    # polaris-migrate.sh --sync-objects (which also covers 03_view, 07_queries,
+    # and 14_foresight_helpers, which the old inline loop here silently missed).
+    # The Docker path syncs through the same tool via --target=dev-stack.
     log "Refreshing procedures, triggers, views (idempotent code objects)"
-    for _codef in 05_procedures.sql 06_triggers.sql 09_grants.sql 11_atlas.sql 15_ontology.sql; do
-        if [[ -f "$SQL_DIR/$_codef" ]]; then
-            (cd "$SQL_DIR" && psql -d polaris_test -v ON_ERROR_STOP=1 -f "$_codef" >/dev/null 2>&1) || {
-                err "Code-object refresh failed on $_codef. Inspect: psql -d polaris_test -f $SQL_DIR/$_codef"
-                exit 1
-            }
-        fi
-    done
+    POLARIS_DB_NAME=polaris_test POLARIS_DB_USER="$USER" POLARIS_DB_HOST=localhost \
+        "$SCRIPT_DIR/scripts/polaris-migrate.sh" --sync-objects >/dev/null || {
+        err "Code-object refresh failed. Inspect: scripts/polaris-migrate.sh --sync-objects"
+        exit 1
+    }
     ok "Code objects current"
 
     cd "$WEB_DIR"

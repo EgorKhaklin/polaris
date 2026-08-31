@@ -2003,15 +2003,42 @@ def check_launcher_refreshes_code(root: pathlib.Path) -> list[Finding]:
     sh = _read(root, "polaris_mac_launch.sh")
     if not sh:
         return _fail("launcher_code", "polaris_mac_launch.sh is missing")
-    # The atlas function file must be re-applied on every launch. It is the file
-    # whose v9.146 signature change caused the drift bug; if the launcher
-    # re-applies it, the whole code-object class is covered alongside it.
-    if "11_atlas.sql" not in sh:
+    mig = _read(root, "scripts/polaris-migrate.sh")
+    # v9.152 pinned this with a bare "11_atlas.sql appears in the launcher"
+    # grep, and that pin passed for months while the DOCKER path (the default)
+    # never refreshed anything: the string lived only in the native branch, a
+    # persistent dev volume kept pre-v9.146 atlas signatures, and the app 500d
+    # with the exact failure the check existed to prevent. Presence is not
+    # coverage. Assert each piece on its actual path:
+    # 1. The object-file list lives in polaris-migrate.sh and covers the atlas.
+    if "11_atlas.sql" not in mig:
         return _fail("launcher_code",
-                     "the launcher never re-applies 11_atlas.sql; a changed atlas function "
-                     "signature would not reach an existing DB (the ATLAS-FEED-INTERRUPTED bug)")
+                     "polaris-migrate.sh --sync-objects does not cover 11_atlas.sql; a changed "
+                     "atlas function signature would never reach an existing DB")
+    # 2. The launcher syncs through that one tool (no private file list to drift).
+    if "--sync-objects" not in sh:
+        return _fail("launcher_code",
+                     "the launcher never invokes polaris-migrate.sh --sync-objects; code-object "
+                     "refresh has no path to any database")
+    # 3. The DOCKER path syncs. launch_docker's body must reach a dev-stack sync.
+    m = re.search(r"^launch_docker\(\)\s*\{(.*?)^\}", sh, re.M | re.S)
+    if not m:
+        return _fail("launcher_code", "launch_docker() not found in the launcher")
+    if "sync_db_docker" not in m.group(1):
+        return _fail("launcher_code",
+                     "launch_docker() never calls sync_db_docker; the Docker path (the "
+                     "launcher default) would leave a persistent volume with stale "
+                     "functions and migrations (the v9.159 regression)")
+    sync = re.search(r"^sync_db_docker\(\)\s*\{(.*?)^\}", sh, re.M | re.S)
+    if not sync or "--target=dev-stack" not in sync.group(1) \
+            or "--up" not in sync.group(1) or "--sync-objects" not in sync.group(1):
+        return _fail("launcher_code",
+                     "sync_db_docker() must apply BOTH halves against the dev stack: "
+                     "migrations (--target=dev-stack --up) and code objects "
+                     "(--target=dev-stack --sync-objects)")
     return _ok("launcher_code",
-               "the launcher re-applies idempotent code objects (atlas functions etc.) on every launch")
+               "both launcher paths sync migrations + code objects through "
+               "polaris-migrate.sh on every launch (single object-file list)")
 
 
 # ---------------------------------------------------------------------------
@@ -2434,6 +2461,43 @@ def check_ci_ssl_probe_aggregated(root: pathlib.Path) -> list[Finding]:
                "every workflow pg_stat_ssl probe aggregates to one boolean before comparing")
 
 
+# `docker compose exec -T` attaches the caller's stdin and drains it. Inside a
+# `while read` loop that is fatal: the first exec swallows every remaining line
+# of the loop's input. In polaris-migrate.sh's pending scan this made three
+# genuinely pending migrations report as "no pending migrations" on the dev
+# stack, silently, exit 0. Every docker-exec psql in run_psql must therefore
+# take stdin from /dev/null (run_psql_file is exempt: its stdin IS the payload).
+def check_migrate_docker_stdin_safe(root: pathlib.Path) -> list[Finding]:
+    mig = _read(root, "scripts/polaris-migrate.sh")
+    if not mig:
+        return _fail("migrate_stdin", "scripts/polaris-migrate.sh is missing")
+    m = re.search(r"^run_psql\(\)\s*\{(.*?)^\}", mig, re.M | re.S)
+    if not m:
+        return _fail("migrate_stdin", "run_psql() not found in polaris-migrate.sh")
+    body = m.group(1)
+    offenders = []
+    lines = body.splitlines()
+    for i, line in enumerate(lines):
+        if "docker compose" not in line:
+            continue
+        # The exec spans a continuation; the psql line ends the command. Find
+        # the end of this logical command and require the /dev/null redirect.
+        j = i
+        while j < len(lines) - 1 and lines[j].rstrip().endswith("\\"):
+            j += 1
+        logical = " ".join(l.strip() for l in lines[i:j + 1])
+        if "< /dev/null" not in logical and "</dev/null" not in logical:
+            offenders.append(logical[:60])
+    if offenders:
+        return _fail("migrate_stdin",
+                     "a docker-exec psql in run_psql() does not redirect stdin from "
+                     "/dev/null; inside a while-read loop it drains the loop's input and "
+                     "pending migrations silently report as applied: " + "; ".join(offenders))
+    return _ok("migrate_stdin",
+               "every docker-exec psql in run_psql() takes stdin from /dev/null; "
+               "while-read loops cannot be drained")
+
+
 CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_csp_forbids_unsafe_inline,
     check_one_active_token_index,
@@ -2505,6 +2569,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_test_reload_fails_loudly,
     check_ci_does_not_duplicate_pins,
     check_ci_ssl_probe_aggregated,
+    check_migrate_docker_stdin_safe,
     check_local_clock_convention,
     check_c6_atlas_redacts_zk_location,
     check_coercion_evidence_retained,

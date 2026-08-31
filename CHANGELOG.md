@@ -5,6 +5,60 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.159 — 2026-08-31 (ATLAS FEED INTERRUPTED, again: the v9.152 fix never covered the launcher's default path)
+
+VANTA hit the atlas error chip on a fresh launch: all four spatial endpoints
+500 with `UndefinedFunction`, the container database still carrying the
+pre-v9.146 five-argument atlas signatures. v9.152 shipped "the launcher
+refreshes code objects on every launch" for exactly this failure. It did not.
+
+**The refresh only ever existed on the NATIVE path.** The v9.152 block runs
+host psql against localhost, inside `launch_native`. `launch_docker`, the
+launcher's DEFAULT, applied no migrations and refreshed nothing; a persistent
+dev volume served whatever schema it was initialized with (here: functions
+from before v9.146, and 6 of 9 migrations). The check that pinned v9.152,
+`check_launcher_refreshes_code`, was a bare "11_atlas.sql appears in the file"
+grep, so it passed for months on the native block while the default path
+shipped the exact bug it existed to prevent. Presence is not coverage.
+
+**The fix is one list, one tool, both paths.** `polaris-migrate.sh` gains
+`--target=dev-stack` (dev compose, service db, polaris_test; files streamed
+over stdin). `launch_docker` now calls `sync_db_docker`, which runs
+`--target=dev-stack --up` then `--target=dev-stack --sync-objects`, in BOTH
+branches (fresh boot and the already-running short-circuit). The native path's
+inline five-file loop is replaced by the same `--sync-objects` call, which
+also closes a quiet gap: the inline list had silently missed 03_view,
+07_queries, and 14_foresight_helpers, which the tool's canonical OBJECT_FILES
+covers.
+
+**Fixing it surfaced a second, nastier bug.** The first dev-stack `--up`
+reported "no pending migrations" while three were pending. `docker compose
+exec -T` attaches and DRAINS the caller's stdin, and `do_up` checks pending
+names inside a `while read` loop: the first exec swallowed the rest of the
+loop's input, so the scan ended after one name, silently, exit 0. This is
+latent in the prod `--target=docker-stack` path too. Both docker-exec branches
+of `run_psql` now take stdin from `/dev/null` (`run_psql_file` is exempt: its
+stdin is the payload). With the redirect in place the same command found and
+applied the three pending migrations. `do_sync_objects` also now executes each
+file once and judges the captured result instead of re-running on failure (the
+v9.153 double-execution pattern, harmless here only because the files are
+idempotent).
+
+Verified end to end on the machine that failed: the launcher reports the sync,
+the container reaches all 8 on-disk migrations applied (9 registry events; one
+records a migration whose file was removed in the v9.55 apparatus deletion)
+plus the six-argument atlas functions, and all four endpoints return 200 with
+live JSON through an authenticated session.
+
+`check_launcher_refreshes_code` is rewritten from presence to coverage: the
+object list must live in the migrate tool and include the atlas file, the
+launcher must sync through that tool, and `launch_docker`'s body must call a
+`sync_db_docker` that applies BOTH halves against the dev stack.
+`check_migrate_docker_stdin_safe` pins the stdin drain. 78 checks, 75
+check-layer tests.
+
+---
+
 ## v9.158 — 2026-08-31 (The deployment roadmap: a recorded decision opening the path to national scale)
 
 ROADMAP.md is rewritten as the complete build plan from the current reference

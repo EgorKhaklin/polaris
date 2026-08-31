@@ -29,6 +29,7 @@
 #                                                   # so changed objects reach an upgraded DB
 #   ./scripts/polaris-migrate.sh --dry-run --up     # list pending; no INSERT
 #   ./scripts/polaris-migrate.sh --target=docker-stack ...   # use prod stack
+#   ./scripts/polaris-migrate.sh --target=dev-stack ...      # use dev compose stack
 #   ./scripts/polaris-migrate.sh --actor-user-id N --up      # record actor
 #
 # Exit codes:
@@ -58,11 +59,13 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
 POLARIS_ROOT="$(cd -- "${SCRIPT_DIR}/.." &> /dev/null && pwd)"
 MIGRATIONS_DIR="${POLARIS_ROOT}/polaris_sql/migrations"
 COMPOSE_FILE="${POLARIS_ROOT}/polaris_web/docker-compose.prod.yml"
+DEV_COMPOSE_FILE="${POLARIS_ROOT}/polaris_web/docker-compose.yml"
 
 MODE="status"   # default
 COUNT=0         # 0 = "all" for --up; required for --down
 DRY_RUN=0
 USE_DOCKER_STACK=0
+USE_DEV_STACK=0
 ACTOR_USER_ID="NULL"
 
 while [[ $# -gt 0 ]]; do
@@ -91,6 +94,7 @@ while [[ $# -gt 0 ]]; do
         --sync-objects)        MODE="sync-objects" ;;
         --dry-run)             DRY_RUN=1 ;;
         --target=docker-stack) USE_DOCKER_STACK=1 ;;
+        --target=dev-stack)    USE_DEV_STACK=1 ;;
         --actor-user-id=*)     ACTOR_USER_ID="${1#--actor-user-id=}" ;;
         --actor-user-id)       shift; ACTOR_USER_ID="${1:-NULL}" ;;
         --help|-h)
@@ -137,10 +141,26 @@ done
 # Filename pattern (must match schema_version.name CHECK).
 NAME_PATTERN='^[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{3}-[a-z][a-z0-9_-]*$'
 
+# --target=dev-stack drives the DEV compose stack (service `db`, database
+# polaris_test). It exists because the launcher's Docker path needs migrations
+# and code-object sync against the container database: the v9.152 refresh only
+# ever ran on the native path, so a persistent dev volume kept pre-v9.146 atlas
+# function signatures and the app 500d with the exact ATLAS-FEED-INTERRUPTED
+# failure v9.152 was shipped to fix. Files are streamed over stdin, so nothing
+# needs to be mounted at a particular container path.
+# The docker branches redirect stdin from /dev/null. Without that,
+# `docker compose exec -T` attaches the caller's stdin and DRAINS it, so when
+# run_psql is called inside a `while read` loop (do_up's pending scan), the
+# first exec swallows every remaining line of the loop's input and the loop
+# ends after one iteration: three genuinely pending migrations reported as
+# "no pending migrations". run_psql_file is exempt: its stdin IS the payload.
 run_psql() {
     if [[ "${USE_DOCKER_STACK}" -eq 1 ]]; then
         docker compose -f "${COMPOSE_FILE}" exec -T postgres \
-            psql -U postgres -d polaris -tA "$@"
+            psql -U postgres -d polaris -tA "$@" < /dev/null
+    elif [[ "${USE_DEV_STACK}" -eq 1 ]]; then
+        docker compose -f "${DEV_COMPOSE_FILE}" exec -T db \
+            psql -U postgres -d polaris_test -tA "$@" < /dev/null
     else
         psql -h "${POLARIS_DB_HOST:-localhost}" \
              -U "${POLARIS_DB_USER:-postgres}" \
@@ -153,6 +173,9 @@ run_psql_file() {
     if [[ "${USE_DOCKER_STACK}" -eq 1 ]]; then
         docker compose -f "${COMPOSE_FILE}" exec -T postgres \
             psql -U postgres -d polaris -v ON_ERROR_STOP=1 < "$1"
+    elif [[ "${USE_DEV_STACK}" -eq 1 ]]; then
+        docker compose -f "${DEV_COMPOSE_FILE}" exec -T db \
+            psql -U postgres -d polaris_test -v ON_ERROR_STOP=1 < "$1"
     else
         psql -h "${POLARIS_DB_HOST:-localhost}" \
              -U "${POLARIS_DB_USER:-postgres}" \
@@ -478,10 +501,13 @@ do_sync_objects() {
             echo "  [dry-run] would re-apply ${f}"
             continue
         fi
-        if run_psql_file "${path}" > /dev/null 2>&1; then
+        # Execute ONCE and judge the captured result. The previous form ran the
+        # file a second time on failure just to capture the error output: the
+        # v9.153 create-operator lesson (harmless here only because these files
+        # are idempotent, but the pattern invites the same bug).
+        if out=$(run_psql_file "${path}" 2>&1); then
             echo "  ✓ ${f}"
         else
-            out=$(run_psql_file "${path}" 2>&1 || true)
             echo "  ✗ ${f}" >&2
             echo "${out}" | tail -3 >&2
             exit "${EXIT_DB}"
