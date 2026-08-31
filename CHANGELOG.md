@@ -5,6 +5,29 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.163 — 2026-09-01 (P0.3 closed for real: the queue drains to structural zero)
+
+The v9.162 closes opened a third wave from behind the 5-PR throttle, so this
+pass took the whole remaining surface at once instead of chasing waves:
+typing_extensions 4.16.0, cbor2 6.1.4, cffi 2.1.1, packaging 26.3, the
+hypothesis floor, and a full `cargo update` (29 compatible transitives,
+build + tests green on the pinned nightly). The webauthn 2.x to 3.x major was
+declined into P1.7 (the operator-MFA library deserves its own test pass, not
+a batch merge) and the redis-py major preemptively ignored into P1.8, both
+with roadmap rows amended and dependabot.yml ignore blocks so neither is
+re-proposed weekly.
+
+The full app suite passed at 440 tests, UP from 419: the cffi/cbor2 refresh
+unskipped WebAuthn-path tests that had been silently dormant on the old
+wheels. pip-audit strict stays clean.
+
+After this ship the queue is structurally empty: every compatible bump is
+current, and every declined major has a recorded home on the roadmap plus a
+config-level ignore. Zero open dependency PRs is now a steady state, not a
+snapshot.
+
+---
+
 ## v9.162 — 2026-08-31 (P0.3 epilogue: the policy's first live test, three fresh bumps in one pass)
 
 Dependabot processed the v9.161 push within seconds: it closed the ignored

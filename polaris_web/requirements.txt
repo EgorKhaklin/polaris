@@ -33,20 +33,20 @@ MarkupSafe==3.0.3
 
 # ---- Runtime: WSGI server ----
 gunicorn==26.2.0
-packaging==26.2
+packaging==26.3
 
 # ---- Runtime: Postgres driver ----
 psycopg2-binary==2.9.12
 
 # ---- Runtime: WebAuthn (operator MFA, v8.97) ----
 webauthn==2.7.1
-cbor2==6.1.1
+cbor2==6.1.4
 cryptography==50.0.1
 pyOpenSSL==26.4.0
 pyasn1==0.6.4
-cffi==2.0.0
+cffi==2.1.1
 pycparser==3.0
-typing_extensions==4.15.0
+typing_extensions==4.16.0
 
 # ---- Runtime: Prometheus client (v8.93 /metrics) ----
 prometheus_client>=0.25.0,<1.0

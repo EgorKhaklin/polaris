@@ -17,6 +17,11 @@
 #   - plonky2 / plonky2_field major (the proving system itself; requires
 #     proof-format compatibility study + two-witness revalidation, folded
 #     into roadmap P0.7's ZK production profile)
+#   - webauthn major (the operator-MFA library; a major of the credential
+#     verification path needs its own test pass, folded into roadmap P1.7's
+#     session/authn hardening)
+#   - redis major (the cross-worker rate-limiter backend; redis-py majors
+#     change connection/script semantics, folded into roadmap P1.8)
 # Removing an ignore block IS the decision record for taking that major.
 version: 2
 updates:
@@ -30,6 +35,11 @@ updates:
       - dependencies
     commit-message:
       prefix: deps
+    ignore:
+      - dependency-name: "webauthn"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "redis"
+        update-types: ["version-update:semver-major"]
 
   # The Rust ZK crate.
   - package-ecosystem: cargo

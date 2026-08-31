@@ -116,8 +116,8 @@ Polaris for its population, on Linux, around the clock, without the author.
 | [ ] P1.4 | Zero-downtime deploys | L | med | - | An expand-contract migration policy, documented and checked; a blue-green profile; a CI job proves a rolling deploy under traffic with zero dropped requests |
 | [ ] P1.5 | Kubernetes/Helm reference profile | L | med | P1.4 | A Helm chart with network policies and pod security that boots to healthy on a stock cluster; compose remains the single-node path |
 | [ ] P1.6 | Distributed tracing and dashboards-as-code | M | low | - | OTel traces across app and DB; Grafana dashboards committed; the correlation id joins logs to traces |
-| [ ] P1.7 | Session and origin hardening pass | M | low | - | WebAuthn attestation policy options, per-role network policy hooks, admin session limits; each new control pinned by a check |
-| [ ] P1.8 | Abuse controls | M | med | - | Per-agency quotas and velocity anomaly alerts on issuance, revocation, and verification; exercised with the load generator |
+| [ ] P1.7 | Session and origin hardening pass | M | low | - | WebAuthn attestation policy options, per-role network policy hooks, admin session limits; each new control pinned by a check. Amended at v9.163: also take the webauthn 2.x to 3.x library major here with its own test pass, declined as a blind merge in P0.3 |
+| [ ] P1.8 | Abuse controls | M | med | - | Per-agency quotas and velocity anomaly alerts on issuance, revocation, and verification; exercised with the load generator. Amended at v9.163: also take the redis-py major (rate-limiter backend) here, declined as a blind merge in P0.3 |
 | [ ] P1.9 | Performance baseline v1, published | M | low | P0.4 | Reference-hardware numbers for issuance/s, verification/s, and atlas p95, committed as a doc CI can re-run |
 | [ ] P1.10 | DR to targets, on a schedule | M | low | P0.9 | RTO <= 4h and RPO <= 5min proven by an automated monthly drill with committed results |
 | [ ] P1.11 | Retention and lifecycle engine | M | med | - | Per-table-class retention configuration with jurisdiction templates; the archive/purge chain drives it; the C1 carve-out rules unchanged |
