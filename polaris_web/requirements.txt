@@ -41,9 +41,9 @@ psycopg2-binary==2.9.12
 # ---- Runtime: WebAuthn (operator MFA, v8.97) ----
 webauthn==2.7.1
 cbor2==6.1.1
-cryptography==48.0.0
-pyOpenSSL==26.2.0
-pyasn1==0.6.3
+cryptography==50.0.1
+pyOpenSSL==26.4.0
+pyasn1==0.6.4
 cffi==2.0.0
 pycparser==3.0
 typing_extensions==4.15.0

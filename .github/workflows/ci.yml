@@ -669,9 +669,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y cmake ninja-build
           pip install liboqs-python
-          # The independent second witness (v9.133): cryptography>=48 provides an
+          # The independent second witness (v9.133): cryptography provides an
           # OpenSSL-backed ML-DSA-65, a DIFFERENT FIPS 204 implementation than liboqs.
-          pip install "cryptography==48.0.0"
+          # Derive the pin from requirements.txt instead of repeating the literal
+          # here. The duplicate drifted: this line still said 48.0.0 after the
+          # runtime surface moved to 50.0.1 for PYSEC-2026-3552/3553/3554 +
+          # GHSA-537c-gmf6-5ccf, so the job under test would have reinstalled the
+          # vulnerable version that cve-scan had just rejected.
+          pip install "$(grep -E '^cryptography==' polaris_web/requirements.txt)"
 
       - name: Real ML-DSA-65 persistent-key sign + verify
         working-directory: polaris_web

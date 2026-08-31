@@ -2376,6 +2376,38 @@ def check_test_reload_fails_loudly(root: pathlib.Path) -> list[Finding]:
                "instead of faking test isolation")
 
 
+# A dependency pin repeated in CI drifts away from requirements.txt, and the
+# drift is invisible until the two disagree in a way that matters. The pqc-real
+# job hardcoded cryptography==48.0.0 while the runtime surface moved to 50.0.1
+# for PYSEC-2026-3552/3553/3554 + GHSA-537c-gmf6-5ccf, so the job would have
+# reinstalled the exact version cve-scan had just rejected, and the second
+# witness would have been exercised at a version no deployment ships.
+# requirements.txt is the single source; CI must derive from it.
+def check_ci_does_not_duplicate_pins(root: pathlib.Path) -> list[Finding]:
+    ci = _read(root, ".github/workflows/ci.yml")
+    if not ci:
+        return _fail("ci_pin_drift", ".github/workflows/ci.yml is missing")
+    offenders = []
+    for num, line in enumerate(ci.splitlines(), 1):
+        stripped = line.strip()
+        if stripped.startswith("#") or "pip install" not in stripped:
+            continue
+        # A literal `pkg==version` inside a pip install is a second source of
+        # truth. Deriving it (grep from requirements.txt) is fine.
+        if "requirements" in stripped:
+            continue
+        for m in re.finditer(r"([A-Za-z0-9_.\-]+)==([0-9][^\"'\s]*)", stripped):
+            offenders.append(f"ci.yml:{num} {m.group(1)}=={m.group(2)}")
+    if offenders:
+        return _fail("ci_pin_drift",
+                     "CI hardcodes a dependency pin that requirements.txt already owns; "
+                     "derive it instead (grep the pin) so the two cannot drift: "
+                     + ", ".join(offenders))
+    return _ok("ci_pin_drift",
+               "CI derives dependency pins from requirements.txt; no duplicated literals "
+               "that could drift from the runtime surface")
+
+
 CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_csp_forbids_unsafe_inline,
     check_one_active_token_index,
@@ -2445,6 +2477,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_psql_status_capture_set_e_safe,
     check_recover_admin_refuses_self_pairing,
     check_test_reload_fails_loudly,
+    check_ci_does_not_duplicate_pins,
     check_local_clock_convention,
     check_c6_atlas_redacts_zk_location,
     check_coercion_evidence_retained,

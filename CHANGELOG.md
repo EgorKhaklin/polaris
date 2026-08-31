@@ -5,6 +5,64 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.155 — 2026-08-31 (CVE sweep: the Python surface, the Caddy image, and the CI pin that would have undone it)
+
+Two independent CVE gates went red on the v9.154 push: `cve-scan` (pip-audit)
+and `image-cve-scan` (Trivy). Everything else was green, including the product
+test suite, the full prod-stack boot, real PQC, and the Caddy PQ KEX proof.
+
+**The Caddy image (Trivy).** `polaris-caddy` shipped `golang.org/x/crypto`
+below v0.55.0, carrying CVE-2026-56854 (CRITICAL) in
+`golang.org/x/crypto/ssh`. Three things were checked before choosing a fix.
+The existing `apk upgrade` cannot reach it, because the dependency is compiled
+into the Go binary rather than installed as an apk package. Bumping the base
+does not fix it either: the newest published builder tag
+(`caddy:2.11-builder-alpine`) still resolves x/crypto to a vulnerable version,
+so there is no upstream image to move to. And it is not unreachable, so
+`.trivyignore` would have been dishonest: `strings` finds 227
+`golang.org/x/crypto/ssh` references in the built binary, more than chacha20
+(58), which Caddy demonstrably uses. The ssh package is genuinely linked in.
+`--with` cannot express a floor for it (x/crypto has no importable root
+package, so it fails with "cannot find module providing package"), so the build
+now passes `--replace golang.org/x/crypto=golang.org/x/crypto@v0.55.0`, which
+is what xcaddy documents for this exact case. Verified locally: the image
+builds, the `rate_limit` plugin assertion still passes, the binary reports
+`v0.54.0 => v0.55.0`, and the real Trivy gate exits 0 where it previously
+reported `Total: 1 (CRITICAL: 1)`.
+
+**The Python runtime surface (pip-audit).** `pip-audit --strict` found 8 known
+vulnerabilities across 2 pinned runtime packages: `cryptography 48.0.0`
+(PYSEC-2026-3552, PYSEC-2026-3553, PYSEC-2026-3554, GHSA-537c-gmf6-5ccf) and
+`pyasn1 0.6.3` (PYSEC-2026-3455, PYSEC-2026-3456, PYSEC-2026-3457). All were
+disclosed after the 2026-05-14 pin date; nothing in v9.153 or v9.154 caused
+them. Clearing the whole set requires `cryptography>=50.0.0`, which
+`pyOpenSSL 26.2.0` refuses, so the runtime surface moves together:
+cryptography 50.0.1, pyOpenSSL 26.4.0, pyasn1 0.6.4. `pip-audit --strict` is
+clean.
+
+`cryptography` 48 to 50 crosses two major versions and it is the OpenSSL-backed
+second witness for ML-DSA-65 (v9.133), so the bump was verified rather than
+assumed: the `mldsa` module, `MLDSA65PublicKey`/`MLDSA65PrivateKey` and
+`InvalidSignature` all survive, `second_witness_available()` reports True, and a
+real keygen/sign/verify round-trip produces a correct 3309-byte ML-DSA-65
+signature, verifies it, and rejects both a tampered payload and a forged
+signature.
+
+The bump alone would not have held. The `pqc-real` CI job carried its own
+`pip install "cryptography==48.0.0"` — a second copy of a pin that
+requirements.txt already owns. It had drifted silently, and after this bump it
+would have reinstalled the exact vulnerable version `cve-scan` had just
+rejected, then exercised the second witness at a version no deployment ships.
+CI now derives the pin from requirements.txt, and `pqc_signing.py`'s comment no
+longer repeats the literal either. This is the same defect as the archive
+MANIFEST's hardcoded `polaris_version` in v9.153: a duplicated literal is a
+second source of truth, and it drifts.
+
+`check_ci_does_not_duplicate_pins` fails any `pip install pkg==X` in a workflow
+that requirements.txt already pins. 76 checks, 73 check-layer tests.
+
+---
+
 ## v9.154 — 2026-08-31 (The local test runner never worked: a silent reload turned one permission error into 200)
 
 `scripts/ai-test.sh` could not pass. Running it reported 200 errors and 14

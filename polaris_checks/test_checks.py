@@ -2345,3 +2345,36 @@ def test_test_reload_loud_check_discriminates(tmp_path):
                    "    run(['psql', '-v', 'ON_ERROR_STOP=1'])\n")
     assert checks.check_test_reload_fails_loudly(tmp_path)[0].level == "FAIL", \
         "must FAIL when ON_ERROR_STOP appears only outside reload_sample_data"
+
+
+def test_ci_pin_drift_check_discriminates(tmp_path):
+    wf = tmp_path / ".github" / "workflows"
+    wf.mkdir(parents=True)
+    ci = wf / "ci.yml"
+
+    # The real defect: a second copy of the pin, which drifted to 48.0.0 while
+    # requirements.txt moved to 50.0.1 for the ML-DSA CVEs.
+    ci.write_text("jobs:\n  pqc:\n    steps:\n"
+                  "      - run: pip install \"cryptography==48.0.0\"\n")
+    assert checks.check_ci_does_not_duplicate_pins(tmp_path)[0].level == "FAIL", \
+        "must FAIL when CI hardcodes a version literal that requirements.txt owns"
+
+    # Deriving the pin from requirements.txt is the fix.
+    ci.write_text("jobs:\n  pqc:\n    steps:\n"
+                  "      - run: pip install \"$(grep -E '^cryptography==' "
+                  "polaris_web/requirements.txt)\"\n")
+    assert checks.check_ci_does_not_duplicate_pins(tmp_path)[0].level == "OK", \
+        "must PASS when the pin is derived from requirements.txt"
+
+    # Installing from a requirements file is obviously fine.
+    ci.write_text("jobs:\n  t:\n    steps:\n"
+                  "      - run: pip install -r polaris_web/requirements-dev.txt\n")
+    assert checks.check_ci_does_not_duplicate_pins(tmp_path)[0].level == "OK", \
+        "must PASS for a plain -r requirements install"
+
+    # A commented-out pin is not a real second source of truth.
+    ci.write_text("jobs:\n  t:\n    steps:\n"
+                  "      # - run: pip install \"cryptography==48.0.0\"\n"
+                  "      - run: pip install -r polaris_web/requirements.txt\n")
+    assert checks.check_ci_does_not_duplicate_pins(tmp_path)[0].level == "OK", \
+        "must PASS when the literal appears only in a comment"

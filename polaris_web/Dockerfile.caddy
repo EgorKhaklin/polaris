@@ -24,8 +24,27 @@
 FROM caddy:2.11.4-builder-alpine@sha256:0ff10d4b83af453e5526b1c3cd7ae43396832aa8a2a55311d624f6812b33767d AS builder
 
 # Compile the edge rate-limiter into the binary. Add future --with plugins here.
+#
+# The --replace line is a dependency FLOOR, not a plugin. Caddy 2.11.4's module
+# graph pulls golang.org/x/crypto below v0.55.0, which carries CVE-2026-56854
+# (CRITICAL) in golang.org/x/crypto/ssh, and Trivy gates on fixable CRITICAL.
+# Three things were checked before choosing this fix:
+#   1. `apk upgrade` below cannot reach it: the dependency is compiled into the
+#      Go binary, not installed as an apk package.
+#   2. Bumping the base does not fix it. The newest published builder tag
+#      (caddy:2.11-builder-alpine) still resolves x/crypto to a vulnerable
+#      version, so there is no upstream image to move to yet.
+#   3. It is NOT unreachable, so .trivyignore would have been dishonest:
+#      `strings` finds 227 golang.org/x/crypto/ssh references in the built
+#      binary, more than chacha20 (58), which Caddy demonstrably uses. The ssh
+#      package is genuinely linked in.
+# --with cannot express this (x/crypto has no importable root package, so it
+# fails with "cannot find module providing package"); --replace writes a plain
+# replace directive to go.mod, which is what xcaddy documents for exactly this
+# case. Remove it once the pinned base resolves x/crypto >= 0.55.0 on its own.
 RUN xcaddy build \
-    --with github.com/mholt/caddy-ratelimit
+    --with github.com/mholt/caddy-ratelimit \
+    --replace golang.org/x/crypto=golang.org/x/crypto@v0.55.0
 
 FROM caddy:2.11.4-alpine@sha256:77c07d5ebfa5be9fd6c820d2094ae662c9e7eeb9bf98346b7f639900263ee2a2
 

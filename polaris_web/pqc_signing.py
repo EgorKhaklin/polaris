@@ -96,7 +96,8 @@ except ImportError as e:
 # that single implementation would pass unnoticed (the two-witness discipline the
 # ZK path already has in polaris_zk/witness2/). cryptography's MLDSA65 is a
 # DIFFERENT FIPS 204 implementation (OpenSSL-backed, not liboqs) and is already a
-# pinned dependency (cryptography==48.0.0). Every real verdict is cross-checked
+# pinned dependency (the `cryptography==` line in requirements.txt is canonical;
+# do not repeat the literal here, it drifts). Every real verdict is cross-checked
 # against it; the two must AGREE. When the witness library is too old to provide
 # ML-DSA, the verdict degrades to the lone primary (no worse than pre-v9.133).
 _WITNESS_AVAILABLE = False
