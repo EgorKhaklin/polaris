@@ -2307,3 +2307,41 @@ def test_recover_admin_self_pairing_check_discriminates(tmp_path):
                   'fi\n')
     assert checks.check_recover_admin_refuses_self_pairing(tmp_path)[0].level == "OK", \
         "must PASS when self-authorization is refused"
+
+
+def test_test_reload_loud_check_discriminates(tmp_path):
+    web = tmp_path / "polaris_web"
+    web.mkdir()
+    app = web / "test_app.py"
+
+    # The real defect: psql exits 0 even when every statement errored, so a
+    # permission-denied reload read as success and broke test isolation with no
+    # signal at all.
+    app.write_text("def reload_sample_data():\n"
+                   "    cmd = ['psql', '-h', db_host, '-U', db_user, '-f', fpath]\n"
+                   "    result = subprocess.run(cmd)\n"
+                   "    if result.returncode != 0:\n"
+                   "        raise RuntimeError('failed')\n"
+                   "\n"
+                   "def other():\n    pass\n")
+    assert checks.check_test_reload_fails_loudly(tmp_path)[0].level == "FAIL", \
+        "must FAIL when reload_sample_data runs psql without ON_ERROR_STOP"
+
+    app.write_text("def reload_sample_data():\n"
+                   "    cmd = ['psql', '-v', 'ON_ERROR_STOP=1', '-f', fpath]\n"
+                   "    result = subprocess.run(cmd)\n"
+                   "    if result.returncode != 0:\n"
+                   "        raise RuntimeError('failed')\n"
+                   "\n"
+                   "def other():\n    pass\n")
+    assert checks.check_test_reload_fails_loudly(tmp_path)[0].level == "OK", \
+        "must PASS when the reload uses ON_ERROR_STOP"
+
+    # ON_ERROR_STOP elsewhere in the file must not satisfy the check.
+    app.write_text("def reload_sample_data():\n"
+                   "    cmd = ['psql', '-f', fpath]\n"
+                   "\n"
+                   "def unrelated():\n"
+                   "    run(['psql', '-v', 'ON_ERROR_STOP=1'])\n")
+    assert checks.check_test_reload_fails_loudly(tmp_path)[0].level == "FAIL", \
+        "must FAIL when ON_ERROR_STOP appears only outside reload_sample_data"

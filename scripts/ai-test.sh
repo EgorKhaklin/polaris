@@ -120,6 +120,32 @@ else
 fi
 
 # -----------------------------------------------------------------------------
+# Database identity. This runner used to hardcode polaris_app, and that never
+# worked: reload_sample_data() TRUNCATEs AppUser/AuthAuditLog, and 09_grants.sql
+# deliberately does NOT grant TRUNCATE to polaris_app (the app role must never
+# be able to truncate an audit table — C1). The reload failed with "permission
+# denied for table authauditlog", psql still exited 0 (no ON_ERROR_STOP), so
+# reload_sample_data saw a clean returncode and every later test died in setUp
+# with a 401 because the admin row was never re-seeded: 200 errors pointing
+# nowhere near the cause.
+#
+# Run as the schema OWNER, which is what ci.yml does (POLARIS_DB_USER: postgres).
+# That is not a shortcut: the append-only tests assert the C1 TRIGGER's
+# "append-only" message, and under a least-privilege role the DELETE is refused
+# by GRANT before the trigger ever runs. Connecting as the owner is what makes
+# those tests exercise the trigger rather than the privilege, so weakening them
+# to accept "permission denied" would let a broken C1 trigger pass silently.
+# -----------------------------------------------------------------------------
+if [ -z "${POLARIS_TEST_RELOAD_USER:-}" ]; then
+    POLARIS_TEST_RELOAD_USER=$(psql -h localhost -d polaris_test -tAc \
+        "SELECT pg_get_userbyid(datdba) FROM pg_database WHERE datname = current_database()" \
+        2>/dev/null | tr -d '[:space:]')
+    [ -z "$POLARIS_TEST_RELOAD_USER" ] && POLARIS_TEST_RELOAD_USER="$(whoami)"
+fi
+printf "${DIM}db user: %s (schema owner, matching ci.yml)${NC}\n" \
+    "$POLARIS_TEST_RELOAD_USER"
+
+# -----------------------------------------------------------------------------
 # Pre-flight: clear admin lockout. Auth tests can leave it locked.
 # -----------------------------------------------------------------------------
 if command -v psql >/dev/null 2>&1; then
@@ -138,12 +164,13 @@ cd "$ROOT/polaris_web"
 output=$( \
   POLARIS_DB_HOST=localhost \
   POLARIS_DB_NAME=polaris_test \
-  POLARIS_DB_USER=polaris_app \
-  POLARIS_DB_PASSWORD=polaris_dev_password \
+  POLARIS_DB_USER="${POLARIS_TEST_RELOAD_USER}" \
+  POLARIS_DB_PASSWORD="${POLARIS_TEST_DB_PASSWORD:-}" \
   POLARIS_PORT=2222 \
   POLARIS_SECRET_KEY="test-secret-$(date +%s)" \
   POLARIS_STATE_DIR=/tmp/polaris-state \
   POLARIS_TEST_RELOAD_VIA=direct \
+  POLARIS_TEST_RELOAD_USER="${POLARIS_TEST_RELOAD_USER}" \
   POLARIS_TEST_REDIS_URL="redis://localhost:${REDIS_PORT}/0" \
   "$PYVENV" "${PYTEST_ARGS[@]}" 2>&1
 )

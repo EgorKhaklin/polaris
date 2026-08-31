@@ -71,6 +71,12 @@ def reload_sample_data():
     service-container Postgres, a Homebrew Postgres owned by the current
     user, and a Linux cluster reached over TCP. Set POLARIS_TEST_RELOAD_VIA=su
     to force the legacy `su - postgres -c` path on a peer-auth dev box.
+
+    The reload TRUNCATEs audit tables, so it must run as the schema OWNER, not
+    as the app role. Set POLARIS_TEST_RELOAD_USER (and optionally
+    POLARIS_TEST_RELOAD_PASSWORD) when the app connects as a least-privilege
+    role such as polaris_app; both default to POLARIS_DB_USER/PASSWORD, which
+    keeps the CI path (everything as `postgres`) unchanged.
     """
     import subprocess
     db_name = os.environ.get('POLARIS_DB_NAME', 'polaris_test')
@@ -78,11 +84,27 @@ def reload_sample_data():
     db_port = os.environ.get('POLARIS_DB_PORT', '5432')
     db_user = os.environ.get('POLARIS_DB_USER', 'postgres')
     db_pass = os.environ.get('POLARIS_DB_PASSWORD', '')
+
+    # The reload TRUNCATEs AppUser/AuthAuditLog (10_auth.sql) and the sample
+    # tables (04_data.sql). TRUNCATE is a distinct Postgres privilege that
+    # 09_grants.sql deliberately does NOT grant to polaris_app: the app role
+    # must never be able to truncate an audit table (C1). So the reload has to
+    # run as the schema OWNER, which is a different identity from the one the
+    # app under test connects as. CI already satisfies this by running
+    # everything as `postgres`; a least-privilege local runner does not, which
+    # is how scripts/ai-test.sh silently produced 200 setUp errors.
+    reload_user = os.environ.get('POLARIS_TEST_RELOAD_USER') or db_user
+    reload_pass = os.environ.get('POLARIS_TEST_RELOAD_PASSWORD')
+    if reload_pass is None:
+        reload_pass = db_pass if reload_user == db_user else ''
+
     files_to_run = ['04_data.sql', '06_triggers.sql', '09_grants.sql', '10_auth.sql']
 
     run_env = os.environ.copy()
-    if db_pass:
-        run_env['PGPASSWORD'] = db_pass
+    if reload_pass:
+        run_env['PGPASSWORD'] = reload_pass
+    else:
+        run_env.pop('PGPASSWORD', None)
     use_su = os.environ.get('POLARIS_TEST_RELOAD_VIA', '').lower() == 'su'
 
     for fname in files_to_run:
@@ -91,13 +113,27 @@ def reload_sample_data():
             # Fallback: try /tmp where the user has copies
             fpath = os.path.join('/tmp', fname)
         if use_su:
-            cmd = ['su', '-', 'postgres', '-c', f'psql -d {db_name} -f {fpath}']
+            cmd = ['su', '-', 'postgres', '-c',
+                   f'psql -v ON_ERROR_STOP=1 -d {db_name} -f {fpath}']
         else:
-            cmd = ['psql', '-h', db_host, '-p', db_port, '-U', db_user,
+            # ON_ERROR_STOP is load-bearing: without it psql exits 0 even when
+            # every statement in the file failed, so the returncode check below
+            # passes and a completely no-op reload looks like a success. That is
+            # what hid the permission-denied TRUNCATE, leaving the previous
+            # test's mutations in place and failing later tests in setUp with a
+            # 401 that pointed nowhere near the real cause.
+            cmd = ['psql', '-v', 'ON_ERROR_STOP=1',
+                   '-h', db_host, '-p', db_port, '-U', reload_user,
                    '-d', db_name, '-f', fpath]
         result = subprocess.run(cmd, capture_output=True, text=True, env=run_env)
         if result.returncode != 0:
-            raise RuntimeError(f"Failed to reload {fname}: {result.stderr}")
+            raise RuntimeError(
+                f"Failed to reload {fname} as user '{reload_user}': "
+                f"{result.stderr.strip()}\n"
+                f"The reload must run as the schema owner (it TRUNCATEs audit "
+                f"tables, which polaris_app is correctly not granted). Set "
+                f"POLARIS_TEST_RELOAD_USER to the owner role."
+            )
 
 
 # Test passwords from 10_auth.sql seed data (development credentials)

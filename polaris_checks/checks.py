@@ -2353,6 +2353,29 @@ def check_recover_admin_refuses_self_pairing(root: pathlib.Path) -> list[Finding
                "a distinct admin (--recovery-code remains for solo-admin recovery)")
 
 
+# The test reload must fail LOUDLY. `psql -f` exits 0 even when every statement
+# in the file errored, so reload_sample_data's returncode check cannot see a
+# failed reload without ON_ERROR_STOP. Without it, a permission-denied TRUNCATE
+# left the previous test's mutations in place and produced 200 setUp errors that
+# pointed nowhere near the cause, while CI stayed green because it runs as a
+# different role. A silent reload is worse than no reload: it fakes isolation.
+def check_test_reload_fails_loudly(root: pathlib.Path) -> list[Finding]:
+    src = _read(root, "polaris_web/test_app.py")
+    if not src:
+        return _fail("test_reload_loud", "polaris_web/test_app.py is missing")
+    if "def reload_sample_data" not in src:
+        return _fail("test_reload_loud", "reload_sample_data() is missing from test_app.py")
+    body = src.split("def reload_sample_data", 1)[1].split("\ndef ", 1)[0]
+    if "ON_ERROR_STOP" not in body:
+        return _fail("test_reload_loud",
+                     "reload_sample_data() invokes psql without ON_ERROR_STOP; psql exits 0 "
+                     "even when the SQL failed, so a no-op reload reads as success and breaks "
+                     "test isolation silently")
+    return _ok("test_reload_loud",
+               "reload_sample_data() runs psql with ON_ERROR_STOP, so a failed reload raises "
+               "instead of faking test isolation")
+
+
 CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_csp_forbids_unsafe_inline,
     check_one_active_token_index,
@@ -2421,6 +2444,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_no_grep_q_transaction_scrape,
     check_psql_status_capture_set_e_safe,
     check_recover_admin_refuses_self_pairing,
+    check_test_reload_fails_loudly,
     check_local_clock_convention,
     check_c6_atlas_redacts_zk_location,
     check_coercion_evidence_retained,

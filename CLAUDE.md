@@ -3,13 +3,6 @@
 The developer onboarding doc for Polaris. If you are an agent (Claude) in a
 fresh session, read this first.
 
-**As of v9.55 (2026-06-03), Polaris is the product plus a flat check layer.**
-The cognitive apparatus — the ant swarm, HYDRA, the legions, the civitas/Denarius
-economy, the soldiers, foresight, and the ~50 `ai-*`/`polaris-*` cognitive
-scripts (~18k LOC + a large narrative corpus) — was removed and replaced by
-`polaris_checks`. A check is a check; there is no mythology. The ship history
-lives in the CHANGELOG and in git; the old narrative corpus was pruned (v9.57).
-
 ---
 
 ## What Polaris is

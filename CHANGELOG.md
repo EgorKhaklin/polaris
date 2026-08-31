@@ -5,6 +5,45 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.154 — 2026-08-31 (The local test runner never worked: a silent reload turned one permission error into 200)
+
+`scripts/ai-test.sh` could not pass. Running it reported 200 errors and 14
+failures, and every one of them was the same defect, three layers deep.
+
+`reload_sample_data()` runs `10_auth.sql`, whose first statement is
+`TRUNCATE TABLE AuthAuditLog, AppUser`. TRUNCATE is a distinct Postgres
+privilege and `09_grants.sql` deliberately withholds it from `polaris_app`: the
+app role must never be able to truncate an audit table (C1). The runner
+hardcoded `POLARIS_DB_USER=polaris_app`, so the truncate was refused, `AppUser`
+was never cleared, the re-seed hit a duplicate key, and the admin row was never
+restored. Every subsequent test then died in `setUp` on a 401 from
+`_login('admin')`, an error that points nowhere near its cause.
+
+None of that surfaced because `psql -f` exits 0 even when every statement in the
+file failed. `reload_sample_data()` checked `returncode`, saw success, and
+carried on: the same "judge the exit code, not the outcome" defect fixed in
+v9.100 and again across the operator scripts in v9.153. A reload that silently
+does nothing is worse than no reload, because it fakes test isolation. It now
+runs psql under `ON_ERROR_STOP` and raises with the failing role named.
+
+CI never caught this because `ci.yml` runs as `POLARIS_DB_USER: postgres`. The
+runner now resolves the database owner (`pg_get_userbyid(datdba)`, falling back
+to the invoking user) and matches CI. That is not a convenience: the append-only
+tests assert the C1 TRIGGER's "append-only" message, and under a least-privilege
+role the DELETE is refused by GRANT before the trigger ever runs. Relaxing those
+assertions to accept "permission denied" would let a broken C1 trigger pass
+silently, so the connection changes and the assertions stand. `test_app.py` also
+gained `POLARIS_TEST_RELOAD_USER` / `POLARIS_TEST_RELOAD_PASSWORD` so a
+least-privilege app connection can still be paired with an owner-level reload;
+both default to `POLARIS_DB_*`, leaving the CI path unchanged.
+
+Verified by breaking it on purpose: with `admin` deactivated beforehand,
+`scripts/ai-test.sh` now heals the row and reports PASS on 419 tests.
+`check_test_reload_fails_loudly` pins the ON_ERROR_STOP contract. 75 checks,
+72 check-layer tests.
+
+---
+
 ## v9.153 — 2026-08-31 (Operator-tooling sweep: exercising the un-swept scripts found seven runtime defects)
 
 Resumed the ops-reliability sweep at the tier it left open: archive/purge,
