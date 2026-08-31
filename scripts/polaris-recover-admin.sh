@@ -175,21 +175,26 @@ run_psql() {
     # leaked connection errors to /dev/null at the call sites, allowing
     # `set -e` to silently exit on DB failure — violating the chaos-test
     # posture (db_unreachable_mid_recovery scenario, v9.27 T8#10).
-    local _out _rc
+    # `_out=$(cmd)` followed by `_rc=$?` does NOT work under `set -e`: a failing
+    # command substitution in an assignment terminates the shell at the
+    # assignment, so `_rc` is never read and the refuse-loudly block below never
+    # runs. The only reason that stayed hidden is that the call sites wrapped
+    # this function in `if ! ...`, which suppresses `set -e` for its condition.
+    # Capture the status with `|| _rc=$?` so the failure is handled here, which
+    # is what the fail-safe-never-open posture actually requires.
+    local _out _rc=0
     if [[ "${USE_DOCKER_STACK}" -eq 1 ]]; then
         _out=$(docker compose -f "${COMPOSE_FILE}" exec -T postgres \
-            psql -U postgres -d polaris -tA "$@" 2>&1)
-        _rc=$?
+            psql -U postgres -d polaris -tA "$@" 2>&1) || _rc=$?
     else
         _out=$(psql -h "${POLARIS_DB_HOST:-localhost}" \
              -p "${POLARIS_DB_PORT:-5432}" \
              -U "${POLARIS_DB_USER:-postgres}" \
              -d "${POLARIS_DB_NAME:-polaris}" \
-             -tA "$@" 2>&1)
-        _rc=$?
+             -tA "$@" 2>&1) || _rc=$?
     fi
     if [[ "${_rc}" -ne 0 ]]; then
-        echo "error: refusing — database call failed (could not connect to ${POLARIS_DB_HOST:-localhost}:${POLARIS_DB_PORT:-5432})" >&2
+        echo "error: refusing — database call failed against ${POLARIS_DB_HOST:-localhost}:${POLARIS_DB_PORT:-5432} (connection or SQL error; see below)" >&2
         echo "       psql exit=${_rc}; tail: ${_out}" >&2
         echo "       polaris-recover-admin REFUSES to open emergency-login window without DB confirmation." >&2
         exit "${EXIT_DB}"
@@ -275,6 +280,21 @@ if [[ -z "${target_row}" ]]; then
 fi
 TARGET_USER_ID="${target_row}"
 
+# "Second-admin pairing" must actually involve a SECOND admin. The authorizer
+# was previously validated only as *an* active admin and never compared to the
+# target, so a single admin could authorize their own MFA-bypass window while
+# the banner still asserted "second-admin pairing" — the control's name claimed
+# a property the code did not enforce. A genuinely single-admin deployment is
+# not locked out: the --recovery-code path above is self-pairing by design
+# ("recovery code (self-pair via printed mnemonic)") and remains available.
+if [[ -n "${AUTHORIZING_USER_ID}" && "${AUTHORIZING_USER_ID}" == "${TARGET_USER_ID}" ]]; then
+    echo "error: self-authorization refused — --authorizing-user-id ${AUTHORIZING_USER_ID}" >&2
+    echo "       IS the recovery target '${TARGET}'. Second-admin pairing requires a" >&2
+    echo "       different admin to authorize the window." >&2
+    echo "       For a single-admin deployment, use --recovery-code instead." >&2
+    exit "${EXIT_AUTHORIZER}"
+fi
+
 echo
 echo "  polaris-recover-admin: emergency password-login window"
 echo "  ──────────────────────────────────────────────────────"
@@ -310,13 +330,14 @@ VALUES (
 COMMIT;
 SQL
 
-if ! run_psql -v ON_ERROR_STOP=1 -f "${sql_tmp}" >/dev/null 2>&1; then
-    out=$(run_psql -v ON_ERROR_STOP=1 -f "${sql_tmp}" 2>&1 || true)
-    rm -f "${sql_tmp}"
-    echo "  ✗ database call failed:" >&2
-    echo "${out}" >&2
-    exit "${EXIT_DB}"
-fi
+# run_psql already REFUSES LOUDLY and exits EXIT_DB on any psql failure (see its
+# definition above: the v9.27 T8#10 fail-safe-never-open posture). Silencing it
+# with `>/dev/null 2>&1` here swallowed that refusal and re-introduced the very
+# defect that posture exists to prevent: on a failing write the operator got
+# exit 5 with ZERO output. The handler that used to follow was also unreachable,
+# because run_psql exits rather than returning. Call it plainly and let it speak;
+# only stdout is discarded, so its diagnostics still reach the operator.
+run_psql -v ON_ERROR_STOP=1 -f "${sql_tmp}" >/dev/null
 rm -f "${sql_tmp}"
 
 echo "  ✓ Window opened. The target may now log in with password only"

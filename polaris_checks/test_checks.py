@@ -2184,3 +2184,126 @@ def test_template_endpoint_check_fails_on_unknown_endpoint(tmp_path):
     out = checks.check_template_endpoints_resolve(tmp_path)
     assert out[0].level == "FAIL", \
         "must FAIL when url_for() names a function that has no @app.route"
+
+
+# ---------------------------------------------------------------------------
+# Operator-tooling sweep (v9.153). Each of these pins a defect that was found by
+# RUNNING the script, not by reading it.
+# ---------------------------------------------------------------------------
+
+def test_purge_archive_binding_check_discriminates(tmp_path):
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    sh = scripts / "polaris-purge.sh"
+
+    # No binding at all: an archive from another database purges rows it cannot
+    # reconstitute (demonstrated with a canary row absent from the archive).
+    sh.write_text('CUTOFF_ISO=$(read_manifest cutoff_iso)\n'
+                  'run_psql -c "CALL uc_archive_purge(...)"\n')
+    assert checks.check_purge_binds_archive_to_database(tmp_path)[0].level == "FAIL", \
+        "must FAIL when purge never checks the archive's source_database"
+
+    # Binds the database but still does not verify that the archive covers the
+    # rows about to be deleted.
+    sh.write_text('MF_DB=$(read_manifest source_database)\n'
+                  '[[ "${MF_DB}" != "${TGT_DB}" ]] && exit 3\n')
+    assert checks.check_purge_binds_archive_to_database(tmp_path)[0].level == "FAIL", \
+        "must FAIL when purge binds the database but skips the coverage pre-check"
+
+    sh.write_text('MF_DB=$(read_manifest source_database)\n'
+                  '[[ "${MF_DB}" != "${TGT_DB}" ]] && exit 3\n'
+                  'echo "coverage mismatch on ${ptable}" >&2\n')
+    assert checks.check_purge_binds_archive_to_database(tmp_path)[0].level == "OK", \
+        "must PASS when purge binds the source database and pre-checks coverage"
+
+
+def test_archive_version_derived_check_discriminates(tmp_path):
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    sh = scripts / "polaris-archive.sh"
+
+    # The real defect: a literal that drifted to 8.84 while the product shipped
+    # 9.152, so every archive misreported its own provenance.
+    sh.write_text('cat <<PY\n    "polaris_version": "8.84",\nPY\n')
+    assert checks.check_archive_version_derived(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the MANIFEST hardcodes a version literal"
+
+    sh.write_text('POLARIS_VERSION="$(sed -n s/x/p polaris_web/__version__.py)"\n'
+                  'cat <<PY\n    "polaris_version": polaris_version,\nPY\n')
+    assert checks.check_archive_version_derived(tmp_path)[0].level == "OK", \
+        "must PASS when the version is derived from the canonical __version__.py"
+
+
+def test_no_grep_q_psql_check_discriminates(tmp_path):
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    sh = scripts / "polaris-create-operator.sh"
+
+    # The real defect: grep -q exits on first match, SIGPIPEs psql mid-file, the
+    # COMMIT never runs, and pipefail reports failure for a rolled-back txn.
+    sh.write_text('if ! run_psql -f "${SQL_TMP}" 2>&1 | grep -qE \'INSERT|COMMIT\'; then\n'
+                  '    exit 5\nfi\n')
+    assert checks.check_no_grep_q_transaction_scrape(tmp_path)[0].level == "FAIL", \
+        "must FAIL when a file-executed psql transaction is scraped through grep -q"
+
+    # A commented-out example of the old form must not trip the check.
+    sh.write_text('# if ! run_psql -f "${SQL_TMP}" 2>&1 | grep -qE \'INSERT\'; then\n'
+                  'run_psql -v ON_ERROR_STOP=1 -f "${SQL_TMP}"\n')
+    assert checks.check_no_grep_q_transaction_scrape(tmp_path)[0].level == "OK", \
+        "must PASS when the offending form appears only inside a comment"
+
+    # A read-only listing has no transaction to abort, so it stays allowed.
+    sh.write_text('if psql -lqt | cut -d"|" -f1 | grep -qw "$DB"; then ok; fi\n')
+    assert checks.check_no_grep_q_transaction_scrape(tmp_path)[0].level == "OK", \
+        "must PASS for a read-only psql listing piped into grep -q"
+
+
+def test_psql_status_set_e_check_discriminates(tmp_path):
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    sh = scripts / "polaris-recover-admin.sh"
+
+    # The real defect: under set -e the shell exits at the assignment, so _rc is
+    # never read and the refuse-loudly block below is unreachable.
+    sh.write_text('set -euo pipefail\n'
+                  'run_psql() {\n'
+                  '    _out=$(psql -h "$H" -tA "$@" 2>&1)\n'
+                  '    _rc=$?\n'
+                  '    if [[ "${_rc}" -ne 0 ]]; then exit 5; fi\n'
+                  '}\n')
+    assert checks.check_psql_status_capture_set_e_safe(tmp_path)[0].level == "FAIL", \
+        "must FAIL when `X=$(psql ...)` is followed by `RC=$?` under set -e"
+
+    sh.write_text('set -euo pipefail\n'
+                  'run_psql() {\n'
+                  '    local _rc=0\n'
+                  '    _out=$(psql -h "$H" -tA "$@" 2>&1) || _rc=$?\n'
+                  '    if [[ "${_rc}" -ne 0 ]]; then exit 5; fi\n'
+                  '}\n')
+    assert checks.check_psql_status_capture_set_e_safe(tmp_path)[0].level == "OK", \
+        "must PASS when the status is captured inline with `|| _rc=$?`"
+
+
+def test_recover_admin_self_pairing_check_discriminates(tmp_path):
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    sh = scripts / "polaris-recover-admin.sh"
+
+    # The real defect: the authorizer was validated only as *an* active admin
+    # and never compared to the target, so one admin could self-authorize an
+    # MFA-bypass window while the banner asserted "second-admin pairing".
+    sh.write_text('auth_row=$(run_psql -c "SELECT username FROM AppUser '
+                  'WHERE user_id = ${AUTHORIZING_USER_ID}")\n'
+                  'TARGET_USER_ID="${target_row}"\n'
+                  'echo "  Authorized by: ${auth_row} (second-admin pairing)"\n')
+    assert checks.check_recover_admin_refuses_self_pairing(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the authorizer is never compared to the recovery target"
+
+    sh.write_text('TARGET_USER_ID="${target_row}"\n'
+                  'if [[ -n "${AUTHORIZING_USER_ID}" && '
+                  '"${AUTHORIZING_USER_ID}" == "${TARGET_USER_ID}" ]]; then\n'
+                  '    echo "error: self-authorization refused" >&2\n'
+                  '    exit "${EXIT_AUTHORIZER}"\n'
+                  'fi\n')
+    assert checks.check_recover_admin_refuses_self_pairing(tmp_path)[0].level == "OK", \
+        "must PASS when self-authorization is refused"

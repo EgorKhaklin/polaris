@@ -2216,6 +2216,143 @@ def check_template_endpoints_resolve(root: pathlib.Path) -> list[Finding]:
                f"every template url_for() resolves to a real route ({len(endpoints) - 1} endpoints)")
 
 
+# ---------------------------------------------------------------------------
+# Operator-tooling sweep (v9.153). Exercising the un-swept operator scripts
+# found five runtime defects, none of them visible to a static read. These five
+# checks pin the fixes so the same classes cannot return.
+# ---------------------------------------------------------------------------
+
+# C1 carve-out — polaris-purge.sh issues the ONLY legitimate DELETE against the
+# audit tables, and its constitutional justification is that the archive can
+# reconstitute every purged row. An archive taken from a DIFFERENT database
+# satisfies both the SHA-256 and the cutoff check while covering none of the
+# rows being deleted. Demonstrated: a canary row absent from the archive was
+# purged anyway, and the checkpoint recorded 11 purged against a 10-row
+# manifest. Purge must bind the archive to its source DB and pre-check coverage.
+def check_purge_binds_archive_to_database(root: pathlib.Path) -> list[Finding]:
+    sh = _read(root, "scripts/polaris-purge.sh")
+    if not sh:
+        return _fail("purge_archive_binding", "scripts/polaris-purge.sh is missing")
+    if "source_database" not in sh:
+        return _fail("purge_archive_binding",
+                     "polaris-purge.sh does not check the archive's source_database; an "
+                     "archive from another cluster would purge rows it cannot reconstitute (C1)")
+    if "coverage mismatch" not in sh:
+        return _fail("purge_archive_binding",
+                     "polaris-purge.sh does not pre-check that the archive covers every row "
+                     "it is about to delete (C1 non-repudiation)")
+    return _ok("purge_archive_binding",
+               "polaris-purge.sh binds the archive to its source database and pre-checks "
+               "row coverage before deleting (C1 carve-out)")
+
+
+# The archive MANIFEST is a non-repudiation artifact, so its provenance must be
+# derived, never a literal. A hardcoded "8.84" drifted while the product shipped
+# 9.152, making every archive misreport its own origin. check_version_is_canonical
+# covers app.py; this covers the archive tool.
+def check_archive_version_derived(root: pathlib.Path) -> list[Finding]:
+    sh = _read(root, "scripts/polaris-archive.sh")
+    if not sh:
+        return _fail("archive_version", "scripts/polaris-archive.sh is missing")
+    if re.search(r'"polaris_version":\s*"[0-9]', sh):
+        return _fail("archive_version",
+                     "polaris-archive.sh hardcodes polaris_version in the MANIFEST; derive it "
+                     "from polaris_web/__version__.py so the archive cannot misreport its origin")
+    if "__version__.py" not in sh:
+        return _fail("archive_version",
+                     "polaris-archive.sh does not read polaris_web/__version__.py for the "
+                     "MANIFEST provenance field")
+    return _ok("archive_version",
+               "the archive MANIFEST derives polaris_version from the canonical __version__.py")
+
+
+# A transactional `psql -f` must never be piped into `grep -q`. grep -q exits at
+# its first match, psql is killed by SIGPIPE mid-transaction, the COMMIT never
+# runs, and pipefail then reports failure for a rolled-back transaction. That is
+# how polaris-create-operator.sh reported "database insert failed" (exit 141) for
+# accounts it had in fact created via a second, unpiped re-run.
+def check_no_grep_q_transaction_scrape(root: pathlib.Path) -> list[Finding]:
+    offenders = []
+    sdir = root / "scripts"
+    if sdir.is_dir():
+        for sh in sorted(sdir.glob("*.sh")):
+            text = sh.read_text(encoding="utf-8", errors="replace")
+            for num, line in enumerate(text.splitlines(), 1):
+                if line.lstrip().startswith("#"):
+                    continue
+                if "grep -q" not in line or not re.search(r"\b(psql|run_psql)\b", line):
+                    continue
+                # Only file-executed invocations are at risk: killing psql
+                # mid-file aborts the transaction the file opened. A read-only
+                # `-c "SELECT ..."` or a `psql -lqt` listing has nothing to
+                # roll back, so piping those into grep -q is harmless.
+                if not re.search(r"-f\s", line):
+                    continue
+                offenders.append(f"{sh.name}:{num}")
+    if offenders:
+        return _fail("no_grep_q_psql",
+                     "a psql invocation is piped into `grep -q` (SIGPIPE kills psql "
+                     "mid-transaction; judge the OUTCOME instead): " + ", ".join(offenders))
+    return _ok("no_grep_q_psql",
+               "no script scrapes a psql transaction through `grep -q`; success is judged "
+               "by verifying the outcome")
+
+
+# `_out=$(cmd)` followed by `_rc=$?` does not work under `set -e`: the shell
+# exits at the assignment, so the status is never inspected. In
+# polaris-recover-admin.sh that made the entire fail-safe-never-open refusal
+# block unreachable, and a failed emergency-window write exited silently.
+def check_psql_status_capture_set_e_safe(root: pathlib.Path) -> list[Finding]:
+    offenders = []
+    sdir = root / "scripts"
+    if sdir.is_dir():
+        for sh in sorted(sdir.glob("*.sh")):
+            text = sh.read_text(encoding="utf-8", errors="replace")
+            if "set -e" not in text:
+                continue
+            lines = text.splitlines()
+            for num, line in enumerate(lines, 1):
+                if not re.search(r"^\s*_?\w+=\$\(.*(psql|docker compose)", line):
+                    continue
+                # Status captured inline on the same logical command is safe.
+                if "||" in line:
+                    continue
+                for nxt in lines[num:num + 2]:
+                    if re.match(r"^\s*_?\w+=\$\?", nxt):
+                        offenders.append(f"{sh.name}:{num}")
+                        break
+    if offenders:
+        return _fail("psql_status_set_e",
+                     "`X=$(psql ...)` followed by `RC=$?` under `set -e`: the shell exits at "
+                     "the assignment and the status is never read, making the error handler "
+                     "unreachable. Use `|| RC=$?`: " + ", ".join(offenders))
+    return _ok("psql_status_set_e",
+               "psql status capture is set -e safe; failure handlers are reachable")
+
+
+# "Second-admin pairing" must involve an actual second admin. The authorizer was
+# validated only as *an* active admin and never compared to the target, so one
+# admin could authorize their own MFA-bypass window while the banner asserted
+# second-admin pairing. Single-admin deployments keep the --recovery-code path,
+# which is self-pairing by design.
+def check_recover_admin_refuses_self_pairing(root: pathlib.Path) -> list[Finding]:
+    sh = _read(root, "scripts/polaris-recover-admin.sh")
+    if not sh:
+        return _fail("recover_admin_self_pair", "scripts/polaris-recover-admin.sh is missing")
+    if "self-authorization refused" not in sh:
+        return _fail("recover_admin_self_pair",
+                     "polaris-recover-admin.sh does not refuse self-authorization; a single "
+                     "admin could authorize their own emergency password-login window while "
+                     "the banner claims 'second-admin pairing'")
+    if not re.search(r'AUTHORIZING_USER_ID\}"?\s*==\s*"?\$\{TARGET_USER_ID', sh):
+        return _fail("recover_admin_self_pair",
+                     "polaris-recover-admin.sh never compares the authorizing user to the "
+                     "recovery target")
+    return _ok("recover_admin_self_pair",
+               "polaris-recover-admin.sh refuses self-pairing; second-admin pairing requires "
+               "a distinct admin (--recovery-code remains for solo-admin recovery)")
+
+
 CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_csp_forbids_unsafe_inline,
     check_one_active_token_index,
@@ -2279,6 +2416,11 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_table_count_matches_doc,
     check_launcher_current,
     check_launcher_refreshes_code,
+    check_purge_binds_archive_to_database,
+    check_archive_version_derived,
+    check_no_grep_q_transaction_scrape,
+    check_psql_status_capture_set_e_safe,
+    check_recover_admin_refuses_self_pairing,
     check_local_clock_convention,
     check_c6_atlas_redacts_zk_location,
     check_coercion_evidence_retained,

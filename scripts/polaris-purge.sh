@@ -164,6 +164,87 @@ echo "  Manifest cutoff_iso: ${CUTOFF_ISO}"
 echo "  Manifest deletion_from_hot flag: ${DELETION_FROM_HOT}  (informational; this script issues the deletion)"
 echo
 
+# ---------------------------------------------------------------------------
+# Archive/target binding. The carve-out's constitutional justification is that
+# the archive reconstitutes every purged row. An archive taken from a DIFFERENT
+# database satisfies the SHA-256 check and the cutoff check while covering none
+# of the rows about to be deleted, so the chain breaks silently. Bind the
+# archive to its source cluster and refuse any mismatch.
+# ---------------------------------------------------------------------------
+MF_DB=$(python3 -c "
+import json
+with open('${EXTRACTED}/MANIFEST.json') as f:
+    m = json.load(f)
+print(m.get('source_database') or '')
+")
+MF_SYSID=$(python3 -c "
+import json
+with open('${EXTRACTED}/MANIFEST.json') as f:
+    m = json.load(f)
+print(m.get('source_system_identifier') or '')
+")
+
+if [[ -z "${MF_DB}" ]]; then
+    echo "  ✗ manifest has no source_database (archive predates the binding fix)." >&2
+    echo "    Refusing: this archive cannot be proven to describe this database." >&2
+    echo "    Re-run polaris-archive.sh against this database and purge with that." >&2
+    exit "${EXIT_ARCHIVE}"
+fi
+
+TGT_DB=$(run_psql -c "SELECT current_database()" 2>/dev/null | tr -d '[:space:]')
+TGT_SYSID=$(run_psql -c "SELECT system_identifier::text FROM pg_control_system()" 2>/dev/null | tr -d '[:space:]' || true)
+
+if [[ "${MF_DB}" != "${TGT_DB}" ]]; then
+    echo "  ✗ archive/target database mismatch; refusing to purge." >&2
+    echo "      archive source_database = ${MF_DB}" >&2
+    echo "      target  current_database = ${TGT_DB}" >&2
+    exit "${EXIT_ARCHIVE}"
+fi
+if [[ -n "${MF_SYSID}" && -n "${TGT_SYSID}" && "${MF_SYSID}" != "${TGT_SYSID}" ]]; then
+    echo "  ✗ archive/target cluster mismatch (same database name, different cluster);" >&2
+    echo "    refusing to purge." >&2
+    echo "      archive source_system_identifier = ${MF_SYSID}" >&2
+    echo "      target  system_identifier        = ${TGT_SYSID}" >&2
+    exit "${EXIT_ARCHIVE}"
+fi
+echo "  Archive/target binding: ${TGT_DB} (system_identifier ${TGT_SYSID:-unavailable})  ✓"
+
+# ---------------------------------------------------------------------------
+# Coverage pre-check. Count exactly what uc_archive_purge would delete and
+# require it to equal what the archive actually captured, BEFORE deleting.
+# uc_archive_purge deletes these four tables only; the manifest file names are
+# fixed by polaris-archive.sh.
+# ---------------------------------------------------------------------------
+COVERAGE_MISMATCH=0
+for pair in \
+    "TokenLifecycleEvent|lifecycle.csv" \
+    "VerificationEvent|verifications.csv" \
+    "EnrollmentStatusEvent|enrollment_events.csv" \
+    "AuthAuditLog|auth_audit.csv"; do
+    IFS='|' read -r ptable pfile <<< "${pair}"
+    would_delete=$(run_psql -c \
+        "SELECT count(*) FROM ${ptable} WHERE event_timestamp < '${CUTOFF_ISO}'::timestamptz" \
+        2>/dev/null | tr -d '[:space:]')
+    archived=$(python3 -c "
+import json
+with open('${EXTRACTED}/MANIFEST.json') as f:
+    m = json.load(f)
+print(m.get('row_counts', {}).get('${pfile}', -1))
+")
+    if [[ "${would_delete}" != "${archived}" ]]; then
+        echo "  ✗ coverage mismatch on ${ptable}: would delete ${would_delete}, archive holds ${archived}" >&2
+        COVERAGE_MISMATCH=1
+    fi
+done
+if [[ "${COVERAGE_MISMATCH}" -eq 1 ]]; then
+    echo "  ✗ refusing to purge: the archive does not cover every row that would be" >&2
+    echo "    deleted, so the deleted rows could not be reconstituted. Re-archive at" >&2
+    echo "    this cutoff against this database, then purge with the new archive." >&2
+    exit "${EXIT_ARCHIVE}"
+fi
+echo "  Coverage pre-check: archive covers every row to be deleted  ✓"
+echo
+
 if [[ "${DRY_RUN}" -eq 1 ]]; then
     echo "  [dry-run] would call uc_archive_purge with:"
     echo "    cutoff_timestamp = ${CUTOFF_ISO}"

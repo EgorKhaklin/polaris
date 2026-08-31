@@ -43,10 +43,22 @@ EXIT_USAGE=2
 EXIT_DB_FAIL=3
 EXIT_ARCHIVE_MISSING=4
 EXIT_VERIFY_FAIL=5
+EXIT_PROVENANCE=6
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
 POLARIS_ROOT="$(cd -- "${SCRIPT_DIR}/.." &> /dev/null && pwd)"
 COMPOSE_FILE="${POLARIS_ROOT}/polaris_web/docker-compose.prod.yml"
+
+# The manifest is a non-repudiation artifact, so its provenance fields must be
+# derived, never literals. polaris_web/__version__.py is the single canonical
+# version (check_version_is_canonical); a hardcoded copy here drifted to "8.84"
+# while the product shipped 9.152, so the archive misreported its own origin.
+POLARIS_VERSION="$(sed -n 's/^__version__: str = "\(.*\)"$/\1/p' \
+    "${POLARIS_ROOT}/polaris_web/__version__.py")"
+if [[ -z "${POLARIS_VERSION}" ]]; then
+    echo "error: cannot read canonical version from polaris_web/__version__.py" >&2
+    exit "${EXIT_PROVENANCE}"
+fi
 
 DEST="/var/backups"
 CUTOFF_DAYS=365
@@ -176,7 +188,9 @@ declare -a TABLES=(
     "anchor_batches.csv|AnchorBatch|created_at"
     "trust_attestations.csv|AgencyTrustAttestation|attested_date"
     "epochs.csv|TokenStateEpoch|valid_from"
-    "epoch_leaves.csv|TokenStateEpochLeaf|leaf_id"
+    # Leaves carry no timestamp of their own; they inherit the cutoff from
+    # their parent epoch. See the TokenStateEpochLeaf branch below.
+    "epoch_leaves.csv|TokenStateEpochLeaf|inherited:TokenStateEpoch.valid_from"
     "duress_events.csv|DuressEvent|event_timestamp"
     "token_signatures.csv|TokenSignature|signed_at"
     "recovery_requests.csv|RecoveryRequest|requested_at"
@@ -188,7 +202,14 @@ for entry in "${TABLES[@]}"; do
     IFS='|' read -r out_file table tcol <<< "${entry}"
     echo "  → exporting ${table} (older than cutoff)…"
     if [[ "${table}" == "TokenStateEpochLeaf" ]]; then
-        sql="COPY (SELECT * FROM ${table}) TO STDOUT WITH CSV HEADER"
+        # TokenStateEpochLeaf has no time column of its own. It previously
+        # exported UNFILTERED while the banner still said "older than cutoff",
+        # so the manifest's cutoff_iso did not describe this file. Inherit the
+        # parent epoch's valid_from so every exported row honours the cutoff.
+        sql="COPY (SELECT l.* FROM TokenStateEpochLeaf l
+                   JOIN TokenStateEpoch e ON e.epoch_id = l.epoch_id
+                   WHERE e.valid_from < '${CUTOFF_ISO}'::timestamptz)
+             TO STDOUT WITH CSV HEADER"
     else
         sql="COPY (SELECT * FROM ${table} WHERE ${tcol} < '${CUTOFF_ISO}'::timestamptz) TO STDOUT WITH CSV HEADER"
     fi
@@ -203,16 +224,32 @@ for entry in "${TABLES[@]}"; do
     fi
 done
 
+# Source-database identity. polaris-purge.sh refuses to purge a database that
+# does not match these, because an archive from another cluster cannot
+# reconstitute the rows it deletes: the non-repudiation chain would be broken
+# silently. system_identifier is best-effort (pg_control_system() is not
+# readable by every role); current_database() is always available.
+SRC_DB="$(run_psql -c "SELECT current_database()" 2>/dev/null | tr -d '[:space:]')"
+SRC_SYSID="$(run_psql -c "SELECT system_identifier::text FROM pg_control_system()" 2>/dev/null | tr -d '[:space:]' || true)"
+if [[ -z "${SRC_DB}" ]]; then
+    echo "error: could not read current_database() for archive provenance" >&2
+    exit "${EXIT_DB_FAIL}"
+fi
+
 # Manifest with row counts + hashes.
 echo "  → writing MANIFEST.json…"
-python3 - "${STAGE}" "${CUTOFF_DAYS}" "${CUTOFF_ISO}" "${TS}" <<'PY' > "${STAGE}/MANIFEST.json"
+python3 - "${STAGE}" "${CUTOFF_DAYS}" "${CUTOFF_ISO}" "${TS}" \
+         "${POLARIS_VERSION}" "${SRC_DB}" "${SRC_SYSID}" <<'PY' > "${STAGE}/MANIFEST.json"
 import json, hashlib, os, sys, time
 stage, cutoff_days, cutoff_iso, ts = sys.argv[1:5]
+polaris_version, src_db, src_sysid = sys.argv[5:8]
 files = sorted(f for f in os.listdir(stage) if f != "MANIFEST.json")
 out = {
     "timestamp_utc": ts,
     "generated_at": time.time(),
-    "polaris_version": "8.84",
+    "polaris_version": polaris_version,
+    "source_database": src_db,
+    "source_system_identifier": src_sysid or None,
     "archive_kind": "audit-log-export-only-C1-preserving",
     "cutoff_days": int(cutoff_days),
     "cutoff_iso": cutoff_iso,

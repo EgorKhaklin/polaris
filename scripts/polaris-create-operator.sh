@@ -135,6 +135,19 @@ run_psql() {
     fi
 }
 
+# Connectivity preflight. Without this, the idempotency check below fails under
+# `set -e` inside a command substitution and the script dies SILENTLY carrying
+# psql's own exit 2 — which collides with this script's documented EXIT_USAGE,
+# so an operator (or CI) reads a connectivity fault as a usage error and gets no
+# diagnostic at all, because `2>/dev/null` swallows psql's message.
+if ! run_psql -c "SELECT 1" >/dev/null 2>&1; then
+    echo "error: cannot reach database '${POLARIS_DB_NAME:-polaris}' as user" \
+         "'${POLARIS_DB_USER:-postgres}' on host '${POLARIS_DB_HOST:-localhost}'." >&2
+    echo "       Check POLARIS_DB_HOST / POLARIS_DB_USER / POLARIS_DB_NAME," >&2
+    echo "       or pass --target=docker-stack to use the running prod stack." >&2
+    exit "${EXIT_DB}"
+fi
+
 # Idempotency check
 EXISTS=$(run_psql -c "SELECT 1 FROM AppUser WHERE username='${USERNAME}'" 2>/dev/null | tr -d '[:space:]')
 if [[ "${EXISTS}" == "1" ]]; then
@@ -186,10 +199,19 @@ trap 'rm -f "${SQL_TMP}"' EXIT
 # A deployment that wants to enforce MFA on operators too can flip this
 # below to apply to the operator role as well, or set
 # webauthn_required_after manually post-create.
+# WEBAUTHN_DEADLINE_SQL is a SQL *expression* and must only ever be spliced
+# where an expression is expected. It contains single quotes ('30 days'), so
+# interpolating it into the quoted audit-detail literal below terminated that
+# literal early and made the whole statement a syntax error. The effect was that
+# `--role admin` could never create an account: the AppUser INSERT succeeded,
+# the AuthAuditLog INSERT failed, and the transaction rolled back. Keep a
+# quote-free human description for the audit text.
 if [[ "${ROLE}" == "admin" ]]; then
     WEBAUTHN_DEADLINE_SQL="now() + interval '30 days'"
+    WEBAUTHN_DEADLINE_DESC="now+30days"
 else
     WEBAUTHN_DEADLINE_SQL="NULL"
+    WEBAUTHN_DEADLINE_DESC="none"
 fi
 
 cat > "${SQL_TMP}" <<SQL
@@ -200,16 +222,35 @@ INSERT INTO AuthAuditLog (event_type, username, detail)
 VALUES (
     'ACCOUNT_CREATED',
     '${USERNAME}',
-    'role=${ROLE} created_by=polaris-create-operator.sh webauthn_deadline=${WEBAUTHN_DEADLINE_SQL}'
+    'role=${ROLE} created_by=polaris-create-operator.sh webauthn_deadline=${WEBAUTHN_DEADLINE_DESC}'
 );
 COMMIT;
 SQL
 
-if ! run_psql -f "${SQL_TMP}" 2>&1 | grep -qE 'INSERT|COMMIT'; then
-    # Capture full error
-    OUT=$(run_psql -f "${SQL_TMP}" 2>&1 || true)
+# Execute ONCE, capturing output; then judge by the OUTCOME, not by the exit
+# status or by scraping psql's chatter.
+#
+# The previous form was:
+#     if ! run_psql -f "${SQL_TMP}" 2>&1 | grep -qE 'INSERT|COMMIT'; then
+# which had two runtime faults, both invisible to a static read:
+#   1. `grep -q` exits at its FIRST match, closing the pipe. psql is then killed
+#      by SIGPIPE partway through writing its output, so COMMIT never executes
+#      and the transaction rolls back. Under `set -o pipefail` the pipeline
+#      returns 141, the branch fires, and the script exits 141 (not even one of
+#      its documented codes). It is a race, so it fails intermittently.
+#   2. The error arm re-ran the SAME SQL to "capture the error", executing the
+#      INSERT a second time. That second run is what actually created the
+#      account, so the operator saw "database insert failed" for an account
+#      that now exists.
+# Same lesson as the v9.100 DR-restore fix: verify the outcome, not the exit
+# code. ON_ERROR_STOP makes psql abort on the first SQL error rather than
+# continuing and returning 0.
+INSERT_OUT=$(run_psql -v ON_ERROR_STOP=1 -f "${SQL_TMP}" 2>&1) || true
+
+CREATED=$(run_psql -c "SELECT 1 FROM AppUser WHERE username='${USERNAME}'" 2>/dev/null | tr -d '[:space:]')
+if [[ "${CREATED}" != "1" ]]; then
     echo "error: database insert failed:" >&2
-    echo "${OUT}" >&2
+    echo "${INSERT_OUT}" >&2
     exit "${EXIT_DB}"
 fi
 

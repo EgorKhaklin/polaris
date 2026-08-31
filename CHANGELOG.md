@@ -5,6 +5,73 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.153 — 2026-08-31 (Operator-tooling sweep: exercising the un-swept scripts found seven runtime defects)
+
+Resumed the ops-reliability sweep at the tier it left open: archive/purge,
+recover-admin, and create-operator. The standing lesson held. Every defect below
+was runtime-only and invisible to a static read, and the worst were found by
+running the tools against scratch databases rather than by reading them.
+
+**C1 carve-out: purge accepted a foreign archive.** `polaris-purge.sh` issues the
+only legitimate DELETE against the audit tables, and its constitutional
+justification is that the archive reconstitutes every purged row. Nothing bound
+an archive to the database it came from. Demonstrated by archiving DB1, planting
+a canary row in DB2 that was provably absent from that archive, and purging DB2
+with it: the canary was destroyed and the checkpoint recorded
+`rows_purged_total=11` against a 10-row manifest. The system held the evidence of
+its own inconsistency and never looked. `polaris-archive.sh` now records
+`source_database` and `source_system_identifier` in the MANIFEST, and
+`polaris-purge.sh` refuses on a database or cluster mismatch, refuses archives
+that predate the binding, and pre-counts exactly what `uc_archive_purge` would
+delete, requiring it to equal the archive's row counts before deleting anything.
+
+**create-operator reported failure on success, intermittently.** The insert was
+piped into `grep -q`, which exits at its first match and SIGPIPEs psql
+mid-transaction, so the COMMIT never ran and pipefail reported failure for a
+rolled-back transaction. Exit was 141, not one of the script's documented codes.
+The error arm then re-ran the same SQL to "capture the error", and that second
+run is what actually created the account. It now executes once under
+`ON_ERROR_STOP` and judges the outcome, which is the v9.100 restore lesson.
+
+**create-operator could never create an admin.** Exposed immediately by the fix
+above. `WEBAUTHN_DEADLINE_SQL` is a SQL expression containing quotes
+(`now() + interval '30 days'`) and was interpolated into the quoted audit-detail
+literal, terminating it early. The AppUser insert succeeded, the audit insert
+raised a syntax error, and the transaction rolled back, so `--role admin` had
+never worked. The audit text now carries a quote-free description.
+
+**recover-admin allowed self-pairing.** The authorizer was validated only as an
+active admin and never compared to the target, so one admin could authorize
+their own MFA-bypass window while the banner asserted "second-admin pairing".
+Now refused. Solo-admin deployments are unaffected: `--recovery-code` is
+self-pairing by design and remains the documented path.
+
+**recover-admin's fail-safe-never-open refusal was unreachable.** `_out=$(psql
+...)` followed by `_rc=$?` does not work under `set -e`: the shell exits at the
+assignment and the status is never read. The v9.27 T8#10 posture therefore never
+fired, and a failed emergency-window write exited with no output at all. Status
+is now captured with `|| _rc=$?`, and the write call no longer redirects the
+wrapper's diagnostics to /dev/null.
+
+**create-operator died silently on an unreachable database.** psql returns 2 on
+a connection failure, `set -e` killed the script at the idempotency check, and
+`2>/dev/null` swallowed the reason, so the operator got a bare exit 2 that
+collides with the documented usage code. A connectivity preflight now reports
+the host, user, and database and exits with the database code.
+
+**Archive provenance was false in two ways.** The MANIFEST hardcoded
+`polaris_version: "8.84"` while the product shipped 9.152, and
+`TokenStateEpochLeaf` exported unfiltered while the banner said "older than
+cutoff" and the manifest recorded a cutoff. The version is now derived from the
+canonical `__version__.py`, and leaves inherit their parent epoch's `valid_from`
+so the manifest describes what the archive actually holds.
+
+Five checks pin the classes, each with a detection test: `purge_archive_binding`,
+`archive_version`, `no_grep_q_psql`, `psql_status_set_e`, and
+`recover_admin_self_pair`. 74 checks, 71 check-layer tests.
+
+---
+
 ## v9.152 — 2026-06-12 (Fix "ATLAS FEED INTERRUPTED": the launcher now refreshes code objects on every launch)
 
 Root-caused a real operator report. The atlas error chip fires when
