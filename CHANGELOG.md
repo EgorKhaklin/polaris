@@ -5,6 +5,42 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.156 — 2026-08-31 (Front-page redesign: the README and the site now lead with the macro)
+
+Full rewrite of the two surfaces an outside observer sees first: `README.md`
+(423 lines to ~300) and `site/index.html`. The v9.149 "cinematic" framing is
+replaced by a professional macro-first story, and everything internal-facing is
+gone from the front page.
+
+**What the new front page says, in order:** what Polaris is (with the
+educational, notional-data framing in the header, not buried at the bottom),
+the ten guarantees as a table (the constitution was previously never shown as
+C1-C10 on the README at all), the six adversarial hard parts, the architecture,
+the cryptography, what CI actually proves, how to run it, where it sits against
+Real ID / mDL / Aadhaar / e-Estonia / DIDs, a by-audience documentation index,
+and an honest scope section.
+
+**Removed as insider-facing or stale:** the double nav of internal links above
+the fold, the tech-badge wall, the v9.55 cognitive-substrate confession, the
+"trick" section, the 14-subcommand launcher reference (now one `--help`
+pointer), the token-model column dump, the duplicate stats boxes, and every
+drifted number: the README and site claimed 68 invariant checks (now 76), 562
+and 572 product tests (571 measured), and "as of v9.148". Numbers now appear
+once, stamped "measured at v9.156", except the schema-table count, which
+`check_table_count_matches_doc` pins to the real schema.
+
+**The site gained the constitution.** A ten-card guarantees grid now sits
+between the Atlas showcase and the threat cards; the hero states the
+educational scope in monospace under the definition; the stale production
+section merged into "Verified, not asserted" with the five CI proof points.
+
+Both files carry zero em-dashes (the pre-commit rule previously only guarded
+new diffs; the rewrite made the whole files clean). All 291 cross-references
+resolve; the guarantees table renders at a uniform four columns; the site
+parses with zero unbalanced tags. 76 checks, READY.
+
+---
+
 ## v9.155 — 2026-08-31 (CVE sweep: the Python surface, the Caddy image, and the CI pin that would have undone it)
 
 Two independent CVE gates went red on the v9.154 push: `cve-scan` (pip-audit)

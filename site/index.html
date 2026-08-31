@@ -3,10 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Polaris — a working national identity infrastructure</title>
-<meta name="description" content="Post-quantum signed, zero-knowledge by default, compulsion-resistant by design. A working reference implementation of a national identity-token system.">
-<meta property="og:title" content="Polaris — a working national identity infrastructure">
-<meta property="og:description" content="Post-quantum signed. Audit-of-record by construction. Compulsion-resistant by design. It is not a slide deck; it runs.">
+<title>Polaris: a post-quantum, zero-knowledge national identity system</title>
+<meta name="description" content="A working reference implementation of a post-quantum, zero-knowledge, compulsion-resistant national identity system. The guarantees live in the database; CI boots the full production stack on every push.">
+<meta property="og:title" content="Polaris: a post-quantum, zero-knowledge national identity system">
+<meta property="og:description" content="One token per person. Post-quantum signed. Zero-knowledge by default. Compulsion-resistant by construction. It runs; CI proves it on every push.">
 <meta property="og:image" content="https://egorkhaklin.github.io/polaris-id/atlas-globe.png">
 <meta property="og:url" content="https://egorkhaklin.github.io/polaris-id/">
 <meta property="og:type" content="website">
@@ -32,16 +32,16 @@ code{font-family:var(--mono);font-size:.92em;color:#bfe6f8;background:rgba(93,21
     border:1px solid rgba(93,214,255,.12);border-radius:3px;padding:0 4px}
 pre{background:#071019;border:1px solid var(--line);border-left:3px solid var(--gold);
     padding:16px 18px;overflow-x:auto;font-family:var(--mono);font-size:12.5px;line-height:1.6;color:#c8dcef;text-align:left}
-.wrap{max-width:1060px;margin:0 auto;padding:0 22px}
 
 /* hero */
-.hero{padding:11vh 22px 70px;text-align:center}
-.hero img{width:190px;height:auto;margin-bottom:26px;filter:drop-shadow(0 0 34px rgba(232,190,100,.25))}
-h1{font-size:clamp(44px,7vw,78px);font-weight:750;letter-spacing:.3em;margin:0 0 12px -.0em;
+.hero{padding:10vh 22px 64px;text-align:center}
+.hero img{width:180px;height:auto;margin-bottom:24px;filter:drop-shadow(0 0 34px rgba(232,190,100,.25))}
+h1{font-size:clamp(44px,7vw,76px);font-weight:750;letter-spacing:.3em;margin:0 0 14px;
     color:var(--gold-b);text-shadow:0 0 36px rgba(232,190,100,.35),0 0 90px rgba(232,190,100,.12)}
-.sub{font-size:clamp(16px,2.4vw,21px);color:#c8d8ea;margin:0 0 14px}
-.tagline{font-size:14.5px;color:var(--dim);max-width:640px;margin:0 auto 12px}
-.motto{font-family:var(--mono);font-style:italic;font-size:12px;color:var(--gold);margin-bottom:36px}
+.sub{font-size:clamp(16px,2.3vw,20px);color:#c8d8ea;max-width:720px;margin:0 auto 12px}
+.scope{font-family:var(--mono);font-size:11.5px;letter-spacing:.08em;color:var(--faint);
+    text-transform:uppercase;margin:0 0 10px}
+.motto{font-family:var(--mono);font-style:italic;font-size:12px;color:var(--gold);margin:0 0 34px}
 .cta{display:flex;justify-content:center;gap:14px;flex-wrap:wrap;margin-bottom:30px}
 .btn{display:inline-block;padding:13px 30px;font-size:13px;font-weight:650;letter-spacing:.07em;
     text-transform:uppercase;border-radius:3px;border:1px solid var(--line-strong);color:var(--ink)}
@@ -50,7 +50,7 @@ h1{font-size:clamp(44px,7vw,78px);font-weight:750;letter-spacing:.3em;margin:0 0
 .btn-gold:hover{background:linear-gradient(180deg,#e8c873,#c9a352);color:#140f02}
 .btn-ghost{background:transparent;border-color:rgba(93,214,255,.35);color:var(--cyan)}
 .btn-ghost:hover{background:rgba(93,214,255,.1);border-color:var(--cyan)}
-.strip{font-family:var(--mono);font-size:11px;letter-spacing:.05em;color:var(--faint);line-height:1.9;max-width:660px;margin:0 auto}
+.strip{font-family:var(--mono);font-size:11px;letter-spacing:.05em;color:var(--faint);line-height:1.9;max-width:680px;margin:0 auto}
 .strip strong{color:var(--gold)}
 
 /* atlas showcase */
@@ -73,7 +73,16 @@ h2{font-size:19px;letter-spacing:.14em;text-transform:uppercase;color:var(--gold
     text-align:center;margin:0 0 8px;font-weight:650}
 h2::after{content:'';display:block;width:56px;height:2px;margin:12px auto 0;
     background:linear-gradient(90deg,transparent,var(--gold),transparent)}
-.lede{text-align:center;color:var(--dim);max-width:680px;margin:14px auto 34px}
+.lede{text-align:center;color:var(--dim);max-width:700px;margin:14px auto 34px}
+
+/* guarantees */
+.laws{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}
+.law{display:flex;gap:14px;align-items:flex-start;background:rgba(10,20,33,.55);
+    border:1px solid var(--line);border-radius:4px;padding:14px 16px}
+.law b{font-family:var(--mono);font-size:12px;font-weight:700;color:var(--gold-b);
+    letter-spacing:.05em;padding-top:1px;min-width:30px}
+.law p{margin:0;font-size:12.5px;color:var(--dim)}
+.law p strong{color:var(--ink);font-weight:600}
 
 /* threat table */
 .threats{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
@@ -85,19 +94,14 @@ h2::after{content:'';display:block;width:56px;height:2px;margin:12px auto 0;
 .threat p.attack{color:var(--faint);font-style:italic}
 
 /* numbers */
-.numbers{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;max-width:880px;margin:0 auto}
+.numbers{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;max-width:920px;margin:0 auto 30px}
 .num{background:rgba(10,20,33,.6);border:1px solid var(--line);border-top:2px solid var(--gold);
     border-radius:4px;padding:16px 14px;text-align:center}
 .num b{display:block;font-family:var(--mono);font-size:27px;font-weight:700;color:#f0f7ff;
     text-shadow:0 0 16px rgba(93,214,255,.25)}
 .num span{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim)}
-
-/* crypto cells */
-.cells{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
-.cell{background:rgba(10,20,33,.55);border:1px solid var(--line);border-left:3px solid #2a8fb8;
-    border-radius:4px;padding:16px 18px}
-.cell h3{margin:0 0 7px;font-family:var(--mono);font-size:13px;color:var(--cyan);letter-spacing:.05em}
-.cell p{font-size:12.5px;color:var(--dim);margin:0}
+.asof{text-align:center;font-family:var(--mono);font-size:10px;letter-spacing:.08em;
+    color:var(--faint);text-transform:uppercase;margin:0 0 26px}
 
 /* prod list */
 .prodlist{list-style:none;margin:0 auto;padding:0;max-width:860px}
@@ -105,6 +109,13 @@ h2::after{content:'';display:block;width:56px;height:2px;margin:12px auto 0;
     color:var(--dim);background:rgba(10,20,33,.55);border:1px solid var(--line);border-radius:4px}
 .prodlist li::before{content:'◆';position:absolute;left:15px;top:14px;color:var(--gold);font-size:11px}
 .prodlist strong{color:var(--ink)}
+
+/* crypto cells */
+.cells{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px}
+.cell{background:rgba(10,20,33,.55);border:1px solid var(--line);border-left:3px solid #2a8fb8;
+    border-radius:4px;padding:16px 18px}
+.cell h3{margin:0 0 7px;font-family:var(--mono);font-size:13px;color:var(--cyan);letter-spacing:.05em}
+.cell p{font-size:12.5px;color:var(--dim);margin:0}
 
 /* quickstart */
 .quick{max-width:760px;margin:0 auto}
@@ -120,12 +131,11 @@ footer a{color:var(--dim)}
 <body>
 
 <div class="hero">
-    <img src="polaris_logo_clean.png" alt="Polaris logo: gold star on navy" width="190" height="190">
+    <img src="polaris_logo_clean.png" alt="Polaris logo: gold star on navy" width="180" height="180">
     <h1>POLARIS</h1>
-    <p class="sub">A working national identity infrastructure.</p>
-    <p class="tagline">Post-quantum signed. Audit-of-record by construction.
-        Compulsion-resistant by design. It is not a slide deck; it runs, and
-        CI boots the full production stack end to end on every push.</p>
+    <p class="sub">A working reference implementation of a post-quantum, zero-knowledge,
+        compulsion-resistant national identity system.</p>
+    <p class="scope">Educational project · notional data only</p>
     <p class="motto">Fixus inter mutabilia · fixed amid the mutable</p>
     <div class="cta">
         <a class="btn btn-gold" href="https://github.com/EgorKhaklin/polaris-id">View on GitHub</a>
@@ -133,7 +143,7 @@ footer a{color:var(--dim)}
     </div>
     <p class="strip">
         <strong>28</strong> schema tables · <strong>72</strong> routes ·
-        <strong>68</strong> machine-checked invariants ·
+        <strong>76</strong> machine-checked invariants ·
         <strong>ML-DSA-65</strong> signing default ·
         <strong>X25519MLKEM768</strong> TLS edge ·
         <strong>Plonky2</strong> ZK + second witness
@@ -148,12 +158,31 @@ footer a{color:var(--dim)}
     <div class="atlas-pair">
         <figure>
             <img src="atlas-street.png" alt="The Atlas zoomed to street level with 3D buildings and an event on its exact coordinate" loading="lazy">
-            <figcaption><b>Zoom to the street.</b> The globe flattens into a 3D street map; an event sits on its exact coordinate. Fetched per-viewport, so the browser holds only what is on screen — a thousand events or a hundred million.</figcaption>
+            <figcaption><b>Zoom to the street.</b> The globe flattens into a 3D street map; an event sits on its exact coordinate. Fetched per viewport, so the browser holds only what is on screen, whether the ledger has a thousand events or a hundred million.</figcaption>
         </figure>
         <figure>
             <img src="atlas-subject.png" alt="Subject-focus investigation drawing one individual's disclosed events as a gold path" loading="lazy">
-            <figcaption><b>Signal in the noise.</b> Warrant-grade subject focus (admin/auditor, audit-logged) isolates one named subject and draws a path of what they did. Their zero-knowledge verifications cannot be plotted, or even attributed — the privacy default survives the investigation.</figcaption>
+            <figcaption><b>Signal in the noise.</b> Warrant-grade subject focus (admin/auditor, audit-logged) isolates one named subject and draws a path of what they did. Their zero-knowledge verifications cannot be plotted, or even attributed: the privacy default survives the investigation.</figcaption>
         </figure>
+    </div>
+</section>
+
+<section>
+    <h2>The ten guarantees</h2>
+    <p class="lede">Above all ten sits the vocation: no person can be compelled to renounce,
+        transfer, or surrender their identity against their will. Each guarantee is enforced
+        in the database, where no client can bypass it, and machine-checked on every change.</p>
+    <div class="laws">
+        <div class="law"><b>C1</b><p><strong>Append-only history.</strong> Triggers reject any UPDATE or DELETE on the audit tables. What happened, stays.</p></div>
+        <div class="law"><b>C2</b><p><strong>Zero-knowledge means zero.</strong> A CHECK constraint refuses to store a token id on a zero-knowledge verification.</p></div>
+        <div class="law"><b>C3</b><p><strong>One active token per person.</strong> A partial unique index makes a second ACTIVE row impossible, under any concurrency.</p></div>
+        <div class="law"><b>C4</b><p><strong>Atomic lockout counting.</strong> Failed logins increment in a single statement; there is no check-then-act race.</p></div>
+        <div class="law"><b>C5</b><p><strong>No inline scripts.</strong> Content-Security-Policy is script-src 'self', verified per route.</p></div>
+        <div class="law"><b>C6</b><p><strong>Server-side disclosure.</strong> A client cannot upgrade what a verification reveals; redaction is tested at every read path.</p></div>
+        <div class="law"><b>C7</b><p><strong>No hardcoded crypto.</strong> Algorithms are rows in a registry; rotation is an INSERT, not a redeploy.</p></div>
+        <div class="law"><b>C8</b><p><strong>Bounded aggregates.</strong> Every map and API result set carries a hard cap; payload scales with the viewport, not the ledger.</p></div>
+        <div class="law"><b>C9</b><p><strong>Real concurrency tests.</strong> Race-prone paths are tested with real threads against a live database, not mocks.</p></div>
+        <div class="law"><b>C10</b><p><strong>Identity is not money.</strong> The schema carries no monetary claim; the boundary is structural, not policy.</p></div>
     </div>
 </section>
 
@@ -170,7 +199,7 @@ footer a{color:var(--dim)}
         <div class="threat"><span class="uc">UC-9 · RECOVERY CEREMONY</span>
             <h3>Catastrophic loss</h3>
             <p class="attack">Token lost, holder unidentified, nothing to prove who they are.</p>
-            <p>A two-phase ceremony gated by three independent out-of-band channels, a cooldown, and an admin-only decision. Compromising one channel is not enough.</p></div>
+            <p>A two-phase ceremony gated by independent out-of-band channels, a cooldown, and an admin-only decision. Compromising one channel is not enough.</p></div>
         <div class="threat"><span class="uc">UC-6 · MULTI-SIG MIGRATION</span>
             <h3>Quantum migration</h3>
             <p class="attack">Today's signing algorithms break overnight when a quantum computer arrives.</p>
@@ -191,22 +220,25 @@ footer a{color:var(--dim)}
 </section>
 
 <section>
-    <h2>Enforced where code cannot reach</h2>
-    <p class="lede">Most reference implementations put their rules in application code,
-        where the next caller can bypass them. Polaris puts them in Postgres:
-        a partial unique index for one-active-token-per-person, append-only triggers
-        for the audit-of-record, a CHECK constraint that refuses to store a token id
-        on a zero-knowledge verification. A flat layer of 68 plain check functions
-        re-verifies all of it on every CI run, and each check provably fails on a
-        broken fixture.</p>
+    <h2>Verified, not asserted</h2>
+    <p class="lede">Every claim on this page is backed by a gate that fails if the claim
+        stops being true. CI does not just run tests; it exercises the artifacts.</p>
     <div class="numbers">
-        <div class="num"><b>28</b><span>schema tables</span></div>
-        <div class="num"><b>9</b><span>append-only AoR triggers</span></div>
-        <div class="num"><b>68</b><span>machine-checked invariants</span></div>
-        <div class="num"><b>572</b><span>product tests</span></div>
+        <div class="num"><b>571</b><span>product tests, live DB</span></div>
+        <div class="num"><b>50</b><span>crypto-witness tests</span></div>
+        <div class="num"><b>76</b><span>invariant checks</span></div>
         <div class="num"><b>7</b><span>CI jobs</span></div>
+        <div class="num"><b>5</b><span>services booted in CI</span></div>
         <div class="num"><b>1</b><span>double-click to launch</span></div>
     </div>
+    <p class="asof">measured at v9.156</p>
+    <ul class="prodlist">
+        <li><strong>The production stack boots in CI.</strong> Five services behind a self-built TLS edge come up end to end on every push, and health is asserted through the edge. Building that job surfaced four prod-down bugs the day it landed, which is the point.</li>
+        <li><strong>Backups restore, provably.</strong> An encrypted backup and restore round-trip runs in CI with a fail-closed negative check, plus streaming replication and a failover runbook.</li>
+        <li><strong>The post-quantum handshake is proven, not claimed.</strong> CI negotiates X25519MLKEM768 against a real certificate on every push, and signs with real ML-DSA-65 inside the production image.</li>
+        <li><strong>CVEs gate the build.</strong> Both the dependency surface and all four self-built container images are scanned on every push; a fixable CRITICAL fails CI.</li>
+        <li><strong>Every check can prove it works.</strong> Each of the 76 invariant checks is paired with a detection test showing it fails on a broken fixture. A check that cannot detect its own violation is treated as broken.</li>
+    </ul>
 </section>
 
 <section>
@@ -215,7 +247,7 @@ footer a{color:var(--dim)}
         to a first-class registry. Rotation is a row update, not a redeploy.</p>
     <div class="cells">
         <div class="cell"><h3>ML-DSA-65 default</h3>
-            <p>NIST FIPS 204 lattice signatures, Level 3, on every new token from day one. Real bytes via liboqs; verified by two independent witnesses (liboqs + OpenSSL 3.5).</p></div>
+            <p>NIST FIPS 204 lattice signatures, Level 3, on every new token from day one. Real bytes via liboqs, verified by two independent witnesses.</p></div>
         <div class="cell"><h3>SLH-DSA hedge</h3>
             <p>FIPS 205 hash-based signatures rest on entirely different assumptions than lattices. If one family falls, the other stands. The cost is signature size, carried openly.</p></div>
         <div class="cell"><h3>Plonky2 ZK-SNARK</h3>
@@ -227,20 +259,6 @@ footer a{color:var(--dim)}
         <div class="cell"><h3>WebAuthn MFA</h3>
             <p>FIDO2 hardware keys are the only authentication path to admin and auditor roles. Passwords alone cannot reach them.</p></div>
     </div>
-</section>
-
-<section>
-    <h2>Production, exercised</h2>
-    <p class="lede">The production stack is not aspirational. CI boots it end to end on
-        every push; building that job surfaced four prod-down bugs the day it landed,
-        which is the point.</p>
-    <ul class="prodlist">
-        <li><strong>TLS everywhere it can be.</strong> Let's Encrypt at the edge with automatic provisioning, certificate-pinned TLS on the pgbouncer-to-postgres hop, hybrid PQ key exchange for capable clients.</li>
-        <li><strong>Hardened containers.</strong> Every service runs non-root with all Linux capabilities dropped; Trivy gates CI on fixable CRITICAL CVEs in dependencies and images.</li>
-        <li><strong>Backups that restore.</strong> pgBackRest WAL archiving with a CI-exercised backup/restore round-trip, streaming replication, and a failover runbook.</li>
-        <li><strong>Observability.</strong> Structured JSON logs with correlation IDs, Prometheus metrics and alert rules, structured per-component health.</li>
-        <li><strong>Privacy machinery.</strong> Right-to-erasure via audited pseudonymization; zero-knowledge verifications never stored the link in the first place.</li>
-    </ul>
 </section>
 
 <section>
