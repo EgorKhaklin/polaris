@@ -5,6 +5,19 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.162 — 2026-08-31 (P0.3 epilogue: the policy's first live test, three fresh bumps in one pass)
+
+Dependabot processed the v9.161 push within seconds: it closed the ignored
+majors on its own (the ignore blocks worked) and opened three fresh PRs for
+bumps that had accrued since the June pins: click 8.5.0, gunicorn 26.2.0, and
+a postgres 16-alpine DIGEST refresh, which the ignore rule correctly still
+allows because it stays inside the pinned major. All three taken per the
+documented policy as one batch: pip-audit strict clean, gunicorn imports, the
+postgres image builds on the new digest, and the 64-test CLI suite passes on
+click 8.5. Queue at zero.
+
+---
+
 ## v9.161 — 2026-08-31 (Roadmap P0.3: nineteen Dependabot PRs resolved, fifteen taken, four declined on the record)
 
 The backlog had accumulated since June across four ecosystems. Blind-merging
