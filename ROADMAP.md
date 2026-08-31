@@ -86,8 +86,8 @@ command, and reproduce every artifact. Nothing on the known-debt list survives.
 
 | ID | Item | Size | Risk | Blocked by | Definition of done |
 |---|---|---|---|---|---|
-| [ ] P0.1 | Pin the Rust toolchain to a dated nightly | S | low | - | `rust-toolchain.toml` carries a dated nightly; CI asserts it; a check pins the presence of a date |
-| [ ] P0.2 | Wire `test_e2e_atlas.py` into CI | S | low | - | A CI step installs the browser and runs the suite; it fails on a broken Atlas |
+| [x] P0.1 | Pin the Rust toolchain to a dated nightly (v9.160) | S | low | - | `rust-toolchain.toml` pins nightly-2026-05-10 (build + tests proven on it); CI derives the toolchain from the file; `check_rust_toolchain_pinned` enforces the dated form |
+| [x] P0.2 | Wire `test_e2e_atlas.py` into CI (v9.160) | S | low | - | The suite was modernized first (it had rotted against the v9.146 MapLibre surface), proven to fail on a sabotaged page and pass on a healthy one, then wired into the docker-image job under POLARIS_E2E_REQUIRE=1 so skips cannot read as green; `check_ci_runs_atlas_e2e` pins the wiring |
 | [ ] P0.3 | Clear the Dependabot backlog and set policy | M | low | - | Zero open Dependabot PRs; an auto-merge policy for patch bumps documented |
 | [ ] P0.4 | Exercise the un-swept operator tools: rotate-secret, chaos-test, load-test, ct-monitor | L | med | - | Each run end to end against a scratch stack; every defect fixed and pinned by a check (the v9.153 method) |
 | [ ] P0.5 | SBOM per release (pip + all four images) | M | low | - | CI publishes SPDX SBOMs as release assets; a check pins the job |

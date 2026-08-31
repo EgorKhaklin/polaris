@@ -5,6 +5,52 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.160 — 2026-08-31 (Roadmap P0.1 + P0.2: the dated nightly, and the e2e suite that rotted because it never ran)
+
+The first two deployment-roadmap items, shipped together as the S-sized batch
+the execution protocol allows.
+
+**P0.1: the ZK toolchain is pinned to nightly-2026-05-10.** A floating
+`channel = "nightly"` re-resolves on every toolchain install, so an upstream
+nightly change could break the ZK build with zero repo changes, and two
+machines building the same commit could disagree. The pin is the nightly this
+crate has been building against locally; `cargo build --release` (21s, clean)
+and `cargo test --release` were proven on it before pinning, and rustup
+auto-selects it from the file inside the crate directory. CI now DERIVES its
+toolchain from rust-toolchain.toml instead of carrying its own floating
+`toolchain: nightly` (the v9.155 lesson: a duplicated pin is a second source
+of truth). `check_rust_toolchain_pinned` enforces the dated form and the
+derivation.
+
+**P0.2: the Atlas e2e suite runs in CI, after being repaired.** The suite
+(v9.33) was wired to no CI job and had rotted in exactly the way it existed to
+catch: the v9.146 MapLibre rewrite renamed every element it selected
+(#atlas-globe is now #atlas-map; the #atlas-hud figure classes are now the
+data-atlas-* hooks of the v9.142 test-pinned-markup contract), so the suite
+would have failed on a perfectly healthy app. A suite that only ever skips
+reads as green while it decays. Repairs: selectors moved to #atlas-map, the
+#atlas-globe-data island, and the four data-atlas-* headline hooks (asserting
+server-rendered values on first paint); the login helper made idempotent
+(pages share one browser context, so a previous test's session cookie made
+/login redirect past the form and the unconditional fill timed out); stale
+atlas-globe.js comments corrected.
+
+The suite gained POLARIS_E2E_REQUIRE=1: with it set, an unreachable app or a
+missing browser is a hard FAILURE instead of a skip, so "ran zero tests" can
+never read as green again. Operator behavior without the var is unchanged
+(graceful skip). CI runs the suite in the docker-image job against the stack
+it just booted, chromium installed on the spot.
+
+Every leg was proven live before wiring: 3 passed against the healthy stack in
+3.2s; a sabotaged page (id renamed inside the running container, restart,
+sabotage confirmed present in the served HTML) failed the selector test;
+restore returned 3 green; a dead port under REQUIRE produced 3 errors, and
+without REQUIRE produced 3 skips. `check_ci_runs_atlas_e2e` pins the job, the
+guard, and that the suite still honors the guard. 80 checks, 77 check-layer
+tests.
+
+---
+
 ## v9.159 — 2026-08-31 (ATLAS FEED INTERRUPTED, again: the v9.152 fix never covered the launcher's default path)
 
 VANTA hit the atlas error chip on a fresh launch: all four spatial endpoints

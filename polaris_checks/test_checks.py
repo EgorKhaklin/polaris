@@ -598,6 +598,68 @@ def test_migrate_docker_stdin_check_discriminates(tmp_path):
         "must PASS when every docker-exec psql redirects stdin from /dev/null"
 
 
+def test_rust_toolchain_pin_check_discriminates(tmp_path):
+    zk = tmp_path / "polaris_zk"
+    zk.mkdir()
+    tc = zk / "rust-toolchain.toml"
+    wf = tmp_path / ".github" / "workflows"
+    wf.mkdir(parents=True)
+    ci = wf / "ci.yml"
+    ci.write_text("jobs:\n  test:\n    steps:\n"
+                  "      - run: grep nightly polaris_zk/rust-toolchain.toml\n")
+
+    # The real defect: a floating nightly re-resolves on every install.
+    tc.write_text('[toolchain]\nchannel = "nightly"\n')
+    assert checks.check_rust_toolchain_pinned(tmp_path)[0].level == "FAIL", \
+        "must FAIL on a floating (undated) nightly channel"
+
+    # A dated pin, but CI carries its own hardcoded copy instead of deriving.
+    tc.write_text('[toolchain]\nchannel = "nightly-2026-05-10"\n')
+    ci.write_text("jobs:\n  test:\n    steps:\n"
+                  "      - uses: dtolnay/rust-toolchain@master\n"
+                  "        with:\n          toolchain: nightly-2026-05-10\n")
+    assert checks.check_rust_toolchain_pinned(tmp_path)[0].level == "FAIL", \
+        "must FAIL when CI does not derive the toolchain from the file"
+
+    ci.write_text("jobs:\n  test:\n    steps:\n"
+                  "      - run: chan=$(grep -oE 'nightly-[0-9-]+' "
+                  "polaris_zk/rust-toolchain.toml)\n")
+    assert checks.check_rust_toolchain_pinned(tmp_path)[0].level == "OK", \
+        "must PASS on a dated pin that CI derives from the file"
+
+
+def test_ci_atlas_e2e_check_discriminates(tmp_path):
+    wf = tmp_path / ".github" / "workflows"
+    wf.mkdir(parents=True)
+    ci = wf / "ci.yml"
+    web = tmp_path / "polaris_web"
+    web.mkdir()
+    suite = web / "test_e2e_atlas.py"
+    suite.write_text('_REQUIRE = os.environ.get("POLARIS_E2E_REQUIRE") == "1"\n')
+
+    # The real defect: the suite exists, no job runs it, it rots silently.
+    ci.write_text("jobs:\n  docker-image:\n    steps:\n      - run: docker compose up -d\n")
+    assert checks.check_ci_runs_atlas_e2e(tmp_path)[0].level == "FAIL", \
+        "must FAIL when no CI job runs the e2e suite"
+
+    # Runs it, but without the no-skip guard: unavailable browser = green.
+    ci.write_text("jobs:\n  docker-image:\n    steps:\n"
+                  "      - run: python3 -m pytest polaris_web/test_e2e_atlas.py\n")
+    assert checks.check_ci_runs_atlas_e2e(tmp_path)[0].level == "FAIL", \
+        "must FAIL when CI runs the suite without POLARIS_E2E_REQUIRE=1"
+
+    ci.write_text("jobs:\n  docker-image:\n    steps:\n"
+                  "      - run: POLARIS_E2E_REQUIRE=1 python3 -m pytest "
+                  "polaris_web/test_e2e_atlas.py\n")
+    assert checks.check_ci_runs_atlas_e2e(tmp_path)[0].level == "OK", \
+        "must PASS when CI forces the suite to run"
+
+    # The guard is asserted in CI but the suite stopped honoring it.
+    suite.write_text("import os\n")
+    assert checks.check_ci_runs_atlas_e2e(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the suite no longer honors POLARIS_E2E_REQUIRE"
+
+
 def test_dockerfile_copies_app_modules_check_discriminates(tmp_path):
     web = tmp_path / "polaris_web"
     web.mkdir()

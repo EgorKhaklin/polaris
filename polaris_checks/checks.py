@@ -2498,6 +2498,58 @@ def check_migrate_docker_stdin_safe(root: pathlib.Path) -> list[Finding]:
                "while-read loops cannot be drained")
 
 
+# P0.1 — the ZK crate must build on a DATED nightly. Plonky2 needs nightly,
+# but a floating `channel = "nightly"` re-resolves on every toolchain install:
+# an upstream change can break the build with zero repo changes, and two
+# machines building the same commit can disagree. CI derives its toolchain
+# from this file, so the date here is the single source of truth.
+def check_rust_toolchain_pinned(root: pathlib.Path) -> list[Finding]:
+    tc = _read(root, "polaris_zk/rust-toolchain.toml")
+    if not tc:
+        return _fail("rust_pin", "polaris_zk/rust-toolchain.toml is missing")
+    m = re.search(r'^channel\s*=\s*"([^"]+)"', tc, re.M)
+    if not m:
+        return _fail("rust_pin", "rust-toolchain.toml declares no channel")
+    chan = m.group(1)
+    if not re.fullmatch(r"nightly-\d{4}-\d{2}-\d{2}", chan):
+        return _fail("rust_pin",
+                     f"the Rust channel is '{chan}'; it must be a dated nightly "
+                     f"(nightly-YYYY-MM-DD) so the ZK build cannot break from an "
+                     f"upstream nightly change with zero repo changes")
+    ci = _read(root, ".github/workflows/ci.yml")
+    if "rust-toolchain.toml" not in ci:
+        return _fail("rust_pin",
+                     "CI does not derive its Rust toolchain from rust-toolchain.toml; "
+                     "a second hardcoded pin would drift (the v9.155 lesson)")
+    return _ok("rust_pin",
+               f"the ZK toolchain is pinned to {chan} and CI derives it from the file")
+
+
+# P0.2 — the Atlas e2e suite must RUN in CI with the skip escape hatch closed.
+# From v9.33 the suite existed but was wired to no job; it skipped everywhere,
+# read as green, and rotted (the v9.146 MapLibre rewrite renamed every element
+# it selected, unnoticed). A browser suite that is not forced to run is not a
+# gate, it is a decoration.
+def check_ci_runs_atlas_e2e(root: pathlib.Path) -> list[Finding]:
+    ci = _read(root, ".github/workflows/ci.yml")
+    if "test_e2e_atlas.py" not in ci:
+        return _fail("ci_e2e",
+                     "no CI job runs test_e2e_atlas.py; the browser surface has no gate "
+                     "and the suite will rot again")
+    if "POLARIS_E2E_REQUIRE=1" not in ci:
+        return _fail("ci_e2e",
+                     "CI runs the e2e suite without POLARIS_E2E_REQUIRE=1; an "
+                     "unavailable app or browser would skip every test and read as green")
+    suite = _read(root, "polaris_web/test_e2e_atlas.py")
+    if "POLARIS_E2E_REQUIRE" not in suite:
+        return _fail("ci_e2e",
+                     "test_e2e_atlas.py no longer honors POLARIS_E2E_REQUIRE; the CI "
+                     "guard is asserting an env var the suite ignores")
+    return _ok("ci_e2e",
+               "CI runs the Atlas e2e suite with POLARIS_E2E_REQUIRE=1; skips cannot "
+               "read as green")
+
+
 CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_csp_forbids_unsafe_inline,
     check_one_active_token_index,
@@ -2570,6 +2622,8 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_ci_does_not_duplicate_pins,
     check_ci_ssl_probe_aggregated,
     check_migrate_docker_stdin_safe,
+    check_rust_toolchain_pinned,
+    check_ci_runs_atlas_e2e,
     check_local_clock_convention,
     check_c6_atlas_redacts_zk_location,
     check_coercion_evidence_retained,

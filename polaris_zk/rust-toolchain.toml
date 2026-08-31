@@ -1,3 +1,10 @@
+# P0.1 (v9.160) — a DATED nightly, not a floating one. Plonky2 needs nightly
+# (specialization), but bare "nightly" re-resolves on every toolchain install:
+# an upstream nightly change can break the ZK build with zero repo changes,
+# and two machines building "the same" commit can disagree. 2026-05-10 is the
+# nightly this crate has been building against locally; bump deliberately, in
+# a commit, after `cargo build --release && cargo test --release` on the new
+# date. check_rust_toolchain_pinned enforces the dated form.
 [toolchain]
-channel = "nightly"
+channel = "nightly-2026-05-10"
 components = ["rustfmt", "clippy"]

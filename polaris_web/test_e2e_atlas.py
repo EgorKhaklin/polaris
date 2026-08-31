@@ -27,6 +27,14 @@ Polaris app is reachable on port 2222. Activation is operator-side:
     ./polaris_mac_launch.sh up --detach  # app on port 2222
     python3 -m unittest polaris_web.test_e2e_atlas
 
+**Why POLARIS_E2E_REQUIRE=1 exists (v9.160 / P0.2).** Graceful skip is
+correct for operators and fatal for CI: this suite sat wired to nothing
+for months, silently skipping, while the v9.146 MapLibre rewrite renamed
+every element it selected. The suite rotted precisely because it never
+ran. With the env var set, an unavailable app or browser is a hard
+FAILURE, not a skip; CI sets it so "the e2e suite ran zero tests" can
+never again read as green.
+
 **Why `wait_until="domcontentloaded"`** (NOT `"networkidle"`).
 Per CLAUDE.md pre-known-gotchas #6: the Polaris page fires a heartbeat
 POST every ~10s (browser-presence beacon for the launcher), so
@@ -81,10 +89,15 @@ def _playwright_available() -> bool:
         return False
 
 
-@unittest.skipUnless(_app_reachable(),
+_REQUIRE = os.environ.get("POLARIS_E2E_REQUIRE") == "1"
+_APP_OK = _app_reachable()
+_PW_OK = _playwright_available()
+
+
+@unittest.skipUnless(_REQUIRE or _APP_OK,
     f"Polaris app not reachable at {POLARIS_URL} — start it via "
     f"`./polaris_mac_launch.sh up --detach` to exercise these tests")
-@unittest.skipUnless(_playwright_available(),
+@unittest.skipUnless(_REQUIRE or _PW_OK,
     "Playwright not available — `pip install playwright && "
     "playwright install chromium` to exercise these tests")
 class TestAtlasGlobeE2E(unittest.TestCase):
@@ -98,6 +111,16 @@ class TestAtlasGlobeE2E(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        if _REQUIRE:
+            # CI mode: an unavailable prerequisite is a failure, not a skip.
+            if not _APP_OK:
+                raise AssertionError(
+                    f"POLARIS_E2E_REQUIRE=1 but no Polaris app is reachable "
+                    f"at {POLARIS_URL}; the suite must RUN, not skip")
+            if not _PW_OK:
+                raise AssertionError(
+                    "POLARIS_E2E_REQUIRE=1 but Playwright/chromium is "
+                    "unavailable; the suite must RUN, not skip")
         from playwright.sync_api import sync_playwright
         cls._playwright = sync_playwright().start()
         cls._browser = cls._playwright.chromium.launch(headless=True)
@@ -119,28 +142,36 @@ class TestAtlasGlobeE2E(unittest.TestCase):
         gotcha #6 — `networkidle` never resolves because of the 10s
         heartbeat POST."""
         page.goto(f"{POLARIS_URL}/login", wait_until="domcontentloaded")
-        page.fill('input[name="username"]', "admin")
-        page.fill('input[name="password"]', "Admin@123!")
-        page.click('button[type="submit"]')
+        # Pages share one browser context, so a previous test's login cookie
+        # survives here and /login redirects straight past the form. Filling
+        # unconditionally then times out waiting for a field that never
+        # renders; only authenticate when the form is actually present.
+        if page.query_selector('input[name="username"]'):
+            page.fill('input[name="username"]', "admin")
+            page.fill('input[name="password"]', "Admin@123!")
+            page.click('button[type="submit"]')
         # After login, /atlas requires admin role (which the seeded
         # admin has). Navigate explicitly rather than relying on a
         # redirect target.
         page.goto(f"{POLARIS_URL}{path}", wait_until="domcontentloaded")
 
-    def test_atlas_page_loads_with_globe_element(self):
-        """The /atlas page must serve 200 AND contain the globe SVG
-        container. Catches: route regression (404/500), template
-        rename (the element id moves), CSP block (script-src refuses
-        atlas-globe.js)."""
+    def test_atlas_page_loads_with_map_and_data_island(self):
+        """The /atlas page must serve 200 AND contain the MapLibre map
+        container plus the JSON data island. Catches: route regression
+        (404/500), template rename (the element id moves), CSP block
+        (script-src refuses atlas-map.js).
+
+        v9.160: this test originally selected #atlas-globe, which the
+        v9.146 MapLibre rewrite renamed to #atlas-map. The suite was
+        wired to no CI job, so it rotted unnoticed: exactly the failure
+        mode it exists to catch, suffered by the test itself."""
         page = self._context.new_page()
         try:
             self._login_and_goto(page)
-            # The globe lives in #atlas-globe per atlas.html. If the
-            # template renamed the container OR CSP blocked the JS
-            # module, this selector fails.
-            globe = page.query_selector("#atlas-globe")
-            self.assertIsNotNone(globe,
-                "atlas.html must render #atlas-globe container")
+            self.assertIsNotNone(page.query_selector("#atlas-map"),
+                "atlas.html must render the #atlas-map container")
+            self.assertIsNotNone(page.query_selector("#atlas-globe-data"),
+                "atlas.html must render the #atlas-globe-data JSON island")
         finally:
             page.close()
 
@@ -152,15 +183,18 @@ class TestAtlasGlobeE2E(unittest.TestCase):
         page = self._context.new_page()
         try:
             self._login_and_goto(page)
-            # Wait for HUD figures to populate (the data-island fetch
-            # is synchronous; first paint includes the numbers).
-            page.wait_for_selector("#atlas-hud", timeout=3000)
-            # The four figures are individually addressable elements;
-            # if all four are present, the HUD shape is intact.
-            figures = page.query_selector_all("#atlas-hud .hud-figure")
-            self.assertGreaterEqual(len(figures), 4,
-                f"Atlas HUD must render ≥4 headline figures; "
-                f"found {len(figures)}")
+            # The four headline figures ride the data-* hooks the JS
+            # updates live (the v9.142 test-pinned-markup contract):
+            # rename-resistant in a way class names are not. First paint
+            # includes server-rendered values, so no async wait races.
+            page.wait_for_selector("[data-atlas-active-tokens]", timeout=3000)
+            for hook in ("data-atlas-active-tokens", "data-atlas-failures",
+                         "data-atlas-pq-pct", "data-atlas-zk-pct"):
+                el = page.query_selector(f"[{hook}]")
+                self.assertIsNotNone(el,
+                    f"Atlas HUD must render the [{hook}] figure")
+                self.assertNotEqual((el.text_content() or "").strip(), "",
+                    f"[{hook}] must carry a server-rendered value on first paint")
         finally:
             page.close()
 
@@ -180,7 +214,7 @@ class TestAtlasGlobeE2E(unittest.TestCase):
             else None)
         try:
             self._login_and_goto(page)
-            # Give the page a beat to settle (atlas-globe.js initializes
+            # Give the page a beat to settle (atlas-map.js initializes
             # asynchronously after DOMContentLoaded).
             page.wait_for_timeout(500)
             self.assertEqual(violations, [],
