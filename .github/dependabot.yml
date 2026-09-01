@@ -21,8 +21,8 @@
 #     FUTURE major (2.x) gets the same bit-for-bit treatment, never a blind bump.
 #   - (webauthn major: taken in v9.189 / roadmap P1.7 with its own ceremony
 #     test pass; its ignore block was removed then, which IS the record)
-#   - redis major (the cross-worker rate-limiter backend; redis-py majors
-#     change connection/script semantics, folded into roadmap P1.8)
+#   - (redis major: taken in v9.190 / roadmap P1.8 with its own test pass; its
+#     ignore block was removed then, which IS the record)
 # Removing an ignore block IS the decision record for taking that major.
 version: 2
 updates:
@@ -36,15 +36,8 @@ updates:
       - dependencies
     commit-message:
       prefix: deps
-    ignore:
-      # redis is ignored for ALL update forms, not just semver-major: the
-      # requirement is a RANGE (>=5,<6), and Dependabot proposes a jump to a
-      # new major as a "requirement update" that the semver-major filter does
-      # not catch (observed live: PR #33 proposed >=8.1.0,<9.0 straight past
-      # the major ignore). Patches inside 5.x resolve automatically at install
-      # time because the range is open, so ignoring redis PRs costs nothing.
-      # The 8.x client major is roadmap P1.8 work.
-      - dependency-name: "redis"
+    # No ignores on the Python surface as of v9.190: the webauthn (v9.189)
+    # and redis (v9.190) majors were taken with their own test passes.
 
   # The Rust ZK crate.
   - package-ecosystem: cargo

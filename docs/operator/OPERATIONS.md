@@ -1068,7 +1068,9 @@ scrape_configs:
 |---|---|---|---|
 | `polaris_requests_total` | counter | route, method, status | HTTP requests served |
 | `polaris_request_latency_seconds` | histogram | route | Per-route request latency |
-| `polaris_verifications_total` | counter | disclosure_level | VerificationEvent rows (incremented at insert time — Phase 2.5 wiring) |
+| `polaris_verifications_total` | counter | disclosure_level | VerificationEvent rows recorded through the app (counted since v9.190; the counter had been defined but never incremented) |
+| `polaris_agency_events_total` | counter | kind, agency_id | v9.190. Issuances, revocations (by the token's issuing agency), and verifications (by the requesting agency): the per-agency velocity signal the `Polaris*Velocity` alerts compare against each agency's own trailing week |
+| `polaris_quota_refusals_total` | counter | kind, agency_id | v9.190. Writes refused by an `AgencyQuota` cap (`PolarisQuotaRefusals` pages on any increase) |
 | `polaris_db_query_latency_seconds` | histogram | — | DB round-trip (sampled on `/api/health` probes) |
 | `polaris_app_info` | gauge | version | App metadata; value always 1; the label carries the data |
 
@@ -1102,6 +1104,41 @@ groups:
 **Graceful fallback:** if `prometheus_client` is not installed
 (ad-hoc dev environment without the prod image), `/metrics`
 returns HTTP 503 with a plain-text message rather than crashing.
+
+### Per-agency quotas and velocity alerts (v9.190 / roadmap P1.8)
+
+Quotas are the database's bound on what an AGENCY may do; the alerts are the
+early sight of an agency changing behaviour before a quota exists or engages.
+Both are per agency, never per person.
+
+**Quotas.** `AgencyQuota` holds up to three caps per agency: issuances per
+rolling day, revocations per rolling day (of the tokens that agency issued),
+verifications per rolling hour (as the requesting agency). NULL = no cap of
+that kind, no row = no caps, so nothing changes until you set one:
+
+```bash
+polaris quota-set 5 --verify-per-hour 500 --justification "First National Bank: contracted verification volume is ~300/h"
+polaris quota-set 2 --issue-per-day 200 --revoke-per-day 20 --justification "PA bureau: enrollment capacity of two offices"
+polaris quota-set 5 --verify-per-hour 0 --justification "verification cap lifted after the audit"   # 0 clears one cap
+polaris quota-show
+```
+
+The `enforce_agency_quota` trigger binds every write path (the stored
+procedures, the SQL console, a bulk loader) and is exact under concurrent
+writers; a refused write is an HTTP 429 with the trigger's own sentence
+(`quota exceeded: agency 5 has reached its verify quota of 500 per hour`),
+a `quota_refused` structured log line, and a `polaris_quota_refusals_total`
+increment. The R11-6 percentage bound on revocation still applies; whichever
+trips first refuses. An uncapped agency pays one primary-key lookup per write.
+
+**Velocity alerts.** `PolarisIssuanceVelocity`, `PolarisRevocationVelocity`,
+and `PolarisVerificationVelocity` fire when one agency's last hour exceeds an
+absolute floor (20 / 5 / 200) AND four times that agency's own trailing 7-day
+hourly mean; `PolarisQuotaRefusals` fires on any refusal. The rules are
+unit-tested with `promtool test rules` in CI, and the whole path (a cap held
+under real traffic from the load generator, the database, `/metrics`, and the
+log agreeing) is `scripts/polaris-abuse-drill.sh`. Runbooks:
+[RUNBOOKS.md](RUNBOOKS.md).
 
 ### Distributed tracing (v9.187 / roadmap P1.6)
 

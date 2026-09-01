@@ -34,6 +34,18 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      # v9.190 (roadmap P1.8): a real Redis so the Redis-backed rate-limiter
+      # tests RUN here (they skipped for want of a server since v9.40) and the
+      # abuse drill exercises the Lua sliding window under redis-py 8.x.
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     env:
       POLARIS_DB_HOST: localhost
@@ -44,6 +56,9 @@ jobs:
       POLARIS_SECRET_KEY: ci-only-test-secret-key-32-bytes-long
       POLARIS_STATE_DIR: /tmp/polaris-state
       PGPASSWORD: ci_password
+      # v9.190: test_app's RedisRateLimiterTests + the multiprocess test run
+      # against the redis service instead of skipping.
+      POLARIS_TEST_REDIS_URL: redis://localhost:6379/0
       # Built before the app suite (see "Build ZK binary"); makes test_app's
       # ZKSnarkTests run instead of skipping for want of the binary.
       POLARIS_ZK_BINARY: ${{ github.workspace }}/polaris_zk/target/release/polaris-zk
@@ -141,6 +156,19 @@ jobs:
         env:
           COVERAGE_FLOOR: "72"
         run: bash scripts/ai-coverage.sh
+
+      # v9.190 (roadmap P1.8) — abuse controls, exercised: promtool unit tests
+      # of the velocity + quota alerts, then a per-agency verification quota
+      # held under real traffic (the load generator logging in and POSTing the
+      # form at 10 rps; exactly the cap recorded, the rest 429), with the
+      # database, /metrics, and the structured log all agreeing, on the REDIS
+      # rate-limiter backend (redis-py 8.x in a real stack). Pinned by
+      # check_abuse_controls.
+      - name: Abuse-controls drill (quota under load + alert unit tests, redis backend)
+        env:
+          POLARIS_RATE_LIMIT_BACKEND: redis
+          POLARIS_REDIS_URL: redis://localhost:6379/0
+        run: bash scripts/polaris-abuse-drill.sh
 
       - name: ai-link-check
         run: bash scripts/ai-link-check.sh --ci

@@ -81,3 +81,59 @@ groups:
         annotations:
           summary: "Request p99 latency > 2s"
           description: "Per-route request p99 latency has exceeded 2 seconds for 10 minutes."
+
+      # v9.190 (roadmap P1.8) — velocity anomaly alerts. An agency doing far
+      # more than its own recent baseline is the abuse signal that quotas may
+      # not have been set for: the last hour against 4x its trailing 7-day
+      # hourly mean (offset one hour so the burst is not in its own baseline),
+      # gated by an absolute floor so a young or quiet agency's first few
+      # actions never page. Per-agency counters, never per-person.
+      - alert: PolarisIssuanceVelocity
+        expr: |
+          (sum by (agency_id) (increase(polaris_agency_events_total{kind="issue"}[1h])) > 20)
+            and
+          (sum by (agency_id) (increase(polaris_agency_events_total{kind="issue"}[1h]))
+            > 4 * sum by (agency_id) (increase(polaris_agency_events_total{kind="issue"}[7d] offset 1h)) / 168)
+        for: 5m
+        labels:
+          severity: sev2
+        annotations:
+          summary: "Issuance velocity anomaly for agency {{ $labels.agency_id }}"
+          description: "Agency {{ $labels.agency_id }} issued more than 20 tokens in the last hour and more than 4x its trailing 7-day hourly mean; polaris_agency_events_total{kind=\"issue\"} has the count."
+
+      - alert: PolarisRevocationVelocity
+        expr: |
+          (sum by (agency_id) (increase(polaris_agency_events_total{kind="revoke"}[1h])) > 5)
+            and
+          (sum by (agency_id) (increase(polaris_agency_events_total{kind="revoke"}[1h]))
+            > 4 * sum by (agency_id) (increase(polaris_agency_events_total{kind="revoke"}[7d] offset 1h)) / 168)
+        for: 5m
+        labels:
+          severity: sev2
+        annotations:
+          summary: "Revocation velocity anomaly for agency {{ $labels.agency_id }}"
+          description: "Tokens issued by agency {{ $labels.agency_id }} were revoked more than 5 times in the last hour and more than 4x its trailing 7-day hourly mean; the R11-6 percentage bound may already have engaged."
+
+      - alert: PolarisVerificationVelocity
+        expr: |
+          (sum by (agency_id) (increase(polaris_agency_events_total{kind="verify"}[1h])) > 200)
+            and
+          (sum by (agency_id) (increase(polaris_agency_events_total{kind="verify"}[1h]))
+            > 4 * sum by (agency_id) (increase(polaris_agency_events_total{kind="verify"}[7d] offset 1h)) / 168)
+        for: 5m
+        labels:
+          severity: sev2
+        annotations:
+          summary: "Verification velocity anomaly for agency {{ $labels.agency_id }}"
+          description: "Agency {{ $labels.agency_id }} recorded more than 200 verifications in the last hour and more than 4x its trailing 7-day hourly mean. Mass verification is the dragnet shape the vocation refuses."
+
+      # SEV-3 — an AgencyQuota cap is refusing writes. Either abuse the cap is
+      # doing its job against, or a cap set too low for legitimate volume;
+      # both need a human to look. No `for`: one refusal is a fact.
+      - alert: PolarisQuotaRefusals
+        expr: sum by (agency_id, kind) (increase(polaris_quota_refusals_total[15m])) > 0
+        labels:
+          severity: sev3
+        annotations:
+          summary: "Agency {{ $labels.agency_id }} is hitting its {{ $labels.kind }} quota"
+          description: "polaris_quota_refusals_total increased: {{ $labels.kind }} writes by agency {{ $labels.agency_id }} were refused by an AgencyQuota cap in the last 15 minutes."

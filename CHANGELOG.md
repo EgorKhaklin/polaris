@@ -5,6 +5,101 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.190 — 2026-09-01 (Roadmap P1.8: abuse controls; per-agency quotas bound at the database, velocity alerts against each agency's own baseline, drilled under real load, and the redis-py 8.x major with a real Redis in CI)
+
+R11-6 bounded one thing an agency can do to its own tokens: revoke them too
+fast. P1.8 extends that leg to everything an agency does through Polaris,
+in two layers: a hard, opt-in bound (quotas) and an always-on signal
+(velocity alerts). Both are keyed on agencies, never on people; the
+constitutional note is that these controls bound what an authority may do
+and count what it does, and touch no holder attribute at all.
+
+  - **Per-agency quotas, enforced by the database.** `AgencyQuota` holds up
+    to three caps per agency: issuances per rolling day, revocations per
+    rolling day (of that agency's tokens), verifications per rolling hour
+    (as the requesting agency). NULL is no cap of that kind and no row is no
+    caps, so an unconfigured deployment is unchanged. `enforce_agency_quota`
+    is a BEFORE trigger on IdentityToken (insert = issue, update into REVOKED
+    = revoke) and VerificationEvent (insert = verify): the stored procedures,
+    the SQL console, and a bulk loader all meet the same bound, and there is
+    deliberately no opt-out GUC. A capped write is serialized per (kind,
+    agency) by a transaction-scoped advisory lock, so the cap is exact under
+    concurrent writers (twelve threads racing a cap of five leave exactly five
+    rows, C9); an uncapped agency pays one primary-key lookup and returns
+    before any lock. The windows are counted from the audit-of-record tables
+    (never a side counter) over two new indexes. Migration
+    `2026-09-01-002-agency-quota` (up, down, idempotent re-up drilled).
+    `polaris quota-set <agency> --issue-per-day N --revoke-per-day N
+    --verify-per-hour N --justification "..."` (0 clears a cap; the
+    justification has the R11-6 twenty-character floor) and `quota-show`.
+  - **The refusal is loud everywhere.** The trigger's own sentence
+    (`quota exceeded: agency 5 has reached its verify quota of 25 per hour`)
+    is the HTTP 429 body on the issue, revoke, and verify routes, a
+    `quota_refused` structured log line with the request id, a
+    `polaris_quota_refusals_total{kind,agency_id}` increment, and the
+    `PolarisQuotaRefusals` page (SEV-3, no wait: one refusal is a fact, and
+    both readings of it, abuse held back or a cap set too low, need a human).
+  - **Velocity alerts against each agency's own week.**
+    `polaris_agency_events_total{kind,agency_id}` is recorded on the issue,
+    revoke (by the token's issuing agency), and verify routes.
+    `PolarisIssuanceVelocity`, `PolarisRevocationVelocity`, and
+    `PolarisVerificationVelocity` fire when one agency's last hour exceeds an
+    absolute floor (20 / 5 / 200) AND four times that agency's trailing 7-day
+    hourly mean, offset one hour so the burst is not in its own baseline: a
+    large agency's normal day never trips a small agency's threshold, and a
+    young or quiet agency's first actions stay under the floor. Each has a
+    runbook; the rules are unit-tested with `promtool test rules`
+    (`polaris-alerts.test.yml`: a steady agency never fires, a 60-in-an-hour
+    burst fires, a 12-in-an-hour burst stays under the floor, one refusal
+    pages); the overview dashboard gains the velocity and refusal panels.
+    Found on the way: `polaris_verifications_total` had been defined since
+    v8.93 and never incremented, so the dashboard panel on it was always
+    empty; it counts now, and the drill asserts it moves.
+  - **Exercised with the load generator, on the redis backend.**
+    `polaris_load_gen.py` gains an operator-flow mode (`--login USER:PASS`,
+    `--method POST`, repeatable `--form`, `--csrf-from PATH`, redirects not
+    followed so the form's own answer lands in the ledger). The new CI step
+    `scripts/polaris-abuse-drill.sh` validates and unit-tests the rules,
+    caps agency 5 at 25 verifications an hour, logs in as an operator, POSTs
+    50 verifications at 10 rps through the app's own form route, and asserts
+    exactly 25 recorded (302) and the rest refused (429), 25 rows in the
+    database, `/metrics` agreeing on events, refusals, and the verification
+    counter, and the log line present. It runs with
+    `POLARIS_RATE_LIMIT_BACKEND=redis` against a Redis service and refuses to
+    pass unless `/api/health` reports the redis backend live.
+  - **redis-py 5.x to 8.1.0, with its own test pass.** The CI test job gains
+    a Redis service and `POLARIS_TEST_REDIS_URL`, so the Redis-backed
+    rate-limiter tests (contract + multiprocess) RUN instead of skipping, as
+    they had since v9.40; locally they passed against redis-server 8.x. Two
+    behaviour changes of the major matter here and are pinned: redis-py 6+
+    retries three times with exponential jitter by default, which on the
+    request hot path turns a Redis outage into multi-second stalls before the
+    fail-closed deny, so `RedisRateLimiter` sets the one-attempt contract it
+    was written against (`Retry(NoBackoff(), 0)`); and 8.x speaks RESP3 by
+    default, which the Lua sliding window, `ping`, `scan_iter`, and `delete`
+    are indifferent to, proven by the same tests. The exact pin replaces the
+    open range; the separate `redis==5.0.*` install in `Dockerfile.prod` (a
+    second source of truth) is gone; the Dependabot ignore is removed, which
+    is the record of the decision.
+  - Docs: OPERATIONS.md (the quotas subsection and the metrics table),
+    RUNBOOKS.md (four sections), SLOS.md, DATA-MODEL.md, SECURITY.md,
+    PRODUCTION-READINESS.md, the observability README, and
+    `DEVNOTES/ships/abuse-controls.md` (the policy choices and the adversary
+    walk). The schema is 29 tables now, stated so everywhere the count lives.
+  - `check_abuse_controls` pins it: the table in the schema and its drop
+    list, the trigger with its lock, its cheap exit before the lock, its
+    refusal sentence and no bypass GUC, the migration pair and the indexes,
+    the app's counters, 429s, and the verification counter, the four alerts
+    with the offset baseline and their unit tests, the drill and its CI step
+    on the redis backend with a Redis service, the load generator's mode, the
+    redis pin and retry contract, the CLI, the tests, and the docs, with a
+    discrimination test per failure mode. 102 checks, 99 check-layer tests;
+    the product suite runs 473 web (Redis tests included), 71 CLI, and 88
+    constraint and property tests green. Next opener: P1.9 performance
+    baseline v1, which the operator-flow load generator now makes possible.
+
+---
+
 ## v9.189 — 2026-09-01 (Roadmap P1.7: session and origin hardening; the webauthn 3.x major with its own ceremony test pass, ML-DSA-65 offered first, per-role network policy, and a server-side session registry)
 
 A Polaris session was, until this ship, a signed cookie and nothing else:

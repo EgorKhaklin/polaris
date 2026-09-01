@@ -71,6 +71,7 @@ DROP TABLE IF EXISTS AnchorBatch            CASCADE;
 DROP TABLE IF EXISTS TokenSignature         CASCADE;
 DROP TABLE IF EXISTS RecoveryRequest       CASCADE;
 DROP TABLE IF EXISTS EnrollmentStatusEvent  CASCADE;
+DROP TABLE IF EXISTS AgencyQuota            CASCADE;
 DROP TABLE IF EXISTS IssuerDiscretionPolicy CASCADE;
 DROP TABLE IF EXISTS TokenPermission        CASCADE;
 DROP TABLE IF EXISTS AgencyAlgorithmAuth    CASCADE;
@@ -707,6 +708,36 @@ COMMENT ON TABLE IssuerDiscretionPolicy IS
   'velocity (R11-6 / M2-11). Absence of a row means the system default '
   '(see polaris.default_max_revoke_percent GUC) applies. The justification '
   'field is required so any loosening is auditable.';
+
+-- ----------------------------------------------------------------------------
+-- AgencyQuota (v9.190 / roadmap P1.8): opt-in per-agency caps on how much an
+-- agency may DO in a rolling window, enforced by enforce_agency_quota() in
+-- 06_triggers.sql at the row level (BEFORE INSERT on IdentityToken = issue,
+-- BEFORE UPDATE to REVOKED on IdentityToken = revoke, BEFORE INSERT on
+-- VerificationEvent = verify), so every path (the procedures, the SQL
+-- console, a bulk loader) meets the same bound. NULL = no cap of that kind;
+-- no row = no caps. A sibling of IssuerDiscretionPolicy: a bound on agency
+-- behaviour, never on a person (the vocation line). Also created
+-- idempotently by migration 2026-09-01-002-agency-quota.up.sql.
+-- ----------------------------------------------------------------------------
+CREATE TABLE AgencyQuota (
+    agency_id          INTEGER      PRIMARY KEY
+                       REFERENCES Agency(agency_id),
+    issue_per_day      INTEGER      CHECK (issue_per_day   IS NULL OR issue_per_day   > 0),
+    revoke_per_day     INTEGER      CHECK (revoke_per_day  IS NULL OR revoke_per_day  > 0),
+    verify_per_hour    INTEGER      CHECK (verify_per_hour IS NULL OR verify_per_hour > 0),
+    set_by_admin       VARCHAR(50)  NOT NULL,
+    set_at             TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    justification      TEXT         NOT NULL
+                       CHECK (length(justification) >= 20)
+);
+
+COMMENT ON TABLE AgencyQuota IS
+  'Opt-in per-agency caps (v9.190 / P1.8): issuances per rolling day, '
+  'revocations per rolling day, verifications per rolling hour. Enforced by '
+  'the enforce_agency_quota trigger on every write path. NULL = no cap of '
+  'that kind; no row = no caps. justification >= 20 chars so any cap is '
+  'auditable from the row alone. Set with `polaris quota-set`.';
 
 -- ----------------------------------------------------------------------------
 -- EnrollmentStatusEvent: append-only log of enrollment-state transitions per

@@ -34,6 +34,9 @@ left a real foundation. Genuinely sound today:
   network allow-lists enforced at login and on live sessions, and a WebAuthn
   attestation policy (user verification required, direct attestation,
   AAGUID allow-list) on the 3.x library with ML-DSA-65 offered first.
+  v9.190 (P1.8) adds opt-in per-agency quotas on issuance, revocation, and
+  verification enforced by a database trigger on every write path, and
+  per-agency velocity alerts compared against each agency's own baseline.
 - **The C1-C10 invariants are enforced at the database**, not in policy: the
   v9.85 grant boundary revokes UPDATE/DELETE on append-only audit tables from
   `polaris_app`, the only DELETE path is SECURITY DEFINER, and `polaris_app` has

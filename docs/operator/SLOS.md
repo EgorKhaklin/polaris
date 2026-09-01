@@ -40,6 +40,8 @@ references a metric the app does not emit.
 | `polaris_request_latency_seconds` | histogram | `route` | `polaris_web/app.py` (`_metrics_after_request`) |
 | `polaris_db_query_latency_seconds` | histogram | (none) | `polaris_web/app.py` (`/api/health` DB probe) |
 | `polaris_app_info` | gauge (always 1) | `version` | `polaris_web/app.py` (refreshed at scrape) |
+| `polaris_agency_events_total` | counter | `kind`, `agency_id` | `polaris_web/app.py` (the issue, revoke, and verify routes; v9.190). Not an SLI: the velocity alerts compare each agency against its own baseline |
+| `polaris_quota_refusals_total` | counter | `kind`, `agency_id` | `polaris_web/app.py` (a quota refusal answered as 429; v9.190). Not an SLI: a refusal is the control working |
 | `up{job="polaris"}` | gauge | Prometheus built-in | the scrape itself |
 
 The JSON `/api/metrics` snapshot (`request_rate_per_minute`,

@@ -8400,3 +8400,237 @@ class SessionLimitTests(UnauthenticatedTestCase):
             sess['sid'] = 'ab' * 32
         self.assertEqual(c.get('/dashboard').status_code, 302,
                          'an sid with no registry row is anonymous')
+
+
+# ============================================================================
+# v9.190 (roadmap P1.8) — ABUSE CONTROLS: per-agency quotas + velocity signal
+# ============================================================================
+
+def _metric_value(client, name, **labels):
+    """One sample from /metrics as a float (0.0 if absent), matching on the
+    given label subset regardless of label order."""
+    text = client.get('/metrics').get_data(as_text=True)
+    for line in text.splitlines():
+        if not line.startswith(name):
+            continue
+        m = re.match(r'^%s(?:\{([^}]*)\})?\s+(\S+)$' % re.escape(name), line)
+        if not m:
+            continue
+        have = dict(re.findall(r'(\w+)="([^"]*)"', m.group(1) or ''))
+        if all(have.get(k) == str(v) for k, v in labels.items()):
+            return float(m.group(2))
+    return 0.0
+
+
+class AgencyQuotaTests(PolarisTestCase):
+    """Opt-in per-agency quotas enforced by enforce_agency_quota on every
+    write path (issue, revoke, verify), exact under concurrent writers (C9),
+    and mapped by the app to HTTP 429 plus polaris_quota_refusals_total; the
+    per-agency velocity counter polaris_agency_events_total; and the
+    once-dead polaris_verifications_total finally counting."""
+
+    VERIFIER = 5    # First National Bank (seed data): a verifier
+    ISSUER = 1      # US National Identity Service: authorized to issue under algorithm 1
+
+    def _set_quota(self, agency_id, issue=None, revoke=None, verify=None):
+        _sql("INSERT INTO AgencyQuota (agency_id, issue_per_day, revoke_per_day, verify_per_hour, "
+             "set_by_admin, justification) VALUES (%s, %s, %s, %s, 'test', "
+             "'AgencyQuotaTests fixture: the caps under test') "
+             "ON CONFLICT (agency_id) DO UPDATE SET issue_per_day=EXCLUDED.issue_per_day, "
+             "revoke_per_day=EXCLUDED.revoke_per_day, verify_per_hour=EXCLUDED.verify_per_hour",
+             (agency_id, issue, revoke, verify), fetch='none')
+
+    def _insert_verification(self, agency_id):
+        return _sql("INSERT INTO VerificationEvent (requesting_agency_id, context_id, outcome, "
+                    "disclosure_level) VALUES (%s, 1, 'UNAUTHORIZED', 'ZERO_KNOWLEDGE') "
+                    "RETURNING event_id", (agency_id,), fetch='one')['event_id']
+
+    def _verifications_in_hour(self, agency_id):
+        return _sql("SELECT count(*) AS n FROM VerificationEvent WHERE requesting_agency_id=%s "
+                    "AND event_timestamp > CURRENT_TIMESTAMP - INTERVAL '1 hour'",
+                    (agency_id,), fetch='one')['n']
+
+    # The seed data is loaded with CURRENT_TIMESTAMP defaults, so an agency may
+    # already have issuances, revocations, or verifications inside the rolling
+    # window; every cap below is set RELATIVE to what the window already holds.
+    def _issued_in_day(self, agency_id):
+        return _sql("SELECT count(*) AS n FROM IdentityToken WHERE issuing_agency_id=%s "
+                    "AND issued_date > CURRENT_TIMESTAMP - INTERVAL '1 day'", (agency_id,), fetch='one')['n']
+
+    def _revoked_in_day(self, agency_id):
+        return _sql("SELECT count(*) AS n FROM TokenLifecycleEvent e JOIN IdentityToken t USING (token_id) "
+                    "WHERE t.issuing_agency_id=%s AND e.event_type='REVOKED' "
+                    "AND e.event_timestamp > CURRENT_TIMESTAMP - INTERVAL '1 day'", (agency_id,), fetch='one')['n']
+
+    def _seed_active_token(self, agency_id, label):
+        """A fresh Individual + an ACTIVE token issued by agency_id (the
+        IssuerDiscretionBoundsTests recipe)."""
+        conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        try:
+            with conn.cursor() as cur:
+                cur.execute("INSERT INTO Individual (legal_name, date_of_birth, jurisdiction) "
+                            "VALUES (%s, '1990-01-01', 'US-PA') RETURNING individual_id",
+                            (f'Quota Test {label}',))
+                iid = cur.fetchone()['individual_id']
+                cur.execute("INSERT INTO IdentityToken (token_value, physical_serial, hardware_model, "
+                            "biometric_binding_type, individual_id, issuing_agency_id, algorithm_id, "
+                            "status, issued_date, expiration_date) VALUES (%s, %s, 'TitanQ-3', 'IRIS', "
+                            "%s, %s, 1, 'RESERVE', CURRENT_TIMESTAMP, (CURRENT_DATE + INTERVAL '10 years')::date) "
+                            "RETURNING token_id", (f'TKN-QUOTA-{label}', f'SN-QUOTA-{label}', iid, agency_id))
+                tid = cur.fetchone()['token_id']
+                cur.execute("SELECT set_config('polaris.actor_agency_id', %s, false)", (str(agency_id),))
+                cur.execute("SELECT set_config('polaris.reason_code', 'TEST_SEED_ACTIVATE', false)")
+                cur.execute("UPDATE IdentityToken SET status='ACTIVE', activated_date=CURRENT_TIMESTAMP "
+                            "WHERE token_id=%s", (tid,))
+            conn.commit()
+        finally:
+            conn.close()
+        return tid
+
+    def _issue_form(self, label):
+        return {
+            'legal_name': f'Quota Holder {label}', 'date_of_birth': '1985-06-20',
+            'jurisdiction': 'US-OH', 'issuing_agency_id': str(self.ISSUER), 'algorithm_id': '1',
+            'biometric_binding_type': 'IRIS', 'witness_agency_id': '2',
+            'liveness_check_type': 'MULTI_MODAL', 'token_value': f'TKN-QUOTA-{label}',
+            'physical_serial': f'SN-QUOTA-{label}', 'hardware_model': 'TitanQ-3', 'contexts': ['1'],
+        }
+
+    # ---- the database bound ------------------------------------------------------
+
+    def test_no_quota_row_means_unlimited(self):
+        base = self._verifications_in_hour(self.VERIFIER)
+        for _ in range(30):
+            self._insert_verification(self.VERIFIER)
+        self.assertEqual(self._verifications_in_hour(self.VERIFIER), base + 30)
+
+    def test_verify_cap_refuses_the_cap_plus_one(self):
+        base = self._verifications_in_hour(self.VERIFIER)
+        cap = base + 3
+        self._set_quota(self.VERIFIER, verify=cap)
+        for _ in range(3):
+            self._insert_verification(self.VERIFIER)
+        for _ in range(2):
+            with self.assertRaises(psycopg2.errors.CheckViolation) as cm:
+                self._insert_verification(self.VERIFIER)
+            self.assertIn(f'quota exceeded: agency 5 has reached its verify quota of {cap} per hour',
+                          str(cm.exception))
+        self.assertEqual(self._verifications_in_hour(self.VERIFIER), cap)
+
+    def test_a_null_cap_of_one_kind_is_unlimited(self):
+        base = self._verifications_in_hour(self.VERIFIER)
+        self._set_quota(self.VERIFIER, issue=1)          # verify_per_hour stays NULL
+        for _ in range(10):
+            self._insert_verification(self.VERIFIER)
+        self.assertEqual(self._verifications_in_hour(self.VERIFIER), base + 10)
+
+    def test_quota_is_per_agency(self):
+        self._set_quota(self.VERIFIER, verify=self._verifications_in_hour(self.VERIFIER) + 1)
+        self._insert_verification(self.VERIFIER)
+        for _ in range(5):
+            self._insert_verification(4)                 # TSA: uncapped
+        with self.assertRaises(psycopg2.errors.CheckViolation):
+            self._insert_verification(self.VERIFIER)
+
+    def test_issue_cap_binds_the_procedure_and_the_raw_insert(self):
+        cap = self._issued_in_day(self.ISSUER) + 2
+        self._set_quota(self.ISSUER, issue=cap)
+        self.assertEqual(self._post('/uc1/issue', data=self._issue_form('A')).status_code, 302)
+        self.assertEqual(self._post('/uc1/issue', data=self._issue_form('B')).status_code, 302)
+        r = self._post('/uc1/issue', data=self._issue_form('C'))
+        self.assertEqual(r.status_code, 429, r.get_data(as_text=True)[:300])
+        self.assertHTML(r, f'quota exceeded: agency 1 has reached its issue quota of {cap} per day')
+        self.assertIsNone(_sql("SELECT token_id FROM IdentityToken WHERE token_value='TKN-QUOTA-C'", fetch='one'))
+        # The raw path is bound too (the trigger, not the route, is the control).
+        with self.assertRaises(psycopg2.errors.CheckViolation):
+            self._seed_active_token(self.ISSUER, 'RAW')
+
+    def test_revoke_cap_binds_uc8(self):
+        # A permissive R11-6 percentage bound so the count cap is what trips.
+        _sql("INSERT INTO IssuerDiscretionPolicy (agency_id, max_revoke_percent, window_days, set_by_admin, "
+             "justification) VALUES (%s, 100, 30, 'test', 'AgencyQuotaTests: percentage bound out of the way') "
+             "ON CONFLICT (agency_id) DO UPDATE SET max_revoke_percent=100", (self.ISSUER,), fetch='none')
+        t1 = self._seed_active_token(self.ISSUER, 'R1')
+        t2 = self._seed_active_token(self.ISSUER, 'R2')
+        cap = self._revoked_in_day(self.ISSUER) + 1
+        self._set_quota(self.ISSUER, revoke=cap)
+        _sql("CALL uc8_revoke_token(%s, %s, 'ADMINISTRATIVE', 'https://crl.example/test.crl', NULL)",
+             (t1, self.ISSUER), fetch='none')
+        with self.assertRaises(psycopg2.errors.CheckViolation) as cm:
+            _sql("CALL uc8_revoke_token(%s, %s, 'ADMINISTRATIVE', 'https://crl.example/test.crl', NULL)",
+                 (t2, self.ISSUER), fetch='none')
+        self.assertIn(f'quota exceeded: agency 1 has reached its revoke quota of {cap} per day', str(cm.exception))
+        self.assertEqual(_sql("SELECT status FROM IdentityToken WHERE token_id=%s", (t2,), fetch='one')['status'],
+                         'ACTIVE')
+        # And the route answers 429 with the refusal counted for the ISSUING agency.
+        before = _metric_value(self.client, 'polaris_quota_refusals_total', kind='revoke', agency_id=self.ISSUER)
+        r = self._post('/uc8/revoke', data={'token_id': str(t2), 'actor_agency_id': str(self.ISSUER),
+                                            'reason_code': 'ADMINISTRATIVE',
+                                            'published_location': 'https://crl.example/test.crl'})
+        self.assertEqual(r.status_code, 429)
+        self.assertEqual(_metric_value(self.client, 'polaris_quota_refusals_total', kind='revoke',
+                                       agency_id=self.ISSUER) - before, 1.0)
+
+    def test_concurrent_verifications_respect_the_cap_exactly(self):
+        """C9: twelve writers racing a cap of five leave exactly five rows;
+        the per-(kind, agency) advisory lock serializes the count-then-write."""
+        base = self._verifications_in_hour(self.VERIFIER)
+        self._set_quota(self.VERIFIER, verify=base + 5)
+        import threading
+        outcomes, lock = [], threading.Lock()
+
+        def writer():
+            try:
+                self._insert_verification(self.VERIFIER)
+                result = 'ok'
+            except psycopg2.errors.CheckViolation:
+                result = 'refused'
+            with lock:
+                outcomes.append(result)
+
+        threads = [threading.Thread(target=writer) for _ in range(12)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        self.assertEqual(outcomes.count('ok'), 5, outcomes)
+        self.assertEqual(outcomes.count('refused'), 7, outcomes)
+        self.assertEqual(self._verifications_in_hour(self.VERIFIER), base + 5)
+
+    # ---- the app's side ----------------------------------------------------------
+
+    def test_verification_route_answers_429_and_counts_the_refusal(self):
+        cap = self._verifications_in_hour(self.VERIFIER) + 1
+        self._set_quota(self.VERIFIER, verify=cap)
+        form = {'token_id': '', 'requesting_agency_id': str(self.VERIFIER), 'context_id': '1',
+                'outcome': 'UNAUTHORIZED', 'disclosure_level': 'ZERO_KNOWLEDGE'}
+        events0 = _metric_value(self.client, 'polaris_agency_events_total', kind='verify', agency_id=self.VERIFIER)
+        refusals0 = _metric_value(self.client, 'polaris_quota_refusals_total', kind='verify', agency_id=self.VERIFIER)
+        zk0 = _metric_value(self.client, 'polaris_verifications_total', disclosure_level='ZERO_KNOWLEDGE')
+        self.assertEqual(self._post('/verifications/new', data=form).status_code, 302)
+        r = self._post('/verifications/new', data=form)
+        self.assertEqual(r.status_code, 429)
+        self.assertHTML(r, f'quota exceeded: agency 5 has reached its verify quota of {cap} per hour')
+        self.assertEqual(_metric_value(self.client, 'polaris_agency_events_total', kind='verify',
+                                       agency_id=self.VERIFIER) - events0, 1.0)
+        self.assertEqual(_metric_value(self.client, 'polaris_quota_refusals_total', kind='verify',
+                                       agency_id=self.VERIFIER) - refusals0, 1.0)
+        self.assertEqual(_metric_value(self.client, 'polaris_verifications_total',
+                                       disclosure_level='ZERO_KNOWLEDGE') - zk0, 1.0,
+                         'polaris_verifications_total must finally count recorded verifications')
+
+    def test_issuance_route_records_the_velocity_signal(self):
+        before = _metric_value(self.client, 'polaris_agency_events_total', kind='issue', agency_id=self.ISSUER)
+        self.assertEqual(self._post('/uc1/issue', data=self._issue_form('V')).status_code, 302)
+        self.assertEqual(_metric_value(self.client, 'polaris_agency_events_total', kind='issue',
+                                       agency_id=self.ISSUER) - before, 1.0)
+
+    def test_quota_refusal_message_is_the_triggers_sentence(self):
+        self._set_quota(self.VERIFIER, verify=self._verifications_in_hour(self.VERIFIER) + 1)
+        self._insert_verification(self.VERIFIER)
+        try:
+            self._insert_verification(self.VERIFIER)
+        except psycopg2.Error as e:
+            msg = flask_app.db_error_to_message(e)
+        self.assertTrue(msg.startswith('quota exceeded: agency 5'), msg)
+        self.assertNotIn('CONTEXT', msg)

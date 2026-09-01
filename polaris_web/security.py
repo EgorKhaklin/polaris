@@ -231,11 +231,20 @@ class RedisRateLimiter(_BaseRateLimiter):
 
     def __init__(self, url, socket_timeout=2.0):
         import redis as _redis  # imported lazily; package is optional
+        from redis.retry import Retry
+        from redis.backoff import NoBackoff
         self._url = url
         self._client = _redis.from_url(
             url, socket_timeout=socket_timeout,
             socket_connect_timeout=socket_timeout,
             decode_responses=False,
+            # v9.190 (redis-py 8.x, roadmap P1.8): since redis-py 6.0 a
+            # standalone client retries 3 times with exponential jitter by
+            # default. On the request hot path that turns a Redis outage into
+            # multi-second stalls before the fail-closed deny below. Keep the
+            # pre-6 contract this limiter was written and tested against:
+            # ONE attempt, then fail closed fast (a 2s socket timeout at most).
+            retry=Retry(NoBackoff(), 0),
         )
         # Surface configuration errors at construction time, not at first
         # request — the selector catches and falls back if this raises.

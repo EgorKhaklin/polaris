@@ -73,6 +73,8 @@ is *who can reach `/metrics`*, not the metric itself.
 | `PolarisAppInfoAbsent` | SEV-1 | `polaris_app_info` is absent for 5m | immediate (inhibited while AppDown fires) |
 | `PolarisDuressEvent` | SEV-1 | a duress-code match recorded a `DuressEvent` (fires immediately) | no wait, re-page every 15m |
 | `PolarisHigh5xx` | SEV-2 | the 5xx share of requests exceeds 1% for 10m | batched 30s, re-page 4h |
+| `PolarisIssuanceVelocity` / `PolarisRevocationVelocity` / `PolarisVerificationVelocity` | SEV-2 | one agency's last hour exceeds an absolute floor AND 4x its own trailing 7-day hourly mean (v9.190) | batched 30s, re-page 4h |
+| `PolarisQuotaRefusals` | SEV-3 | an `AgencyQuota` cap refused writes in the last 15m (v9.190) | batched 30s, re-page 4h |
 | `PolarisHighDBLatency` | SEV-2 | DB round-trip p99 exceeds 5s for 5m | batched 30s, re-page 4h |
 | `PolarisHighRequestLatency` | SEV-3 | request p99 exceeds 2s for 10m | batched 30s, re-page 4h |
 

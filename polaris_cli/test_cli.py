@@ -647,6 +647,62 @@ class UserDeactivateCommandTests(CLIBaseTestCase):
         self.assertEqual(r.returncode, 1)
 
 
+class QuotaCommandTests(CLIBaseTestCase):
+    """v9.190 (P1.8): quota-set / quota-show manage AgencyQuota rows."""
+
+    def _row(self, agency_id):
+        conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        with conn.cursor() as cur:
+            cur.execute("SELECT issue_per_day, revoke_per_day, verify_per_hour, set_by_admin, justification "
+                        "FROM AgencyQuota WHERE agency_id=%s", (agency_id,))
+            row = cur.fetchone()
+        conn.close()
+        return row
+
+    def test_quota_set_creates_the_row_and_show_lists_it(self):
+        r = run_cli('quota-set', '5', '--verify-per-hour', '25', '--set-by', 'cli-test',
+                    '--justification', 'QuotaCommandTests: cap a verifier for the test')
+        self.assertIn('Quota set for agency #5', r.stdout)
+        row = self._row(5)
+        self.assertEqual(row['verify_per_hour'], 25)
+        self.assertIsNone(row['issue_per_day'])
+        self.assertEqual(row['set_by_admin'], 'cli-test')
+        r = run_cli('quota-show', '5')
+        self.assertIn('verify/hour=25', r.stdout)
+        self.assertIn('issue/day=unlimited', r.stdout)
+        self.assertIn('QuotaCommandTests', r.stdout)
+
+    def test_quota_set_zero_clears_one_cap_and_keeps_the_others(self):
+        run_cli('quota-set', '5', '--issue-per-day', '3', '--verify-per-hour', '25',
+                '--justification', 'QuotaCommandTests: two caps, then clear one')
+        run_cli('quota-set', '5', '--verify-per-hour', '0',
+                '--justification', 'QuotaCommandTests: verification cap lifted')
+        row = self._row(5)
+        self.assertIsNone(row['verify_per_hour'])
+        self.assertEqual(row['issue_per_day'], 3)
+        self.assertIn('lifted', row['justification'])
+
+    def test_quota_set_refuses_a_short_justification_and_no_caps(self):
+        r = run_cli('quota-set', '5', '--verify-per-hour', '25', '--justification', 'because',
+                    expect_success=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('20 characters', r.stderr)
+        r = run_cli('quota-set', '5', '--justification', 'QuotaCommandTests: no cap given at all',
+                    expect_success=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIsNone(self._row(5))
+
+    def test_quota_set_unknown_agency_fails(self):
+        r = run_cli('quota-set', '999', '--verify-per-hour', '1',
+                    '--justification', 'QuotaCommandTests: no such agency exists', expect_success=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('No such agency', r.stderr)
+
+    def test_quota_show_without_rows(self):
+        r = run_cli('quota-show')
+        self.assertIn('No agency quotas set', r.stdout)
+
+
 class AuditLogCommandTests(CLIBaseTestCase):
 
     def setUp(self):

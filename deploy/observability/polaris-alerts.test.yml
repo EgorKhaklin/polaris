@@ -1,0 +1,68 @@
+# Unit tests for the v9.190 (roadmap P1.8) velocity and quota alerts, run by
+# scripts/polaris-abuse-drill.sh with `promtool test rules` on the digest-pinned
+# Prometheus image. Series are spaced 5m apart (a week is 2016 samples; the
+# promtool test engine caps a query at 10,000 samples, which 1m spacing over a
+# 7-day baseline would exceed). Each velocity test feeds one agency's counter
+# and asserts the alert fires only above BOTH the absolute floor and 4x that
+# agency's own trailing baseline; PolarisQuotaRefusals fires on one refusal.
+rule_files:
+  - polaris-alerts.yml
+
+evaluation_interval: 5m
+
+tests:
+  # Agency 7 issues one token an hour for a week, then 60 in one hour.
+  - interval: 5m
+    input_series:
+      - series: 'polaris_agency_events_total{kind="issue",agency_id="7",job="polaris"}'
+        values: '0x11 1x11 2x11 3x11 4x11 5x11 6x11 7x11 8x11 9x11 10x11 11x11 12x11 13x11 14x11 15x11 16x11 17x11 18x11 19x11 20x11 21x11 22x11 23x11 24x11 25x11 26x11 27x11 28x11 29x11 30x11 31x11 32x11 33x11 34x11 35x11 36x11 37x11 38x11 39x11 40x11 41x11 42x11 43x11 44x11 45x11 46x11 47x11 48x11 49x11 50x11 51x11 52x11 53x11 54x11 55x11 56x11 57x11 58x11 59x11 60x11 61x11 62x11 63x11 64x11 65x11 66x11 67x11 68x11 69x11 70x11 71x11 72x11 73x11 74x11 75x11 76x11 77x11 78x11 79x11 80x11 81x11 82x11 83x11 84x11 85x11 86x11 87x11 88x11 89x11 90x11 91x11 92x11 93x11 94x11 95x11 96x11 97x11 98x11 99x11 100x11 101x11 102x11 103x11 104x11 105x11 106x11 107x11 108x11 109x11 110x11 111x11 112x11 113x11 114x11 115x11 116x11 117x11 118x11 119x11 120x11 121x11 122x11 123x11 124x11 125x11 126x11 127x11 128x11 129x11 130x11 131x11 132x11 133x11 134x11 135x11 136x11 137x11 138x11 139x11 140x11 141x11 142x11 143x11 144x11 145x11 146x11 147x11 148x11 149x11 150x11 151x11 152x11 153x11 154x11 155x11 156x11 157x11 158x11 159x11 160x11 161x11 162x11 163x11 164x11 165x11 166x11 167x11 168+5x12 228x12'
+    alert_rule_test:
+      # Before the burst: a steady 1/h agency never alerts.
+      - eval_time: 167h
+        alertname: PolarisIssuanceVelocity
+        exp_alerts: []
+      # An hour into the burst (+5m pending): fires for agency 7 only.
+      - eval_time: 169h10m
+        alertname: PolarisIssuanceVelocity
+        exp_alerts:
+          - exp_labels:
+              severity: sev2
+              agency_id: "7"
+            exp_annotations:
+              summary: "Issuance velocity anomaly for agency 7"
+              description: "Agency 7 issued more than 20 tokens in the last hour and more than 4x its trailing 7-day hourly mean; polaris_agency_events_total{kind=\"issue\"} has the count."
+      # The other kinds never fire on an issuance series.
+      - eval_time: 169h10m
+        alertname: PolarisRevocationVelocity
+        exp_alerts: []
+
+  # The floor: a burst of 12 in an hour is 12x a silent agency's baseline but
+  # below the absolute floor of 20, so it must NOT page.
+  - interval: 5m
+    input_series:
+      - series: 'polaris_agency_events_total{kind="issue",agency_id="8",job="polaris"}'
+        values: '0x2016 0+1x12 12x12'
+    alert_rule_test:
+      - eval_time: 169h10m
+        alertname: PolarisIssuanceVelocity
+        exp_alerts: []
+
+  # A single quota refusal pages at SEV-3 immediately (no `for`).
+  - interval: 5m
+    input_series:
+      - series: 'polaris_quota_refusals_total{kind="verify",agency_id="1",job="polaris"}'
+        values: '0 0 0 3 3 3'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: PolarisQuotaRefusals
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: PolarisQuotaRefusals
+        exp_alerts:
+          - exp_labels:
+              severity: sev3
+              agency_id: "1"
+              kind: verify
+            exp_annotations:
+              summary: "Agency 1 is hitting its verify quota"
+              description: "polaris_quota_refusals_total increased: verify writes by agency 1 were refused by an AgencyQuota cap in the last 15 minutes."

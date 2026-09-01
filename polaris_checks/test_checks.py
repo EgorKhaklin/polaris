@@ -3422,3 +3422,91 @@ def test_schema_reload_idempotent_check_discriminates(tmp_path):
 
     write(schema="DROP TABLE IF EXISTS Beta CASCADE;\nCREATE TABLE Alpha (id int);\n")
     assert checks.check_schema_reload_idempotent(tmp_path)[0].level == "FAIL", "must FAIL on a schema table missing from the drop list"
+
+
+def test_abuse_controls_check_discriminates(tmp_path):
+    TRG = ("CREATE OR REPLACE FUNCTION enforce_agency_quota()\nBEGIN\n"
+           "    IF v_cap IS NULL THEN RETURN NEW; END IF;\n"
+           "    PERFORM pg_advisory_xact_lock(hashtext('polaris.quota.' || v_kind));\n"
+           "    RAISE EXCEPTION 'quota exceeded: agency %', v_agency_id;\n"
+           "END$$;\n"
+           "CREATE TRIGGER trg_quota_issue BEFORE INSERT ON IdentityToken EXECUTE FUNCTION enforce_agency_quota('issue');\n"
+           "CREATE TRIGGER trg_quota_revoke BEFORE UPDATE OF status ON IdentityToken EXECUTE FUNCTION enforce_agency_quota('revoke');\n"
+           "CREATE TRIGGER trg_quota_verify BEFORE INSERT ON VerificationEvent EXECUTE FUNCTION enforce_agency_quota('verify');\n")
+    APP = ("_PromCounter('polaris_agency_events_total')\n_PromCounter('polaris_quota_refusals_total')\n"
+           "_record_agency_event('issue', a)\n_record_agency_event('revoke', a)\n_record_agency_event('verify', a)\n"
+           "if _quota_refused(e, 'issue', a):\n    status = 429\n"
+           "if _quota_refused(e, 'revoke', a):\n    status = 429\n"
+           "if _quota_refused(e, 'verify', a):\n    status = 429\n"
+           "_METRICS_VERIFICATIONS.labels(disclosure_level=d).inc()\n")
+    RULES = ("- alert: PolarisIssuanceVelocity\n  expr: x offset 1h\n- alert: PolarisRevocationVelocity\n"
+             "- alert: PolarisVerificationVelocity\n- alert: PolarisQuotaRefusals\n")
+    DRILL = ("promtool test rules polaris-alerts.test.yml\n--login operator --method POST\n"
+             "polaris_quota_refusals_total polaris_agency_events_total polaris_verifications_total 429\n")
+    CI = ("run: bash scripts/polaris-abuse-drill.sh\nPOLARIS_TEST_REDIS_URL: redis://localhost:6379/0\n"
+          '--health-cmd "redis-cli ping"\nPOLARIS_RATE_LIMIT_BACKEND: redis\n')
+    good = {
+        "polaris_sql/01_schema.sql": "DROP TABLE IF EXISTS AgencyQuota CASCADE;\nCREATE TABLE AgencyQuota (x int);\n",
+        "polaris_sql/06_triggers.sql": TRG,
+        "polaris_sql/02_indexes.sql": "idx_token_agency_issued\nidx_verification_agency_time\n",
+        "polaris_sql/migrations/2026-09-01-002-agency-quota.up.sql":
+            "CREATE TABLE IF NOT EXISTS AgencyQuota (x int);\nidx_token_agency_issued idx_verification_agency_time\n" + TRG,
+        "polaris_sql/migrations/2026-09-01-002-agency-quota.down.sql": "DROP TABLE IF EXISTS AgencyQuota;\n",
+        "polaris_web/app.py": APP,
+        "deploy/observability/polaris-alerts.yml": RULES,
+        "deploy/observability/polaris-alerts.test.yml": "alert_rule_test:\n  alertname: PolarisQuotaRefusals\n",
+        "scripts/polaris-abuse-drill.sh": DRILL,
+        ".github/workflows/ci.yml": CI,
+        "scripts/polaris_load_gen.py": "--login --form --csrf-from\nclass _NoRedirect: pass\n",
+        "polaris_web/requirements.txt": "redis==8.1.0\n",
+        "polaris_web/Dockerfile.prod": "RUN pip install -r requirements.txt\n",
+        ".github/dependabot.yml": 'ignore:\n  - dependency-name: "postgres"\n',
+        "polaris_web/security.py": "retry=Retry(NoBackoff(), 0)\n",
+        "polaris_cli/polaris.py": "'quota-set': cmd_quota_set\n",
+        "polaris_web/test_app.py": "class AgencyQuotaTests: ...\n",
+        "docs/operator/RUNBOOKS.md": "## PolarisQuotaRefusals\n",
+        "docs/operator/OPERATIONS.md": "polaris_quota_refusals_total\n",
+        "docs/operator/SLOS.md": "polaris_agency_events_total\n",
+        "docs/reference/DATA-MODEL.md": "AgencyQuota\n",
+        "docs/operator/SECURITY.md": "AgencyQuota\n",
+    }
+
+    def write(overrides=None):
+        files = dict(good); files.update(overrides or {})
+        for rel, body in files.items():
+            f = tmp_path / rel
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text(body)
+
+    write()
+    assert checks.check_abuse_controls(tmp_path)[0].level == "OK", "must PASS on the good fixture"
+
+    # The lock is gone: the cap races.
+    write({"polaris_sql/06_triggers.sql": TRG.replace("    PERFORM pg_advisory_xact_lock(hashtext('polaris.quota.' || v_kind));\n", "")})
+    assert checks.check_abuse_controls(tmp_path)[0].level == "FAIL", "must FAIL without the advisory lock"
+
+    # The cheap exit moved after the lock (every uncapped write pays the lock).
+    write({"polaris_sql/06_triggers.sql": TRG.replace(
+        "    IF v_cap IS NULL THEN RETURN NEW; END IF;\n    PERFORM pg_advisory_xact_lock(hashtext('polaris.quota.' || v_kind));\n",
+        "    PERFORM pg_advisory_xact_lock(hashtext('polaris.quota.' || v_kind));\n    IF v_cap IS NULL THEN RETURN NEW; END IF;\n")})
+    assert checks.check_abuse_controls(tmp_path)[0].level == "FAIL", "must FAIL when the uncapped path takes the lock"
+
+    # A sanctioned bypass crept in.
+    write({"polaris_sql/06_triggers.sql": TRG.replace("BEGIN\n", "BEGIN\n    IF current_setting('polaris.revoke_check_done', true) = '1' THEN RETURN NEW; END IF;\n")})
+    assert checks.check_abuse_controls(tmp_path)[0].level == "FAIL", "must FAIL when the quota honours the opt-out GUC"
+
+    # One route stopped answering 429.
+    write({"polaris_web/app.py": APP.replace("if _quota_refused(e, 'verify', a):\n    status = 429\n", "if _quota_refused(e, 'verify', a):\n    pass\n")})
+    assert checks.check_abuse_controls(tmp_path)[0].level == "FAIL", "must FAIL when a route drops the 429"
+
+    # The velocity baseline includes the burst.
+    write({"deploy/observability/polaris-alerts.yml": RULES.replace(" offset 1h", "")})
+    assert checks.check_abuse_controls(tmp_path)[0].level == "FAIL", "must FAIL without the offset baseline"
+
+    # CI lost the Redis service.
+    write({".github/workflows/ci.yml": CI.replace('--health-cmd "redis-cli ping"\n', "")})
+    assert checks.check_abuse_controls(tmp_path)[0].level == "FAIL", "must FAIL without a Redis in CI"
+
+    # The retry contract was dropped.
+    write({"polaris_web/security.py": "retry=None\n"})
+    assert checks.check_abuse_controls(tmp_path)[0].level == "FAIL", "must FAIL without the one-attempt retry contract"

@@ -74,7 +74,7 @@ The actual product — the thing being built.
 
 | Layer-1 dir | What |
 |---|---|
-| [`polaris_web/`](../../polaris_web/) | Flask web app — routes; 28 schema tables; ZK wrapper; WebAuthn |
+| [`polaris_web/`](../../polaris_web/) | Flask web app — routes; 29 schema tables; ZK wrapper; WebAuthn |
 | [`polaris_sql/`](../../polaris_sql/) | DDL + procedures + triggers + atlas functions + migrations |
 | [`polaris_zk/`](../../polaris_zk/) | Rust crate — Plonky2 ZK-SNARK prover/verifier + `witness2/` independent second witness |
 | [`polaris_cli/`](../../polaris_cli/) | CLI utilities |

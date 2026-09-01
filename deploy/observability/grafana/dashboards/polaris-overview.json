@@ -1,134 +1,501 @@
 {
   "__comment": "Polaris service overview (v9.187 / roadmap P1.6). Dashboards-as-code: this JSON is the dashboard; edit here, commit, redeploy. Panel expressions mirror deploy/observability/polaris-alerts.yml so what pages you is what you see.",
   "uid": "polaris-overview",
-  "title": "Polaris — Service Overview",
-  "tags": ["polaris", "provisioned"],
+  "title": "Polaris \u2014 Service Overview",
+  "tags": [
+    "polaris",
+    "provisioned"
+  ],
   "timezone": "utc",
   "editable": false,
   "graphTooltip": 1,
   "refresh": "30s",
   "schemaVersion": 39,
-  "time": { "from": "now-6h", "to": "now" },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
   "panels": [
     {
       "id": 1,
       "type": "stat",
       "title": "Duress events (anti-coercion alarm)",
-      "description": "polaris_duress_events_total. NON-ZERO IS THE ALARM — a duress-code match means a person signalled coercion. PolarisDuressEvent pages immediately; this panel is the same signal on a wall.",
-      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
-      "datasource": { "type": "prometheus", "uid": "polaris-prometheus" },
-      "targets": [ { "refId": "A", "expr": "sum(polaris_duress_events_total) or vector(0)", "instant": true } ],
+      "description": "polaris_duress_events_total. NON-ZERO IS THE ALARM \u2014 a duress-code match means a person signalled coercion. PolarisDuressEvent pages immediately; this panel is the same signal on a wall.",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "polaris-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(polaris_duress_events_total) or vector(0)",
+          "instant": true
+        }
+      ],
       "fieldConfig": {
         "defaults": {
           "unit": "none",
-          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 1 } ] }
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
         },
         "overrides": []
       },
-      "options": { "colorMode": "background", "graphMode": "none", "reduceOptions": { "calcs": ["lastNotNull"] } }
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      }
     },
     {
       "id": 2,
       "type": "stat",
       "title": "App version",
-      "description": "polaris_app_info — the version label carries the data.",
-      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 0 },
-      "datasource": { "type": "prometheus", "uid": "polaris-prometheus" },
-      "targets": [ { "refId": "A", "expr": "polaris_app_info", "instant": true, "legendFormat": "{{version}}" } ],
-      "fieldConfig": { "defaults": { "unit": "none", "thresholds": { "mode": "absolute", "steps": [ { "color": "blue", "value": null } ] } }, "overrides": [] },
-      "options": { "colorMode": "none", "graphMode": "none", "textMode": "name", "reduceOptions": { "calcs": ["lastNotNull"] } }
+      "description": "polaris_app_info \u2014 the version label carries the data.",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "polaris-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "polaris_app_info",
+          "instant": true,
+          "legendFormat": "{{version}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "name",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      }
     },
     {
       "id": 3,
       "type": "stat",
       "title": "Request rate",
-      "description": "sum(rate(polaris_requests_total[5m])) — whole-app (multiprocess-aggregated /metrics, v9.120).",
-      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 0 },
-      "datasource": { "type": "prometheus", "uid": "polaris-prometheus" },
-      "targets": [ { "refId": "A", "expr": "sum(rate(polaris_requests_total[5m]))" } ],
-      "fieldConfig": { "defaults": { "unit": "reqps", "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null } ] } }, "overrides": [] },
-      "options": { "colorMode": "none", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } }
+      "description": "sum(rate(polaris_requests_total[5m])) \u2014 whole-app (multiprocess-aggregated /metrics, v9.120).",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "polaris-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(polaris_requests_total[5m]))"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "none",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      }
     },
     {
       "id": 4,
       "type": "stat",
       "title": "5xx share (alert > 1%)",
       "description": "Mirrors PolarisHigh5xx: sum(rate(5xx))/sum(rate(all)) over 5m; the alert fires when this holds above 1% for 10m.",
-      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 0 },
-      "datasource": { "type": "prometheus", "uid": "polaris-prometheus" },
-      "targets": [ { "refId": "A", "expr": "(sum(rate(polaris_requests_total{status=~\"5..\"}[5m])) or vector(0)) / sum(rate(polaris_requests_total[5m]))" } ],
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "polaris-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "(sum(rate(polaris_requests_total{status=~\"5..\"}[5m])) or vector(0)) / sum(rate(polaris_requests_total[5m]))"
+        }
+      ],
       "fieldConfig": {
         "defaults": {
           "unit": "percentunit",
-          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "yellow", "value": 0.005 }, { "color": "red", "value": 0.01 } ] }
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.005
+              },
+              {
+                "color": "red",
+                "value": 0.01
+              }
+            ]
+          }
         },
         "overrides": []
       },
-      "options": { "colorMode": "value", "graphMode": "area", "reduceOptions": { "calcs": ["lastNotNull"] } }
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      }
     },
     {
       "id": 5,
       "type": "timeseries",
       "title": "Requests by status",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 5 },
-      "datasource": { "type": "prometheus", "uid": "polaris-prometheus" },
-      "targets": [ { "refId": "A", "expr": "sum(rate(polaris_requests_total[5m])) by (status)", "legendFormat": "{{status}}" } ],
-      "fieldConfig": { "defaults": { "unit": "reqps", "custom": { "fillOpacity": 10 } }, "overrides": [] },
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" } }
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "polaris-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(polaris_requests_total[5m])) by (status)",
+          "legendFormat": "{{status}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
     },
     {
       "id": 6,
       "type": "timeseries",
       "title": "Request latency p50 / p95 / p99 (alert: p99 > 2s)",
       "description": "histogram_quantile over polaris_request_latency_seconds. PolarisHighRequestLatency (SEV-3) fires at p99 > 2s for 10m.",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 5 },
-      "datasource": { "type": "prometheus", "uid": "polaris-prometheus" },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 5
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "polaris-prometheus"
+      },
       "targets": [
-        { "refId": "A", "expr": "histogram_quantile(0.50, sum(rate(polaris_request_latency_seconds_bucket[5m])) by (le))", "legendFormat": "p50" },
-        { "refId": "B", "expr": "histogram_quantile(0.95, sum(rate(polaris_request_latency_seconds_bucket[5m])) by (le))", "legendFormat": "p95" },
-        { "refId": "C", "expr": "histogram_quantile(0.99, sum(rate(polaris_request_latency_seconds_bucket[5m])) by (le))", "legendFormat": "p99" }
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.50, sum(rate(polaris_request_latency_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p50"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum(rate(polaris_request_latency_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p95"
+        },
+        {
+          "refId": "C",
+          "expr": "histogram_quantile(0.99, sum(rate(polaris_request_latency_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p99"
+        }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "s",
-          "custom": { "fillOpacity": 5 },
-          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 2 } ] }
+          "custom": {
+            "fillOpacity": 5
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 2
+              }
+            ]
+          }
         },
         "overrides": []
       },
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" } }
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
     },
     {
       "id": 7,
       "type": "timeseries",
       "title": "DB round-trip p50 / p99 (alert: p99 > 5s)",
-      "description": "histogram_quantile over polaris_db_query_latency_seconds (sampled on /api/health probes). PolarisHighDBLatency (SEV-2) fires at p99 > 5s for 5m. For per-query latency attribution, open the trace: DB client spans sit inside each request's server span (see the Polaris — Traces dashboard).",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 13 },
-      "datasource": { "type": "prometheus", "uid": "polaris-prometheus" },
+      "description": "histogram_quantile over polaris_db_query_latency_seconds (sampled on /api/health probes). PolarisHighDBLatency (SEV-2) fires at p99 > 5s for 5m. For per-query latency attribution, open the trace: DB client spans sit inside each request's server span (see the Polaris \u2014 Traces dashboard).",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 13
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "polaris-prometheus"
+      },
       "targets": [
-        { "refId": "A", "expr": "histogram_quantile(0.50, sum(rate(polaris_db_query_latency_seconds_bucket[5m])) by (le))", "legendFormat": "p50" },
-        { "refId": "B", "expr": "histogram_quantile(0.99, sum(rate(polaris_db_query_latency_seconds_bucket[5m])) by (le))", "legendFormat": "p99" }
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.50, sum(rate(polaris_db_query_latency_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p50"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.99, sum(rate(polaris_db_query_latency_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p99"
+        }
       ],
       "fieldConfig": {
         "defaults": {
           "unit": "s",
-          "custom": { "fillOpacity": 5 },
-          "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 5 } ] }
+          "custom": {
+            "fillOpacity": 5
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          }
         },
         "overrides": []
       },
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" } }
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
     },
     {
       "id": 8,
       "type": "timeseries",
       "title": "Verifications by disclosure level",
-      "description": "polaris_verifications_total by disclosure_level — the C6 disclosure ladder in operation. Level shares shifting toward broader disclosure is a policy conversation, not a performance one.",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 13 },
-      "datasource": { "type": "prometheus", "uid": "polaris-prometheus" },
-      "targets": [ { "refId": "A", "expr": "sum(rate(polaris_verifications_total[5m])) by (disclosure_level)", "legendFormat": "{{disclosure_level}}" } ],
-      "fieldConfig": { "defaults": { "unit": "cps", "custom": { "fillOpacity": 10 } }, "overrides": [] },
-      "options": { "legend": { "displayMode": "list", "placement": "bottom" } }
+      "description": "polaris_verifications_total by disclosure_level \u2014 the C6 disclosure ladder in operation. Level shares shifting toward broader disclosure is a policy conversation, not a performance one.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 13
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "polaris-prometheus"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(polaris_verifications_total[5m])) by (disclosure_level)",
+          "legendFormat": "{{disclosure_level}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "cps",
+          "custom": {
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Agency events per hour by kind (velocity)",
+      "description": "sum by kind of increase(polaris_agency_events_total[1h]): issuances, revocations, verifications across agencies. The PolarisIssuanceVelocity / PolarisRevocationVelocity / PolarisVerificationVelocity alerts compare each AGENCY's hour against 4x its own trailing 7-day hourly mean (v9.190, roadmap P1.8).",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 21
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "polaris-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (kind) (increase(polaris_agency_events_total[1h]))",
+          "legendFormat": "{{kind}}"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "Quota refusals (15m; alert on any)",
+      "description": "sum(increase(polaris_quota_refusals_total[15m])). Non-zero means an AgencyQuota cap is refusing writes: abuse the cap is holding, or a cap set too low. PolarisQuotaRefusals pages at SEV-3 (v9.190).",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 21
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "polaris-prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(increase(polaris_quota_refusals_total[15m])) or vector(0)",
+          "instant": true
+        }
+      ]
     }
   ]
 }

@@ -350,6 +350,23 @@ is auditable from the row alone. Implements the PDF §9
 *"constitutional limits on issuer discretion"* leg of the
 issuer-trust-concentration triad. See `DEVNOTES/ships/issuer-discretion.md`.
 
+### `AgencyQuota` (v9.190 / roadmap P1.8)
+
+Opt-in per-agency caps enforced by the `enforce_agency_quota` trigger on
+every write path: `issue_per_day` (IdentityToken inserts by
+`issuing_agency_id`, rolling day), `revoke_per_day` (transitions into
+`REVOKED` of that agency's tokens, rolling day), `verify_per_hour`
+(VerificationEvent inserts by `requesting_agency_id`, rolling hour). NULL
+means no cap of that kind and no row means no caps, so an unconfigured
+database behaves exactly as before. A capped write is serialized per
+(kind, agency) by a transaction-scoped advisory lock, so the cap is exact
+under concurrency; the (cap + 1)th write is refused with
+`quota exceeded: ...` (`check_violation`), which the app answers as HTTP
+429. `justification` has a 20-character floor, as for
+`IssuerDiscretionPolicy`, so the row explains itself. Set with
+`polaris quota-set`; migration `2026-09-01-002-agency-quota`. The sibling
+of `IssuerDiscretionPolicy`: a bound on agency behaviour, never on a person.
+
 ### `EnrollmentStatusEvent` (M2-9 / R11-4)
 
 Append-only log of enrollment-state transitions per `Individual`.

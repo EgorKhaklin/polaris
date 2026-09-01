@@ -975,6 +975,121 @@ def cmd_user_deactivate(args):
 
 
 # ----------------------------------------------------------------------------
+# COMMAND: quota-set / quota-show (v9.190 / roadmap P1.8 per-agency quotas)
+# ----------------------------------------------------------------------------
+
+def _quota_cap(value):
+    """CLI value -> stored cap: None (not given) keeps the current value,
+    0 clears the cap (NULL = unlimited), N > 0 sets it."""
+    if value is None:
+        return ('keep', None)
+    if value == 0:
+        return ('set', None)
+    if value < 0:
+        sys.stderr.write(red("A quota must be a positive integer, or 0 to clear it.\n"))
+        sys.exit(1)
+    return ('set', value)
+
+
+def cmd_quota_set(args):
+    """Upsert the AgencyQuota row for one agency. Each of the three caps is
+    independent: omitted = unchanged, 0 = cleared (unlimited), N = set. The
+    justification is required (>= 20 chars) so the row explains itself."""
+    caps = {
+        'issue_per_day':   _quota_cap(args.issue_per_day),
+        'revoke_per_day':  _quota_cap(args.revoke_per_day),
+        'verify_per_hour': _quota_cap(args.verify_per_hour),
+    }
+    if all(mode == 'keep' for mode, _ in caps.values()):
+        sys.stderr.write(red("Give at least one of --issue-per-day, --revoke-per-day, "
+                             "--verify-per-hour (0 clears a cap).\n"))
+        sys.exit(1)
+    if len((args.justification or '').strip()) < 20:
+        sys.stderr.write(red("--justification must be at least 20 characters "
+                             "(the row must explain itself).\n"))
+        sys.exit(1)
+    set_by = (args.set_by or os.environ.get('USER') or 'operator')[:50]
+
+    conn = connect()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT agency_id, name FROM Agency WHERE agency_id = %s", (args.agency_id,))
+            agency = cur.fetchone()
+            if agency is None:
+                sys.stderr.write(red(f"No such agency: {args.agency_id}\n"))
+                sys.exit(1)
+            cur.execute("SELECT issue_per_day, revoke_per_day, verify_per_hour "
+                        "FROM AgencyQuota WHERE agency_id = %s", (args.agency_id,))
+            current = cur.fetchone() or {}
+            new_values = {}
+            for col, (mode, value) in caps.items():
+                new_values[col] = current.get(col) if mode == 'keep' else value
+            cur.execute("""
+                INSERT INTO AgencyQuota
+                    (agency_id, issue_per_day, revoke_per_day, verify_per_hour,
+                     set_by_admin, justification)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (agency_id) DO UPDATE
+                   SET issue_per_day   = EXCLUDED.issue_per_day,
+                       revoke_per_day  = EXCLUDED.revoke_per_day,
+                       verify_per_hour = EXCLUDED.verify_per_hour,
+                       set_by_admin    = EXCLUDED.set_by_admin,
+                       set_at          = CURRENT_TIMESTAMP,
+                       justification   = EXCLUDED.justification
+            """, (args.agency_id, new_values['issue_per_day'], new_values['revoke_per_day'],
+                  new_values['verify_per_hour'], set_by, args.justification.strip()))
+            conn.commit()
+        def show(v):
+            return 'unlimited' if v is None else str(v)
+        print(green(f"✓ Quota set for agency #{agency['agency_id']} ({agency['name']})"))
+        print(f"  issue/day: {show(new_values['issue_per_day'])}   "
+              f"revoke/day: {show(new_values['revoke_per_day'])}   "
+              f"verify/hour: {show(new_values['verify_per_hour'])}")
+        print(dim("  Enforced by the enforce_agency_quota trigger on every write path; "
+                  "refusals count on polaris_quota_refusals_total."))
+    except psycopg2.errors.CheckViolation as e:
+        conn.rollback()
+        sys.stderr.write(red(f"Constraint violation: {str(e).split(chr(10))[0]}\n"))
+        sys.exit(3)
+    except psycopg2.Error as e:
+        conn.rollback()
+        sys.stderr.write(red(f"Database error: {db_error_message(e)}\n"))
+        sys.exit(2)
+    finally:
+        conn.close()
+
+
+def cmd_quota_show(args):
+    """List the AgencyQuota rows (or one agency's), with the agency name."""
+    conn = connect()
+    try:
+        with conn.cursor() as cur:
+            if args.agency_id is not None:
+                cur.execute("""
+                    SELECT q.*, a.name FROM AgencyQuota q JOIN Agency a USING (agency_id)
+                     WHERE q.agency_id = %s
+                """, (args.agency_id,))
+            else:
+                cur.execute("""
+                    SELECT q.*, a.name FROM AgencyQuota q JOIN Agency a USING (agency_id)
+                     ORDER BY q.agency_id
+                """)
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+    if not rows:
+        print(dim("No agency quotas set (every agency is unlimited)."))
+        return
+    def show(v):
+        return 'unlimited' if v is None else str(v)
+    for r in rows:
+        print(f"agency #{r['agency_id']} {r['name']}: issue/day={show(r['issue_per_day'])} "
+              f"revoke/day={show(r['revoke_per_day'])} verify/hour={show(r['verify_per_hour'])} "
+              f"(set by {r['set_by_admin']} at {r['set_at']:%Y-%m-%d %H:%M})")
+        print(dim(f"  {r['justification']}"))
+
+
+# ----------------------------------------------------------------------------
 # COMMAND: audit-log (tail authentication audit events)
 # ----------------------------------------------------------------------------
 
@@ -1237,6 +1352,20 @@ def build_parser():
     p_ud = sub.add_parser('user-deactivate', help='Deactivate (soft-delete) a user account')
     p_ud.add_argument('username')
 
+    # quota-set / quota-show (v9.190 / P1.8)
+    p_qs = sub.add_parser('quota-set',
+                          help='Set per-agency caps (issuances/day, revocations/day, '
+                               'verifications/hour); 0 clears a cap')
+    p_qs.add_argument('agency_id', type=int)
+    p_qs.add_argument('--issue-per-day', type=int, default=None)
+    p_qs.add_argument('--revoke-per-day', type=int, default=None)
+    p_qs.add_argument('--verify-per-hour', type=int, default=None)
+    p_qs.add_argument('--justification', required=True,
+                      help='Why this cap exists (>= 20 chars; stored on the row)')
+    p_qs.add_argument('--set-by', default=None, help='Recorded as set_by_admin (default: $USER)')
+    p_qsh = sub.add_parser('quota-show', help='Show per-agency caps (all agencies, or one)')
+    p_qsh.add_argument('agency_id', type=int, nargs='?', default=None)
+
     # audit-log
     p_al = sub.add_parser('audit-log', help='Tail the authentication audit log')
     p_al.add_argument('--event-type',
@@ -1279,6 +1408,8 @@ HANDLERS = {
     'user-create':      cmd_user_create,
     'user-passwd':      cmd_user_passwd,
     'user-deactivate':  cmd_user_deactivate,
+    'quota-set':        cmd_quota_set,
+    'quota-show':       cmd_quota_show,
     'audit-log':        cmd_audit_log,
 }
 

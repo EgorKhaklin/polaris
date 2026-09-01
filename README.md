@@ -30,7 +30,7 @@ Americans carry six to eight credentials that do not talk to each other: driver'
 
 Polaris consolidates them into **one physical token per person**, signed under post-quantum cryptography (ML-DSA-65, FIPS 204), verified through **context-scoped events** (banking, voting, and healthcare are different events with different disclosure rules) at three disclosure levels. The default level is **zero-knowledge**: the typical verification stores no token identifier at all, so the verification graph cannot be reconstructed even by someone holding the whole database.
 
-This repository is the complete working system: a 28-table PostgreSQL schema whose constraints are the security boundary, a Flask application covering every use case, a Rust ZK-SNARK prover with an independent second witness, an operator CLI, a hardened production container stack behind a post-quantum TLS edge, and a flat layer of 101 machine-checked invariants (v9.189) that gates every change in CI.
+This repository is the complete working system: a 29-table PostgreSQL schema whose constraints are the security boundary, a Flask application covering every use case, a Rust ZK-SNARK prover with an independent second witness, an operator CLI, a hardened production container stack behind a post-quantum TLS edge, and a flat layer of 102 machine-checked invariants (v9.190) that gates every change in CI.
 
 What holds it together is one design rule: **the guarantees live in the database, not in application code**. A rule enforced by a trigger, a CHECK constraint, or a unique index binds every client, survives every restore from backup, and cannot be bypassed by the next caller. Application-level policy can be skipped; schema-level structure cannot.
 
@@ -53,7 +53,7 @@ Above the ten sits the project's vocation: **no person can be compelled to renou
 | **C9** | Concurrency claims are tested with real threads, not mocks. | Threaded test suites against a live database |
 | **C10** | Identity is not money. The schema carries no monetary claim. | Structural absence, pinned by a check |
 
-Each guarantee is machine-checked by [`polaris_checks`](polaris_checks/): 101 plain `check_*` functions (v9.189), each paired with a detection test proving it fails on a broken fixture. A check that cannot detect its own violation is treated as broken. The reasoning for why these ten, and why they interlock, is in [MISSION.md](MISSION.md) and [meta/constraint-lattice.md](meta/constraint-lattice.md).
+Each guarantee is machine-checked by [`polaris_checks`](polaris_checks/): 102 plain `check_*` functions (v9.190), each paired with a detection test proving it fails on a broken fixture. A check that cannot detect its own violation is treated as broken. The reasoning for why these ten, and why they interlock, is in [MISSION.md](MISSION.md) and [meta/constraint-lattice.md](meta/constraint-lattice.md).
 
 ---
 
@@ -91,7 +91,7 @@ Four layers. The schema is the core; everything else is a client of it.
                  │                              │ subprocess
       ┌──────────▼─────────────┐   ┌────────────▼─────────────────┐
       │  SCHEMA  PostgreSQL 16 │   │  ZK PROVER  Rust + Plonky2   │
-      │  28 tables, 11 stored  │   │  Merkle-inclusion SNARK,     │
+      │  29 tables, 11 stored  │   │  Merkle-inclusion SNARK,     │
       │  procedures, append-   │   │  re-verified bit-for-bit by  │
       │  only audit triggers   │   │  an independent Python       │
       │  (the security         │   │  second witness              │

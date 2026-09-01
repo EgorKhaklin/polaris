@@ -152,6 +152,22 @@ try:
         registry=_METRICS_REGISTRY,
         **_gauge_extra,
     )
+    # v9.190 (roadmap P1.8) — the per-agency velocity signal and its refusal
+    # counter. agency_id is a BOUNDED label (one value per agency; the
+    # cardinality rule of v9.130) and never a person: these count what an
+    # agency does, which is the vocation's side of the line.
+    _METRICS_AGENCY_EVENTS = _PromCounter(
+        'polaris_agency_events_total',
+        'Issuances, revocations, and verifications recorded, by kind and agency',
+        labelnames=('kind', 'agency_id'),
+        registry=_METRICS_REGISTRY,
+    )
+    _METRICS_QUOTA_REFUSALS = _PromCounter(
+        'polaris_quota_refusals_total',
+        'Writes refused by an AgencyQuota cap, by kind and agency',
+        labelnames=('kind', 'agency_id'),
+        registry=_METRICS_REGISTRY,
+    )
 except ImportError:
     _PROM_AVAILABLE = False
     _PROM_MULTIPROC_DIR = None
@@ -352,6 +368,50 @@ def query(sql, params=None, fetch='all'):
         conn.close()
 
 
+# v9.190 (roadmap P1.8) — per-agency quotas and the velocity signal.
+QUOTA_EXCEEDED_MARKER = 'quota exceeded:'
+
+
+def _record_agency_event(kind, agency_id):
+    """Count one issuance / revocation / verification for an agency on the
+    Prometheus velocity counter. Never raises: telemetry must not fail a write."""
+    if not _PROM_AVAILABLE or agency_id is None:
+        return
+    try:
+        _METRICS_AGENCY_EVENTS.labels(kind=kind, agency_id=str(int(agency_id))).inc()
+    except Exception:
+        pass
+
+
+def _quota_refused(e, kind, agency_id):
+    """True when a database error is an AgencyQuota refusal (the trigger's
+    "quota exceeded:" message). Counts it and writes a structured log line so
+    the refusal is visible operator-side; the caller answers HTTP 429."""
+    if QUOTA_EXCEEDED_MARKER not in str(e):
+        return False
+    try:
+        agency = int(agency_id) if agency_id not in (None, '') else None
+    except (TypeError, ValueError):
+        agency = None
+    if _PROM_AVAILABLE and agency is not None:
+        try:
+            _METRICS_QUOTA_REFUSALS.labels(kind=kind, agency_id=str(agency)).inc()
+        except Exception:
+            pass
+    observability.structured_log('quota_refused', kind=kind, agency_id=agency)
+    return True
+
+
+def _issuing_agency_of(token_id):
+    """The issuing agency of a token, or None (a bad id is not an error here)."""
+    try:
+        row = query("SELECT issuing_agency_id FROM IdentityToken WHERE token_id = %s",
+                    (int(token_id),), fetch='one')
+    except (psycopg2.Error, TypeError, ValueError):
+        return None
+    return row['issuing_agency_id'] if row else None
+
+
 def db_error_to_message(e):
     """
     Convert a psycopg2 error into a user-readable message. We surface
@@ -365,6 +425,11 @@ def db_error_to_message(e):
     msg = str(e).strip()
 
     # Known, intentional, user-friendly mappings -----------------------------
+    if QUOTA_EXCEEDED_MARKER in msg:
+        # v9.190: the AgencyQuota trigger's own sentence, without SQL context.
+        for line in msg.split('\n'):
+            if QUOTA_EXCEEDED_MARKER in line:
+                return line.replace('ERROR:', '').strip()
     if 'duplicate key value' in msg and 'uq_one_active_per_person' in msg:
         return "Cannot create a second ACTIVE token for this individual. Each individual may hold only one active token at a time."
     if 'violates check constraint' in msg and 'chk_disclosure_token_consistency' in msg:
@@ -3789,6 +3854,7 @@ def tokens_delete(tok_id):
 @security.csrf_protect
 def uc1_issue():
     """Wraps the uc1_issue_and_activate stored procedure."""
+    status = 200
     if request.method == 'POST':
         try:
             contexts = [int(c) for c in request.form.getlist('contexts')]
@@ -3821,12 +3887,15 @@ def uc1_issue():
                 psycopg2.Binary(sig_bytes),
                 sig_pubkey,
             ), fetch='returning')['token_id']  # 'returning' commits the transaction
+            _record_agency_event('issue', request.form['issuing_agency_id'])
             flash(f'Issued and activated token #{new_token_id}', 'success')
             return redirect(url_for('tokens_detail', tok_id=new_token_id))
         except (pqc_signing.PQCUnavailableError, pqc_signing.SigningError) as e:
             flash(f'Issuance blocked: {e}', 'error')
         except (psycopg2.Error, ValueError, KeyError) as e:
             flash(db_error_to_message(e), 'error')
+            if _quota_refused(e, 'issue', request.form.get('issuing_agency_id')):
+                status = 429
 
     agencies = query("SELECT * FROM Agency WHERE authorization_level >= 4 ORDER BY agency_id")
     algorithms = query("SELECT * FROM CryptographicAlgorithm WHERE quantum_resistant = TRUE ORDER BY algorithm_id")
@@ -3834,7 +3903,7 @@ def uc1_issue():
     return render_template('uc1_issue.html',
                            agencies=agencies,
                            algorithms=algorithms,
-                           contexts=contexts)
+                           contexts=contexts), status
 
 
 # ============================================================================
@@ -3964,6 +4033,7 @@ def uc7_warrant_audit():
 @security.csrf_protect
 def uc8_revoke():
     """Wraps the uc8_revoke_token stored procedure."""
+    status = 200
     if request.method == 'POST':
         try:
             token_id = int(request.form['token_id'])
@@ -3989,6 +4059,9 @@ def uc8_revoke():
                 conn.commit()
             finally:
                 conn.close()
+            # The quota and the velocity signal are keyed on the ISSUING
+            # agency (the bound applies to it, as in R11-6), not the actor.
+            _record_agency_event('revoke', _issuing_agency_of(token_id))
             flash(
                 f'Revoked token #{token_id}'
                 + (' with co-signer' if cosigner_agency_id else ''),
@@ -3996,6 +4069,8 @@ def uc8_revoke():
             return redirect(url_for('tokens_detail', tok_id=token_id))
         except (psycopg2.Error, ValueError) as e:
             flash(db_error_to_message(e), 'error')
+            if _quota_refused(e, 'revoke', _issuing_agency_of(request.form.get('token_id'))):
+                status = 429
 
     active_tokens = query("""
         SELECT t.token_id, i.legal_name, t.token_value,
@@ -4013,7 +4088,7 @@ def uc8_revoke():
     """)
     return render_template('uc8_revoke.html',
                            active_tokens=active_tokens,
-                           agencies=agencies)
+                           agencies=agencies), status
 
 
 # ============================================================================
@@ -4571,6 +4646,7 @@ def verifications_new():
     verifier cannot legitimately record SUCCESS on a token whose issuing
     agency it does not trust for the given context.
     """
+    status = 200
     if request.method == 'POST':
         try:
             disclosure = request.form['disclosure_level']
@@ -4644,10 +4720,21 @@ def verifications_new():
                 request.form.get('requestor_location') or None,
                 purpose_text_val,
             ), fetch='returning')['event_id']
+            # v9.190: polaris_verifications_total existed since v8.93 but was
+            # never incremented (the dashboard panel on it was always empty);
+            # it counts here, next to the per-agency velocity signal.
+            if _PROM_AVAILABLE:
+                try:
+                    _METRICS_VERIFICATIONS.labels(disclosure_level=disclosure).inc()
+                except Exception:
+                    pass
+            _record_agency_event('verify', verifier_id)
             flash(f'Recorded verification event #{event_id}', 'success')
             return redirect(url_for('verifications_list'))
         except (psycopg2.Error, ValueError) as e:
             flash(db_error_to_message(e), 'error')
+            if _quota_refused(e, 'verify', request.form.get('requesting_agency_id')):
+                status = 429
 
     tokens = query("""
         SELECT t.token_id, i.legal_name, t.token_value, t.status
@@ -4659,7 +4746,7 @@ def verifications_new():
     return render_template('verifications_form.html',
                            tokens=tokens,
                            agencies=agencies,
-                           contexts=contexts)
+                           contexts=contexts), status
 
 
 # ============================================================================

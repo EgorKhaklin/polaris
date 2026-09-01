@@ -28,7 +28,7 @@ Two documents that together cover the what and the how. Added v8.59 as the publi
 
 | File | When to read |
 |---|---|
-| [DATA-MODEL.md](reference/DATA-MODEL.md) | ER overview + table-by-table prose for the 28 tables (includes M2-1 TokenStateEpoch + Leaf, M2-2 AnchorBatch, M2-5 QuantumObserverBinding, M2-6 TokenSignature, M2-7 RecoveryRequest, M2-8 AgencyTrustAttestation, M2-9 EnrollmentStatusEvent, M2-10 DuressEvent, M2-11 IssuerDiscretionPolicy). The complement to `polaris_sql/01_schema.sql` for readers who want narrative rather than DDL. |
+| [DATA-MODEL.md](reference/DATA-MODEL.md) | ER overview + table-by-table prose for the 29 tables (includes M2-1 TokenStateEpoch + Leaf, M2-2 AnchorBatch, M2-5 QuantumObserverBinding, M2-6 TokenSignature, M2-7 RecoveryRequest, M2-8 AgencyTrustAttestation, M2-9 EnrollmentStatusEvent, M2-10 DuressEvent, M2-11 IssuerDiscretionPolicy). The complement to `polaris_sql/01_schema.sql` for readers who want narrative rather than DDL. |
 | [SCALING.md](reference/SCALING.md) | The v6 scaling architecture. How the 2M+ event capacity actually works (server-side cluster aggregation, viewport-aware fetches, hard caps). |
 | [SECURITY.md](operator/SECURITY.md) | The cybersecurity audit and the controls applied. Pairs with `DEVNOTES/threat-model.md` (STRIDE) and `meta/redaction-proof.md` (the privacy claim). |
 | [PRIVACY.md](operator/PRIVACY.md) | What data is collected, retained, shared, and how the architecture enforces minimization. Distinct from `SECURITY.md` — that's about defending data, this is about not collecting more than necessary. |

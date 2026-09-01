@@ -62,7 +62,12 @@ prometheus_client>=0.26.0,<1.0
 # is reachable. Without this package, security.py falls back to the
 # in-memory backend (each gunicorn worker holds its own bucket).
 # Required for accurate per-IP rate limits under POLARIS_WORKERS>1.
-redis>=5.0,<6.0
+# v9.190 (roadmap P1.8): the 5.x to 8.x major taken with its own test pass
+# (the Redis-backed limiter tests run against a real Redis in CI, and the
+# abuse drill runs the Lua sliding window through it). Exact pin, so the
+# image and the runner install the same client; 8.x speaks RESP3 by default
+# and retries by default, the latter overridden in security.py.
+redis==8.1.0
 
 # ---- Runtime: OpenTelemetry distributed tracing (v9.187, roadmap P1.6) ----
 # OPT-IN and optional at runtime, exactly like prometheus_client above:

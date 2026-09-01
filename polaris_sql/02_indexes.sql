@@ -261,3 +261,18 @@ DROP INDEX IF EXISTS idx_leaf_token_lookup;
 CREATE INDEX idx_leaf_token_lookup
     ON TokenStateEpochLeaf (token_id);
 
+-- ----------------------------------------------------------------------------
+-- v9.190 / roadmap P1.8 — AgencyQuota window counts. enforce_agency_quota()
+-- counts an agency's issuances (IdentityToken by issuing_agency_id in the
+-- last day) and verifications (VerificationEvent by requesting_agency_id in
+-- the last hour) on every capped write; these keep that an index range scan
+-- instead of a per-write table scan. The revocation count reuses
+-- idx_lifecycle_revoked_time above.
+-- ----------------------------------------------------------------------------
+DROP INDEX IF EXISTS idx_token_agency_issued;
+CREATE INDEX idx_token_agency_issued
+    ON IdentityToken (issuing_agency_id, issued_date DESC);
+
+DROP INDEX IF EXISTS idx_verification_agency_time;
+CREATE INDEX idx_verification_agency_time
+    ON VerificationEvent (requesting_agency_id, event_timestamp DESC);

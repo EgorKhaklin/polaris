@@ -33,8 +33,12 @@ edit either file.
 4. [PolarisHigh5xx](#polarishigh5xx)
 5. [PolarisHighDBLatency](#polarishighdblatency)
 6. [PolarisHighRequestLatency](#polarishighrequestlatency)
-7. [Paging: wiring the receiver](#paging-wiring-the-receiver)
-8. [Cross-references](#cross-references)
+7. [PolarisIssuanceVelocity](#polarisissuancevelocity)
+8. [PolarisRevocationVelocity](#polarisrevocationvelocity)
+9. [PolarisVerificationVelocity](#polarisverificationvelocity)
+10. [PolarisQuotaRefusals](#polarisquotarefusals)
+11. [Paging: wiring the receiver](#paging-wiring-the-receiver)
+12. [Cross-references](#cross-references)
 
 ---
 
@@ -277,6 +281,127 @@ This matches the latency SLO boundary in [`SLOS.md`](SLOS.md) §3.
 - Post-deploy cold cache → if the p99 is trending back down on its own within
   the `for` window after a restart, monitor rather than act.
 - Confirm recovery: the p99 quantile falls back under 2s and the alert clears.
+
+---
+
+## PolarisIssuanceVelocity
+
+**Severity:** SEV-2 · **Expression:** last-hour issuances by one agency `> 20` AND `> 4x` that agency's trailing 7-day hourly mean (offset 1h) · **For:** 5m
+
+An issuing agency is minting tokens far faster than it usually does. v9.190
+(roadmap P1.8) keys `polaris_agency_events_total{kind="issue"}` on the issuing
+agency, so the comparison is each agency against ITS OWN baseline: a large
+agency's normal volume never trips a small agency's threshold, and a young or
+quiet agency's first actions stay under the absolute floor of 20 per hour.
+
+**Trigger.** More than 20 issuances in the last hour by one agency, and more
+than four times what that agency averaged per hour over the previous week.
+
+**Likely cause.**
+- A legitimate enrollment drive (a campus intake week, a new office) nobody
+  told operations about.
+- A compromised operator account or a script running the issuance form.
+- A bulk import that should have gone through a planned, announced window.
+
+**Diagnosis.**
+1. `SELECT actor_agency_id, count(*) FROM TokenLifecycleEvent WHERE event_type='ISSUED' AND event_timestamp > now() - interval '1 hour' GROUP BY 1;` confirms the agency and volume.
+2. `polaris audit-log --since-minutes 60` shows which operator sessions were active; a single session issuing everything is the account-compromise shape.
+3. Check whether the agency has an `AgencyQuota` (`polaris quota-show <id>`); if not, the alert is the only brake.
+
+**Remediation.** If unexpected: set a cap with `polaris quota-set <agency_id>
+--issue-per-day N --justification "..."` (it engages on the next write,
+refusing the excess with HTTP 429 and `PolarisQuotaRefusals`), and rotate or
+deactivate the operator account if it is the source (`polaris user-passwd` /
+`user-deactivate` end its sessions). Issued tokens are not undone by the
+alert; a wrongful batch is revoked through `uc8_revoke_token`, which is itself
+bounded (R11-6). If expected: raise or clear the cap and note the drive in the
+journal; the alert clears when the hour rolls off.
+
+---
+
+## PolarisRevocationVelocity
+
+**Severity:** SEV-2 · **Expression:** last-hour revocations of one agency's tokens `> 5` AND `> 4x` its trailing 7-day hourly mean (offset 1h) · **For:** 5m
+
+Tokens issued by one agency are being revoked far faster than that agency's
+norm. Mass revocation is the denaturalization shape the constitution names
+(R11-6); the percentage bound in `uc8_revoke_token` may already be refusing,
+and this alert is the operator's early sight of the run-up.
+
+**Trigger.** More than 5 revocations in the last hour of one issuing agency's
+tokens, and more than four times its weekly hourly mean.
+
+**Likely cause.**
+- A planned recall (a hardware batch defect) that should be co-signed and announced.
+- A compromised operator working the revocation form.
+- A recovery ceremony (`uc9`) or reserve swaps (`uc4`) revoking lost tokens in bulk.
+
+**Diagnosis.**
+1. `SELECT e.reason_code, count(*) FROM TokenLifecycleEvent e JOIN IdentityToken t USING (token_id) WHERE e.event_type='REVOKED' AND e.event_timestamp > now() - interval '1 hour' AND t.issuing_agency_id=<id> GROUP BY 1;` shows whether the reasons cluster (a recall) or scatter (an operator).
+2. `[COSIGN:<id>]` tags in `reason_code` show whether the R11-6 bound already demanded a co-signer.
+3. `polaris audit-log --since-minutes 60` for the operator sessions involved.
+
+**Remediation.** If unexpected: `polaris quota-set <agency_id>
+--revoke-per-day N --justification "..."` caps further revocations at the
+database (no procedure bypasses it); deactivate the operator if compromised.
+Revocations already recorded are append-only audit and stay; a wrongful
+revocation is remedied by issuance of a successor token, never by editing
+history. If expected: the co-signer path exists for exactly this; use it.
+
+---
+
+## PolarisVerificationVelocity
+
+**Severity:** SEV-2 · **Expression:** last-hour verifications by one requesting agency `> 200` AND `> 4x` its trailing 7-day hourly mean (offset 1h) · **For:** 5m
+
+A verifier is checking identities far faster than it usually does. Population-
+scale verification is the dragnet shape the vocation refuses: Polaris bounds
+what an agency may DO, and this alert is the signal that a verifier's behaviour
+changed.
+
+**Trigger.** More than 200 verifications recorded in the last hour by one
+requesting agency, and more than four times its weekly hourly mean.
+
+**Likely cause.**
+- A legitimate surge (an event gate, a benefits deadline) at a known verifier.
+- A verifier scripting the verification form, or a leaked operator session.
+- A verifier sweeping the population for a purpose the attestation did not cover.
+
+**Diagnosis.**
+1. `SELECT context_id, outcome, count(*) FROM VerificationEvent WHERE requesting_agency_id=<id> AND event_timestamp > now() - interval '1 hour' GROUP BY 1,2;` shows whether one context and outcome dominate (a sweep) or the mix looks like a queue.
+2. `requesting_purpose_text` on those rows is the coercion-evidence trail (kept, never redacted); read it.
+3. `polaris audit-log --since-minutes 60` for the operator sessions.
+
+**Remediation.** `polaris quota-set <agency_id> --verify-per-hour N
+--justification "..."` caps the verifier at the database on its next write.
+For a verifier outside its attested purpose, revoke the federation attestation
+(`/api/federation/revoke`); later SUCCESS outcomes then fail the R11-3 trust
+check. The recorded verifications are audit-of-record and stay.
+
+---
+
+## PolarisQuotaRefusals
+
+**Severity:** SEV-3 · **Expression:** `sum by (agency_id, kind) (increase(polaris_quota_refusals_total[15m])) > 0` · **For:** immediate
+
+An `AgencyQuota` cap refused at least one write in the last 15 minutes. This
+is the cap doing its job; the alert exists because both readings of it need a
+human: abuse the cap is holding back, or a cap set too low for legitimate
+volume that is now failing real operators with HTTP 429.
+
+**Trigger.** Any increase of `polaris_quota_refusals_total`, labelled with the
+agency and the kind (`issue`, `revoke`, `verify`).
+
+**Diagnosis.**
+1. `polaris quota-show <agency_id>` for the cap and its justification (the row explains why it exists).
+2. The `quota_refused` structured log lines carry the request ids; the
+   corresponding velocity alert above says whether the volume is anomalous.
+3. Ask the agency. A legitimate surge has a name and a contact.
+
+**Remediation.** Legitimate volume: raise the cap (`polaris quota-set`, with
+a new justification). Abuse: leave the cap, work the matching velocity runbook,
+and end the operator sessions involved. The alert clears 15 minutes after the
+last refusal; refused writes were never recorded and are not replayed.
 
 ---
 

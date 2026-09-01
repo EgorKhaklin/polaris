@@ -65,8 +65,9 @@ ENV PATH="/opt/venv/bin:$PATH"
 # v9.05 / Wave 1 / C3: pinned via requirements.txt for reproducibility.
 # (Pre-v9.05 listed 5 packages with loose version specs inline.)
 COPY polaris_web/requirements.txt /tmp/requirements.txt
-RUN pip install --no-cache-dir -r /tmp/requirements.txt \
-    && pip install --no-cache-dir 'redis==5.0.*'
+# (v9.190: redis is an exact pin in requirements.txt now; the separate
+# redis 5 install that used to follow here was a second source of truth.)
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
 # v9.116 — Real post-quantum signing in production. liboqs-python builds the
 # liboqs C library from source (to /root/_oqs) on first import; we trigger that

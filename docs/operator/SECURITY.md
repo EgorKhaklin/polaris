@@ -478,6 +478,18 @@ What R11-6 protects against:
   PDF's named historical case study.
 - Bypassing the procedure via raw UPDATE — caught by a
   belt-and-suspenders trigger on `IdentityToken.status`.
+
+v9.190 (roadmap P1.8) extends the same leg to issuance and verification.
+`AgencyQuota` holds opt-in per-agency caps (issuances and revocations per
+rolling day, verifications per rolling hour) that the `enforce_agency_quota`
+trigger binds on every write path with no bypass, exact under concurrent
+writers; a refused write is an HTTP 429, a `quota_refused` log line, and a
+`polaris_quota_refusals_total` increment. Alongside, per-agency velocity
+counters feed `PolarisIssuanceVelocity`, `PolarisRevocationVelocity`, and
+`PolarisVerificationVelocity`, which page when one agency's hour exceeds an
+absolute floor and four times its own trailing weekly mean. Mass verification
+is the dragnet shape the vocation refuses; these controls bound what an
+agency may do and count what it does, never what a person is.
 - Race conditions at the boundary — `pg_advisory_xact_lock` keyed on
   agency_id serializes concurrent revocations by the same agency.
 

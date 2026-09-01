@@ -3574,6 +3574,114 @@ def check_schema_reload_idempotent(root: pathlib.Path) -> list[Finding]:
                f"list ({len(dropped)} entries): the reload + re-migrate path is idempotent")
 
 
+# ---------------------------------------------------------------------------
+# Roadmap P1.8 (v9.190) — abuse controls. Pins: opt-in per-agency quotas as a
+# DATABASE bound (AgencyQuota + enforce_agency_quota on every write path of
+# issuance, revocation, and verification; a cheap exit for uncapped agencies;
+# a per-(kind, agency) advisory lock so the cap is exact under concurrency;
+# the migration pair; the window indexes), the app's side (the per-agency
+# velocity counter and the refusal counter, a refusal answered as HTTP 429,
+# the once-dead polaris_verifications_total incremented), the alerts with
+# their promtool unit tests and the drill that runs them plus a quota under
+# real load on the redis backend, the redis-py 8.x major taken (exact pin,
+# no Dependabot ignore, one-attempt fail-closed retry contract), the load
+# generator's operator-flow mode, the CLI, the tests, and the docs.
+# ---------------------------------------------------------------------------
+def check_abuse_controls(root: pathlib.Path) -> list[Finding]:
+    schema = _read(root, "polaris_sql/01_schema.sql")
+    if "CREATE TABLE AgencyQuota" not in schema or "DROP TABLE IF EXISTS AgencyQuota" not in schema:
+        return _fail("abuse_controls", "01_schema.sql must declare AgencyQuota and drop it in the reload list")
+    trg = _read(root, "polaris_sql/06_triggers.sql")
+    for needle in ("FUNCTION enforce_agency_quota", "trg_quota_issue", "trg_quota_revoke", "trg_quota_verify"):
+        if needle not in trg:
+            return _fail("abuse_controls", f"06_triggers.sql lacks {needle} (the quota must bind every write path)")
+    body = trg.split("FUNCTION enforce_agency_quota", 1)[1].split("END$$;", 1)[0]
+    if "pg_advisory_xact_lock" not in body:
+        return _fail("abuse_controls", "enforce_agency_quota() takes no advisory lock: the cap is not exact under "
+                     "concurrent writers (C9)")
+    if "IF v_cap IS NULL THEN" not in body or body.index("IF v_cap IS NULL THEN") > body.index("pg_advisory_xact_lock"):
+        return _fail("abuse_controls", "enforce_agency_quota() must return for an uncapped agency BEFORE taking "
+                     "the lock or counting (the no-quota path is the hot path)")
+    if "quota exceeded:" not in body:
+        return _fail("abuse_controls", "the refusal message must start with 'quota exceeded:' (the app maps it to 429)")
+    if re.search(r"revoke_check_done", body):
+        return _fail("abuse_controls", "enforce_agency_quota() must not honour the revocation opt-out GUC: a quota "
+                     "has no sanctioned bypass")
+    ups = list((root / "polaris_sql" / "migrations").glob("*-agency-quota.up.sql"))
+    if not ups or not ups[0].with_name(ups[0].name.replace(".up.sql", ".down.sql")).exists():
+        return _fail("abuse_controls", "the agency-quota migration pair is missing")
+    mig = ups[0].read_text(encoding="utf-8")
+    if "CREATE TABLE IF NOT EXISTS AgencyQuota" not in mig or "enforce_agency_quota" not in mig:
+        return _fail("abuse_controls", f"{ups[0].name} must create AgencyQuota idempotently and install the trigger")
+    idx = _read(root, "polaris_sql/02_indexes.sql")
+    for name in ("idx_token_agency_issued", "idx_verification_agency_time"):
+        if name not in idx or name not in mig:
+            return _fail("abuse_controls", f"window index {name} must exist in 02_indexes.sql and the migration")
+    app = _read(root, "polaris_web/app.py")
+    for needle in ("'polaris_agency_events_total'", "'polaris_quota_refusals_total'",
+                   "_record_agency_event('issue'", "_record_agency_event('revoke'", "_record_agency_event('verify'",
+                   "_quota_refused(e, 'issue'", "_quota_refused(e, 'revoke'", "_quota_refused(e, 'verify'",
+                   "_METRICS_VERIFICATIONS.labels("):
+        if needle not in app:
+            return _fail("abuse_controls", f"app.py lacks {needle}")
+    if app.count("status = 429") < 3:
+        return _fail("abuse_controls", "a quota refusal must answer HTTP 429 on the issue, revoke, AND verify routes")
+    rules = _read(root, "deploy/observability/polaris-alerts.yml")
+    for a in ("PolarisIssuanceVelocity", "PolarisRevocationVelocity", "PolarisVerificationVelocity", "PolarisQuotaRefusals"):
+        if f"alert: {a}" not in rules:
+            return _fail("abuse_controls", f"polaris-alerts.yml must define {a}")
+    if "offset 1h" not in rules:
+        return _fail("abuse_controls", "the velocity baseline must be offset so the burst is not in its own baseline")
+    tests_yml = _read(root, "deploy/observability/polaris-alerts.test.yml")
+    if "alert_rule_test" not in tests_yml or "PolarisQuotaRefusals" not in tests_yml:
+        return _fail("abuse_controls", "deploy/observability/polaris-alerts.test.yml must unit-test the new alerts")
+    drill = _read(root, "scripts/polaris-abuse-drill.sh")
+    for needle in ("promtool", "test rules", "--login", "--method POST", "polaris_quota_refusals_total",
+                   "polaris_agency_events_total", "polaris_verifications_total", "429"):
+        if needle not in drill:
+            return _fail("abuse_controls", f"polaris-abuse-drill.sh does not {needle!r}")
+    ci = _read(root, ".github/workflows/ci.yml")
+    if "scripts/polaris-abuse-drill.sh" not in ci:
+        return _fail("abuse_controls", "ci.yml does not run scripts/polaris-abuse-drill.sh")
+    if "POLARIS_TEST_REDIS_URL" not in ci or "redis-cli ping" not in ci:
+        return _fail("abuse_controls", "the CI test job needs a Redis service + POLARIS_TEST_REDIS_URL so the "
+                     "Redis-backed tests run instead of skipping")
+    if "POLARIS_RATE_LIMIT_BACKEND: redis" not in ci:
+        return _fail("abuse_controls", "the abuse drill must run on the redis rate-limiter backend in CI")
+    gen = _read(root, "scripts/polaris_load_gen.py")
+    for needle in ("--login", "--form", "--csrf-from", "class _NoRedirect"):
+        if needle not in gen:
+            return _fail("abuse_controls", f"polaris_load_gen.py lacks the operator-flow mode ({needle})")
+    req = _read(root, "polaris_web/requirements.txt")
+    if not re.search(r"(?m)^redis==8\.", req):
+        return _fail("abuse_controls", "requirements.txt must pin the redis-py 8.x major exactly")
+    if "redis==5" in _read(root, "polaris_web/Dockerfile.prod"):
+        return _fail("abuse_controls", "Dockerfile.prod still installs a separate redis 5 pin (a second source of truth)")
+    if re.search(r'dependency-name:\s*"redis"', _read(root, ".github/dependabot.yml")):
+        return _fail("abuse_controls", "dependabot.yml still ignores redis: the ignore block is the un-decision")
+    sec = _read(root, "polaris_web/security.py")
+    if "Retry(NoBackoff(), 0)" not in sec:
+        return _fail("abuse_controls", "RedisRateLimiter must pin the one-attempt, fail-closed retry contract "
+                     "(redis-py >= 6 retries with backoff by default)")
+    if "'quota-set'" not in _read(root, "polaris_cli/polaris.py"):
+        return _fail("abuse_controls", "the CLI must offer quota-set")
+    tests = _read(root, "polaris_web/test_app.py")
+    if "class AgencyQuotaTests" not in tests:
+        return _fail("abuse_controls", "test_app.py lacks AgencyQuotaTests")
+    for rel, needle in (("docs/operator/RUNBOOKS.md", "## PolarisQuotaRefusals"),
+                        ("docs/operator/OPERATIONS.md", "polaris_quota_refusals_total"),
+                        ("docs/operator/SLOS.md", "polaris_agency_events_total"),
+                        ("docs/reference/DATA-MODEL.md", "AgencyQuota"),
+                        ("docs/operator/SECURITY.md", "AgencyQuota")):
+        if needle not in _read(root, rel):
+            return _fail("abuse_controls", f"{rel} does not document {needle}")
+    return _ok("abuse_controls",
+               "P1.8: per-agency quotas bound issuance/revocation/verification at the database (advisory-locked, "
+               "no bypass, migrated, indexed), the app answers 429 and counts refusals + per-agency velocity, "
+               "four alerts unit-tested by promtool and drilled under real load on the redis backend, redis-py 8.x "
+               "taken with a real Redis in CI, load generator drives operator flows, CLI + docs in place")
+
+
 CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_csp_forbids_unsafe_inline,
     check_one_active_token_index,
@@ -3676,6 +3784,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_postgres_probes_use_tcp,
     check_session_origin_hardening,
     check_schema_reload_idempotent,
+    check_abuse_controls,
 ]
 
 
