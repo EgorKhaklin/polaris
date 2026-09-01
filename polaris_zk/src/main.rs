@@ -20,7 +20,7 @@
 
 use anyhow::{anyhow, Result};
 use polaris_zk::{
-    build_merkle_tree, compute_epoch_root, prove, verify, ProofBundle, WitnessInput, F, TREE_DEPTH,
+    build_merkle_tree, compute_epoch_root, prove, tree_depth, verify, ProofBundle, WitnessInput, F,
 };
 use plonky2::field::types::PrimeField64;
 use serde::{Deserialize, Serialize};
@@ -90,15 +90,15 @@ fn cmd_compute_leaves(input: &str) -> Result<String> {
     if parsed.leaves_hex.is_empty() {
         return Err(anyhow!("empty leaf set"));
     }
-    if parsed.leaves_hex.len() > (1 << TREE_DEPTH) {
+    if parsed.leaves_hex.len() > (1 << tree_depth()) {
         return Err(anyhow!(
             "too many leaves ({}); circuit cap at 2^{} = {}",
             parsed.leaves_hex.len(),
-            TREE_DEPTH,
-            1 << TREE_DEPTH
+            tree_depth(),
+            1 << tree_depth()
         ));
     }
-    // build_merkle_tree from the library handles the padding to 2^TREE_DEPTH.
+    // build_merkle_tree from the library handles the padding to 2^tree_depth().
     let tree = build_merkle_tree(&parsed.leaves_hex)?;
     let root_hex = hash_to_hex(&tree.cap.0[0]);
 

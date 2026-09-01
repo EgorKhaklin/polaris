@@ -45,22 +45,54 @@ pub type F = GoldilocksField;
 pub type C = PoseidonGoldilocksConfig;
 pub const D: usize = 2;
 
-/// Tree depth — limits the maximum number of leaves to 2^TREE_DEPTH.
-/// TREE_DEPTH=14 supports 16,384 leaves, which covers the schema cap of
-/// 10,000 leaves per epoch (`TokenStateEpoch`), so the anonymity set is a
-/// full epoch rather than a 16-leaf demo. Plonky2 is transparent (no
-/// trusted setup), so changing this is a recompile, not a ceremony.
-/// The trade-off is named in DEVNOTES/zk-snark.md.
+/// Merkle tree depth — the base-2 log of the maximum leaves per epoch
+/// (max leaves = 2^depth). Runtime-parameterized (P0.7) so a deployment can
+/// size the anonymity set to its population without editing source: Plonky2 is
+/// transparent, so a depth change is a config change, not a trusted-setup
+/// ceremony. Read ONCE (OnceLock) from `POLARIS_ZK_TREE_DEPTH`, defaulting to
+/// 14 (16,384 leaves, covering the schema's 10,000-leaf epoch cap; the
+/// anonymity set is a full epoch, not a 16-leaf demo).
 ///
-/// Smaller leaves are padded with zero-hash to 2^TREE_DEPTH so the
-/// circuit is uniform regardless of actual epoch size.
-pub const TREE_DEPTH: usize = 14;
+/// PROFILES (measured numbers in DEVNOTES/zk-soundness.md):
+///   demo        depth 10   1,024 leaves      fastest, teaching
+///   epoch (dflt) depth 14  16,384 leaves     covers one 10k-leaf epoch
+///   national    depth 24   16.7M leaves      a state-scale anonymity set
+///
+/// PROVER/VERIFIER MUST AGREE on depth: the circuit shape depends on it, so a
+/// proof made at depth D verifies only against a verifier built at depth D. A
+/// mismatched verifier REJECTS a valid proof (fails safe, never open). The
+/// Python second witness reads the same env var; check_zk_tree_depth_synced
+/// pins the two defaults together.
+pub fn tree_depth() -> usize {
+    static DEPTH: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *DEPTH.get_or_init(|| match std::env::var("POLARIS_ZK_TREE_DEPTH") {
+        Ok(s) => {
+            let d: usize = s.trim().parse().unwrap_or_else(|_| {
+                panic!("POLARIS_ZK_TREE_DEPTH must be an integer, got {s:?}")
+            });
+            // Below 4 the tree is a toy; above 32 the u64 index space and the
+            // proving cost both stop making sense. A bad config fails LOUD at
+            // first use rather than silently proving at the wrong depth.
+            assert!(
+                (4..=32).contains(&d),
+                "POLARIS_ZK_TREE_DEPTH must be in 4..=32, got {d}"
+            );
+            d
+        }
+        Err(_) => 14,
+    })
+}
 
-/// Pad leaves with zero-hash entries up to 2^TREE_DEPTH so every tree
-/// has the same shape and `tree.prove(i)` returns exactly TREE_DEPTH
+/// The default tree depth, used where a compile-time reference reads better
+/// than the env lookup (docs, error text). Kept equal to tree_depth()'s
+/// fallback; the Python witness mirrors it.
+pub const DEFAULT_TREE_DEPTH: usize = 14;
+
+/// Pad leaves with zero-hash entries up to 2^tree_depth() so every tree
+/// has the same shape and `tree.prove(i)` returns exactly tree_depth()
 /// siblings.
 fn pad_leaves_to_full_depth(leaves_hex: &[String]) -> Vec<String> {
-    let cap = 1usize << TREE_DEPTH;
+    let cap = 1usize << tree_depth();
     let zero_leaf = "0".repeat(64); // 32 bytes of zero
     let mut padded: Vec<String> = leaves_hex.iter().cloned().collect();
     while padded.len() < cap {
@@ -143,12 +175,12 @@ pub fn build_merkle_tree(leaves_hex: &[String]) -> Result<MerkleTree<F, Poseidon
     if leaves_hex.is_empty() {
         return Err(anyhow!("Cannot build Merkle tree from empty leaf set"));
     }
-    if leaves_hex.len() > (1 << TREE_DEPTH) {
+    if leaves_hex.len() > (1 << tree_depth()) {
         return Err(anyhow!(
             "Too many leaves ({}); circuit tree depth {} caps at {}",
             leaves_hex.len(),
-            TREE_DEPTH,
-            1 << TREE_DEPTH
+            tree_depth(),
+            1 << tree_depth()
         ));
     }
     // Each leaf is a 4-element field array. MerkleTree expects Vec<Vec<F>>.
@@ -176,8 +208,8 @@ pub fn compute_epoch_root(leaves_hex: &[String]) -> Result<String> {
 /// whose root is R, where R + epoch_id + context_id + nonce are public."
 ///
 /// The circuit takes a leaf hash (4 elements, private), an inclusion path
-/// (TREE_DEPTH siblings × 4 elements each, private), and the leaf's index
-/// (TREE_DEPTH bits, private). It verifies the path hashes up to the
+/// (tree_depth() siblings × 4 elements each, private), and the leaf's index
+/// (tree_depth() bits, private). It verifies the path hashes up to the
 /// claimed root.
 pub fn build_circuit() -> (
     CircuitBuilder<F, D>,
@@ -197,11 +229,11 @@ pub fn build_circuit() -> (
 
     // Private: the inclusion proof's sibling hashes.
     let proof_target = MerkleProofTarget {
-        siblings: (0..TREE_DEPTH).map(|_| builder.add_virtual_hash()).collect(),
+        siblings: (0..tree_depth()).map(|_| builder.add_virtual_hash()).collect(),
     };
 
     // Private: the leaf's index expressed as bits.
-    let index_bits: Vec<_> = (0..TREE_DEPTH)
+    let index_bits: Vec<_> = (0..tree_depth())
         .map(|_| builder.add_virtual_bool_target_safe())
         .collect();
 
@@ -224,7 +256,7 @@ pub fn build_circuit() -> (
     // that hashing leaf along proof.siblings (per index_bits) produces the
     // claimed root. The public API uses index_bits where bits beyond the
     // proof depth address into the cap; for cap_height=0 there are no
-    // such bits, so we pass exactly TREE_DEPTH index bits.
+    // such bits, so we pass exactly tree_depth() index bits.
     builder.verify_merkle_proof_to_cap::<PoseidonHash>(
         leaf_target.elements.to_vec(),
         &index_bits,
@@ -261,7 +293,7 @@ pub fn prove(
     nonce: u64,
 ) -> Result<ProofBundle> {
     // Validate the caller-supplied index against the REAL leaf count before
-    // using it. build_merkle_tree pads to 2^TREE_DEPTH, so an index past the
+    // using it. build_merkle_tree pads to 2^tree_depth(), so an index past the
     // real leaves but within the padded range slips past tree.prove() and then
     // panics on the all_leaves_hex[leaf_index] slice; an index past the padded
     // range panics inside plonky2. Return the crate's error instead of aborting
@@ -291,7 +323,7 @@ pub fn prove(
     for (i, sibling) in merkle_proof.siblings.iter().enumerate() {
         pw.set_hash_target(proof_t.siblings[i], *sibling);
     }
-    // Set index bits: TREE_DEPTH bits, least significant first.
+    // Set index bits: tree_depth() bits, least significant first.
     for (i, bit_t) in index_bits_t.iter().enumerate() {
         let bit_val = ((witness.leaf_index >> i) & 1) as u64;
         pw.set_bool_target(*bit_t, bit_val == 1);

@@ -20,13 +20,30 @@ lines up exactly (little-endian, 8 bytes per Goldilocks lane, 4 lanes = 32 bytes
 
 from __future__ import annotations
 
+import os
+
 from .poseidon import HASH_OUT_ELEMENTS, hash_or_noop, two_to_one
 from .poseidon_constants import P
 
-# Must match polaris_zk/src/lib.rs TREE_DEPTH. Depth 14 supports 16,384
-# leaves, covering the schema's 10,000-leaf epoch cap. The differential
-# test fails loudly if the Rust crate's depth ever diverges.
-TREE_DEPTH = 14
+# Must match polaris_zk/src/lib.rs tree_depth(). Both read POLARIS_ZK_TREE_DEPTH
+# (default 14: 16,384 leaves, covering the schema's 10,000-leaf epoch cap), so
+# the second witness and the Rust prover stay on the same circuit shape when a
+# deployment reprofiles the tree (P0.7). The differential test fails loudly if
+# the two ever diverge; check_zk_tree_depth_synced pins the two defaults.
+DEFAULT_TREE_DEPTH = 14
+
+
+def _tree_depth() -> int:
+    raw = os.environ.get("POLARIS_ZK_TREE_DEPTH")
+    if raw is None:
+        return DEFAULT_TREE_DEPTH
+    d = int(raw)
+    if not (4 <= d <= 32):
+        raise ValueError(f"POLARIS_ZK_TREE_DEPTH must be in 4..=32, got {d}")
+    return d
+
+
+TREE_DEPTH = _tree_depth()
 ZERO_LEAF_HEX = "0" * 64
 
 

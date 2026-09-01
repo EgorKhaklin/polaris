@@ -5,6 +5,48 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.169 — 2026-09-01 (Roadmap P0.7 part 1: the ZK tree is parameterized and, for the first time, benchmarked)
+
+The ZK layer's tree depth was a hardcoded `const TREE_DEPTH = 14`; the
+soundness ledger admitted its prove/verify cost was "aspirational until
+measured." Both are now fixed.
+
+**Parameterized.** Depth is read at runtime from `POLARIS_ZK_TREE_DEPTH`
+(default 14, range 4..=32), once, via OnceLock in Rust and an env read in the
+Python second witness. Plonky2 is transparent, so a depth change is a config
+change, not a trusted-setup ceremony. The two sides MUST share a depth or the
+verifier rejects a valid proof (fails safe), so both read the one env var and
+`check_zk_tree_depth_synced` pins their defaults together. The full two-witness
+differential passes 31/31 at the default depth: the parameterization changed
+nothing observable, which is the point.
+
+**Benchmarked.** Measured across depths 10-24 (the ledger now carries the
+table). Two facts set the production profile:
+
+  depth 14 (default): prove ~36 ms, verify ~10 ms, proof 76 KB, 16,384 leaves
+  depth 24:           prove ~11 s,  verify ~11 ms, proof 76 KB, 16.7M leaves
+
+Verify time and proof size are effectively CONSTANT across depth (FRI
+succinctness doing its job); a verifier's cost does not grow with the anonymity
+set. Prove time grows superlinearly, but the cost is `pad_leaves_to_full_depth`
+rebuilding the entire 2^depth-leaf tree per proof, NOT the SNARK (which is
+O(depth) hashes). So depth 14 is production-ready at 36 ms, and larger
+anonymity sets are gated on a sibling-path-only witness, not on the proof
+system. The ledger's FRI bit-security caveat stays honest: performance is now
+measured, but the concrete soundness-bit number is still not re-derived here.
+
+**Plonky2 1.x pre-evaluated (bump ships next as v9.170).** In an isolated
+worktree, plonky2 + plonky2_field 0.2 to 1.x builds clean, produces
+bit-identical Merkle roots (Poseidon/Goldilocks semantics preserved), and the
+full two-witness differential passes 18/18 against the 1.x binary. So the major
+Dependabot deferred in v9.161 is safe; it ships as its own coherent change
+(handling seven new must-use-Result warnings) rather than bundled here.
+
+`check_zk_tree_depth_synced` pins prover/witness depth agreement. 88 checks,
+85 check-layer tests.
+
+---
+
 ## v9.168 — 2026-09-01 (Roadmap P0.6: keyless SLSA provenance signs every release SBOM)
 
 The SBOM workflow from v9.167 now also signs what it produces. Each release

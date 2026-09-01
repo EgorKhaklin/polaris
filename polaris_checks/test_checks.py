@@ -833,6 +833,37 @@ def test_release_provenance_check_discriminates(tmp_path):
         "must PASS with attestation, permissions, and a documented verify command"
 
 
+def test_zk_tree_depth_synced_check_discriminates(tmp_path):
+    zk = tmp_path / "polaris_zk"
+    src = zk / "src"
+    w2 = zk / "witness2"
+    src.mkdir(parents=True)
+    w2.mkdir(parents=True)
+    rs = src / "lib.rs"
+    py = w2 / "merkle.py"
+
+    def write(rs_default, py_default, env=True):
+        envtok = "POLARIS_ZK_TREE_DEPTH" if env else "SOMETHING_ELSE"
+        rs.write_text(f'match std::env::var("{envtok}") {{ Err(_) => {rs_default}, }}\n'
+                      f'pub const DEFAULT_TREE_DEPTH: usize = {rs_default};\n')
+        py.write_text(f'os.environ.get("{envtok}")\n'
+                      f'DEFAULT_TREE_DEPTH = {py_default}\n')
+
+    # Defaults diverge -> a default-config prover and witness disagree.
+    write(14, 16)
+    assert checks.check_zk_tree_depth_synced(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the Rust and Python default depths differ"
+
+    # One side does not read the shared env var.
+    write(14, 14, env=False)
+    assert checks.check_zk_tree_depth_synced(tmp_path)[0].level == "FAIL", \
+        "must FAIL when a side does not read POLARIS_ZK_TREE_DEPTH"
+
+    write(14, 14)
+    assert checks.check_zk_tree_depth_synced(tmp_path)[0].level == "OK", \
+        "must PASS when both read the env var and share the default"
+
+
 def test_dockerfile_copies_app_modules_check_discriminates(tmp_path):
     web = tmp_path / "polaris_web"
     web.mkdir()

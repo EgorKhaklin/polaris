@@ -2725,6 +2725,40 @@ def check_release_provenance(root: pathlib.Path) -> list[Finding]:
                "documents the verify command")
 
 
+# P0.7 — the Rust prover and the Python second witness must build the SAME
+# circuit shape, which means the SAME tree depth. Depth is now runtime-
+# parameterized (POLARIS_ZK_TREE_DEPTH); both sides read that env var and must
+# share the same default. If the defaults drift, a default-config prover and a
+# default-config witness would silently disagree on every proof, and the
+# two-witness guarantee (the strongest thing this layer offers) would break.
+def check_zk_tree_depth_synced(root: pathlib.Path) -> list[Finding]:
+    rs = _read(root, "polaris_zk/src/lib.rs")
+    py = _read(root, "polaris_zk/witness2/merkle.py")
+    if not rs or not py:
+        return _fail("zk_depth_sync", "polaris_zk lib.rs or witness2/merkle.py is missing")
+    # Both must read the shared env var.
+    if "POLARIS_ZK_TREE_DEPTH" not in rs or "POLARIS_ZK_TREE_DEPTH" not in py:
+        return _fail("zk_depth_sync",
+                     "the tree depth is not read from POLARIS_ZK_TREE_DEPTH on both sides; "
+                     "the prover and second witness could diverge on circuit shape")
+    m_rs = re.search(r"DEFAULT_TREE_DEPTH:\s*usize\s*=\s*(\d+)", rs)
+    m_py = re.search(r"DEFAULT_TREE_DEPTH\s*=\s*(\d+)", py)
+    if not m_rs or not m_py:
+        return _fail("zk_depth_sync", "could not find DEFAULT_TREE_DEPTH on both sides")
+    if m_rs.group(1) != m_py.group(1):
+        return _fail("zk_depth_sync",
+                     f"default tree depth differs: Rust {m_rs.group(1)} vs Python "
+                     f"{m_py.group(1)}; a default-config prover and witness would disagree")
+    # The Rust fallback in tree_depth() must equal DEFAULT_TREE_DEPTH too.
+    m_fallback = re.search(r"Err\(_\)\s*=>\s*(\d+)", rs)
+    if m_fallback and m_fallback.group(1) != m_rs.group(1):
+        return _fail("zk_depth_sync",
+                     "the tree_depth() env-absent fallback differs from DEFAULT_TREE_DEPTH")
+    return _ok("zk_depth_sync",
+               f"the Rust prover and Python second witness share tree depth "
+               f"(default {m_rs.group(1)}, both read POLARIS_ZK_TREE_DEPTH)")
+
+
 CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_csp_forbids_unsafe_inline,
     check_one_active_token_index,
@@ -2806,6 +2840,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_sbom_workflow,
     check_sbom_trivy_matches_scan,
     check_release_provenance,
+    check_zk_tree_depth_synced,
     check_local_clock_convention,
     check_c6_atlas_redacts_zk_location,
     check_coercion_evidence_retained,
