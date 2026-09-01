@@ -3039,6 +3039,63 @@ def check_key_custody_abstraction(root: pathlib.Path) -> list[Finding]:
                "each driver exercised (PKCS#11 against Kryoptic in CI), ceremony + rotation runbook, health")
 
 
+def check_secrets_lifecycle_sealed(root: pathlib.Path) -> list[Finding]:
+    """Roadmap P1.3: production secrets come from a sealed store (age or AWS KMS
+    envelope encryption), materialized into a tmpfs at start; compose reads only
+    POLARIS_SECRETS_DIR; rotation writes through to the store; and CI boots the
+    prod stack from a sealed store with the plaintext deleted, then rotates two
+    secrets on the live stack and verifies the store still matches."""
+    st = _read(root, "polaris_web/secretstore.py")
+    wr = _read(root, "scripts/polaris-secrets.sh")
+    dep = _read(root, "scripts/polaris-deploy.sh")
+    rot = _read(root, "scripts/polaris-rotate-secret.sh")
+    unit = _read(root, "deploy/linux/polaris.service")
+    tests = _read(root, "polaris_web/test_secretstore.py")
+    ci = _read(root, ".github/workflows/ci.yml")
+    doc = _read(root, "docs/operator/SECRETS.md")
+    gi = _read(root, ".gitignore")
+    if not (st and wr and dep and rot and unit and tests and ci and doc and gi):
+        return _fail("secrets_sealed", "a sealed-secrets file is missing (secretstore.py, polaris-secrets.sh, deploy, "
+                     "rotate-secret, polaris.service, test_secretstore.py, ci.yml, SECRETS.md, .gitignore)")
+    for needle in ("class AgeBackend", "class AwsKmsBackend", "generate_data_key", "AESGCM", "KeyId=self.key_id",
+                   "def rotate_wrapping", "def verify", "\"mode\""):
+        if needle not in st:
+            return _fail("secrets_sealed", f"secretstore.py must contain {needle!r} (age + KMS envelope backends, "
+                         "KeyId pinned on Decrypt, wrapping rotation, verify, modes in the manifest)")
+    compose_files = ["polaris_web/docker-compose.prod.yml", "polaris_web/docker-compose.custody-pkcs11.yml",
+                     "polaris_web/docker-compose.custody-awskms.yml"]
+    for f in compose_files:
+        c = _read(root, f)
+        if c and re.search(r"(?<!\{POLARIS_SECRETS_DIR:-)\./secrets/", c):
+            return _fail("secrets_sealed", f"{f} still references ./secrets/ directly; every secret path must go "
+                         "through ${POLARIS_SECRETS_DIR:-./secrets} so a sealed store can be materialized elsewhere")
+    if "unseal-if-configured" not in wr or "mount -t tmpfs" not in wr:
+        return _fail("secrets_sealed", "polaris-secrets.sh must provide unseal-if-configured that mounts a tmpfs for the "
+                     "materialized plaintext")
+    if "unseal-if-configured" not in dep or "POLARIS_SECRETS_DIR" not in dep:
+        return _fail("secrets_sealed", "polaris-deploy.sh must unseal-if-configured before preflight and honour "
+                     "POLARIS_SECRETS_DIR")
+    if "seal --only" not in rot or "POLARIS_SECRETS_DIR" not in rot:
+        return _fail("secrets_sealed", "polaris-rotate-secret.sh must rotate the materialized secret and write it through "
+                     "to the sealed store (seal --only)")
+    if "unseal-if-configured" not in unit:
+        return _fail("secrets_sealed", "polaris.service must run polaris-secrets.sh unseal-if-configured as ExecStartPre")
+    for needle in ("class AgeBackendTests", "class AwsKmsBackendTests", "rotate_wrapping", "drift"):
+        if needle not in tests:
+            return _fail("secrets_sealed", f"test_secretstore.py must contain {needle!r}")
+    if "polaris-secrets.sh seal" not in ci or "rm -rf polaris_web/secrets" not in ci \
+            or "polaris-rotate-secret.sh polaris_db_password" not in ci or "polaris-secrets.sh verify" not in ci:
+        return _fail("secrets_sealed", "ci.yml prod-stack-boot must seal, DELETE the plaintext, boot from the tmpfs, "
+                     "rotate on the live stack, and verify the sealed store matches")
+    if "POLARIS_SECRETS_BACKEND" not in doc or "rotate-wrapping" not in doc:
+        return _fail("secrets_sealed", "SECRETS.md must document POLARIS_SECRETS_BACKEND and rotate-wrapping")
+    if "polaris_web/secrets.sealed/" not in gi:
+        return _fail("secrets_sealed", ".gitignore must exclude polaris_web/secrets.sealed/")
+    return _ok("secrets_sealed", "secrets lifecycle: age / AWS KMS envelope sealed store, compose reads only "
+               "POLARIS_SECRETS_DIR (tmpfs), deploy + polaris.service unseal first, rotation writes through, "
+               "wrapping-key rotation, tests for both backends, and a CI boot-from-sealed + live rotation drill")
+
+
 CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_csp_forbids_unsafe_inline,
     check_one_active_token_index,
@@ -3126,6 +3183,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_pager_integration,
     check_linux_server_deployment,
     check_key_custody_abstraction,
+    check_secrets_lifecycle_sealed,
     check_local_clock_convention,
     check_c6_atlas_redacts_zk_location,
     check_coercion_evidence_retained,

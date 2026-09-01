@@ -2997,3 +2997,54 @@ def test_key_custody_abstraction_check_discriminates(tmp_path):
     # No rotation procedure.
     write({"docs/operator/KEY-CEREMONY.md": "## Ceremony\npkcs11-keygen ML_DSA_65\n"})
     assert checks.check_key_custody_abstraction(tmp_path)[0].level == "FAIL", "must FAIL without a Rotation section"
+
+
+def test_secrets_lifecycle_sealed_check_discriminates(tmp_path):
+    ST = ("class AgeBackend: pass\nclass AwsKmsBackend:\n  def seal(self): self._kms.generate_data_key(); AESGCM\n"
+          "  def unseal(self): self._kms.decrypt(CiphertextBlob=edk, KeyId=self.key_id)\n"
+          "def rotate_wrapping(): pass\ndef verify(): pass\nmanifest = {\"mode\": 1}\n")
+    good = {
+        "polaris_web/secretstore.py": ST,
+        "scripts/polaris-secrets.sh": "unseal-if-configured) mount -t tmpfs -o mode=0700 tmpfs $d\n",
+        "scripts/polaris-deploy.sh": "polaris-secrets.sh unseal-if-configured\nSECRETS_DIR=${POLARIS_SECRETS_DIR:-x}\n",
+        "scripts/polaris-rotate-secret.sh": "SECRETS_DIR=${POLARIS_SECRETS_DIR:-x}\npolaris-secrets.sh seal --only $SECRET\n",
+        "deploy/linux/polaris.service": "ExecStartPre=polaris-secrets.sh unseal-if-configured\n",
+        "polaris_web/test_secretstore.py": "class AgeBackendTests: rotate_wrapping\nclass AwsKmsBackendTests: drift\n",
+        "polaris_web/docker-compose.prod.yml": "secrets:\n  k:\n    file: ${POLARIS_SECRETS_DIR:-./secrets}/k\n",
+        ".github/workflows/ci.yml": ("run: bash scripts/polaris-secrets.sh seal; rm -rf polaris_web/secrets; "
+                                     "bash scripts/polaris-rotate-secret.sh polaris_db_password; "
+                                     "bash scripts/polaris-secrets.sh verify\n"),
+        "docs/operator/SECRETS.md": "POLARIS_SECRETS_BACKEND=age ... rotate-wrapping\n",
+        ".gitignore": "polaris_web/secrets/\npolaris_web/secrets.sealed/\n",
+    }
+
+    def write(overrides=None):
+        files = dict(good); files.update(overrides or {})
+        for rel, body in files.items():
+            f = tmp_path / rel
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text(body)
+
+    write()
+    assert checks.check_secrets_lifecycle_sealed(tmp_path)[0].level == "OK", "must PASS on the good fixture"
+
+    # A compose file that still reads ./secrets/ directly (the pre-P1.3 layout).
+    write({"polaris_web/docker-compose.prod.yml": "secrets:\n  k:\n    file: ./secrets/k\n"})
+    f = checks.check_secrets_lifecycle_sealed(tmp_path)[0]
+    assert f.level == "FAIL" and "POLARIS_SECRETS_DIR" in f.message, "must FAIL on a direct ./secrets/ reference"
+
+    # KMS Decrypt without the KeyId pin (a stale key would open a re-wrapped store).
+    write({"polaris_web/secretstore.py": ST.replace(", KeyId=self.key_id", "")})
+    assert checks.check_secrets_lifecycle_sealed(tmp_path)[0].level == "FAIL", "must FAIL without KeyId pinned on Decrypt"
+
+    # Rotation that does not write through.
+    write({"scripts/polaris-rotate-secret.sh": "SECRETS_DIR=${POLARIS_SECRETS_DIR:-x}\n"})
+    assert checks.check_secrets_lifecycle_sealed(tmp_path)[0].level == "FAIL", "must FAIL when rotation does not write through"
+
+    # CI that boots from plaintext (no seal / delete / live rotation).
+    write({".github/workflows/ci.yml": "run: bash scripts/polaris-generate-secrets.sh; docker compose up -d\n"})
+    assert checks.check_secrets_lifecycle_sealed(tmp_path)[0].level == "FAIL", "must FAIL when CI does not drill the sealed boot + rotation"
+
+    # The systemd unit that starts compose without unsealing.
+    write({"deploy/linux/polaris.service": "ExecStart=docker compose up -d\n"})
+    assert checks.check_secrets_lifecycle_sealed(tmp_path)[0].level == "FAIL", "must FAIL when the unit skips unseal"

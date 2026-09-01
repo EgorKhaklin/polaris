@@ -20,6 +20,9 @@ EnvironmentFile=__ENV_FILE__
 # POLARIS_COMPOSE_EXTRA is normally empty. CI sets it to
 # "-f docker-compose.citest.yml" so the TLS edge uses Caddy's internal CA on a
 # host with no public domain; everything else is exactly production.
+# P1.3: with POLARIS_SECRETS_BACKEND=age|awskms the sealed store is unsealed into
+# a tmpfs at POLARIS_SECRETS_DIR before compose reads it; a no-op otherwise.
+ExecStartPre=/usr/bin/env bash __INSTALL_DIR__/scripts/polaris-secrets.sh unseal-if-configured
 ExecStart=/usr/bin/docker compose -f docker-compose.prod.yml $POLARIS_COMPOSE_EXTRA up -d --remove-orphans
 ExecStop=/usr/bin/docker compose -f docker-compose.prod.yml $POLARIS_COMPOSE_EXTRA down
 TimeoutStartSec=900

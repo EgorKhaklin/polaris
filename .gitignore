@@ -122,6 +122,10 @@ credentials.json
 # scripts/polaris-generate-secrets.sh; rotated by polaris-rotate-secret.sh.
 # G28 requires these never leave the host filesystem.
 polaris_web/secrets/
+# P1.3: the sealed store is safe to keep in a PRIVATE ops repo; it is never
+# committed here, and neither is the previous generation kept beside it.
+polaris_web/secrets.sealed/
+polaris_web/secrets.sealed.prev/
 
 # ============================================================================
 # Build outputs from local Polaris docker workflows

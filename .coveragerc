@@ -16,6 +16,8 @@ omit =
     # is not product code, and recording it leaves a dangling source reference
     # once the temp dir is cleaned (a "No source for code" report error).
     */sitecustomize.py
+    # Test infrastructure, not product code (P1.2/P1.3).
+    */kms_standin.py
 
 [report]
 # The CLI entrypoints are exercised end to end (the app shells into the ZK

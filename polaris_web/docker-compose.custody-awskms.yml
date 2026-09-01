@@ -24,4 +24,4 @@ services:
 
 secrets:
   aws_credentials:
-    file: ./secrets/aws_credentials
+    file: ${POLARIS_SECRETS_DIR:-./secrets}/aws_credentials

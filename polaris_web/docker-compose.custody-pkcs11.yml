@@ -24,4 +24,4 @@ services:
 
 secrets:
   pkcs11_pin:
-    file: ./secrets/pkcs11_pin
+    file: ${POLARIS_SECRETS_DIR:-./secrets}/pkcs11_pin

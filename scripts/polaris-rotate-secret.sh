@@ -24,7 +24,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
 POLARIS_ROOT="$(cd -- "${SCRIPT_DIR}/.." &> /dev/null && pwd)"
-SECRETS_DIR="${POLARIS_ROOT}/polaris_web/secrets"
+# v9.180 (P1.3) — rotate the MATERIALIZED secret (a tmpfs when a sealed store
+# is in use) and write it through to the sealed store below.
+SECRETS_DIR="${POLARIS_SECRETS_DIR:-${POLARIS_ROOT}/polaris_web/secrets}"
 ARCHIVE_DIR="${SECRETS_DIR}/.archive"
 COMPOSE_FILE="${POLARIS_ROOT}/polaris_web/docker-compose.prod.yml"
 
@@ -84,6 +86,12 @@ chmod "0${CUR_MODE#0}" "${TARGET}.new"
 mv "${TARGET}.new" "${TARGET}"
 
 echo "  ✓ rotated ${SECRET} (previous archived at ${ARCHIVE_PATH})"
+if [[ "${POLARIS_SECRETS_BACKEND:-file}" != "file" ]]; then
+    # Write-through: the sealed store is the source of truth and must never
+    # lag the running stack (a reboot would resurrect the old secret).
+    POLARIS_SECRETS_PLAIN_DIR="${SECRETS_DIR}" "${SCRIPT_DIR}/polaris-secrets.sh" seal --only "${SECRET}" >/dev/null
+    echo "  ✓ sealed store updated (${POLARIS_SECRETS_BACKEND}); previous blob kept as .prev"
+fi
 
 # Apply the rotation to the running stack.
 if ! command -v docker >/dev/null 2>&1; then

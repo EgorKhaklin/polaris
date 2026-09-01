@@ -523,282 +523,94 @@ Document the reason in the operator runbook.
 
 ---
 
-## 8. HSM / KMS integration (v9.01 / Phase 3 Wave 1)
+## 8. The sealed secret store (v9.180, roadmap P1.3)
 
-> **The issuer SIGNING key has its own custody layer (v9.178, roadmap P1.2).**
-> This section is about the app's symmetric secrets. The ML-DSA-65 signing key
-> is handled by `polaris_web/custody.py` with `file`, `pkcs11` (HSM / PKCS#11
-> v3.2 token), and `awskms` (KMS `ML_DSA_65`) drivers, a witnessed ceremony, and
-> a rotation procedure with trust anchors: [`KEY-CEREMONY.md`](KEY-CEREMONY.md).
+Production secrets are no longer files in a directory. `polaris_web/secrets/`
+is the MATERIALIZED form, written into a root-only tmpfs at start; the source
+of truth is a sealed store, `polaris_web/secrets.sealed/`, whose contents are
+useless without a key that is not on the disk beside them.
 
-
-The default v8.77 deployment file-mounts secrets at mode 0600 on
-host disk. That's adequate for single-host deployments under the
-operator's full control. For deployments that need:
-
-- **Encryption-at-rest with a hardware root of trust** (the secret
-  never exists in plaintext outside of an HSM)
-- **Cross-machine secret sharing** (same Polaris deployment running
-  on multiple hosts that all need the same SECRET_KEY without
-  synchronizing files)
-- **Automated key rotation** (compliance regimes that mandate
-  90-day rotation cycles)
-- **Auditable secret access** (every read of the secret is logged
-  with timestamp + caller identity)
-
-… you want a KMS-backed secret store. Three operator-pick paved
-paths follow. **Pick one based on your cloud / compliance regime;
-do not mix.**
-
-### 8.1 HashiCorp Vault Transit Engine
-
-**When to pick:** multi-cloud / on-prem / no cloud-vendor lock-in.
-Vault is open-source + self-hostable; Transit Engine is its
-encryption-as-a-service primitive (Polaris secrets are encrypted
-under a Vault-held key; Polaris fetches the decrypted value at
-startup).
-
-```bash
-# 1. Install Vault (one-time, on a separate host or HA cluster)
-brew install vault    # macOS dev; production = official binary or container
-
-# 2. Initialize + unseal (separate operator runbook; one-time)
-vault server -config=/etc/vault.d/vault.hcl
-vault operator init    # produces unseal keys; store offline + split per Shamir
-vault operator unseal  # repeat with N of M unseal keys
-
-# 3. Enable Transit + create the polaris-secret-key
-vault secrets enable transit
-vault write -f transit/keys/polaris-secret-key
-
-# 4. Encrypt the SECRET_KEY (one-time, per Polaris deployment)
-SECRET=$(openssl rand -hex 32)
-ENCRYPTED=$(vault write transit/encrypt/polaris-secret-key \
-                   plaintext=$(echo -n "$SECRET" | base64) \
-                   -format=json | jq -r '.data.ciphertext')
-echo "$ENCRYPTED" > /run/polaris/secret_key.vault-encrypted
-
-# 5. Polaris launch wrapper decrypts at startup:
-cat > /usr/local/bin/polaris-launch-vault <<'EOF'
-#!/bin/bash
-set -euo pipefail
-ENCRYPTED=$(cat /run/polaris/secret_key.vault-encrypted)
-SECRET_B64=$(vault write transit/decrypt/polaris-secret-key \
-                    ciphertext="$ENCRYPTED" \
-                    -format=json | jq -r '.data.plaintext')
-export POLARIS_SECRET_KEY=$(echo "$SECRET_B64" | base64 -d)
-exec /usr/bin/polaris-deploy.sh prod
-EOF
-chmod +x /usr/local/bin/polaris-launch-vault
-```
-
-**Key rotation** (90-day cycle):
-
-```bash
-# Vault rotates the underlying key without breaking decryption of
-# old ciphertexts (versioned encryption keys per Vault Transit spec).
-vault write -f transit/keys/polaris-secret-key/rotate
-
-# Polaris ciphertext stays valid; on next launch it decrypts under
-# the new version. To force re-encryption under the latest version:
-vault write transit/rewrap/polaris-secret-key \
-            ciphertext="$(cat /run/polaris/secret_key.vault-encrypted)" \
-            -format=json | jq -r '.data.ciphertext' > /run/polaris/secret_key.vault-encrypted
-```
-
-**Audit trail:** Vault's audit device logs every encrypt/decrypt
-operation with caller identity + timestamp; cite this in the SOC 2
-CC6.1 evidence package.
-
-**Cost:** self-hosted Vault is FOSS; HA cluster recommended for
-production (3 nodes minimum for Raft consensus). HashiCorp Cloud
-Platform offers Vault-as-a-Service if self-hosting is too operationally
-heavy.
-
-### 8.2 AWS KMS envelope encryption
-
-**When to pick:** AWS-native deployment; existing AWS account; want
-the strongest hardware-root-of-trust without operating Vault.
-KMS keys are FIPS 140-3 Level 3 (HSM-backed).
-
-```bash
-# 1. Create a KMS Customer Managed Key (CMK) for Polaris
-aws kms create-key \
-    --description "Polaris session-secret encryption key" \
-    --key-usage ENCRYPT_DECRYPT \
-    --tags TagKey=Service,TagValue=Polaris
-
-# Note the KeyId; use it as POLARIS_KMS_KEY_ID below.
-
-# 2. Encrypt SECRET_KEY (one-time, per Polaris deployment)
-SECRET=$(openssl rand -hex 32)
-echo -n "$SECRET" | aws kms encrypt \
-    --key-id "$POLARIS_KMS_KEY_ID" \
-    --plaintext fileb:///dev/stdin \
-    --output text \
-    --query CiphertextBlob > /run/polaris/secret_key.kms-encrypted
-
-# 3. Polaris launch wrapper decrypts at startup:
-cat > /usr/local/bin/polaris-launch-kms <<'EOF'
-#!/bin/bash
-set -euo pipefail
-ENCRYPTED=$(cat /run/polaris/secret_key.kms-encrypted)
-export POLARIS_SECRET_KEY=$(echo "$ENCRYPTED" | base64 -d | aws kms decrypt \
-    --ciphertext-blob fileb:///dev/stdin \
-    --output text \
-    --query Plaintext | base64 -d)
-exec /usr/bin/polaris-deploy.sh prod
-EOF
-chmod +x /usr/local/bin/polaris-launch-kms
-```
-
-**IAM policy for the Polaris EC2 instance role:**
-
-```json
-{
-    "Version": "2012-10-17",
-    "Statement": [{
-        "Effect": "Allow",
-        "Action": "kms:Decrypt",
-        "Resource": "arn:aws:kms:us-east-1:<account>:key/<polaris-cmk-id>"
-    }]
-}
-```
-
-(Decrypt only — the host should NEVER need Encrypt; encryption
-happens once during deployment by an admin role with a separate
-IAM principal.)
-
-**Key rotation** (automatic): AWS KMS rotates Customer Managed
-Keys annually if `--key-rotation-status enabled` is set.
-Ciphertexts encrypted under old versions remain decryptable
-indefinitely; new ciphertexts use the latest version. To force
-re-encryption: re-run step 2 above.
-
-**Audit trail:** CloudTrail logs every kms:Decrypt with caller
-identity, timestamp, and source IP. Cite this in SOC 2 CC6.1
-evidence.
-
-**Cost:** $1/month per CMK + $0.03 per 10K decrypts. For a
-single-instance Polaris deployment (decrypt once per launch ≈ ~30
-launches/month), monthly cost is ~$1.
-
-### 8.3 GCP Secret Manager
-
-**When to pick:** GCP-native deployment; existing GCP project;
-want managed secret storage without envelope-encryption complexity.
-Secret Manager stores the plaintext in Google's HSM-backed
-infrastructure; Polaris fetches at startup.
-
-```bash
-# 1. Create the secret (one-time, per Polaris deployment)
-SECRET=$(openssl rand -hex 32)
-echo -n "$SECRET" | gcloud secrets create polaris-secret-key \
-    --replication-policy=automatic \
-    --data-file=-
-
-# 2. Polaris launch wrapper fetches at startup:
-cat > /usr/local/bin/polaris-launch-gsm <<'EOF'
-#!/bin/bash
-set -euo pipefail
-export POLARIS_SECRET_KEY=$(gcloud secrets versions access latest \
-    --secret=polaris-secret-key)
-exec /usr/bin/polaris-deploy.sh prod
-EOF
-chmod +x /usr/local/bin/polaris-launch-gsm
-```
-
-**IAM binding for the Polaris GCE VM service account:**
-
-```bash
-gcloud secrets add-iam-policy-binding polaris-secret-key \
-    --member=serviceAccount:polaris-prod@<project>.iam.gserviceaccount.com \
-    --role=roles/secretmanager.secretAccessor
-```
-
-(Accessor only — the VM should NEVER need to write the secret;
-write happens during deployment by an admin SA with separate
-permissions.)
-
-**Key rotation** (manual cycle):
-
-```bash
-# Add a new secret version (Polaris automatically picks up "latest"
-# on next launch; old versions remain accessible for rollback).
-NEW_SECRET=$(openssl rand -hex 32)
-echo -n "$NEW_SECRET" | gcloud secrets versions add polaris-secret-key \
-    --data-file=-
-
-# Disable the old version after verifying the new one works:
-gcloud secrets versions disable <old-version-id> \
-    --secret=polaris-secret-key
-```
-
-**Audit trail:** Cloud Audit Logs records every secrets.versions.access
-call with caller identity + timestamp. Cite this in SOC 2 CC6.1
-evidence.
-
-**Cost:** $0.06/month per secret + $0.03 per 10K accesses. For a
-single-instance Polaris deployment, monthly cost is < $1.
-
-### 8.4 Comparison matrix
-
-| Factor | Vault Transit | AWS KMS | GCP Secret Manager |
+| `POLARIS_SECRETS_BACKEND` | Sealed with | Unsealed by | Use when |
 |---|---|---|---|
-| **Cloud lock-in** | None (self-hosted) | AWS | GCP |
-| **Operational burden** | High (HA cluster + unseal protocol) | Low (managed) | Low (managed) |
-| **Hardware root of trust** | Yes (HSM cluster optional, FIPS 140-2 L3) | Yes (HSM-backed FIPS 140-3 L3) | Yes (HSM-backed) |
-| **Automated rotation** | CLI-driven | Annual auto + on-demand | Manual versioning |
-| **Cost (single instance)** | FOSS + ops cost | ~$1/month | < $1/month |
-| **Audit logging** | Vault audit devices | CloudTrail | Cloud Audit Logs |
-| **Ransomware resistance** | Trust-boundary protected | Cross-account + MFA-delete | Project-scope IAM |
+| `file` (default) | nothing: the plaintext dir is the store | n/a | development; the pre-P1.3 layout |
+| `age` | the operator's age recipients (`POLARIS_SECRETS_AGE_RECIPIENTS`) | an age identity file (`POLARIS_SECRETS_AGE_IDENTITY`), root-only, or an age plugin for a hardware token | on-premises; no cloud dependency; the identity can live on a YubiKey |
+| `awskms` | envelope encryption: per file, KMS `GenerateDataKey` (AES-256) + AES-256-GCM with the file name as AAD; the KMS-wrapped data key stored beside the ciphertext | `kms:Decrypt` on `POLARIS_SECRETS_AWSKMS_KEY_ID`, an IAM decision rather than a file | AWS-hosted authorities |
 
-### 8.5 Migration from file-mounted to KMS-backed
+The issuer SIGNING key has its own custody layer with HSM/PKCS#11 and KMS
+drivers ([`KEY-CEREMONY.md`](KEY-CEREMONY.md)); this section is about
+everything else in the matrix in section 1.
 
-A running Polaris deployment migrating from v8.77 file-mounted
-secrets to KMS-backed:
+### 8.1 Adopting a sealed store
 
 ```bash
-# 1. Pick a KMS path (Vault / AWS KMS / GCP SM); follow §§ 8.1-8.3
-#    setup steps EXCEPT do NOT generate a new SECRET_KEY in step 1.
-#    Instead, use the existing secret from /run/secrets/polaris_secret_key
-#    so existing user sessions stay valid across the migration:
-EXISTING_SECRET=$(cat /run/secrets/polaris_secret_key)
-
-# 2. Encrypt + persist via your chosen path (AWS KMS example):
-echo -n "$EXISTING_SECRET" | aws kms encrypt \
-    --key-id "$POLARIS_KMS_KEY_ID" \
-    --plaintext fileb:///dev/stdin \
-    --output text \
-    --query CiphertextBlob > /run/polaris/secret_key.kms-encrypted
-
-# 3. Switch the launcher to use the KMS-decrypt wrapper instead of
-#    the file-mount path. Restart Polaris.
-
-# 4. Verify a known-good user session survives the cut:
-#    - Open https://${POLARIS_DOMAIN}/dashboard in your browser
-#    - You should NOT be logged out; the cookie still validates
-#    - If you ARE logged out, the wrapper isn't exporting POLARIS_SECRET_KEY
-#      correctly — debug before declaring the migration done
-
-# 5. Once verified, remove the plaintext file-mounted secret:
-shred -u /run/secrets/polaris_secret_key
-docker compose down && docker compose up -d
+# one-time: the plaintext is generated exactly as before, then sealed
+./scripts/polaris-generate-secrets.sh
+age-keygen -o /root/polaris-age.identity          # keep OUT of the repo; back it up sealed
+grep -i "public key:" <(age-keygen -y /root/polaris-age.identity 2>&1) | sed 's/.*: *//' > /root/polaris-age.recipients
+export POLARIS_SECRETS_BACKEND=age POLARIS_SECRETS_AGE_RECIPIENTS=/root/polaris-age.recipients \
+       POLARIS_SECRETS_AGE_IDENTITY=/root/polaris-age.identity
+./scripts/polaris-secrets.sh seal                 # -> polaris_web/secrets.sealed/ (+ MANIFEST.json)
+./scripts/polaris-secrets.sh verify               # every blob decrypts and matches its sha256
+shred -u polaris_web/secrets/* && rmdir polaris_web/secrets   # the plaintext directory goes away
 ```
 
-Document the migration in your operator change log; this becomes
-evidence for the next SOC 2 audit cycle (CC8.1 — change management).
+Put the four `POLARIS_SECRETS_*` lines in `/etc/polaris/polaris.env`
+([`LINUX-SERVER.md`](LINUX-SERVER.md)). From then on
+`polaris.service` runs `polaris-secrets.sh unseal-if-configured` before
+`docker compose up` and `polaris-deploy.sh` does the same before its preflight:
+the store is unsealed into `POLARIS_SECRETS_DIR` (default
+`/run/polaris/secrets`, a `tmpfs` mounted `mode=0700,nosuid,nodev,noexec`),
+file modes restored from the manifest, and compose reads every secret and
+certificate from there. Nothing plaintext touches the disk.
 
-### 8.6 Cross-references for KMS path
+For `awskms`: `POLARIS_SECRETS_BACKEND=awskms POLARIS_SECRETS_AWSKMS_KEY_ID=<key arn>
+POLARIS_SECRETS_AWSKMS_REGION=<region>`, host `python3` with boto3
+(`pip install -r polaris_web/requirements-custody.txt`), and an instance role
+allowed `kms:GenerateDataKey` and `kms:Decrypt` on that key. The store can be
+kept in a PRIVATE ops repository or an object bucket; it is gitignored here.
 
-- [DR.md](DR.md) § 4.7 — ransomware recovery (KMS-backed secrets
-  are NOT exfiltrable from the host alone; the cloud account
-  trust boundary holds even if the host is compromised)
-- `polaris_web/security.py` — the consumer of POLARIS_SECRET_KEY
-  (no code change needed for the KMS migration; the launcher
-  wrapper exports the env var, security.py reads it as today)
+### 8.2 Rotation
 
----
+**A secret** (the session key, a DB password): `polaris-rotate-secret.sh
+<name>` exactly as in section 3. It rotates the materialized copy, updates the
+database role, recreates the affected container, and WRITES THROUGH to the
+sealed store, keeping the previous blob as `<name>.age.prev` (or `.kms.prev`).
+The store never lags the running stack, so a reboot re-unseals the new value.
+`polaris-secrets.sh verify` asserts that invariant (sealed == materialized).
+
+**The wrapping key** (a new age identity, or a new KMS key), without changing
+any secret's value:
+
+```bash
+./scripts/polaris-secrets.sh rotate-wrapping --new-recipients /root/polaris-age-2.recipients
+#   or: --new-key-id <new kms key arn>
+```
+
+The previous generation is kept as `polaris_web/secrets.sealed.prev/` until you
+remove it; the old identity or key no longer opens the live store (the KMS
+driver pins `KeyId` on `Decrypt`, so a stale key is refused, not silently
+accepted). Then update `polaris.env` to the new identity or key and run
+`polaris-secrets.sh verify`.
+
+### 8.3 What is drilled in CI
+
+`prod-stack-boot` seals the generated secrets to a throwaway age identity,
+DELETES the plaintext directory, unseals into a tmpfs, boots the full
+production stack from it, asserts health through the TLS edge, then runs
+`polaris-rotate-secret.sh` for `polaris_db_password` and `polaris_secret_key`
+against the live stack, asserts health again, verifies the sealed store
+matches the tmpfs, and proves a fresh unseal returns the rotated password.
+`test_secretstore.py` covers both backends (age through the real CLI, KMS
+through the wire-faithful stand-in), wrapping-key rotation, tamper and drift
+detection, and mode restoration.
+
+### 8.4 External alternatives
+
+HashiCorp Vault, GCP Secret Manager, and Azure Key Vault are not built in.
+They fit the same shape: an `unseal-if-configured` that materializes the
+secrets into `POLARIS_SECRETS_DIR` from your store before the stack starts.
+Write that hook in place of `polaris-secrets.sh` and keep the rest identical;
+the compose file only ever sees the directory.
 
 ## 9. Cross-references
 

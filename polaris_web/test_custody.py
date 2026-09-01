@@ -30,9 +30,7 @@ import json
 import os
 import sys
 import tempfile
-import threading
 import unittest
-from http.server import BaseHTTPRequestHandler, HTTPServer
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import custody
@@ -167,67 +165,7 @@ class FileCustodyTests(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
-class _KmsStandIn:
-    """A local AWS KMS (TrentService JSON 1.1) holding ONE ML-DSA-65 key, signing
-    with OpenSSL's implementation. Faithful to the real wire shapes boto3 sends
-    and expects; wrong-key-spec behaviour is configurable for the negative test."""
-
-    def __init__(self, key_spec="ML_DSA_65", key_usage="SIGN_VERIFY", state="Enabled"):
-        self.key_id = "1234abcd-12ab-34cd-56ef-1234567890ab"
-        self.arn = f"arn:aws:kms:us-east-1:000000000000:key/{self.key_id}"
-        self.key_spec, self.key_usage, self.state = key_spec, key_usage, state
-        self.priv = _mldsa.MLDSA65PrivateKey.generate()
-        self.pub_raw = self.priv.public_key().public_bytes_raw()
-        self.spki = self.priv.public_key().public_bytes(_ser.Encoding.DER, _ser.PublicFormat.SubjectPublicKeyInfo)
-        self.calls = []
-        standin = self
-
-        class H(BaseHTTPRequestHandler):
-            def log_message(self, *a):
-                pass
-
-            def do_POST(self):
-                target = self.headers.get("X-Amz-Target", "")
-                body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0"))) or b"{}")
-                standin.calls.append((target, body))
-                if body.get("KeyId") not in (standin.key_id, standin.arn):
-                    return self._send(400, {"__type": "NotFoundException", "message": "Key not found"})
-                if target.endswith("DescribeKey"):
-                    out = {"KeyMetadata": {"KeyId": standin.key_id, "Arn": standin.arn, "KeySpec": standin.key_spec,
-                                           "KeyUsage": standin.key_usage, "KeyState": standin.state,
-                                           "SigningAlgorithms": ["ML_DSA_SHAKE_256"]}}
-                elif target.endswith("GetPublicKey"):
-                    out = {"KeyId": standin.arn, "KeySpec": standin.key_spec, "KeyUsage": standin.key_usage,
-                           "PublicKey": base64.b64encode(standin.spki).decode(),
-                           "SigningAlgorithms": ["ML_DSA_SHAKE_256"]}
-                elif target.endswith("Sign"):
-                    if body.get("SigningAlgorithm") != "ML_DSA_SHAKE_256" or body.get("MessageType") != "RAW":
-                        return self._send(400, {"__type": "InvalidParameterException",
-                                                "message": "algorithm/message type"})
-                    msg = base64.b64decode(body["Message"])
-                    sig = standin.priv.sign(msg)
-                    out = {"KeyId": standin.arn, "Signature": base64.b64encode(sig).decode(),
-                           "SigningAlgorithm": "ML_DSA_SHAKE_256"}
-                else:
-                    return self._send(400, {"__type": "UnknownOperationException", "message": target})
-                self._send(200, out)
-
-            def _send(self, code, obj):
-                data = json.dumps(obj).encode()
-                self.send_response(code)
-                self.send_header("Content-Type", "application/x-amz-json-1.1")
-                self.send_header("Content-Length", str(len(data)))
-                self.end_headers()
-                self.wfile.write(data)
-
-        self.server = HTTPServer(("127.0.0.1", 0), H)
-        self.url = f"http://127.0.0.1:{self.server.server_port}"
-        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
-        self.thread.start()
-
-    def close(self):
-        self.server.shutdown()
-        self.server.server_close()
+from kms_standin import KmsStandIn as _KmsStandIn  # shared with test_secretstore
 
 
 def _boto3_present():

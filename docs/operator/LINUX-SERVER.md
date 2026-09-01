@@ -89,6 +89,11 @@ key pair in `polaris_web/secrets/pgbackrest_repo_creds.conf`, set
 `POLARIS_PGBACKREST_ENABLED=1`, then `scripts/polaris-deploy.sh prod`
 ([`DR.md`](DR.md)).
 
+**Sealed secrets**: set `POLARIS_SECRETS_BACKEND=age` (or `awskms`) plus the
+identity/recipients (or key id) lines in `polaris.env`; `polaris.service`
+unseals into a tmpfs at `/run/polaris/secrets` before every start and the
+plaintext directory can be shredded ([`SECRETS.md`](SECRETS.md) section 8).
+
 **Paging**: mount your pager URL into Alertmanager per
 [`RUNBOOKS.md`](RUNBOOKS.md) "Paging". The Prometheus and Alertmanager
 configs are in [`deploy/observability/`](../../deploy/observability/README.md).

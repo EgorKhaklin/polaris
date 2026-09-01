@@ -5,6 +5,65 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.180 — 2026-09-01 (Roadmap P1.3: production secrets from a sealed store, materialized into a tmpfs; rotation drilled live in CI)
+
+Until now every production secret (the session key, the DB and replicator
+passwords, the signing key file, the TLS keys, the pgBackRest key pair) was a
+plaintext file in polaris_web/secrets/ and nowhere else. That directory is now
+the MATERIALIZED form only; the source of truth is a sealed store.
+
+  - `polaris_web/secretstore.py`: `age` (each secret encrypted to the
+    operator's age recipients; the identity that decrypts can live on a
+    hardware token) and `awskms` (envelope encryption: per file, KMS
+    GenerateDataKey gives an AES-256 data key and its KMS-wrapped form, the
+    file is AES-256-GCM encrypted with the file name as AAD; Decrypt pins
+    KeyId, so a store re-wrapped under a new key is refused through a stale
+    backend rather than silently read). `file` keeps the old layout for
+    development. MANIFEST.json records per-file sha256 and MODE, and unseal
+    restores the mode (the v9.140 lesson: uid-70 containers must read them).
+    Operations: seal, unseal, verify (sealed == materialized, no drift),
+    rotate-wrapping (a new identity or key; values unchanged; the previous
+    generation kept beside it).
+  - `scripts/polaris-secrets.sh` wraps it; `unseal-if-configured` mounts a
+    root-only tmpfs (mode=0700,nosuid,nodev,noexec) at POLARIS_SECRETS_DIR and
+    unseals into it. `polaris-deploy.sh` runs it before its preflight and
+    `polaris.service` runs it as ExecStartPre, so plaintext exists only in RAM
+    while the stack runs. The compose files read every secret and certificate
+    through `${POLARIS_SECRETS_DIR:-./secrets}` (15 references; none bare).
+  - `polaris-rotate-secret.sh` rotates the materialized copy and WRITES THROUGH
+    to the sealed store (previous blob kept as .prev), so a reboot re-unseals
+    the new value; `polaris-secrets.sh verify` asserts that invariant.
+  - SECRETS.md section 8 is rewritten around the store (adoption, rotation of
+    a secret and of the wrapping key, what CI drills); the old Vault / AWS
+    envelope / GSM launch-wrapper recipes are replaced by one sentence: an
+    external store is the same unseal hook. LINUX-SERVER.md and
+    polaris.env.example carry the four POLARIS_SECRETS_* settings.
+
+Drilled, not asserted. `test_secretstore.py` (19 tests, both backends real:
+age through the CLI, KMS through the wire-faithful stand-in whose envelope
+cryptography is real AES-GCM): round-trip with modes, stale-file removal,
+drift detection, tampered blob and manifest refused, seal --only write-through,
+wrapping rotation (old key refused, new key opens, .prev intact), backend
+mismatch refused. In CI, prod-stack-boot now seals the generated secrets to a
+throwaway age identity, DELETES the plaintext directory, unseals into a tmpfs,
+boots the full production stack from it, asserts health through the TLS edge,
+then rotates polaris_db_password and polaris_secret_key on the LIVE stack with
+polaris-rotate-secret.sh, asserts health again, verifies the sealed store
+matches the tmpfs byte for byte, and proves a fresh unseal returns the rotated
+password. The KMS stand-in moved to `kms_standin.py`, shared with
+test_custody.
+
+Found by running: age-keygen prints "Public key:" capitalised (the parser
+matched nothing); KMS Decrypt resolves the key from the ciphertext, so
+without KeyId a stale backend would open a re-wrapped store; and a global
+`./secrets/` replace rewrote a comment I then asserted on. Stated limits: on
+macOS or as non-root the materialized dir is a plain 0700 directory with a
+warning, not a tmpfs; the KMS backend is drilled against the stand-in, with
+the same driver wire path a real key would see. 94 checks, 91 check-layer
+tests. Next opener: P1.4 zero-downtime deploys.
+
+---
+
 ## v9.179 — 2026-09-01 (P1.2 follow-through: the PKCS#11 CI recipe moves out of an inline bash -c block)
 
 The v9.178 run was green on nine of ten jobs, including test_custody in

@@ -30,7 +30,14 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
 POLARIS_ROOT="$(cd -- "${SCRIPT_DIR}/.." &> /dev/null && pwd)"
 COMPOSE_FILE="${POLARIS_ROOT}/polaris_web/docker-compose.prod.yml"
-SECRETS_DIR="${POLARIS_ROOT}/polaris_web/secrets"
+# v9.180 (P1.3) — with a sealed store (POLARIS_SECRETS_BACKEND=age|awskms) the
+# plaintext is materialized into POLARIS_SECRETS_DIR (a tmpfs) right before
+# the stack starts; the compose file reads the same variable.
+if [[ "${POLARIS_SECRETS_BACKEND:-file}" != "file" ]]; then
+    export POLARIS_SECRETS_DIR="${POLARIS_SECRETS_DIR:-/run/polaris/secrets}"
+    "${SCRIPT_DIR}/polaris-secrets.sh" unseal-if-configured
+fi
+SECRETS_DIR="${POLARIS_SECRETS_DIR:-${POLARIS_ROOT}/polaris_web/secrets}"
 
 MODE="${1:-prod}"
 shift || true

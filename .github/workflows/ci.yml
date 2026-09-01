@@ -60,7 +60,7 @@ jobs:
       - name: Install PostgreSQL client
         run: |
           sudo apt-get update
-          sudo apt-get install -y postgresql-client
+          sudo apt-get install -y postgresql-client age   # age: test_secretstore's age backend (P1.3)
 
       - name: Install Python deps
         run: |
@@ -1075,10 +1075,32 @@ jobs:
       - name: Generate secrets + certs (signing key via the built app image)
         run: bash scripts/polaris-generate-secrets.sh
 
-      - name: Boot the full prod stack (prod + citest override)
+      # v9.180 (roadmap P1.3) — the stack boots from a SEALED store, not from
+      # files in a directory: the generated secrets are sealed to a throwaway
+      # age identity, the plaintext directory is DELETED, and the sealed store
+      # is unsealed into a root-only tmpfs that compose reads through
+      # POLARIS_SECRETS_DIR. Everything below then runs against that.
+      - name: Seal the secrets (age), delete the plaintext, unseal into a tmpfs
+        run: |
+          set -e
+          sudo apt-get install -y age >/dev/null
+          age-keygen -o /tmp/ci-age.identity 2>/tmp/keygen.out
+          grep -i "public key:" /tmp/keygen.out | sed 's/.*: *//' > /tmp/ci-age.recipients
+          export POLARIS_SECRETS_BACKEND=age POLARIS_SECRETS_AGE_RECIPIENTS=/tmp/ci-age.recipients \
+                 POLARIS_SECRETS_AGE_IDENTITY=/tmp/ci-age.identity POLARIS_SECRETS_DIR=/run/polaris/secrets
+          bash scripts/polaris-secrets.sh seal
+          bash scripts/polaris-secrets.sh status
+          rm -rf polaris_web/secrets && echo "plaintext secrets directory deleted"
+          sudo -E bash scripts/polaris-secrets.sh unseal-if-configured
+          mount | grep -q "/run/polaris/secrets" && echo "tmpfs confirmed at /run/polaris/secrets"
+          sudo ls -la /run/polaris/secrets
+          sudo -E bash scripts/polaris-secrets.sh verify
+
+      - name: Boot the full prod stack (prod + citest override) from the sealed store
         working-directory: polaris_web
         env:
           POLARIS_DOMAIN: localhost
+          POLARIS_SECRETS_DIR: /run/polaris/secrets
         run: |
           set +e
           docker compose -f docker-compose.prod.yml -f docker-compose.citest.yml up -d
@@ -1129,9 +1151,46 @@ jobs:
             || { echo "::error::postgres is not running with ssl=on (prod init did not enable TLS)"; exit 1; }
           echo "postgres ssl=on confirmed"
 
+      # v9.180 (roadmap P1.3) — the ROTATION DRILL on the live stack: rotate the
+      # DB password and the session key with polaris-rotate-secret.sh, which
+      # rotates the tmpfs copy, updates the DB role, recreates the app, and
+      # writes the new value through to the sealed store. Then health must be
+      # 200 again and the sealed store must match the tmpfs byte for byte (the
+      # write-through invariant: a reboot re-unseals the NEW secrets).
+      - name: Rotation drill on the live stack (db password + session key), then verify write-through
+        working-directory: polaris_web
+        env:
+          POLARIS_DOMAIN: localhost
+          POLARIS_SECRETS_DIR: /run/polaris/secrets
+          POLARIS_SECRETS_BACKEND: age
+          POLARIS_SECRETS_AGE_RECIPIENTS: /tmp/ci-age.recipients
+          POLARIS_SECRETS_AGE_IDENTITY: /tmp/ci-age.identity
+        run: |
+          set -e
+          before=$(sudo sha256sum /run/polaris/secrets/polaris_db_password | cut -c1-16)
+          sudo -E bash ../scripts/polaris-rotate-secret.sh polaris_db_password
+          sudo -E bash ../scripts/polaris-rotate-secret.sh polaris_secret_key
+          after=$(sudo sha256sum /run/polaris/secrets/polaris_db_password | cut -c1-16)
+          [ "$before" != "$after" ] || { echo "::error::db password did not change"; exit 1; }
+          code=""
+          for i in $(seq 1 45); do
+            code=$(curl -sk https://localhost:8443/api/health -o /dev/null -w '%{http_code}' || true)
+            [ "$code" = 200 ] && break
+            sleep 4
+          done
+          [ "$code" = 200 ] || { echo "::error::stack not healthy after rotation (last HTTP $code)"; docker logs polaris-app 2>&1 | tail -30; exit 1; }
+          curl -sk https://localhost:8443/api/health | python3 -c "import sys,json; d=json.load(sys.stdin); assert d['checks']['database']['status']=='healthy', d['checks']['database']; print('healthy after rotating polaris_db_password + polaris_secret_key')"
+          sudo -E bash ../scripts/polaris-secrets.sh verify
+          echo "sealed store matches the live tmpfs after rotation (write-through holds)"
+          sudo -E bash ../scripts/polaris-secrets.sh unseal --dst /tmp/reunseal >/dev/null
+          [ "$(sudo sha256sum /tmp/reunseal/polaris_db_password | cut -c1-16)" = "$after" ] && echo "re-unseal returns the rotated password"
+
       - name: Tear down
         if: always()
         working-directory: polaris_web
         env:
           POLARIS_DOMAIN: localhost
-        run: docker compose -f docker-compose.prod.yml -f docker-compose.citest.yml down -v || true
+          POLARIS_SECRETS_DIR: /run/polaris/secrets
+        run: |
+          docker compose -f docker-compose.prod.yml -f docker-compose.citest.yml down -v || true
+          sudo umount /run/polaris/secrets 2>/dev/null || true
