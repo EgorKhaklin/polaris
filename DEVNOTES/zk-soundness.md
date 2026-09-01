@@ -9,7 +9,8 @@ Glass bounded-integration decision.
 The short version, up front:
 
 > **The ZK layer is an educational Merkle-inclusion SNARK built on the audited
-> `plonky2` 0.2 crate. The membership statement and its verdict are
+> `plonky2` 1.x crate (bumped from 0.2 in v9.170; Merkle roots verified
+> bit-identical across the major). The membership statement and its verdict are
 > two-witnessed by an independent implementation. The tree depth is
 > runtime-parameterized (`POLARIS_ZK_TREE_DEPTH`, default 14 = 16,384 leaves),
 > which covers the schema's 10,000-leaf epoch cap, so the default anonymity set
@@ -61,16 +62,17 @@ implementation also rejects.
 
 The soundness of the *proof object itself* (the FRI / Plonky2 proof, that a
 cheating prover cannot forge membership) rests entirely on the upstream
-`plonky2` 0.2 crate. Polaris does not re-implement or audit that; it depends on
+`plonky2` 1.x crate. Polaris does not re-implement or audit that; it depends on
 it. The honest caveats:
 
 | Component | What is real | The honest caveat |
 |---|---|---|
-| **Proof system** | The audited, widely-used `plonky2` 0.2 crate (transparent setup, FRI-based, no trusted ceremony, no elliptic-curve assumption). | Polaris ships a thin circuit over it. The *crate* is mature; *Polaris's use of it* has had no external review. |
+| **Proof system** | The audited, widely-used `plonky2` 1.x crate (transparent setup, FRI-based, no trusted ceremony, no elliptic-curve assumption); bumped from 0.2 in v9.170 with roots verified bit-identical and the two-witness differential re-passing. | Polaris ships a thin circuit over it. The *crate* is mature; *Polaris's use of it* has had no external review. |
 | **Statement** | "I know a leaf `L` and a path `P` such that `L` hashes up to the public root `R`, bound to `(epoch_id, context_id, nonce)`." Correct and now two-witnessed. | The binding fields are registered as public inputs but not otherwise constrained (see the public-input registration in `lib.rs`); they prevent proof *substitution* by commitment, not by an in-circuit predicate, and do not by themselves prevent bundle replay (the single-use nonce store is deferred, threat-model T-T2). |
 | **Tree size** | Depth is runtime-parameterized (P0.7): `POLARIS_ZK_TREE_DEPTH`, default 14 (16,384 leaves), settable 4..=32. | The default covers the schema's 10,000-leaf epoch cap, so the anonymity set is a full epoch, not a 16-leaf demo. Plonky2 is transparent, so a depth change is a config change, not a ceremony. Larger anonymity sets are viable for verify/size but bounded by prover cost (see benchmarks). |
 | **Hash** | Poseidon over Goldilocks, Plonky2-native, vector-matched. | Standard primitive, but the in-circuit security margin is Plonky2's default config, not a parameter set audited for this deployment. |
 | **FRI parameters** | `CircuitConfig::standard_recursion_config()` defaults. | The concrete bit-security of the shipped config is **still not independently derived here** (it depends on the FRI rate + query count, which this ledger does not re-derive); treat any specific bit number as aspirational. What IS now measured is the *performance* profile below. |
+| **Token-signing PQC** | Integration scaffold for real ML-DSA via liboqs (`pqc_signing.py`, `POLARIS_USE_REAL_PQC`). | **Off by default**: `token_value` is a deterministic placeholder so property tests stay reproducible. Activation is operator-side. This is a separate primitive from the Merkle SNARK above; do not conflate them. |
 
 ### Measured performance (P0.7, v9.169)
 
@@ -105,7 +107,6 @@ cap). Depths up to ~20 are usable today at a sub-second prove cost. A
 national-scale single-tree anonymity set (depth 24+) is verify- and
 size-viable but needs the sibling-path witness optimization before its prover
 cost is practical; that optimization is the named next step for this layer.
-| **Token-signing PQC** | Integration scaffold for real ML-DSA via liboqs (`pqc_signing.py`, `POLARIS_USE_REAL_PQC`). | **Off by default**: `token_value` is a deterministic placeholder so property tests stay reproducible. Activation is operator-side. This is a separate primitive from the Merkle SNARK above; do not conflate them. |
 
 ---
 

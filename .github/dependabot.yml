@@ -15,8 +15,10 @@
 #     major is a migration project, revisited in the P2 scale phase)
 #   - python base-image major (runtime is pinned and tested on 3.12)
 #   - plonky2 / plonky2_field major (the proving system itself; requires
-#     proof-format compatibility study + two-witness revalidation, folded
-#     into roadmap P0.7's ZK production profile)
+#     proof-format compatibility study + two-witness revalidation). The
+#     0.2->1.x major was taken deliberately in v9.170 after that revalidation
+#     (roots bit-identical, two-witness re-passing). The ignore stays so a
+#     FUTURE major (2.x) gets the same bit-for-bit treatment, never a blind bump.
 #   - webauthn major (the operator-MFA library; a major of the credential
 #     verification path needs its own test pass, folded into roadmap P1.7's
 #     session/authn hardening)

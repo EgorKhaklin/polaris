@@ -5,6 +5,35 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.170 — 2026-09-01 (Roadmap P0.7 part 2: the plonky2 0.2 to 1.x major, evaluated then taken)
+
+The proving-system major Dependabot proposed and v9.161 deferred as unevaluated
+is now taken, after the evaluation P0.7 called for came back clean.
+
+The revalidation, all on the real crate (0.2 to 1.x) rather than trusting the
+version number: the crate builds, the eight Rust crate tests pass, a Merkle
+root over a fixed leaf set is BIT-IDENTICAL to the 0.2-era root (Poseidon and
+Goldilocks parameters unchanged across the major, so the constants extracted
+from 0.2.2 remain valid and needed no regeneration), and the full two-witness
+differential re-passes 31/31 against the 1.x binary. The second witness is the
+load-bearing check here: if 1.x had altered the hash, the encoding, or the tree
+ordering, the independent Python re-derivation would have diverged, and it did
+not.
+
+Plonky2 1.x made `PartialWitness::set_*` return a `Result` (it errors on a
+double-set), which surfaced as seven "unused Result that must be used"
+warnings. These were handled with `?`, not silenced: `prove()` already returns
+`Result`, and a dropped set error could leave a circuit target unconstrained,
+so the error is propagated. Zero warnings remain.
+
+The soundness ledger, the Poseidon-constants provenance note, and the
+dependabot posture were all updated to reflect 1.x. A future 2.x stays
+`ignore`d for the same reason 1.x was: a proving-system major gets a bit-for-bit
+revalidation, not a blind merge. ROADMAP P0.7 is done across v9.169 (profile +
+benchmarks) and this ship (the major). 88 checks, 85 check-layer tests.
+
+---
+
 ## v9.169 — 2026-09-01 (Roadmap P0.7 part 1: the ZK tree is parameterized and, for the first time, benchmarked)
 
 The ZK layer's tree depth was a hardcoded `const TREE_DEPTH = 14`; the

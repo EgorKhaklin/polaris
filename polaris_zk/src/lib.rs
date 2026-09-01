@@ -313,20 +313,24 @@ pub fn prove(
     let (builder, leaf_t, proof_t, index_bits_t, root_t, epoch_t, context_t, nonce_t) =
         build_circuit();
 
+    // Plonky2 1.x — the PartialWitness::set_* methods return Result (they error
+    // on a double-set of the same target). prove() is a Result-returning trust
+    // boundary, so propagate rather than ignore: a silently-dropped set error
+    // could leave a target unconstrained. `?` surfaces it as the crate error.
     let mut pw = PartialWitness::<F>::new();
-    pw.set_hash_target(leaf_t, leaf_hash);
-    pw.set_hash_target(root_t, tree.cap.0[0]);
-    pw.set_target(epoch_t, F::from_canonical_u64(epoch_id));
-    pw.set_target(context_t, F::from_canonical_u64(context_id));
-    pw.set_target(nonce_t, F::from_canonical_u64(nonce));
+    pw.set_hash_target(leaf_t, leaf_hash)?;
+    pw.set_hash_target(root_t, tree.cap.0[0])?;
+    pw.set_target(epoch_t, F::from_canonical_u64(epoch_id))?;
+    pw.set_target(context_t, F::from_canonical_u64(context_id))?;
+    pw.set_target(nonce_t, F::from_canonical_u64(nonce))?;
 
     for (i, sibling) in merkle_proof.siblings.iter().enumerate() {
-        pw.set_hash_target(proof_t.siblings[i], *sibling);
+        pw.set_hash_target(proof_t.siblings[i], *sibling)?;
     }
     // Set index bits: tree_depth() bits, least significant first.
     for (i, bit_t) in index_bits_t.iter().enumerate() {
         let bit_val = ((witness.leaf_index >> i) & 1) as u64;
-        pw.set_bool_target(*bit_t, bit_val == 1);
+        pw.set_bool_target(*bit_t, bit_val == 1)?;
     }
 
     let circuit = builder.build::<C>();

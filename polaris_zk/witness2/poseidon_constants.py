@@ -6,6 +6,12 @@ AUTO-GENERATED from the public plonky2 0.2.2 source
 MDS_MATRIX_CIRC / MDS_MATRIX_DIAG; #[test] test_vectors). These are public
 cryptographic constants, not Polaris or Glass code. Regenerate with
 tools/gen_poseidon_constants.py if the pinned plonky2 version changes.
+
+The crate was bumped 0.2 to 1.x in v9.170; these constants remain VALID under
+1.x, proven bit-for-bit: the Rust and Python Merkle roots stayed identical
+across the major, and the published-vector anchor test (test_witness2.py) still
+passes. Plonky2 did not change the Poseidon-Goldilocks parameters across the
+major, so no regeneration was needed.
 """
 
 # Goldilocks prime: 2**64 - 2**32 + 1
