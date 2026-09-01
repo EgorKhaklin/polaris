@@ -67,6 +67,13 @@ if r['oqs_import_error']:
     print(f"  oqs import error: {r['oqs_import_error']}")
 print(f"  flag POLARIS_USE_REAL_PQC: {r['flag_set']}")
 print(f"  is enabled:       {r['is_enabled']}")
+c = r.get('custody')
+if c is None:
+    print("  custody:          none (no persistent key; ephemeral dev signing)")
+elif 'error' in c:
+    print(f"  custody:          ERROR {c['error']}")
+else:
+    print(f"  custody:          {c['driver']}  key={c['key_id']}  pk-fp={c['public_key_fingerprint']}")
 print()
 if r['is_enabled']:
     print("  STATE: real PQ signing is ENABLED for new token issuance.")

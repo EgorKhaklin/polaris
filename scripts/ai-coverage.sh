@@ -77,7 +77,7 @@ run() {  # run <cwd> <module...>
 
 echo "== running suites under coverage =="
 run "$ROOT"            pytest polaris_checks/test_checks.py -q
-run "$ROOT/polaris_web" unittest test_app test_check_constraints test_pqc_signing
+run "$ROOT/polaris_web" unittest test_app test_check_constraints test_pqc_signing test_custody
 run "$ROOT/polaris_web" unittest test_invariants_property test_redaction_property
 run "$ROOT/polaris_cli" unittest test_cli
 

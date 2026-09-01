@@ -107,6 +107,18 @@ services:
       redis:
         condition: service_healthy
     environment:
+      # v9.178 (roadmap P1.2) — issuer-key custody. Empty = the file driver via
+      # POLARIS_PQC_SIGNING_KEY_FILE. For an HSM/PKCS#11 token or AWS KMS, set
+      # POLARIS_CUSTODY_DRIVER and layer the matching override template
+      # (docker-compose.custody-pkcs11.yml / docker-compose.custody-awskms.yml)
+      # via POLARIS_COMPOSE_EXTRA; secrets (the PIN, cloud credentials) never
+      # travel through this block. See docs/operator/KEY-CEREMONY.md.
+      POLARIS_CUSTODY_DRIVER: "${POLARIS_CUSTODY_DRIVER:-}"
+      POLARIS_CUSTODY_AWSKMS_KEY_ID: "${POLARIS_CUSTODY_AWSKMS_KEY_ID:-}"
+      POLARIS_CUSTODY_AWSKMS_REGION: "${POLARIS_CUSTODY_AWSKMS_REGION:-}"
+      POLARIS_CUSTODY_PKCS11_TOKEN_LABEL: "${POLARIS_CUSTODY_PKCS11_TOKEN_LABEL:-polaris}"
+      POLARIS_CUSTODY_PKCS11_KEY_LABEL: "${POLARIS_CUSTODY_PKCS11_KEY_LABEL:-polaris-issuer}"
+      POLARIS_PQC_TRUST_ANCHORS_FILE: "${POLARIS_PQC_TRUST_ANCHORS_FILE:-}"
       # Non-sensitive runtime config (G28: nothing here is sensitive)
       # v8.83: app talks to pgbouncer:6432, which multiplexes onto
       # postgres:5432. Connection-pooling foundations for Arc B Phase 2.

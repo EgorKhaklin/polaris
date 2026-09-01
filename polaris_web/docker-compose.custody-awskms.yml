@@ -1,0 +1,27 @@
+# docker-compose.custody-awskms.yml — layer over docker-compose.prod.yml when the
+# issuer signing key is an AWS KMS asymmetric key (KeySpec ML_DSA_65). Roadmap
+# P1.2; see docs/operator/KEY-CEREMONY.md.
+#
+#   POLARIS_COMPOSE_EXTRA="-f docker-compose.custody-awskms.yml"   (polaris.env)
+#   POLARIS_CUSTODY_AWSKMS_KEY_ID=<key id or ARN>  POLARIS_CUSTODY_AWSKMS_REGION=<region>
+#
+# Credentials: prefer the host's instance role / IAM role (no secret material at
+# all). If you must use static keys, put them in secrets/aws_credentials (an
+# AWS shared-credentials file, 0600-class) which is mounted read-only below;
+# never in environment. The app image needs boto3: build with
+# --build-arg POLARIS_CUSTODY_EXTRAS=1.
+services:
+  app:
+    build:
+      args:
+        POLARIS_CUSTODY_EXTRAS: "1"
+    environment:
+      POLARIS_CUSTODY_DRIVER: awskms
+      AWS_SHARED_CREDENTIALS_FILE: /run/secrets/aws_credentials
+      AWS_DEFAULT_REGION: "${POLARIS_CUSTODY_AWSKMS_REGION:-}"
+    secrets:
+      - aws_credentials
+
+secrets:
+  aws_credentials:
+    file: ./secrets/aws_credentials

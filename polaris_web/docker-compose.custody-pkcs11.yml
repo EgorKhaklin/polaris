@@ -1,0 +1,27 @@
+# docker-compose.custody-pkcs11.yml — layer over docker-compose.prod.yml when the
+# issuer signing key lives in a PKCS#11 token (an HSM, or a software token such
+# as Kryoptic). Roadmap P1.2; see docs/operator/KEY-CEREMONY.md.
+#
+#   POLARIS_COMPOSE_EXTRA="-f docker-compose.custody-pkcs11.yml"   (polaris.env)
+#
+# What the operator supplies: the vendor's PKCS#11 module (and its client
+# configuration) at ./custody/pkcs11/ on the host, and the user PIN in
+# secrets/pkcs11_pin (0600-class, one line, NEVER env). The app image needs the
+# python-pkcs11 driver: build with --build-arg POLARIS_CUSTODY_EXTRAS=1.
+services:
+  app:
+    build:
+      args:
+        POLARIS_CUSTODY_EXTRAS: "1"
+    environment:
+      POLARIS_CUSTODY_DRIVER: pkcs11
+      POLARIS_CUSTODY_PKCS11_MODULE: /opt/polaris-custody/pkcs11/${POLARIS_CUSTODY_PKCS11_MODULE_FILE:-libpkcs11.so}
+      POLARIS_CUSTODY_PKCS11_PIN_FILE: /run/secrets/pkcs11_pin
+    volumes:
+      - ./custody/pkcs11:/opt/polaris-custody/pkcs11:ro
+    secrets:
+      - pkcs11_pin
+
+secrets:
+  pkcs11_pin:
+    file: ./secrets/pkcs11_pin

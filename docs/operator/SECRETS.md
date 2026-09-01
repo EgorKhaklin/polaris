@@ -525,6 +525,13 @@ Document the reason in the operator runbook.
 
 ## 8. HSM / KMS integration (v9.01 / Phase 3 Wave 1)
 
+> **The issuer SIGNING key has its own custody layer (v9.178, roadmap P1.2).**
+> This section is about the app's symmetric secrets. The ML-DSA-65 signing key
+> is handled by `polaris_web/custody.py` with `file`, `pkcs11` (HSM / PKCS#11
+> v3.2 token), and `awskms` (KMS `ML_DSA_65`) drivers, a witnessed ceremony, and
+> a rotation procedure with trust anchors: [`KEY-CEREMONY.md`](KEY-CEREMONY.md).
+
+
 The default v8.77 deployment file-mounts secrets at mode 0600 on
 host disk. That's adequate for single-host deployments under the
 operator's full control. For deployments that need:

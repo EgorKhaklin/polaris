@@ -65,6 +65,11 @@ import sys
 from dataclasses import dataclass
 from typing import Optional
 
+try:  # roadmap P1.2 — the issuer key sits behind a custody driver
+    import custody  # type: ignore
+except ImportError:  # pragma: no cover
+    from polaris_web import custody  # type: ignore
+
 
 class PQCUnavailableError(RuntimeError):
     """Raised when POLARIS_USE_REAL_PQC=1 but oqs is not importable."""
@@ -153,6 +158,13 @@ def is_enabled() -> bool:
     return flag_set and _OQS_AVAILABLE
 
 
+def _custody_report():
+    try:
+        return custody.describe_current()
+    except custody.CustodyError as exc:
+        return {"error": str(exc)}
+
+
 def availability_report() -> dict:
     """Structured introspection for operators + CI.
 
@@ -170,6 +182,10 @@ def availability_report() -> dict:
         "flag_set": os.environ.get("POLARIS_USE_REAL_PQC", "0") == "1",
         "is_enabled": is_enabled(),
         "algorithm": _ALG_NAME,
+        # roadmap P1.2 — which custody holds the issuer key (non-secret facts;
+        # None = no persistent key, the ephemeral dev fallback). A misconfigured
+        # custody is reported as an error string rather than raising here.
+        "custody": _custody_report(),
         "notes": (
             "Per BIG MISSION v9.24 Sanctum T2#7: real signing ships as "
             "scaffolding behind POLARIS_USE_REAL_PQC=1. Migration of "
@@ -192,29 +208,19 @@ _PERSISTENT_LOADED = False
 
 
 def _load_persistent_keypair() -> Optional[tuple]:
-    """Return (secret_key_bytes, public_key_bytes) from the configured key file,
-    or None if POLARIS_PQC_SIGNING_KEY_FILE is unset. Cached after first load.
-    Raises RuntimeError on a malformed/mismatched key file (fail loud — a bad
-    signing key must not silently degrade to ephemeral)."""
+    """Legacy accessor kept for callers/tests: (secret_key, public_key) when the
+    custody driver is the FILE driver, None when no persistent key is configured.
+    Non-file drivers (pkcs11, awskms) never expose a secret key, so this returns
+    None for them; use `custody.get_custody()` directly. Raises loudly on a
+    malformed key file (a bad signing key must not silently degrade to ephemeral)."""
     global _PERSISTENT_KEYPAIR, _PERSISTENT_LOADED
-    if _PERSISTENT_LOADED:
-        return _PERSISTENT_KEYPAIR
-    _PERSISTENT_LOADED = True
-    path = os.environ.get(_PERSISTENT_KEY_ENV)
-    if not path:
+    cust = custody.get_custody()
+    if isinstance(cust, custody.FileCustody):
+        _PERSISTENT_KEYPAIR = cust.keypair()
+    else:
         _PERSISTENT_KEYPAIR = None
-        return None
-    try:
-        with open(path) as fh:
-            data = json.load(fh)
-        if data.get("algorithm") != _ALG_NAME:
-            raise RuntimeError(
-                f"{_PERSISTENT_KEY_ENV} algorithm {data.get('algorithm')!r} != {_ALG_NAME}")
-        keypair = (bytes.fromhex(data["secret_key_hex"]), bytes.fromhex(data["public_key_hex"]))
-    except (OSError, ValueError, KeyError) as exc:
-        raise RuntimeError(f"{_PERSISTENT_KEY_ENV}={path} is unreadable/malformed: {exc}") from exc
-    _PERSISTENT_KEYPAIR = keypair
-    return keypair
+    _PERSISTENT_LOADED = True
+    return _PERSISTENT_KEYPAIR
 
 
 def generate_keypair() -> dict:
@@ -241,9 +247,11 @@ def generate_keypair() -> dict:
 def sign(message: bytes) -> SigningResult:
     """Sign `message` with ML-DSA-65.
 
-    Uses the long-lived keypair from POLARIS_PQC_SIGNING_KEY_FILE when configured
-    (so the public key is a stable trust anchor); otherwise generates an ephemeral
-    per-call keypair (the dev/test fallback — not verifiable against a known anchor).
+    Uses the custodied long-lived key when one is configured (the file driver via
+    POLARIS_PQC_SIGNING_KEY_FILE, or a PKCS#11 / AWS KMS driver via
+    POLARIS_CUSTODY_DRIVER; see custody.py), so the public key is a stable trust
+    anchor; otherwise generates an ephemeral per-call keypair (the dev/test
+    fallback — not verifiable against a known anchor).
 
     Raises PQCUnavailableError if oqs is not importable.
     Returns SigningResult with public_key, signature, message hash.
@@ -260,11 +268,13 @@ def sign(message: bytes) -> SigningResult:
     # SHA3-256 the message for binding to a fixed-size digest
     digest = hashlib.sha3_256(message).digest()
 
-    keypair = _load_persistent_keypair()
-    if keypair is not None:
-        secret_key, public_key = keypair
-        with _oqs.Signature(_ALG_NAME, secret_key=secret_key) as signer:
-            signature = signer.sign(digest)
+    # roadmap P1.2 — the custodied key (file, pkcs11, or awskms driver) signs
+    # the digest; the driver returns raw ML-DSA-65 bytes, so nothing downstream
+    # (storage, the two-witness verify) can tell which custody produced them.
+    cust = custody.get_custody()
+    if cust is not None:
+        public_key = cust.public_key()
+        signature = cust.sign(digest)
     else:
         # No persistent key configured — ephemeral keypair (dev/test only).
         with _oqs.Signature(_ALG_NAME) as signer:
@@ -456,18 +466,46 @@ def verify_both(message: bytes, signature_hex: str, public_key_hex: str) -> bool
 
 
 def trust_anchor_public_key_hex() -> Optional[str]:
-    """The published trust anchor: the persistent signing key's public key (hex).
+    """The published trust anchor: the custodied signing key's public key (hex).
 
     This is the key a verifier checks token signatures against. Returns None when
-    no persistent key is configured (`POLARIS_PQC_SIGNING_KEY_FILE` unset) — there
-    is then no stable, publishable anchor, only per-process ephemeral keys, so a
-    real signature cannot be verified at use.
+    no custody is configured (no persistent key), since there is then no stable,
+    publishable anchor, only per-process ephemeral keys, so a real signature
+    cannot be verified at use.
     """
-    keypair = _load_persistent_keypair()
-    if keypair is None:
+    cust = custody.get_custody()
+    if cust is None:
         return None
-    _secret, public = keypair
-    return public.hex()
+    return cust.public_key().hex()
+
+
+_TRUST_ANCHORS_ENV = "POLARIS_PQC_TRUST_ANCHORS_FILE"
+
+
+def trust_anchor_public_keys() -> list:
+    """All acceptable anchors, hex: the CURRENT custodied key first, then the
+    previous keys listed in POLARIS_PQC_TRUST_ANCHORS_FILE (a JSON document
+    {"anchors": [{"public_key_hex": ..., "label": ..., "retired": ...}]}). This is
+    what makes key rotation possible: tokens signed under a previous key keep
+    verifying until the operator removes that anchor (KEY-CEREMONY.md).
+    A malformed anchors file fails loud rather than silently shrinking trust."""
+    anchors = []
+    current = trust_anchor_public_key_hex()
+    if current:
+        anchors.append(current)
+    path = os.environ.get(_TRUST_ANCHORS_ENV)
+    if path:
+        try:
+            with open(path) as fh:
+                doc = json.load(fh)
+            for entry in doc.get("anchors", []):
+                pk = entry["public_key_hex"]
+                bytes.fromhex(pk)
+                if pk not in anchors:
+                    anchors.append(pk)
+        except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+            raise RuntimeError(f"{_TRUST_ANCHORS_ENV}={path} is unreadable/malformed: {exc}") from exc
+    return anchors
 
 
 def verify_token_signature(
@@ -491,10 +529,11 @@ def verify_token_signature(
     - anything else — False (unknown signature scheme).
     """
     if algorithm_label == _ALG_NAME:
-        anchor = trust_anchor_public_key_hex()
-        if not anchor:
+        anchors = trust_anchor_public_keys()
+        if not anchors:
             return False
-        return verify_both(token_value.encode("utf-8"), signature_bytes.hex(), anchor)
+        # The current key first, then any previous keys still trusted (rotation).
+        return any(verify_both(token_value.encode("utf-8"), signature_bytes.hex(), a) for a in anchors)
     if algorithm_label == PLACEHOLDER_LABEL:
         import hmac
         expected = hashlib.sha3_256(token_value.encode("utf-8")).digest()

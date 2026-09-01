@@ -5,6 +5,67 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.178 — 2026-09-01 (Roadmap P1.2: the issuer signing key behind a custody interface, HSM/PKCS#11 and AWS KMS drivers)
+
+Polaris has one long-lived private key, the issuer's ML-DSA-65 token-signing
+key, and until now it was a JSON file the app read into memory. That is now
+the `file` driver of a custody interface, and two more drivers put the key
+where a national authority keeps it.
+
+  - `polaris_web/custody.py`: `KeyCustody` with `public_key()` and
+    `sign(digest)` returning raw ML-DSA-65 bytes, so nothing downstream can
+    tell which driver signed. `FileCustody` (the JSON file, liboqs in-process);
+    `Pkcs11Custody` (a PKCS#11 v3.2 token: the key is generated IN the token by
+    the ceremony helper, sensitive and non-extractable, and every signature is
+    `CKM_ML_DSA` inside it); `AwsKmsCustody` (KeySpec `ML_DSA_65`, `Sign` with
+    `MessageType RAW` and `ML_DSA_SHAKE_256`, the public key parsed from KMS's
+    SPKI; wrong key spec or a disabled key is refused at load). Selection by
+    `POLARIS_CUSTODY_DRIVER`; the PKCS#11 PIN comes only from a file and the
+    app refuses to start if it finds the PIN in env.
+  - `pqc_signing.sign()` obtains signatures from the custody driver; the
+    two-witness verification (liboqs and OpenSSL must agree) is byte-for-byte
+    unchanged and still gates every signature before it is stored, whichever
+    driver produced it. `verify_token_signature` now accepts the current key
+    or any previous key listed in `POLARIS_PQC_TRUST_ANCHORS_FILE`, which is
+    what makes rotation possible; a malformed anchors file fails loud.
+  - `/api/health` gains a `custody` component (driver, key id, public-key
+    fingerprint; degraded when real PQC is on with only ephemeral keys,
+    unhealthy when the backend fails to load); `polaris-pqc-status.sh` prints
+    the same. The prod compose passes the non-secret custody env through, and
+    two overlay templates (`docker-compose.custody-pkcs11.yml`,
+    `docker-compose.custody-awskms.yml`) mount the vendor module / PIN file /
+    credentials file; the app image takes `--build-arg POLARIS_CUSTODY_EXTRAS=1`
+    for the optional drivers (`requirements-custody.txt`: python-pkcs11,
+    boto3, pinned).
+  - `docs/operator/KEY-CEREMONY.md`: what a witnessed ceremony records, the
+    ceremony per driver, rotation with trust anchors, and the compromise case.
+    SECRETS.md, PQC-POSTURE.md, and the operator index point at it.
+
+Exercised, not asserted. `test_custody.py`: the file driver for real; the KMS
+driver through its real botocore wire path (JSON 1.1, SigV4, base64 blobs,
+SPKI) against a stand-in that implements DescribeKey / GetPublicKey / Sign and
+signs with OpenSSL's ML-DSA-65, so the only fake is the remote service, plus
+an opt-in live test; rotation end to end (a token signed under the old key
+stops verifying after the switch and verifies again once the old key is an
+anchor); the env refusals. The PKCS#11 driver runs against a REAL PKCS#11 v3.2
+token: Kryoptic (a software token with ML-DSA, Fedora 43) in the new
+`custody-pkcs11` CI job, key generated in-token, signatures verified by both
+witnesses, duplicate labels refused. Building it found the usual things:
+`MLDSAParameterSet` lives in `pkcs11.mechanisms`, not `constants`; liboqs-python
+builds liboqs from source when Fedora's 0.12 is older than it wants, and needs
+git for that; and the dev Dockerfile's per-module COPY list did not include the
+new module (caught by `check_dockerfile_modules` before it could ship).
+
+Scope, honestly: epoch anchors are hash-chained, not signed, so the issuer key
+is the only key under custody; anything signed later goes through the same
+interface. No hardware HSM is exercised in CI; the PKCS#11 conformance surface
+is exercised against a software token. AWS is the cloud driver shipped; GCP and
+Azure ML-DSA are preview-stage and follow the same shape.
+`check_key_custody_abstraction` pins all of it. 93 checks, 90 check-layer
+tests.
+
+---
+
 ## v9.177 — 2026-09-01 (P1.1 follow-through: the CI assertion could not read the backup directory it was checking)
 
 The v9.176 `linux-install` job proved the substance of P1.1 on a real Linux

@@ -2943,3 +2943,57 @@ def test_linux_server_deployment_check_discriminates(tmp_path):
 
     write({"README.md": "no server path here\n"})
     assert checks.check_linux_server_deployment(tmp_path)[0].level == "FAIL", "must FAIL when README does not link the guide"
+
+
+def test_key_custody_abstraction_check_discriminates(tmp_path):
+    CU = ("class FileCustody: pass\nclass Pkcs11Custody:\n  def sign(self): Mechanism.ML_DSA\n"
+          "def pkcs11_generate_key(): ML_DSA_KEY_PAIR_GEN; {EXTRACTABLE: False}\n"
+          "class AwsKmsCustody: ML_DSA_65; ML_DSA_SHAKE_256; MessageType=\"RAW\"\n"
+          "def from_env():\n  os.environ.get(\"POLARIS_CUSTODY_PKCS11_PIN\"); POLARIS_CUSTODY_PKCS11_PIN_FILE\n"
+          "def get_custody(): pass\n")
+    PQ = ("def verify_both(): pass\ndef signature_with_key_for_token():\n    verify_both()\n"
+          "def sign():\n    cust = custody.get_custody()\n"
+          "def trust_anchor_public_keys():\n    os.environ.get(\"POLARIS_PQC_TRUST_ANCHORS_FILE\")\n")
+    good = {
+        "polaris_web/custody.py": CU,
+        "polaris_web/pqc_signing.py": PQ,
+        "polaris_web/test_custody.py": "class FileCustodyTests: pass\nclass AwsKmsCustodyTests: pass\n"
+                                       "class Pkcs11CustodyTests: pass\nclass _KmsStandIn: pass\n"
+                                       "POLARIS_PQC_TRUST_ANCHORS_FILE\n",
+        "polaris_web/requirements-custody.txt": "python-pkcs11==0.9.5\nboto3==1.43.85\n",
+        ".github/workflows/ci.yml": "run: dnf install kryoptic; pip install -r polaris_web/requirements-custody.txt; "
+                                    "POLARIS_CUSTODY_PKCS11_REQUIRE=1 python -m unittest test_custody\n",
+        "docs/operator/KEY-CEREMONY.md": "## Ceremony\npkcs11-keygen ML_DSA_65\n## Rotation\n",
+        "polaris_web/app.py": "def _health_check_custody(): pass\nchecks = {'custody': _health_check_custody()}\n",
+    }
+
+    def write(overrides=None):
+        files = dict(good); files.update(overrides or {})
+        for rel, body in files.items():
+            f = tmp_path / rel
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text(body)
+
+    write()
+    assert checks.check_key_custody_abstraction(tmp_path)[0].level == "OK", "must PASS on the good fixture"
+
+    # A secret-key signing path that bypasses custody (the pre-P1.2 code).
+    write({"polaris_web/pqc_signing.py": PQ + "with _oqs.Signature(_ALG_NAME, secret_key=sk) as s: pass\n"})
+    f = checks.check_key_custody_abstraction(tmp_path)[0]
+    assert f.level == "FAIL" and "custody.get_custody" in f.message, "must FAIL on direct secret-key signing"
+
+    # The PIN accepted from env.
+    write({"polaris_web/custody.py": CU.replace("os.environ.get(\"POLARIS_CUSTODY_PKCS11_PIN\"); ", "")})
+    assert checks.check_key_custody_abstraction(tmp_path)[0].level == "FAIL", "must FAIL when the PIN can come from env"
+
+    # KMS signing with a pre-hash / non-RAW message type.
+    write({"polaris_web/custody.py": CU.replace('MessageType=\"RAW\"', 'MessageType=\"DIGEST\"')})
+    assert checks.check_key_custody_abstraction(tmp_path)[0].level == "FAIL", "must FAIL when KMS is not RAW pure ML-DSA"
+
+    # CI without the real-token PKCS#11 run.
+    write({".github/workflows/ci.yml": "run: pip install -r polaris_web/requirements-custody.txt; python -m unittest test_custody\n"})
+    assert checks.check_key_custody_abstraction(tmp_path)[0].level == "FAIL", "must FAIL when CI has no real PKCS#11 token run"
+
+    # No rotation procedure.
+    write({"docs/operator/KEY-CEREMONY.md": "## Ceremony\npkcs11-keygen ML_DSA_65\n"})
+    assert checks.check_key_custody_abstraction(tmp_path)[0].level == "FAIL", "must FAIL without a Rotation section"

@@ -16,6 +16,7 @@ For developers contributing to Polaris, see
 | [`DEPLOYMENT.md`](DEPLOYMENT.md) | Three deployment paths (dev / staging / prod) |
 | [`OPERATIONS.md`](OPERATIONS.md) | **Day-2 runbook (~1700 lines)** — backup, restore, scaling, monitoring, archive, purge, pre-commit, certificate transparency |
 | [`SECRETS.md`](SECRETS.md) | Env-var matrix + rotation cadence + KMS paved paths |
+| [`KEY-CEREMONY.md`](KEY-CEREMONY.md) | The issuer signing key: custody drivers (file / PKCS#11 HSM / AWS KMS), the witnessed key ceremony, rotation with trust anchors |
 | [`SECURITY.md`](SECURITY.md) | Cybersecurity posture + audit + controls |
 | [`PRIVACY.md`](PRIVACY.md) | Data minimization + operational privacy posture |
 | [`DR.md`](DR.md) | Disaster recovery procedures (RPO ≤1min / RTO ≤30min) |

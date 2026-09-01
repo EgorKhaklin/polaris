@@ -2983,6 +2983,62 @@ def check_linux_server_deployment(root: pathlib.Path) -> list[Finding]:
                "operator index, and CI proving both package branches plus a full systemd install to healthy")
 
 
+def check_key_custody_abstraction(root: pathlib.Path) -> list[Finding]:
+    """Roadmap P1.2: the issuer signing key sits behind a custody interface with
+    file, PKCS#11, and AWS KMS drivers; secrets never come from env; the
+    two-witness verify path is unchanged; each driver is exercised (the
+    PKCS#11 one against a real token in CI); ceremony + rotation documented."""
+    cu = _read(root, "polaris_web/custody.py")
+    pq = _read(root, "polaris_web/pqc_signing.py")
+    tests = _read(root, "polaris_web/test_custody.py")
+    req = _read(root, "polaris_web/requirements-custody.txt")
+    ci = _read(root, ".github/workflows/ci.yml")
+    cer = _read(root, "docs/operator/KEY-CEREMONY.md")
+    app = _read(root, "polaris_web/app.py")
+    if not (cu and pq and tests and req and ci and cer and app):
+        return _fail("key_custody", "a custody file is missing (custody.py, pqc_signing.py, test_custody.py, "
+                     "requirements-custody.txt, ci.yml, KEY-CEREMONY.md, app.py)")
+    for cls in ("class FileCustody", "class Pkcs11Custody", "class AwsKmsCustody", "def from_env", "def get_custody"):
+        if cls not in cu:
+            return _fail("key_custody", f"custody.py must define {cls}")
+    if "Mechanism.ML_DSA" not in cu or "ML_DSA_KEY_PAIR_GEN" not in cu or "EXTRACTABLE: False" not in cu:
+        return _fail("key_custody", "the PKCS#11 driver must sign with CKM_ML_DSA and generate the key in-token, "
+                     "non-extractable (ML_DSA_KEY_PAIR_GEN, EXTRACTABLE: False)")
+    if "ML_DSA_65" not in cu or "ML_DSA_SHAKE_256" not in cu or 'MessageType="RAW"' not in cu:
+        return _fail("key_custody", "the AWS KMS driver must require KeySpec ML_DSA_65 and sign RAW with "
+                     "ML_DSA_SHAKE_256 (pure ML-DSA over the digest, so verifiers see the same bytes)")
+    if "POLARIS_CUSTODY_PKCS11_PIN_FILE" not in cu or "POLARIS_CUSTODY_PKCS11_PIN\"" not in cu \
+            or "PIN_FILE" not in cu:
+        return _fail("key_custody", "the PKCS#11 PIN must come from POLARIS_CUSTODY_PKCS11_PIN_FILE and the driver "
+                     "must refuse POLARIS_CUSTODY_PKCS11_PIN in env")
+    if "custody.get_custody()" not in pq or re.search(r"Signature\(_ALG_NAME,\s*secret_key=", pq):
+        return _fail("key_custody", "pqc_signing.sign() must obtain signatures from custody.get_custody(); no direct "
+                     "secret-key signing outside the custody layer")
+    if "def trust_anchor_public_keys" not in pq or "POLARIS_PQC_TRUST_ANCHORS_FILE" not in pq:
+        return _fail("key_custody", "pqc_signing must expose rotation trust anchors "
+                     "(trust_anchor_public_keys + POLARIS_PQC_TRUST_ANCHORS_FILE)")
+    if "def verify_both" not in pq or "verify_both(" not in pq.split("def signature_with_key_for_token")[1].split("\ndef ")[0]:
+        return _fail("key_custody", "the two-witness verify (verify_both) must still gate every stored signature")
+    for cls in ("class FileCustodyTests", "class AwsKmsCustodyTests", "class Pkcs11CustodyTests", "_KmsStandIn",
+                "TRUST_ANCHORS_FILE"):
+        if cls not in tests:
+            return _fail("key_custody", f"test_custody.py must contain {cls} (each driver exercised, rotation tested)")
+    if "python-pkcs11==" not in req or "boto3==" not in req:
+        return _fail("key_custody", "requirements-custody.txt must pin python-pkcs11 and boto3")
+    if "kryoptic" not in ci or "test_custody" not in ci or "POLARIS_CUSTODY_PKCS11_REQUIRE" not in ci \
+            or "requirements-custody.txt" not in ci:
+        return _fail("key_custody", "ci.yml must run the PKCS#11 suite against a real token (kryoptic, "
+                     "POLARIS_CUSTODY_PKCS11_REQUIRE=1) and install requirements-custody.txt for the test job")
+    if "## Rotation" not in cer or "pkcs11-keygen" not in cer or "ML_DSA_65" not in cer:
+        return _fail("key_custody", "KEY-CEREMONY.md must document the ceremony per driver and a Rotation section")
+    if "'custody':" not in app or "def _health_check_custody" not in app:
+        return _fail("key_custody", "/api/health must report the custody component (driver, key id, fingerprint)")
+    return _ok("key_custody", "issuer-key custody: file / PKCS#11 (CKM_ML_DSA, in-token, non-extractable) / "
+               "AWS KMS (ML_DSA_65, RAW ML_DSA_SHAKE_256) behind one interface, PIN never from env, "
+               "pqc_signing routed through it with the two-witness verify unchanged, rotation anchors, "
+               "each driver exercised (PKCS#11 against Kryoptic in CI), ceremony + rotation runbook, health")
+
+
 CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_csp_forbids_unsafe_inline,
     check_one_active_token_index,
@@ -3069,6 +3125,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_offsite_backup_env_driven,
     check_pager_integration,
     check_linux_server_deployment,
+    check_key_custody_abstraction,
     check_local_clock_convention,
     check_c6_atlas_redacts_zk_location,
     check_coercion_evidence_retained,

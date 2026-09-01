@@ -70,6 +70,9 @@ jobs:
           # runtime surface via its `-r requirements.txt` line. The Docker
           # images, by contrast, install requirements.txt only (no test deps).
           pip install -r polaris_web/requirements-dev.txt
+          # v9.178 (P1.2) — the optional custody drivers (boto3, python-pkcs11) so
+          # test_custody's KMS stand-in and env-selection tests run here.
+          pip install -r polaris_web/requirements-custody.txt
 
       - name: Wait for Postgres
         run: |
@@ -799,6 +802,54 @@ jobs:
           sudo systemctl stop polaris.service || true
           sudo docker compose -f /opt/polaris/polaris_web/docker-compose.prod.yml -f /opt/polaris/polaris_web/docker-compose.citest.yml down -v || true
 
+  # --------------------------------------------------------------------------
+  # v9.178 (roadmap P1.2) — the PKCS#11 custody driver against a REAL PKCS#11
+  # v3.2 token with ML-DSA: Kryoptic (a software token, packaged in Fedora 43),
+  # with liboqs + OpenSSL as the two verifying witnesses. The ML-DSA-65 key is
+  # generated INSIDE the token (non-extractable) by the ceremony helper, the
+  # driver signs with CKM_ML_DSA, both witnesses verify, a forged message is
+  # rejected, the duplicate-label refusal holds, and pqc_signing routes through
+  # the driver by env. POLARIS_CUSTODY_PKCS11_REQUIRE=1 makes a skip a failure.
+  # The file driver and the AWS KMS driver (against a wire-faithful stand-in
+  # signing with OpenSSL's ML-DSA) run in the product test job.
+  # --------------------------------------------------------------------------
+  custody-pkcs11:
+    name: Key custody via PKCS#11 (Kryoptic token, ML-DSA-65 in-token, two-witness verified)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: PKCS#11 custody suite inside Fedora 43 (kryoptic + python-pkcs11 + liboqs + cryptography)
+        run: |
+          docker run --rm -v "$PWD:/src:ro" \
+            fedora@sha256:a651ddf48ea28a06ed4e1e6519f51c9f47e7a5a138722ade87369b8fbb7e5b42 \
+            bash -c '
+              set -eo pipefail
+              # git + openssl-devel: liboqs-python builds liboqs from source (Fedora's
+              # liboqs 0.12 is older than the binding wants); the experiments died on
+              # a missing git, then on CMake not finding OpenSSL.
+              dnf -y -q install kryoptic python3 python3-pip python3-devel gcc cmake ninja-build git openssl-devel opensc >/dev/null
+              pip -q install "$(grep -E "^python-pkcs11==" /src/polaris_web/requirements-custody.txt)" \
+                "$(grep -E "^cryptography==" /src/polaris_web/requirements.txt)" liboqs-python 2>&1 | grep -v WARNING || true
+              # The first import builds liboqs into /root/_oqs; Fedora's CMake installs it
+              # under lib64 only, and the binding then failed to load it until the lib
+              # symlink + OQS_INSTALL_PATH were added (found by running this, not reading).
+              python3 -c "import oqs" >/dev/null 2>&1 || true
+              [ -e /root/_oqs/lib ] || ln -s /root/_oqs/lib64 /root/_oqs/lib
+              export OQS_INSTALL_PATH=/root/_oqs
+              python3 -c "import io,sys; _s=sys.stdout; sys.stdout=io.StringIO(); import oqs; sys.stdout=_s; print(\"liboqs\", oqs.oqs_version(), \"loaded: both witnesses present\")"
+              MOD=/usr/lib64/pkcs11/libkryoptic_pkcs11.so
+              export KRYOPTIC_CONF=/tmp/kryoptic.sql
+              pkcs11-tool --module "$MOD" --init-token --label polaris --so-pin 12345678 >/dev/null
+              pkcs11-tool --module "$MOD" --login --so-pin 12345678 --init-pin --pin 1234 >/dev/null
+              echo 1234 > /tmp/pin && chmod 0600 /tmp/pin
+              cp -r /src/polaris_web /work && cd /work
+              export POLARIS_CUSTODY_PKCS11_MODULE="$MOD" POLARIS_CUSTODY_PKCS11_PIN_FILE=/tmp/pin \
+                     POLARIS_CUSTODY_PKCS11_REQUIRE=1
+              python3 -m unittest test_custody.Pkcs11CustodyTests -v 2>&1 | grep -v faulthandler
+            '
+
   pqc-real:
     name: Real PQC (ML-DSA-65) sign + verify
     runs-on: ubuntu-latest
@@ -824,6 +875,10 @@ jobs:
           # GHSA-537c-gmf6-5ccf, so the job under test would have reinstalled the
           # vulnerable version that cve-scan had just rejected.
           pip install "$(grep -E '^cryptography==' polaris_web/requirements.txt)"
+          # v9.178 (P1.2) — the custody drivers, so test_custody runs here with BOTH
+          # witnesses (liboqs + OpenSSL): the file driver for real, the AWS KMS
+          # driver against its wire-faithful stand-in, rotation end to end.
+          pip install -r polaris_web/requirements-custody.txt
 
       - name: Real ML-DSA-65 persistent-key sign + verify
         working-directory: polaris_web
@@ -899,6 +954,14 @@ jobs:
           out=$(python -c 'import sys,io,json; _s=sys.stdout; sys.stdout=io.StringIO(); import pqc_signing; sys.stdout=_s; print(json.dumps(pqc_signing.generate_keypair()))')
           echo "$out" | python -c "import sys, json; d=json.load(sys.stdin); assert d['algorithm']=='ML-DSA-65' and d['secret_key_hex'] and d['public_key_hex']; print('signing-key generation snippet emits clean ML-DSA-65 JSON')"
 
+
+      - name: Key custody suite with both witnesses (file driver real, KMS stand-in, rotation)
+        working-directory: polaris_web
+        # pipefail: without it the pipeline's status is grep's, and a failing
+        # suite would read as green (the grep -q / psql -f family).
+        run: |
+          set -o pipefail
+          python -m unittest test_custody -v 2>&1 | grep -v faulthandler
   # --------------------------------------------------------------------------
   # Dependency CVE scan. The dependency surface was pinned but never audited —
   # a known CVE in a pinned package would ship silently. This GATES on the

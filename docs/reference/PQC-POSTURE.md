@@ -7,6 +7,14 @@ reference system; see [../../MISSION.md](../../MISSION.md) for scope and
 [../PRODUCTION-READINESS.md](../PRODUCTION-READINESS.md) for the operational gap
 ledger. Nothing here asserts production-readiness.
 
+
+> **Key custody (v9.178, roadmap P1.2).** The issuer's ML-DSA-65 private key sits
+> behind `polaris_web/custody.py`: a `file` driver (development), a `pkcs11`
+> driver (HSM or PKCS#11 v3.2 software token; the key is generated in-token and
+> never leaves it), and an `awskms` driver (KMS `ML_DSA_65`). The two-witness
+> verification is unchanged and checks every driver's output. Ceremony and
+> rotation: [`docs/operator/KEY-CEREMONY.md`](../operator/KEY-CEREMONY.md).
+
 ## Scope
 
 Polaris's thesis is a "post-quantum identity system." That thesis holds for the

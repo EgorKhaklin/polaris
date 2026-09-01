@@ -2019,6 +2019,34 @@ def _sanitize_health_checks(checks):
 _HEALTH_SEVERITY = {'healthy': 0, 'degraded': 1, 'unhealthy': 2}
 
 
+def _health_check_custody():
+    """Which custody holds the issuer signing key (roadmap P1.2), non-secret.
+
+    - real PQC off (the placeholder/dev mode): healthy, custody not required.
+    - real PQC on and a custody driver loads: healthy, with driver / key id /
+      public-key fingerprint so an operator can confirm WHICH key signs.
+    - real PQC on but no persistent key: degraded (ephemeral per-process keys
+      are not a production signing posture; nothing can verify them later).
+    - real PQC on and the custody backend fails to load: unhealthy (issuance
+      would fail loud on the next token, so say so here first).
+    """
+    real = os.environ.get('POLARIS_USE_REAL_PQC', '0') == '1'
+    try:
+        from custody import get_custody, CustodyError  # type: ignore
+        cust = get_custody()
+    except Exception as exc:  # CustodyError or an import problem
+        if not real:
+            return {'status': 'healthy', 'note': 'real PQC off; custody not required'}
+        return {'status': 'unhealthy', 'note': 'custody backend failed to load: %s' % type(exc).__name__}
+    if cust is None:
+        if not real:
+            return {'status': 'healthy', 'note': 'real PQC off; custody not required'}
+        return {'status': 'degraded', 'note': 'real PQC on with no persistent key (ephemeral signing)'}
+    d = cust.describe()
+    return {'status': 'healthy', 'driver': d['driver'], 'key_id': d['key_id'],
+            'public_key_fingerprint': d['public_key_fingerprint']}
+
+
 def _compute_readiness():
     """Run the dependency health checks and roll them up to an overall status.
 
@@ -2033,6 +2061,7 @@ def _compute_readiness():
         'redis':     _health_check_redis(),
         'zk_binary': _health_check_zk_binary(),
         'disk':      _health_check_disk(),
+        'custody':   _health_check_custody(),
     }
 
     # Roll up worst-of per-component status as the overall status.
