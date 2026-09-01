@@ -30,6 +30,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
 POLARIS_ROOT="$(cd -- "${SCRIPT_DIR}/.." &> /dev/null && pwd)"
 COMPOSE_FILE="${POLARIS_ROOT}/polaris_web/docker-compose.prod.yml"
+# v9.183 (P1.4) — the same overlays polaris.service uses (blue-green, the CI
+# internal-CA edge, a custody overlay) apply to every compose call here.
+read -r -a COMPOSE_EXTRA <<< "${POLARIS_COMPOSE_EXTRA:-}"
+compose() { (cd "${POLARIS_ROOT}/polaris_web" && docker compose -f docker-compose.prod.yml "${COMPOSE_EXTRA[@]}" "$@"); }
 # v9.180 (P1.3) — with a sealed store (POLARIS_SECRETS_BACKEND=age|awskms) the
 # plaintext is materialized into POLARIS_SECRETS_DIR (a tmpfs) right before
 # the stack starts; the compose file reads the same variable.
@@ -125,14 +129,18 @@ fi
 # 4. Pull upstream images + build app
 # ---------------------------------------------------------------------------
 echo "  [4/7] Pulling upstream images + building app…"
-(cd "${POLARIS_ROOT}/polaris_web" && docker compose -f docker-compose.prod.yml pull --ignore-pull-failures postgres redis caddy)
-(cd "${POLARIS_ROOT}/polaris_web" && docker compose -f docker-compose.prod.yml build app)
+compose pull --ignore-pull-failures postgres redis caddy
+compose build app
 
 # ---------------------------------------------------------------------------
 # 5. Bring stack up
 # ---------------------------------------------------------------------------
-echo "  [5/7] Bringing stack up…"
-(cd "${POLARIS_ROOT}/polaris_web" && docker compose -f docker-compose.prod.yml up -d --remove-orphans)
+# v9.183 (P1.4) — infrastructure first, WITHOUT touching the app containers:
+# the running app keeps serving while migrations (the expand phase) apply
+# below; the app colours are then rolled one at a time. Recreating caddy or
+# postgres here (only when their config changed) is not zero-downtime.
+echo "  [5/7] Bringing infrastructure up (postgres, pgbouncer, redis, caddy)…"
+compose up -d --remove-orphans --no-deps postgres pgbouncer redis caddy
 
 # ---------------------------------------------------------------------------
 # 5b. Apply migrations + sync DB objects against the RUNNING stack.
@@ -146,7 +154,7 @@ echo "  [5/7] Bringing stack up…"
 # ---------------------------------------------------------------------------
 echo "  [5b]  Applying migrations + syncing DB objects (procedures/triggers/views/grants)…"
 for _i in $(seq 1 30); do
-    if docker compose -f "${COMPOSE_FILE}" exec -T postgres pg_isready -U postgres >/dev/null 2>&1; then
+    if compose exec -T postgres pg_isready -U postgres >/dev/null 2>&1; then
         break
     fi
     sleep 2
@@ -166,10 +174,8 @@ done
 # ---------------------------------------------------------------------------
 if [[ "${POLARIS_PGBACKREST_ENABLED:-0}" == "1" ]]; then
     echo "  [5c]  Bootstrapping pgBackRest stanza (WAL archiving is enabled)…"
-    if docker compose -f "${COMPOSE_FILE}" exec -T postgres \
-            pgbackrest --stanza=polaris stanza-create >/dev/null 2>&1 \
-       && docker compose -f "${COMPOSE_FILE}" exec -T postgres \
-            pgbackrest --stanza=polaris check >/dev/null 2>&1; then
+    if compose exec -T postgres pgbackrest --stanza=polaris stanza-create >/dev/null 2>&1 \
+       && compose exec -T postgres pgbackrest --stanza=polaris check >/dev/null 2>&1; then
         echo "  ✓ pgBackRest stanza ready (archive-push validated)"
     else
         echo "  ⚠  pgBackRest stanza-create/check FAILED. Archiving is enabled but the" >&2
@@ -183,12 +189,47 @@ fi
 # ---------------------------------------------------------------------------
 # 6. Smoke test
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# 5d. Roll the app. With the blue-green overlay (app + app-green behind Caddy,
+#     which retries onto the other colour), recreate app-green, wait for its
+#     healthcheck, then app: zero dropped requests. Without it, the single app
+#     is recreated (a few seconds of 502s, as before v9.183).
+# ---------------------------------------------------------------------------
+wait_healthy() {  # $1 = service
+    local cid i
+    for i in $(seq 1 60); do
+        cid=$(compose ps -q "$1" 2>/dev/null | head -1)
+        [[ -n "$cid" ]] && [[ "$(docker inspect --format '{{.State.Health.Status}}' "$cid" 2>/dev/null)" == "healthy" ]] && return 0
+        sleep 2
+    done
+    return 1
+}
+# (no mapfile: macOS ships bash 3.2, and the first local drill died here silently)
+APP_SERVICES=()
+while IFS= read -r svc; do [[ -n "$svc" ]] && APP_SERVICES+=("$svc"); done < <(compose config --services 2>/dev/null | grep -E '^app(-green)?$' | sort -r)
+[[ ${#APP_SERVICES[@]} -gt 0 ]] || APP_SERVICES=(app)
+if [[ ${#APP_SERVICES[@]} -gt 1 ]]; then
+    echo "  [5d]  Rolling deploy across ${APP_SERVICES[*]} (blue-green profile)…"
+else
+    echo "  [5d]  Recreating app (single-app profile; add docker-compose.bluegreen.yml for zero downtime)…"
+fi
+ROLL_OK=1
+for svc in "${APP_SERVICES[@]}"; do
+    compose up -d --no-deps --force-recreate "${svc}"
+    if wait_healthy "${svc}"; then
+        echo "  ✓ ${svc} healthy"
+    else
+        echo "  ✗ ${svc} did not become healthy" >&2
+        ROLL_OK=0
+        break
+    fi
+done
 echo "  [6/7] Smoke test (/api/health)…"
 SMOKE_OK=0
 for i in $(seq 1 30); do
     sleep 2
     # Probe from inside the docker network — avoids waiting on TLS issuance.
-    if HEALTH_JSON=$(docker compose -f "${COMPOSE_FILE}" exec -T app \
+    if HEALTH_JSON=$(compose exec -T app \
                        curl -fsS http://localhost:8000/api/health 2>/dev/null); then
         STATUS=$(echo "${HEALTH_JSON}" | grep -oE '"status":"[a-z]+"' | head -1 | cut -d'"' -f4)
         if [[ "${STATUS}" == "healthy" ]]; then
@@ -204,12 +245,12 @@ for i in $(seq 1 30); do
     [[ $((i % 5)) -eq 0 ]] && echo "    …still waiting (attempt ${i}/30)"
 done
 
-if [[ "${SMOKE_OK}" -ne 1 ]]; then
+if [[ "${SMOKE_OK}" -ne 1 || "${ROLL_OK}" -ne 1 ]]; then
     echo "  ✗ Smoke test failed after 60s"
     if [[ -n "${PREV_IMAGE_ID}" ]]; then
         echo "  → Rolling back to previous app image…"
         docker tag "${PREV_IMAGE_ID}" polaris-app:prod
-        (cd "${POLARIS_ROOT}/polaris_web" && docker compose -f docker-compose.prod.yml up -d --no-deps --force-recreate app)
+        for svc in "${APP_SERVICES[@]}"; do compose up -d --no-deps --force-recreate "${svc}"; wait_healthy "${svc}" || true; done
         echo "  ✓ Rolled back. Investigate logs:"
         echo "    docker compose -f polaris_web/docker-compose.prod.yml logs --tail=200 app"
     else

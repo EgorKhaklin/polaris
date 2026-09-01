@@ -1,0 +1,32 @@
+# docker-compose.bluegreen.yml — the blue-green profile (roadmap P1.4).
+#
+#   POLARIS_COMPOSE_EXTRA="-f docker-compose.bluegreen.yml"     (polaris.env)
+#
+# Two app containers, `app` (blue) and `app-green`, both behind Caddy, which
+# retries a request on the other upstream while one is being recreated
+# (lb_try_duration) and polls /api/health/live every 2s. polaris-deploy.sh
+# detects this overlay and rolls: migrate (expand), recreate app-green, wait
+# for its healthcheck, recreate app, wait, smoke test, roll back both on
+# failure. Sessions are server-side in Redis, so a request may land on either
+# colour. scripts/polaris-rolling-drill.sh proves zero dropped requests under
+# traffic, with a negative control, in the CI job rolling-deploy.
+#
+# Edge (Caddy) and database changes are NOT zero-downtime: recreating caddy
+# drops its connections and postgres recreation stops the DB. This overlay
+# makes APP deploys, the routine case, drop nothing.
+services:
+  app-green:
+    extends:
+      file: docker-compose.prod.yml
+      service: app
+    container_name: polaris-app-green
+    depends_on:
+      pgbouncer:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+  caddy:
+    environment:
+      POLARIS_UPSTREAMS: "app:8000 app-green:8000"

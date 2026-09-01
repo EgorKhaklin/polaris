@@ -31,16 +31,25 @@
 {$POLARIS_DOMAIN} {
 
     # Reverse proxy to the Polaris app (gunicorn :8000 inside the network)
-    reverse_proxy app:8000 {
+    reverse_proxy {$POLARIS_UPSTREAMS:app:8000} {
         header_up X-Real-IP {remote_host}
         header_up X-Forwarded-For {remote_host}
         header_up X-Forwarded-Proto {scheme}
         header_up X-Forwarded-Host {host}
 
-        # Pass health checks through but with a short timeout
-        health_uri /api/health
-        health_interval 30s
-        health_timeout 5s
+        # v9.183 (roadmap P1.4) — the upstream list comes from POLARIS_UPSTREAMS
+        # (one app by default; "app:8000 app-green:8000" under the blue-green
+        # overlay). A request that hits an upstream being recreated is retried
+        # on the other for up to lb_try_duration, active liveness runs every 2s,
+        # and a failed upstream is skipped for fail_duration: a rolling deploy
+        # drops no requests (proven by scripts/polaris-rolling-drill.sh in CI).
+        lb_policy round_robin
+        lb_try_duration 15s
+        lb_try_interval 250ms
+        fail_duration 10s
+        health_uri /api/health/live
+        health_interval 2s
+        health_timeout 2s
 
         # Standard timeouts
         transport http {
@@ -94,7 +103,11 @@
     @static path /static/*
     handle @static {
         header Cache-Control "public, max-age=31536000, immutable"
-        reverse_proxy app:8000
+        reverse_proxy {$POLARIS_UPSTREAMS:app:8000} {
+            lb_try_duration 15s
+            lb_try_interval 250ms
+            fail_duration 10s
+        }
     }
 
     # Block common probes (reduce log noise + minor security)

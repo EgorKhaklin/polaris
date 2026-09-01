@@ -3070,3 +3070,76 @@ def test_secrets_lifecycle_sealed_check_discriminates(tmp_path):
     # The systemd unit that starts compose without unsealing.
     write({"deploy/linux/polaris.service": "ExecStart=docker compose up -d\n"})
     assert checks.check_secrets_lifecycle_sealed(tmp_path)[0].level == "FAIL", "must FAIL when the unit skips unseal"
+
+
+def test_migrations_expand_contract_check_discriminates(tmp_path):
+    mig = tmp_path / "polaris_sql" / "migrations"
+    mig.mkdir(parents=True)
+    (mig / "README.md").write_text("## Expand-contract policy\n-- phase: contract\n-- expands: <id>\n")
+    (mig / "2026-01-01-001-add-col.up.sql").write_text("ALTER TABLE t ADD COLUMN IF NOT EXISTS c TEXT;\n")
+    (mig / "2026-01-01-001-add-col.down.sql").write_text("ALTER TABLE t DROP COLUMN c;\n")
+    assert checks.check_migrations_expand_contract(tmp_path)[0].level == "OK", "additive up + destructive down must PASS"
+
+    # A destructive up with no contract declaration (old code breaks mid-roll).
+    (mig / "2026-02-01-001-drop-old.up.sql").write_text("-- clean up\nALTER TABLE t DROP COLUMN old_c;\n")
+    f = checks.check_migrations_expand_contract(tmp_path)[0]
+    assert f.level == "FAIL" and "drop-old" in f.message, "must FAIL on undeclared destructive DDL"
+
+    # Declared, but expands a migration that does not exist.
+    (mig / "2026-02-01-001-drop-old.up.sql").write_text("-- phase: contract\n-- expands: 2025-12-31-009-nope\nALTER TABLE t DROP COLUMN old_c;\n")
+    assert checks.check_migrations_expand_contract(tmp_path)[0].level == "FAIL", "must FAIL when expands names a missing migration"
+
+    # Declared and expanding an EARLIER migration: allowed.
+    (mig / "2026-02-01-001-drop-old.up.sql").write_text("-- phase: contract\n-- expands: 2026-01-01-001-add-col\nALTER TABLE t DROP COLUMN old_c;\n")
+    assert checks.check_migrations_expand_contract(tmp_path)[0].level == "OK", "a declared contract of an earlier expand must PASS"
+
+    # Destructive words only inside comments must not count.
+    (mig / "2026-03-01-001-comment.up.sql").write_text("-- we will DROP COLUMN x later\nCREATE INDEX IF NOT EXISTS i ON t(c);\n")
+    assert checks.check_migrations_expand_contract(tmp_path)[0].level == "OK", "comments are not DDL"
+
+
+def test_zero_downtime_deploy_check_discriminates(tmp_path):
+    CADDY = "reverse_proxy {$POLARIS_UPSTREAMS:app:8000} {\n  lb_try_duration 15s\n  health_uri /api/health/live\n}\n"
+    COMPOSE = ("services:\n  app:\n    container_name: polaris-app\n    healthcheck:\n      test: x\n    stop_grace_period: 35s\n"
+               "  pgbouncer:\n    image: y\n  caddy:\n    environment:\n      POLARIS_UPSTREAMS: \"${POLARIS_UPSTREAMS:-app:8000}\"\n")
+    DEPLOY = ("read -r -a COMPOSE_EXTRA <<< \"${POLARIS_COMPOSE_EXTRA:-}\"\ncompose up -d --no-deps postgres pgbouncer redis caddy\n"
+              "polaris-migrate.sh --up --target=docker-stack\nwait_healthy() { :; }\n"
+              "mapfile -t APP_SERVICES < <(compose config --services | grep -E '^app(-green)?$' | sort -r)\n")
+    good = {
+        "polaris_web/Caddyfile": CADDY, "polaris_web/Caddyfile.citest": CADDY,
+        "polaris_web/docker-compose.prod.yml": COMPOSE,
+        "polaris_web/docker-compose.bluegreen.yml": "services:\n  app-green:\n    container_name: polaris-app-green\n  caddy:\n    environment:\n      POLARIS_UPSTREAMS: \"app:8000 app-green:8000\"\n",
+        "scripts/polaris-deploy.sh": DEPLOY,
+        "scripts/polaris-rotate-secret.sh": "recreate_apps() { compose config --services | grep -E '^app(-green)?$'; }\n",
+        "scripts/polaris-rolling-drill.sh": ("bash scripts/polaris-deploy.sh prod --no-pull\nassert s[\"drops\"] == 0\n"
+                                             "compose stop -t 1 app app-green\nassert s[\"drops\"] > 0\n"),
+        ".github/workflows/ci.yml": "run: docker compose -f docker-compose.bluegreen.yml up -d; bash scripts/polaris-rolling-drill.sh\n",
+    }
+
+    def write(overrides=None):
+        files = dict(good); files.update(overrides or {})
+        for rel, body in files.items():
+            f = tmp_path / rel
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text(body)
+
+    write()
+    assert checks.check_zero_downtime_deploy(tmp_path)[0].level == "OK", "must PASS on the good fixture"
+
+    # The edge pinned to one upstream with no retry (the pre-P1.4 Caddyfile).
+    write({"polaris_web/Caddyfile": "reverse_proxy app:8000 {\n  health_uri /api/health\n}\n"})
+    assert checks.check_zero_downtime_deploy(tmp_path)[0].level == "FAIL", "must FAIL when the edge cannot retry onto another colour"
+
+    # Deploy that recreates the app BEFORE migrating (old order).
+    write({"scripts/polaris-deploy.sh": ("read -r -a COMPOSE_EXTRA <<< \"${POLARIS_COMPOSE_EXTRA:-}\"\nwait_healthy() { :; }\n"
+                                         "mapfile -t APP_SERVICES < <(compose config --services | grep -E '^app(-green)?$' | sort -r)\n"
+                                         "compose up -d --no-deps postgres pgbouncer redis caddy\npolaris-migrate.sh --up --target=docker-stack\n")})
+    assert checks.check_zero_downtime_deploy(tmp_path)[0].level == "FAIL", "must FAIL when the roll precedes the migration"
+
+    # A drill with no negative control.
+    write({"scripts/polaris-rolling-drill.sh": "bash scripts/polaris-deploy.sh prod --no-pull\nassert s[\"drops\"] == 0\n"})
+    assert checks.check_zero_downtime_deploy(tmp_path)[0].level == "FAIL", "must FAIL when zero drops is not validated by a control"
+
+    # Rotation that only recreates one colour.
+    write({"scripts/polaris-rotate-secret.sh": "compose up -d --no-deps --force-recreate app\n"})
+    assert checks.check_zero_downtime_deploy(tmp_path)[0].level == "FAIL", "must FAIL when rotation ignores app-green"

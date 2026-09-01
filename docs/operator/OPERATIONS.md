@@ -140,27 +140,48 @@ standard path below.
 This script is idempotent. It performs:
 
 1. `git pull` (skipped if `--no-pull`)
-2. `docker compose -f polaris_web/docker-compose.prod.yml pull` to
-   refresh upstream images (postgres, redis, caddy)
-3. `docker compose build app` (multi-stage Dockerfile.prod)
-4. Schema migration via the same load path as dev
-   (`polaris_sql/00_load_all.sql`) — only applies fresh on an empty
-   database; subsequent runs no-op
-5. Smoke test: HTTP GET `/api/health` from inside the network must
-   return overall `status: healthy`
-6. Blue-green swap (when re-deploying over a running stack):
-   `docker compose up -d --no-deps --force-recreate app` recreates
-   the app container only; DB + Redis volumes are preserved
-7. Rollback on failure: if the smoke test fails post-swap, the
-   script restarts the previous image tag and exits non-zero
+2. `docker compose pull` to refresh upstream images and `docker compose
+   build app` (multi-stage Dockerfile.prod)
+3. Infrastructure up (`postgres`, `pgbouncer`, `redis`, `caddy`) WITHOUT
+   touching the app containers, so the running app keeps serving
+4. Migrations applied and DB objects synced (`polaris-migrate.sh --up` and
+   `--sync-objects`): the EXPAND phase, safe for the code still running
+   (the policy is enforced; see `polaris_sql/migrations/README.md`)
+5. The app rolled: with the blue-green profile, `app-green` is recreated and
+   health-waited, then `app`; without it, the single `app` is recreated
+6. Smoke test: `/api/health` from inside the network must be `healthy`
+7. Rollback on failure: the previous app image is re-tagged and every colour
+   recreated from it
 
-Three modes:
+`POLARIS_COMPOSE_EXTRA` (the same variable `polaris.service` uses) selects
+overlays for every compose call the script makes.
+
+### Zero-downtime deploys (blue-green profile, v9.183)
+
+Add the overlay to `polaris.env` and re-deploy once:
 
 ```bash
-./scripts/polaris-deploy.sh dev       # local dev stack (delegates to polaris_mac_launch.sh)
-./scripts/polaris-deploy.sh staging   # prod stack but on staging.${POLARIS_DOMAIN}
-./scripts/polaris-deploy.sh prod      # production
+POLARIS_COMPOSE_EXTRA="-f docker-compose.bluegreen.yml"
 ```
+
+Two app containers (`app`, `app-green`) then sit behind Caddy, whose upstream
+list comes from `POLARIS_UPSTREAMS`. Caddy polls `/api/health/live` every 2s,
+retries a request onto the other colour for up to 15s (`lb_try_duration`) when
+one is being recreated, and skips a failed upstream for 10s. gunicorn drains
+in-flight requests on SIGTERM (`stop_grace_period` 35s). `polaris-deploy.sh`
+rolls green, waits for its healthcheck, then blue; `polaris-rotate-secret.sh`
+recreates the colours the same way. Sessions live in Redis, so either colour
+serves any request.
+
+What this covers: app deploys and secret rotations, the routine operations.
+What it does not: recreating `caddy` (edge config changes) or `postgres`
+(the database itself) still interrupts service; plan those in a window.
+
+Proven in CI on every push (`rolling-deploy`): under continuous traffic at the
+TLS edge, a full deploy replaces both containers with zero non-200 responses
+and zero transport errors, and a negative control (both colours stopped for
+20s) shows drops, so the zero is a measurement.
+`scripts/polaris-rolling-drill.sh` runs the same locally.
 
 ### Manual path (advanced)
 

@@ -148,6 +148,35 @@ which cannot run inside a transaction; if you need it, either:
 
 ---
 
+## Expand-contract policy (enforced, v9.183 / roadmap P1.4)
+
+A rolling deploy runs the OLD app code against the NEW schema for the length
+of the roll (migrations apply before the app colours are recreated). So every
+`.up.sql` must be one of:
+
+- **expand** (the default): purely additive. New tables, new nullable columns
+  or columns with defaults, new indexes (`CONCURRENTLY` where the table is
+  large), new constraints that existing rows already satisfy, new functions
+  and views. The previous code keeps working unchanged.
+- **contract**: removes or reshapes what the previous code still used
+  (`DROP TABLE`, `DROP COLUMN`, `ALTER COLUMN ... TYPE`, `RENAME COLUMN`,
+  `RENAME TO`, `SET NOT NULL` on an existing column). A contract migration
+  ships in a LATER release than the code that stopped depending on the old
+  shape, and declares it in its header:
+
+  ```sql
+  -- phase: contract
+  -- expands: 2026-05-14-002-operator-webauthn
+  ```
+
+  where `expands` names the earlier migration (or release) whose expand step
+  this completes. `check_migrations_expand_contract` refuses an `.up.sql`
+  with destructive DDL that lacks these two lines, or whose `expands` target
+  does not exist. `.down.sql` files are reverts and are exempt.
+
+The rule is what makes `polaris-deploy.sh`'s rolling mode safe; see
+`docs/operator/OPERATIONS.md`, "Deploy".
+
 ## Operator workflow (production)
 
 See `docs/operator/OPERATIONS.md` § "Schema migrations" for the

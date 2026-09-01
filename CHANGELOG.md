@@ -5,6 +5,67 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.183 — 2026-09-01 (Roadmap P1.4: zero-downtime deploys; blue-green behind a retrying edge, expand-contract enforced, zero drops proven with a control)
+
+OPERATIONS.md called the deploy a "blue-green swap"; it was `docker compose up
+-d`, which recreates the single app container and serves 502s for the seconds
+gunicorn takes to boot. Now:
+
+  - Blue-green profile (`docker-compose.bluegreen.yml`): `app` and
+    `app-green` behind Caddy. Both Caddyfiles take their upstream list from
+    POLARIS_UPSTREAMS, retry a request onto the other colour for up to 15s
+    while one is being recreated (lb_try_duration), poll /api/health/live
+    every 2s, and skip a failed upstream for 10s. The app service gains a
+    healthcheck (the roll waits on it) and a 35s stop_grace_period so
+    gunicorn drains in-flight requests on SIGTERM.
+  - `polaris-deploy.sh` honours POLARIS_COMPOSE_EXTRA (the variable
+    polaris.service already used), brings infrastructure up WITHOUT touching
+    the app containers, applies migrations (the expand phase, against the
+    code still running), then recreates app-green, waits for its healthcheck,
+    then app; on failure the previous image is re-tagged and every colour is
+    recreated from it. `polaris-rotate-secret.sh` recreates the colours the
+    same way, so rotation is zero-downtime too.
+  - Expand-contract policy in polaris_sql/migrations/README.md, enforced by
+    `check_migrations_expand_contract`: an .up.sql containing destructive DDL
+    (DROP TABLE/COLUMN, ALTER COLUMN TYPE, RENAME, SET NOT NULL) must declare
+    `-- phase: contract` and `-- expands: <id>` naming an EARLIER migration;
+    reverts are exempt; comments are not DDL. All 17 existing migrations
+    comply with no grandfathering.
+  - `scripts/polaris-rolling-drill.sh`, run by the new `rolling-deploy` CI job
+    against the booted blue-green stack: a traffic generator (8 threads,
+    continuous GETs at the TLS edge; every non-200 and every transport error
+    is a drop) runs while `polaris-deploy.sh prod` performs a full deploy;
+    the drill asserts zero drops with a meaningful request count and that
+    BOTH app containers were replaced. Then the negative control: both
+    colours stopped for 20s (longer than the retry window) under the same
+    traffic must show drops, so a generator that could not see an outage
+    would fail the drill rather than pass it (the P0.4 vacuous-scenario
+    lesson, applied in advance).
+
+Found by running the drill locally before shipping: `mapfile` does not exist
+in macOS's bash 3.2, so the new roll step killed polaris-deploy.sh silently
+right after the migrations (CI's bash 5 would have hidden that from a script
+the repo says runs on macOS); it is a portable read loop now, and the drill
+shows the deploy's full output instead of a grep for the lines expected. And
+the first generator ran at ~160 rps, above the edge's own 1000/min rate limit,
+so two thirds of its requests were 429s: the edge enforcing policy, not
+drops; the generator now stays under the limit and counts 429 separately
+while still requiring a meaningful number of served requests.
+The third local run then failed its own preflight on the session's oldest
+defect family: `compose config --services | grep -qx app-green` under
+pipefail, where grep exits on the first match and compose gets SIGPIPE, so
+the pipeline read as failed at random (it had passed the run before). The
+drill captures then tests, and `check_zero_downtime_deploy` refuses a
+`| grep -q` pipeline in it.
+
+Stated limits: recreating caddy (edge config changes) or postgres is still a
+service interruption; this makes app deploys and rotations, the routine
+operations, drop nothing. Both Caddyfiles validate on the self-built edge
+with two upstreams. 96 checks, 93 check-layer tests. Next opener: P1.5
+Kubernetes/Helm reference profile.
+
+---
+
 ## v9.182 — 2026-09-01 (P1.3 follow-through: rotating the DB password never restarted pgbouncer)
 
 v9.181 cleared both earlier failures: the Linux install is green (with the

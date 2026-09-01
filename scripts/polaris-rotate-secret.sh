@@ -29,6 +29,21 @@ POLARIS_ROOT="$(cd -- "${SCRIPT_DIR}/.." &> /dev/null && pwd)"
 SECRETS_DIR="${POLARIS_SECRETS_DIR:-${POLARIS_ROOT}/polaris_web/secrets}"
 ARCHIVE_DIR="${SECRETS_DIR}/.archive"
 COMPOSE_FILE="${POLARIS_ROOT}/polaris_web/docker-compose.prod.yml"
+# v9.183 (P1.4) — honour the same overlays as deploy (blue-green, CI edge), and
+# recreate every app colour one at a time so rotation is zero-downtime too.
+read -r -a COMPOSE_EXTRA <<< "${POLARIS_COMPOSE_EXTRA:-}"
+compose() { docker compose -f "${COMPOSE_FILE}" "${COMPOSE_EXTRA[@]}" "$@"; }
+recreate_apps() {
+    local svc cid
+    for svc in $(compose config --services 2>/dev/null | grep -E '^app(-green)?$' | sort -r); do
+        compose up -d --no-deps --force-recreate "${svc}"
+        for _ in $(seq 1 60); do
+            cid=$(compose ps -q "${svc}" 2>/dev/null | head -1)
+            [[ -n "${cid}" ]] && [[ "$(docker inspect --format '{{.State.Health.Status}}' "${cid}" 2>/dev/null)" == "healthy" ]] && break
+            sleep 2
+        done
+    done
+}
 
 if [[ $# -ne 1 ]]; then
     echo "usage: $(basename "$0") <secret-name>" >&2
@@ -108,7 +123,7 @@ if ! command -v docker >/dev/null 2>&1; then
     exit 0
 fi
 
-if ! docker compose -f "${COMPOSE_FILE}" ps --status running --quiet 2>/dev/null | grep -q .; then
+if ! compose ps --status running --quiet 2>/dev/null | grep -q .; then
     echo "  • stack not running; secret will take effect on next 'polaris-deploy.sh prod'"
     exit 0
 fi
@@ -116,12 +131,12 @@ fi
 case "${SECRET}" in
     polaris_secret_key)
         echo "  → recreating app container (all sessions invalidated)…"
-        docker compose -f "${COMPOSE_FILE}" up -d --no-deps --force-recreate app
+        recreate_apps
         ;;
 
     polaris_db_password)
         echo "  → updating polaris_app password in DB…"
-        docker compose -f "${COMPOSE_FILE}" exec -T postgres psql -U postgres -d polaris \
+        compose exec -T postgres psql -U postgres -d polaris \
             -c "ALTER USER polaris_app WITH PASSWORD '${NEW_VALUE}';"
         # pgbouncer (v8.83+) authenticates to postgres as polaris_app with a
         # userlist.txt it generates from the secret AT CONTAINER START, so it
@@ -129,17 +144,17 @@ case "${SECRET}" in
         # fails with "SASL authentication failed" (found by the first live
         # rotation drill in CI, v9.182; this script predates pgbouncer).
         echo "  → recreating pgbouncer (regenerates its userlist from the new secret)…"
-        docker compose -f "${COMPOSE_FILE}" up -d --no-deps --force-recreate pgbouncer
+        compose up -d --no-deps --force-recreate pgbouncer
         echo "  → recreating app container…"
-        docker compose -f "${COMPOSE_FILE}" up -d --no-deps --force-recreate app
+        recreate_apps
         ;;
 
     polaris_db_root_password)
         echo "  → updating postgres superuser password…"
-        docker compose -f "${COMPOSE_FILE}" exec -T postgres psql -U postgres -d polaris \
+        compose exec -T postgres psql -U postgres -d polaris \
             -c "ALTER USER postgres WITH PASSWORD '${NEW_VALUE}';"
         echo "  → recreating postgres container…"
-        docker compose -f "${COMPOSE_FILE}" up -d --no-deps --force-recreate postgres
+        compose up -d --no-deps --force-recreate postgres
         ;;
 esac
 

@@ -3112,6 +3112,93 @@ def check_secrets_lifecycle_sealed(root: pathlib.Path) -> list[Finding]:
                "wrapping-key rotation, tests for both backends, and a CI boot-from-sealed + live rotation drill")
 
 
+_DESTRUCTIVE_DDL = re.compile(
+    r"\b(DROP\s+TABLE|DROP\s+COLUMN|ALTER\s+COLUMN\s+\w+\s+(SET\s+DATA\s+)?TYPE|RENAME\s+COLUMN|RENAME\s+TO|SET\s+NOT\s+NULL)\b",
+    re.I)
+
+
+def _strip_sql_comments(sql: str) -> str:
+    sql = re.sub(r"/\*.*?\*/", " ", sql, flags=re.S)
+    return "\n".join(l.split("--", 1)[0] for l in sql.splitlines())
+
+
+def check_migrations_expand_contract(root: pathlib.Path) -> list[Finding]:
+    """Roadmap P1.4: the expand-contract policy. A rolling deploy runs the OLD
+    code against the NEW schema, so an .up.sql that removes or reshapes what the
+    previous code used must declare `-- phase: contract` and `-- expands: <id>`
+    naming an existing earlier migration. Reverts (.down.sql) are exempt."""
+    mig_dir = root / "polaris_sql" / "migrations"
+    readme = _read(root, "polaris_sql/migrations/README.md")
+    if not mig_dir.is_dir() or not readme:
+        return _fail("expand_contract", "polaris_sql/migrations/ or its README.md is missing")
+    if "phase: contract" not in readme or "expands:" not in readme:
+        return _fail("expand_contract", "migrations/README.md must document the expand-contract policy "
+                     "(`-- phase: contract` + `-- expands: <id>` headers)")
+    ups = sorted(p for p in mig_dir.glob("*.up.sql"))
+    ids = {p.name[:-len(".up.sql")] for p in ups}
+    offenders = []
+    for up in ups:
+        text = up.read_text()
+        m = _DESTRUCTIVE_DDL.search(_strip_sql_comments(text))
+        if not m:
+            continue
+        phase = re.search(r"(?m)^--\s*phase:\s*(\w+)", text)
+        expands = re.search(r"(?m)^--\s*expands:\s*(\S+)", text)
+        if not phase or phase.group(1).lower() != "contract" or not expands:
+            offenders.append(f"{up.name}: {m.group(1)} without `-- phase: contract` + `-- expands: <id>`")
+        elif expands.group(1) not in ids or expands.group(1) >= up.name[:-len(".up.sql")]:
+            offenders.append(f"{up.name}: expands {expands.group(1)!r}, which is not an EARLIER migration")
+    if offenders:
+        return _fail("expand_contract", "destructive DDL outside the contract phase (old code would break during a "
+                     "rolling deploy): " + "; ".join(offenders[:4]))
+    return _ok("expand_contract", f"expand-contract policy holds across {len(ups)} up-migrations (destructive DDL only "
+               "in declared contract migrations that name their earlier expand step)")
+
+
+def check_zero_downtime_deploy(root: pathlib.Path) -> list[Finding]:
+    """Roadmap P1.4: a blue-green profile behind a retrying edge, a deploy that
+    migrates first and rolls one colour at a time with health waits, rotation
+    that rolls too, and a CI drill proving zero drops under traffic WITH a
+    negative control."""
+    caddy = _read(root, "polaris_web/Caddyfile")
+    citest = _read(root, "polaris_web/Caddyfile.citest")
+    compose = _read(root, "polaris_web/docker-compose.prod.yml")
+    overlay = _read(root, "polaris_web/docker-compose.bluegreen.yml")
+    dep = _read(root, "scripts/polaris-deploy.sh")
+    rot = _read(root, "scripts/polaris-rotate-secret.sh")
+    drill = _read(root, "scripts/polaris-rolling-drill.sh")
+    ci = _read(root, ".github/workflows/ci.yml")
+    if not (caddy and citest and compose and overlay and dep and rot and drill and ci):
+        return _fail("zero_downtime", "a zero-downtime file is missing (Caddyfile(s), compose, bluegreen overlay, "
+                     "deploy, rotate-secret, rolling drill, ci.yml)")
+    for name, cf in (("Caddyfile", caddy), ("Caddyfile.citest", citest)):
+        if "{$POLARIS_UPSTREAMS" not in cf or "lb_try_duration" not in cf or "/api/health/live" not in cf:
+            return _fail("zero_downtime", f"{name} must take upstreams from POLARIS_UPSTREAMS, retry onto the other "
+                         "colour (lb_try_duration), and poll /api/health/live")
+    if "healthcheck:" not in compose.split("container_name: polaris-app\n")[1].split("\n  pgbouncer:")[0] \
+            or "stop_grace_period" not in compose or "POLARIS_UPSTREAMS" not in compose:
+        return _fail("zero_downtime", "the app service needs a healthcheck (the roll waits on it), a stop_grace_period "
+                     "for gunicorn's graceful drain, and caddy must receive POLARIS_UPSTREAMS")
+    if "app-green" not in overlay or "polaris-app-green" not in overlay or "app:8000 app-green:8000" not in overlay:
+        return _fail("zero_downtime", "docker-compose.bluegreen.yml must define app-green and point caddy at both colours")
+    i_up, i_mig, i_roll = dep.find("postgres pgbouncer redis caddy"), dep.find("--up --target=docker-stack"), dep.find("wait_healthy")
+    if "POLARIS_COMPOSE_EXTRA" not in dep or min(i_up, i_mig, i_roll) < 0 or not (i_up < i_mig < i_roll) \
+            or "sort -r" not in dep:
+        return _fail("zero_downtime", "polaris-deploy.sh must honour POLARIS_COMPOSE_EXTRA, bring infrastructure up "
+                     "first, migrate (expand), THEN roll app-green before app with health waits")
+    if "recreate_apps" not in rot or "app(-green)?" not in rot:
+        return _fail("zero_downtime", "polaris-rotate-secret.sh must recreate every app colour one at a time")
+    for needle in ("drops\"] == 0", "drops\"] > 0", "compose stop", "polaris-deploy.sh prod"):
+        if needle not in drill:
+            return _fail("zero_downtime", f"polaris-rolling-drill.sh must contain {needle!r}: zero drops under a real "
+                         "deploy AND a negative control that shows drops")
+    if "polaris-rolling-drill.sh" not in ci or "docker-compose.bluegreen.yml" not in ci:
+        return _fail("zero_downtime", "ci.yml must boot the blue-green profile and run scripts/polaris-rolling-drill.sh")
+    return _ok("zero_downtime", "blue-green profile behind a retrying edge with fast liveness, deploy migrates then rolls "
+               "green/blue with health waits (rollback both), rotation rolls too, and CI drills zero drops under "
+               "traffic with a negative control")
+
+
 CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_csp_forbids_unsafe_inline,
     check_one_active_token_index,
@@ -3200,6 +3287,8 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_linux_server_deployment,
     check_key_custody_abstraction,
     check_secrets_lifecycle_sealed,
+    check_migrations_expand_contract,
+    check_zero_downtime_deploy,
     check_local_clock_convention,
     check_c6_atlas_redacts_zk_location,
     check_coercion_evidence_retained,

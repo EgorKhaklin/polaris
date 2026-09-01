@@ -212,6 +212,14 @@ posture audit's migration roadmap.
   promtool-validated `polaris-alerts.yml` (6 rules) + `prometheus.yml` scrape
   config + README; ratios/quantiles stay valid per worker. Pinned by
   `check_alert_rules`. (Alertmanager backend operator-gated.)
+- [x] **Zero-downtime deploys (v9.183).** A blue-green profile
+  (`docker-compose.bluegreen.yml`) behind a retrying edge with 2s liveness
+  polling; `polaris-deploy.sh` brings infrastructure up, migrates (expand),
+  then rolls green and blue with health waits and rolls both back on failure;
+  an enforced expand-contract migration policy; the `rolling-deploy` CI job
+  proves zero dropped requests under traffic with a negative control. Pinned
+  by `check_zero_downtime_deploy` and `check_migrations_expand_contract`.
+  (Edge and database recreation remain window operations.)
 - [x] **Pager integration + the duress page path proven (v9.175).**
   `deploy/observability/alertmanager.yml` ships routing (duress: no wait,
   re-page 15m) and a `pager` webhook receiver whose URL is a mounted secret file;

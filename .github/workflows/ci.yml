@@ -829,6 +829,58 @@ jobs:
             bash /src/scripts/polaris-custody-pkcs11-drill.sh
 
 
+  # --------------------------------------------------------------------------
+  # v9.183 (roadmap P1.4) — a rolling deploy under traffic drops ZERO requests.
+  # The production stack boots with the blue-green overlay (app + app-green
+  # behind Caddy, which retries onto the other colour), a traffic generator
+  # hammers the TLS edge, polaris-deploy.sh rolls green then blue with health
+  # waits, and the drill asserts no non-200 and no transport error while both
+  # containers were replaced. A negative control (both colours stopped for
+  # 20s) must show drops, so "zero" is a measurement, not a vacuous pass.
+  # Pinned by check_zero_downtime_deploy.
+  # --------------------------------------------------------------------------
+  rolling-deploy:
+    name: Rolling deploy under traffic drops zero requests (blue-green profile + control)
+    runs-on: ubuntu-latest
+    env:
+      POLARIS_DOMAIN: localhost
+      POLARIS_COMPOSE_EXTRA: "-f docker-compose.citest.yml -f docker-compose.bluegreen.yml"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Build the prod images
+        run: |
+          set -e
+          docker build -f polaris_web/Dockerfile.prod      -t polaris-app:prod       .
+          docker build -f polaris_web/Dockerfile.caddy     -t polaris-caddy:prod     polaris_web
+          docker build -f polaris_web/Dockerfile.pgbouncer -t polaris-pgbouncer:prod polaris_web
+          docker build -f polaris_web/Dockerfile.postgres  -t polaris-postgres:prod  polaris_web
+
+      - name: Generate secrets + certs
+        run: bash scripts/polaris-generate-secrets.sh
+
+      - name: Boot the stack with both colours behind the edge
+        working-directory: polaris_web
+        run: |
+          set -e
+          docker compose -f docker-compose.prod.yml -f docker-compose.citest.yml -f docker-compose.bluegreen.yml up -d
+          for i in $(seq 1 60); do
+            code=$(curl -sk https://localhost:8443/api/health -o /dev/null -w '%{http_code}' || true)
+            [ "$code" = 200 ] && { echo "edge healthy after check $i"; break; }
+            sleep 4
+          done
+          [ "$code" = 200 ] || { docker compose -f docker-compose.prod.yml -f docker-compose.citest.yml -f docker-compose.bluegreen.yml ps; docker logs polaris-app 2>&1 | tail -30; exit 1; }
+          docker compose -f docker-compose.prod.yml -f docker-compose.citest.yml -f docker-compose.bluegreen.yml ps --format 'table {{.Service}}\t{{.Status}}'
+
+      - name: Rolling deploy under traffic, then the negative control
+        run: bash scripts/polaris-rolling-drill.sh
+
+      - name: Tear down
+        if: always()
+        working-directory: polaris_web
+        run: docker compose -f docker-compose.prod.yml -f docker-compose.citest.yml -f docker-compose.bluegreen.yml down -v || true
+
   pqc-real:
     name: Real PQC (ML-DSA-65) sign + verify
     runs-on: ubuntu-latest

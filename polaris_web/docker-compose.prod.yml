@@ -57,6 +57,9 @@ services:
       - "443:443/udp"          # HTTP/3
     environment:
       POLARIS_DOMAIN: ${POLARIS_DOMAIN:?POLARIS_DOMAIN must be set in shell env}
+      # v9.183 (P1.4) — upstream list for the Caddyfile; the blue-green overlay
+      # sets "app:8000 app-green:8000".
+      POLARIS_UPSTREAMS: "${POLARIS_UPSTREAMS:-app:8000}"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
@@ -93,6 +96,18 @@ services:
       dockerfile: polaris_web/Dockerfile.prod
     container_name: polaris-app
     restart: unless-stopped
+    # v9.183 (roadmap P1.4) — the rolling deploy waits for THIS before draining
+    # the other colour, and Caddy's depends_on can key on it. /api/health/live
+    # is process liveness (no DB), so a healthy-but-DB-less app still reports
+    # 'healthy' here; the DB-backed roll-up is the deploy smoke test.
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 20s
+    # gunicorn graceful_timeout is 30s: in-flight requests finish on SIGTERM.
+    stop_grace_period: 35s
     # v9.141 — container hardening. The app already runs non-root (USER polaris,
     # uid 1000) and binds :8000 (>1024), so it needs no capabilities at all.
     security_opt:

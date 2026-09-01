@@ -89,6 +89,11 @@ key pair in `polaris_web/secrets/pgbackrest_repo_creds.conf`, set
 `POLARIS_PGBACKREST_ENABLED=1`, then `scripts/polaris-deploy.sh prod`
 ([`DR.md`](DR.md)).
 
+**Zero-downtime deploys**: add `-f docker-compose.bluegreen.yml` to
+`POLARIS_COMPOSE_EXTRA` in `polaris.env` and deploy once; from then on
+`polaris-deploy.sh prod` rolls the two app colours behind Caddy without dropping
+requests ([`OPERATIONS.md`](OPERATIONS.md), "Zero-downtime deploys").
+
 **Sealed secrets**: set `POLARIS_SECRETS_BACKEND=age` (or `awskms`) plus the
 identity/recipients (or key id) lines in `polaris.env`; `polaris.service`
 unseals into a tmpfs at `/run/polaris/secrets` before every start and the
