@@ -5,6 +5,65 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.176 — 2026-09-01 (Roadmap P1.1: a fresh Linux server to a healthy production stack, under systemd)
+
+P1 opens. Until now the production path was "any Docker host" plus a deploy
+script, and DEPLOYMENT.md still carried a native gunicorn+nginx recipe that
+bypassed the container hardening, the TLS hops, pgBackRest, and the secrets
+layout. Now one script takes a fresh Debian 12+, Ubuntu 22.04+, or RHEL 9
+family host to the full stack owned by systemd, and CI proves it.
+
+  - `deploy/linux/install.sh`: Docker Engine + the compose plugin from Docker's
+    OFFICIAL apt or dnf repository, after verifying the signing key's
+    fingerprint with gpg; it never pipes a download into a shell. Then the repo
+    at /opt/polaris, the production images, secrets (if-missing),
+    /etc/polaris/polaris.env (0600), the systemd units installed and enabled,
+    the stack started, migrations and DB objects synced, and /api/health
+    asserted healthy through the TLS edge. Idempotent; `--stage`, `--no-start`,
+    `--skip-build` for partial runs.
+  - `deploy/linux/polaris.service` (Requires=docker.service, EnvironmentFile,
+    compose up/down), `polaris-backup.timer` (daily 03:00 UTC) and
+    `polaris-backup-verify.timer` (Sunday 04:00 UTC) driving the existing
+    backup script, and `polaris.env.example` as the only configuration surface.
+  - `docs/operator/LINUX-SERVER.md`: requirements, the three-command install,
+    what is installed, operate, upgrade (polaris-deploy.sh on the same compose
+    project), offsite backups, paging, uninstall, caveats (SELinux labels,
+    ufw and Docker, no public DNS yet), and how it is tested.
+    `docs/operator/HARDENING.md`: the host around Polaris as copy-paste
+    commands for both families: SSH, updates, firewall and Docker's iptables
+    bypass, chrony, daemon.json, permissions and separate volumes, sysctl,
+    auditd on the secrets, fail2ban, /metrics exposure, backups off-host, RHEL
+    specifics. DEPLOYMENT.md's native path is retired in favour of these;
+    README, OPERATIONS, and the operator index link them.
+  - CI job `linux-install`: the packages stage executes for real inside
+    digest-pinned Debian 12 and Rocky Linux 9 containers, then the full
+    installer runs on the Ubuntu runner with real systemd: /opt/polaris,
+    secrets, units, `systemctl start polaris`, migrations, health through the
+    TLS edge, `systemctl start polaris-backup` producing a tarball, and health
+    again after `systemctl restart polaris`. Stated limit: ACME against a
+    public domain cannot run in CI; the edge uses Caddy's internal CA
+    (docker-compose.citest.yml), which differs from production only in who
+    signs the certificate. `check_linux_server_deployment` pins all of it.
+
+Three things found by running it that reading would not have found:
+
+  1. Docker signs its deb and rpm repositories with DIFFERENT keys. The first
+     Rocky run refused the rpm key against the deb fingerprint, which is
+     exactly what verification is for; the installer now carries both
+     fingerprints (deb 9DC85822...0EBFCD88, rpm 060A61C5...621E9F35, both from
+     Docker's docs) and the check requires both.
+  2. RHEL 9 ships curl-minimal, which conflicts with the full curl package;
+     `dnf install curl` fails on a stock Rocky 9. curl is installed only if
+     absent.
+  3. The check's "never curl | sh" regex matched the installer's own header
+     comment saying never to do that. Checks judge executable lines, not
+     comments.
+
+92 checks, 89 check-layer tests. P1.1 done; P1.2 (key custody, HSM/KMS) is
+the next opener.
+
+---
+
 ## v9.175 — 2026-09-01 (Roadmap P0.10: pager integration, and the duress page path proven end to end)
 
 Polaris shipped alert rules and a scrape config, but the Alertmanager side was

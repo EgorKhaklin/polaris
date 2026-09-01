@@ -10,7 +10,9 @@ For developers contributing to Polaris, see
 
 | Doc | When you need it |
 |---|---|
-| [`INSTALL.md`](INSTALL.md) | Initial environment setup; system requirements |
+| [`LINUX-SERVER.md`](LINUX-SERVER.md) | **A fresh Linux server to a healthy production stack** under systemd, one script; day-2 commands, upgrades, uninstall |
+| [`HARDENING.md`](HARDENING.md) | The operating system around Polaris: SSH, updates, firewall (and Docker), time, daemon, permissions, auditing |
+| [`INSTALL.md`](INSTALL.md) | Laptop / evaluation install (macOS launcher); troubleshooting |
 | [`DEPLOYMENT.md`](DEPLOYMENT.md) | Three deployment paths (dev / staging / prod) |
 | [`OPERATIONS.md`](OPERATIONS.md) | **Day-2 runbook (~1700 lines)** — backup, restore, scaling, monitoring, archive, purge, pre-commit, certificate transparency |
 | [`SECRETS.md`](SECRETS.md) | Env-var matrix + rotation cadence + KMS paved paths |
@@ -26,8 +28,9 @@ For developers contributing to Polaris, see
 
 ## Reading order
 
-**First-time deploy:**
-1. [INSTALL.md](INSTALL.md) — get the deps right
+**First-time deploy (a server):**
+0. [LINUX-SERVER.md](LINUX-SERVER.md) — the one-script install, then [HARDENING.md](HARDENING.md)
+1. [INSTALL.md](INSTALL.md) — laptop evaluation only
 2. [DEPLOYMENT.md](DEPLOYMENT.md) — pick a path
 3. [SECRETS.md](SECRETS.md) — generate + rotate
 4. [OPERATIONS.md](OPERATIONS.md) §"Quick start (5 min)" — actual deploy

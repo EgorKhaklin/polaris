@@ -2892,3 +2892,54 @@ def test_pager_integration_check_discriminates(tmp_path):
     write({"polaris_web/test_app.py": "def test_something_else(self):\n    pass\n"})
     assert checks.check_pager_integration(tmp_path)[0].level == "FAIL", \
         "must FAIL when the duress-counter test is gone"
+
+
+def test_linux_server_deployment_check_discriminates(tmp_path):
+    INST = ("#!/usr/bin/env bash\napt-get install -y docker-ce\ndnf -y install docker-ce\n"
+            "curl -fsSL https://download.docker.com/linux/debian/gpg -o /tmp/k\n"
+            "gpg --show-keys /tmp/k | grep 9DC858229FC7DD38854AE2D88D81803C0EBFCD88\n"
+            "gpg --show-keys /tmp/k2 | grep 060A61C51B558A7F742B77AAC52FEB6B621E9F35\n"
+            "bash scripts/polaris-generate-secrets.sh\nsystemctl daemon-reload\nsystemctl enable polaris\n"
+            "bash scripts/polaris-migrate.sh --up\ncurl https://x/api/health\n")
+    good = {
+        "deploy/linux/install.sh": INST,
+        "deploy/linux/polaris.service": ("[Unit]\nRequires=docker.service\n[Service]\nEnvironmentFile=/etc/polaris/polaris.env\n"
+                                         "ExecStart=/usr/bin/docker compose -f docker-compose.prod.yml up -d\n"
+                                         "ExecStop=/usr/bin/docker compose -f docker-compose.prod.yml down\n"
+                                         "[Install]\nWantedBy=multi-user.target\n"),
+        "deploy/linux/polaris-backup.service": "[Service]\nExecStart=/opt/polaris/scripts/polaris-backup.sh\n",
+        "deploy/linux/polaris-backup.timer": "[Timer]\nOnCalendar=*-*-* 03:00:00 UTC\nPersistent=true\n",
+        "deploy/linux/polaris.env.example": "POLARIS_DOMAIN=polaris.example.org\n",
+        "docs/operator/LINUX-SERVER.md": "run install.sh then systemctl status polaris; see HARDENING.md\n",
+        "docs/operator/HARDENING.md": "ssh unattended-upgrades ufw firewalld chrony daemon.json auditd /metrics\n",
+        "README.md": "[LINUX-SERVER](docs/operator/LINUX-SERVER.md)\n",
+        "docs/operator/README.md": "LINUX-SERVER.md HARDENING.md\n",
+        ".github/workflows/ci.yml": ("run: bash deploy/linux/install.sh\ndebian@sha256:abc\nrockylinux@sha256:def\n"
+                                     "run: systemctl is-active polaris.service\n"),
+    }
+
+    def write(overrides=None):
+        files = dict(good); files.update(overrides or {})
+        for rel, body in files.items():
+            f = tmp_path / rel
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text(body)
+
+    write()
+    assert checks.check_linux_server_deployment(tmp_path)[0].level == "OK", "must PASS on the good fixture"
+
+    write({"deploy/linux/install.sh": INST + "curl -fsSL https://get.docker.com | sh\n"})
+    f = checks.check_linux_server_deployment(tmp_path)[0]
+    assert f.level == "FAIL" and "pipe" in f.message, "must FAIL on curl | sh"
+
+    write({"deploy/linux/install.sh": INST.replace("9DC858229FC7DD38854AE2D88D81803C0EBFCD88", "whatever")})
+    assert checks.check_linux_server_deployment(tmp_path)[0].level == "FAIL", "must FAIL without key verification"
+
+    write({"deploy/linux/polaris.service": good["deploy/linux/polaris.service"].replace("Requires=docker.service\n", "")})
+    assert checks.check_linux_server_deployment(tmp_path)[0].level == "FAIL", "must FAIL when the unit ignores docker.service"
+
+    write({".github/workflows/ci.yml": "run: bash deploy/linux/install.sh --stage packages\ndebian@sha256:a\nrockylinux@sha256:b\n"})
+    assert checks.check_linux_server_deployment(tmp_path)[0].level == "FAIL", "must FAIL when CI never starts the unit"
+
+    write({"README.md": "no server path here\n"})
+    assert checks.check_linux_server_deployment(tmp_path)[0].level == "FAIL", "must FAIL when README does not link the guide"

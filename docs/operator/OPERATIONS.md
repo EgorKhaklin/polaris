@@ -117,6 +117,20 @@ Out-bound: the host must reach Let's Encrypt
 
 ## Deploy
 
+### A fresh Linux server (systemd)
+
+```bash
+git clone https://github.com/EgorKhaklin/polaris-id.git /opt/polaris
+sudo POLARIS_DOMAIN=polaris.example.org /opt/polaris/deploy/linux/install.sh
+```
+
+One script: Docker from Docker's repository (key verified), images, secrets,
+`/etc/polaris/polaris.env`, `polaris.service` plus daily backup and weekly
+verify timers, the stack started and `/api/health` asserted healthy. Details,
+day-2 commands, and uninstall in [`LINUX-SERVER.md`](LINUX-SERVER.md); the host
+itself in [`HARDENING.md`](HARDENING.md). Upgrades on such a host are the
+standard path below.
+
 ### Standard path (Docker Compose, single host)
 
 ```bash

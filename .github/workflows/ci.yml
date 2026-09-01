@@ -737,6 +737,65 @@ jobs:
       - name: promtool + amtool validate the shipped configs, then the page drill
         run: bash scripts/polaris-page-drill.sh
 
+  # --------------------------------------------------------------------------
+  # v9.176 (roadmap P1.1) — a fresh Linux server reaches a healthy production
+  # stack from deploy/linux/install.sh alone. The packages stage executes for
+  # real inside Debian 12 and Rocky Linux 9 containers (Docker's official apt
+  # and dnf repositories, signing-key fingerprint verified, no curl|sh); the
+  # full installer then runs on this Ubuntu host with REAL systemd: /opt/polaris,
+  # secrets, units, `systemctl start polaris`, migrations, /api/health healthy
+  # through the TLS edge, the backup service producing a tarball, and health
+  # again after `systemctl restart polaris`. ACME cannot run here, so the edge
+  # uses Caddy's internal CA (docker-compose.citest.yml), exactly as the
+  # prod-stack-boot job does. Pinned by check_linux_server_deployment.
+  # --------------------------------------------------------------------------
+  linux-install:
+    name: Linux server install (systemd on this host; Debian 12 + Rocky 9 package stages)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: packages stage, for real, on Debian 12 and Rocky Linux 9
+        run: |
+          set -e
+          docker run --rm -v "$PWD/deploy/linux/install.sh:/install.sh:ro" \
+            debian@sha256:6ebd97fa83deb272194a2cf015b3d26a4d538e9ad3a7a79d544c8af5b0a01443 \
+            bash /install.sh --stage packages
+          docker run --rm -v "$PWD/deploy/linux/install.sh:/install.sh:ro" \
+            rockylinux@sha256:d7be1c094cc5845ee815d4632fe377514ee6ebcf8efaed6892889657e5ddaaa6 \
+            bash /install.sh --stage packages
+
+      - name: full install on this host (real systemd) to a healthy stack through the TLS edge
+        env:
+          POLARIS_DOMAIN: localhost
+          POLARIS_COMPOSE_EXTRA: "-f docker-compose.citest.yml"
+        run: sudo -E bash deploy/linux/install.sh --source "$PWD"
+
+      - name: systemd owns the stack (active, timers scheduled, backup runs, restart survives)
+        run: |
+          set -e
+          systemctl is-active polaris.service
+          systemctl list-timers --all | grep -E 'polaris-backup(-verify)?\.timer'
+          sudo systemctl start polaris-backup.service
+          ls -la /var/backups/polaris/
+          ls /var/backups/polaris/*.tar.gz
+          sudo systemctl restart polaris.service
+          code=""
+          for i in $(seq 1 60); do
+            code=$(curl -sk -o /dev/null -w '%{http_code}' https://localhost:8443/api/health || true)
+            [ "$code" = 200 ] && break
+            sleep 3
+          done
+          [ "$code" = 200 ] || { echo "::error::stack not healthy after systemctl restart polaris (last HTTP $code)"; sudo journalctl -u polaris -e --no-pager | tail -30; exit 1; }
+          echo "healthy again after systemctl restart polaris (check $i)"
+
+      - name: Tear down
+        if: always()
+        run: |
+          sudo systemctl stop polaris.service || true
+          sudo docker compose -f /opt/polaris/polaris_web/docker-compose.prod.yml -f /opt/polaris/polaris_web/docker-compose.citest.yml down -v || true
+
   pqc-real:
     name: Real PQC (ML-DSA-65) sign + verify
     runs-on: ubuntu-latest

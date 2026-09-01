@@ -1,0 +1,12 @@
+# polaris-backup.timer — daily 03:00 UTC (the cadence polaris-cron-install.sh
+# documents), as a systemd timer for hosts installed by deploy/linux/install.sh.
+[Unit]
+Description=Daily Polaris backup
+
+[Timer]
+OnCalendar=*-*-* 03:00:00 UTC
+Persistent=true
+RandomizedDelaySec=10m
+
+[Install]
+WantedBy=timers.target

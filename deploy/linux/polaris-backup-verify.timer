@@ -1,0 +1,11 @@
+# polaris-backup-verify.timer — weekly, Sunday 04:00 UTC.
+[Unit]
+Description=Weekly Polaris backup verification
+
+[Timer]
+OnCalendar=Sun *-*-* 04:00:00 UTC
+Persistent=true
+RandomizedDelaySec=10m
+
+[Install]
+WantedBy=timers.target

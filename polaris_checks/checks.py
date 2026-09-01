@@ -2915,6 +2915,74 @@ def check_pager_integration(root: pathlib.Path) -> list[Finding]:
                "wiring runbook")
 
 
+def check_linux_server_deployment(root: pathlib.Path) -> list[Finding]:
+    """Roadmap P1.1: a fresh Debian/RHEL server reaches a healthy production stack
+    from deploy/linux/install.sh alone, under systemd, with a hardening guide.
+
+    Pins the shape that makes it trustworthy: Docker from Docker's official
+    repositories with the signing key's fingerprint verified (never curl|sh),
+    both apt and dnf branches present, a unit that Requires docker.service and
+    reads an EnvironmentFile, backup timers, the two guides linked from the
+    README and the operator index, and CI executing the package stage on both
+    distro families plus the full install on a real systemd host."""
+    inst = _read(root, "deploy/linux/install.sh")
+    unit = _read(root, "deploy/linux/polaris.service")
+    bsvc = _read(root, "deploy/linux/polaris-backup.service")
+    btim = _read(root, "deploy/linux/polaris-backup.timer")
+    envx = _read(root, "deploy/linux/polaris.env.example")
+    guide = _read(root, "docs/operator/LINUX-SERVER.md")
+    hard = _read(root, "docs/operator/HARDENING.md")
+    readme = _read(root, "README.md")
+    index = _read(root, "docs/operator/README.md")
+    ci = _read(root, ".github/workflows/ci.yml")
+    if not (inst and unit and bsvc and btim and envx and guide and hard and readme and index and ci):
+        return _fail("linux_server", "a Linux-deployment file is missing (deploy/linux/{install.sh, polaris.service, "
+                     "polaris-backup.service, polaris-backup.timer, polaris.env.example}, "
+                     "docs/operator/{LINUX-SERVER.md, HARDENING.md}, README.md, docs/operator/README.md, ci.yml)")
+    # Comments may NAME the anti-pattern (the installer's header says never to do
+    # it); only executable lines are judged.
+    code = "\n".join(l for l in inst.splitlines() if not l.lstrip().startswith("#"))
+    if re.search(r"get\.docker\.com|curl[^|\n]*\|\s*(sudo\s+)?(ba)?sh\b", code):
+        return _fail("linux_server", "install.sh must not pipe a download into a shell (get.docker.com / curl | sh); "
+                     "use Docker's apt/dnf repositories with the signing key verified")
+    if "download.docker.com" not in inst or "0EBFCD88" not in inst or "621E9F35" not in inst or "gpg" not in inst:
+        return _fail("linux_server", "install.sh must add Docker's official repository and verify the signing key "
+                     "fingerprint with gpg before trusting it, for BOTH keys: deb 9DC85822...0EBFCD88 and rpm "
+                     "060A61C5...621E9F35 (they differ; the deb fingerprint refuses the rpm key)")
+    if "apt-get" not in inst or "dnf" not in inst:
+        return _fail("linux_server", "install.sh must carry both the Debian (apt-get) and RHEL (dnf) branches")
+    for needle in ("polaris-generate-secrets.sh", "systemctl enable", "systemctl daemon-reload", "/api/health",
+                   "polaris-migrate.sh"):
+        if needle not in inst:
+            return _fail("linux_server", f"install.sh must include '{needle}' (secrets, units enabled, migrations, "
+                         "health asserted)")
+    if "Requires=docker.service" not in unit or "EnvironmentFile=" not in unit \
+            or "docker-compose.prod.yml" not in unit or "WantedBy=multi-user.target" not in unit \
+            or "ExecStop=" not in unit:
+        return _fail("linux_server", "polaris.service must Require docker.service, read an EnvironmentFile, run the prod "
+                     "compose file in ExecStart with an ExecStop, and be WantedBy multi-user.target")
+    if "OnCalendar=" not in btim or "Persistent=true" not in btim or "polaris-backup.sh" not in bsvc:
+        return _fail("linux_server", "polaris-backup.timer must schedule (OnCalendar, Persistent) polaris-backup.service "
+                     "running scripts/polaris-backup.sh")
+    if "POLARIS_DOMAIN=" not in envx:
+        return _fail("linux_server", "polaris.env.example must carry POLARIS_DOMAIN")
+    if "install.sh" not in guide or "systemctl" not in guide or "HARDENING.md" not in guide:
+        return _fail("linux_server", "LINUX-SERVER.md must document the installer, the systemd units, and link HARDENING.md")
+    for needle in ("ssh", "unattended-upgrades", "ufw", "firewalld", "chrony", "daemon.json", "auditd", "/metrics"):
+        if needle not in hard:
+            return _fail("linux_server", f"HARDENING.md must cover '{needle}'")
+    if "docs/operator/LINUX-SERVER.md" not in readme or "LINUX-SERVER.md" not in index or "HARDENING.md" not in index:
+        return _fail("linux_server", "README.md must link docs/operator/LINUX-SERVER.md and the operator index must list "
+                     "LINUX-SERVER.md and HARDENING.md (a server path no one can find is not a path)")
+    if "deploy/linux/install.sh" not in ci or "debian@sha256:" not in ci or "rockylinux@sha256:" not in ci \
+            or "systemctl is-active polaris" not in ci:
+        return _fail("linux_server", "ci.yml must run install.sh: the packages stage in digest-pinned Debian and Rocky "
+                     "containers, and the full install under real systemd (systemctl is-active polaris)")
+    return _ok("linux_server", "Linux server deployment: install.sh (Docker's repos, key verified, apt+dnf), "
+               "polaris.service + backup timers, LINUX-SERVER.md + HARDENING.md linked from README and the "
+               "operator index, and CI proving both package branches plus a full systemd install to healthy")
+
+
 CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_csp_forbids_unsafe_inline,
     check_one_active_token_index,
@@ -3000,6 +3068,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_coverage_gated,
     check_offsite_backup_env_driven,
     check_pager_integration,
+    check_linux_server_deployment,
     check_local_clock_convention,
     check_c6_atlas_redacts_zk_location,
     check_coercion_evidence_retained,

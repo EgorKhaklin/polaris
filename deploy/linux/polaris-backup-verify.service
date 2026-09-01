@@ -1,0 +1,12 @@
+# polaris-backup-verify.service — extract + SHA-256-verify the newest backup.
+# Driven by polaris-backup-verify.timer (weekly).
+[Unit]
+Description=Polaris backup verification (newest tarball extracted and hash-checked)
+Requires=polaris.service
+After=polaris.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=__INSTALL_DIR__
+EnvironmentFile=__ENV_FILE__
+ExecStart=__INSTALL_DIR__/scripts/polaris-backup.sh --dest /var/backups/polaris --verify-latest

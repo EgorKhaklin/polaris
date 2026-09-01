@@ -1,0 +1,29 @@
+# polaris.service — the Polaris production stack under systemd (roadmap P1.1).
+#
+# Installed by deploy/linux/install.sh with __INSTALL_DIR__ and __ENV_FILE__
+# substituted. The stack is the production docker compose project; systemd owns
+# its lifecycle (boot, stop, restart) and the compose restart policies own the
+# individual containers. Upgrades are `scripts/polaris-deploy.sh prod`, which
+# operates on the same compose project.
+[Unit]
+Description=Polaris identity-token stack (docker compose, production profile)
+Documentation=https://github.com/EgorKhaklin/polaris-id/blob/main/docs/operator/LINUX-SERVER.md
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=__INSTALL_DIR__/polaris_web
+EnvironmentFile=__ENV_FILE__
+# POLARIS_COMPOSE_EXTRA is normally empty. CI sets it to
+# "-f docker-compose.citest.yml" so the TLS edge uses Caddy's internal CA on a
+# host with no public domain; everything else is exactly production.
+ExecStart=/usr/bin/docker compose -f docker-compose.prod.yml $POLARIS_COMPOSE_EXTRA up -d --remove-orphans
+ExecStop=/usr/bin/docker compose -f docker-compose.prod.yml $POLARIS_COMPOSE_EXTRA down
+TimeoutStartSec=900
+TimeoutStopSec=180
+
+[Install]
+WantedBy=multi-user.target

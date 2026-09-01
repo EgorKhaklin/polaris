@@ -1,0 +1,13 @@
+# polaris-backup.service — one encrypted full backup (roadmap P1.1).
+# Driven by polaris-backup.timer (daily); also `systemctl start polaris-backup`.
+[Unit]
+Description=Polaris database backup (pg_dump tarball with SHA-256 manifest)
+Documentation=https://github.com/EgorKhaklin/polaris-id/blob/main/docs/operator/OPERATIONS.md
+Requires=polaris.service
+After=polaris.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=__INSTALL_DIR__
+EnvironmentFile=__ENV_FILE__
+ExecStart=__INSTALL_DIR__/scripts/polaris-backup.sh --dest /var/backups/polaris

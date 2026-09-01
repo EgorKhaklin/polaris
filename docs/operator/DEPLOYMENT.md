@@ -33,74 +33,23 @@ pip3 install --break-system-packages flask psycopg2-binary gunicorn
 python3 app.py                                                  # http://localhost:5000
 ```
 
-## Path 3: Production (systemd + nginx + TLS + auth)
+## Path 3: Production (a Linux server under systemd)
 
-**1. Provision Postgres** on a hardened host. Restrict `pg_hba.conf` to localhost or VPN. Run `polaris_sql/00_load_all.sql` once (loads schema, sample data, triggers, grants, AppUser/AuthAuditLog).
+The production path is the compose stack behind the Caddy TLS edge, owned by
+systemd, installed by one script on a fresh Debian, Ubuntu, or RHEL-family host:
 
-**2. Rotate the polaris_app role password.** The default `polaris_dev_password` is for development only:
-```sql
-ALTER ROLE polaris_app WITH PASSWORD '<min-16-chars-letters-digits-symbols>';
-```
-
-**3. Rotate the application user passwords.** Generate a real scrypt hash and update the seed accounts:
-```python
-python3 -c "from werkzeug.security import generate_password_hash; print(generate_password_hash('YourProdPassword!', method='scrypt'))"
-```
-```sql
-UPDATE AppUser SET password_hash = '<the-hash>', failed_login_count=0, locked_until=NULL
- WHERE username IN ('admin', 'operator', 'auditor');
-```
-Or remove the seeds entirely and create your own via SQL.
-
-**4. Generate a real session secret**:
 ```bash
-python3 -c 'import secrets; print(secrets.token_hex(32))' > /etc/polaris/secret_key
-chmod 600 /etc/polaris/secret_key
+git clone https://github.com/EgorKhaklin/polaris-id.git /opt/polaris
+sudo POLARIS_DOMAIN=polaris.example.org /opt/polaris/deploy/linux/install.sh
 ```
 
-**5. systemd unit** at `/etc/systemd/system/polaris.service`:
-```ini
-[Unit]
-Description=Polaris Identity Token System
-After=network.target postgresql.service
-Requires=postgresql.service
-
-[Service]
-Type=simple
-User=polaris
-WorkingDirectory=/opt/polaris/web
-EnvironmentFile=/etc/polaris/env
-ExecStart=/opt/polaris/venv/bin/gunicorn --config gunicorn.conf.py app:app
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-```
-
-`/etc/polaris/env` (chmod 600, owned by polaris):
-```
-POLARIS_ENV=production              # refuses to start with default secret_key
-POLARIS_DB_HOST=127.0.0.1
-POLARIS_DB_NAME=polaris_test
-POLARIS_DB_USER=polaris_app
-POLARIS_DB_PASSWORD=<strong-password>
-POLARIS_SECRET_KEY=<contents of /etc/polaris/secret_key>
-POLARIS_COOKIE_SECURE=1             # require HTTPS for session cookie
-POLARIS_HSTS=1                      # HSTS header (only after committed to HTTPS-only)
-POLARIS_TRUST_PROXY=1               # honor X-Forwarded-For from nginx
-POLARIS_WORKERS=4
-POLARIS_REDIS_URL=redis://127.0.0.1:6379/0   # required when POLARIS_WORKERS > 1; see Rate Limiter section
-```
-
-**6. nginx with TLS** (see `polaris_web/nginx.conf.example`). Get a cert with `certbot --nginx -d polaris.example.gov`.
-
-**7. Start**:
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now polaris.service
-sudo systemctl reload nginx
-```
+Everything about it, including what is installed, day-2 commands, upgrades, and
+uninstall, is in [`LINUX-SERVER.md`](LINUX-SERVER.md); the operating system
+around it is [`HARDENING.md`](HARDENING.md). The earlier native path on this page
+(a host Postgres, gunicorn under systemd, nginx with certbot) was retired in
+v9.176: it bypassed the container hardening, the pgbouncer and postgres TLS
+hops, pgBackRest, and the secrets layout that the rest of these docs assume.
+The seeded accounts still apply and must be rotated on first login (below).
 
 ---
 
