@@ -5,6 +5,76 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.186 — 2026-09-01 (Roadmap P1.5: the Kubernetes/Helm reference profile, boots to healthy on kind with enforced policies and the restricted standard)
+
+Compose on one Linux host stays the single-node path (P1.1); this gives an
+authority whose platform is a cluster the same topology under Kubernetes'
+own controls, and proves it on a stock cluster in CI.
+
+  - `deploy/helm/polaris`: caddy (uid 1000, 8080/8443 behind a Service on
+    80/443, `tls: internal` or ACME, the same headers, rate limit, and
+    liveness-based retry as the compose edge), app (2 replicas,
+    `maxUnavailable: 0`, readiness on /api/health/live, a
+    PodDisruptionBudget: the Kubernetes-native form of P1.4), pgbouncer,
+    postgres (a StatefulSet running as uid 70 with PGDATA in a subdirectory of
+    the volume, TLS on), redis. Every pod satisfies the restricted Pod
+    Security Standard (numeric non-root user, RuntimeDefault seccomp, all
+    capabilities dropped, no privilege escalation). NetworkPolicies
+    default-deny both directions for every pod and allow only the topology's
+    edges, DNS for all, ACME egress only with `edge.tls=acme`, S3 egress for
+    postgres only with pgBackRest enabled. Secrets: the same generator as
+    compose (`existingSecret`, including the ML-DSA-65 signing key) or a
+    chart-generated Secret with random passwords and self-signed certificates
+    kept across upgrades.
+  - The postgres image is now self-contained: the schema and migrations, the
+    init script, and pgbackrest.conf are baked in (build context is the
+    repository root; compose keeps bind-mounting the live copies). Every build
+    site updated, including sbom.yml.
+  - `scripts/polaris-helm-drill.sh`, run by the new `helm-kind` CI job: a kind
+    cluster with the default CNI DISABLED and Calico installed, because
+    kindnet does not enforce NetworkPolicy and a green run on it would prove
+    nothing about the policies; the four self-built images loaded (pull policy Never for them,
+    redis pulled by its pinned digest); the namespace labelled restricted and a privileged pod REJECTED by the API
+    server; the real secrets as a Secret; `helm lint` and `helm install
+    --wait`; /api/health through the edge with database, redis, zk_binary, and
+    custody healthy; a probe pod outside the topology DENIED on postgres,
+    pgbouncer, and app; and a rolling restart that keeps the edge healthy.
+  - `docs/operator/KUBERNETES.md`: prerequisites (an enforcing CNI, storage,
+    a LoadBalancer for ACME, images in a registry), install, verify, operate
+    (upgrade, migrations, rotation, backups, metrics), limits. README and the
+    operator index link it.
+
+Found by running the drill locally: `kind load` of a digest-referenced
+manifest list (the pinned redis) fails inside the node with "content digest
+not found" for the platforms it does not have, so the drill loads only the
+four self-built images (pull policy Never for them) and the node pulls redis
+by its pinned digest; the chart gained a per-image `redisPullPolicy` for
+exactly that. The second run then showed postgres crash-looping on a
+missing server.crt: the StatefulSet passed `-c ssl=on` as an argument, which
+the official entrypoint also applies to the TEMPORARY server it starts to run
+the init scripts, before docker-init.sh has copied the certificate in; init
+aborted half-way and every restart skipped it. docker-init.sh turns TLS on
+itself (as on compose), so the argument is gone. The third run, with every
+pod's logs dumped on failure, showed the last two: the app could not start
+because kubelet needs /var/run/secrets/kubernetes.io/serviceaccount for the
+projected API token and the Secret mount had made /run/secrets read-only,
+so every workload now sets automountServiceAccountToken: false (none of them
+talks to the API; one credential fewer in every pod); and caddy died with
+"exec /usr/bin/caddy: operation not permitted" because the runtime base
+image sets cap_net_bind_service on the binary as a FILE capability, which a
+non-root process with all capabilities dropped cannot exec at all. The
+profile listens on 8080/8443, so Dockerfile.caddy strips the file capability;
+the compose edge, root with NET_BIND_SERVICE from cap_add, still binds 80/443
+(proven), and `check_helm_reference_profile` pins both.
+
+Stated limits: one postgres replica (HA PostgreSQL is P2), `tls: internal`
+and a single node in CI, no registry images published yet (the operator
+builds and pushes; P0.6's image-signing deferral stands until there is a
+registry). 97 checks, 94 check-layer tests. Next opener: P1.6 distributed
+tracing and dashboards-as-code.
+
+---
+
 ## v9.185 — 2026-09-01 (P1.4 follow-through: a wider app healthcheck window for cold starts)
 
 v9.184 was green on all eleven jobs with no product change since v9.183, so

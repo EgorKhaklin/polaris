@@ -1,0 +1,85 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "polaris.fullname" . }}-caddy
+  labels:
+    {{- include "polaris.labels" . | nindent 4 }}
+    app.kubernetes.io/component: caddy
+spec:
+  replicas: {{ .Values.edge.replicas }}
+  selector:
+    matchLabels:
+      {{- include "polaris.selector" . | nindent 6 }}
+      app.kubernetes.io/component: caddy
+  template:
+    metadata:
+      labels:
+        {{- include "polaris.selector" . | nindent 8 }}
+        app.kubernetes.io/component: caddy
+      annotations:
+        checksum/caddyfile: {{ include (print $.Template.BasePath "/configmap-caddy.yaml") . | sha256sum }}
+    spec:
+      # No API token: none of these processes talk to the Kubernetes API, and the
+      # projected token mount lands under /var/run/secrets, which the app's Secret
+      # mount would otherwise make read-only (the mkdir failed at runc).
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "polaris.podSecurity" (dict "uid" 1000 "gid" 1000) | nindent 8 }}
+      containers:
+        - name: caddy
+          image: {{ .Values.images.caddy }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          securityContext:
+            {{- include "polaris.containerSecurity" . | nindent 12 }}
+          env:
+            - name: POLARIS_DOMAIN
+              value: {{ .Values.domain | quote }}
+          ports:
+            - name: http
+              containerPort: 8080
+            - name: https
+              containerPort: 8443
+          volumeMounts:
+            - name: caddyfile
+              mountPath: /etc/caddy/Caddyfile
+              subPath: Caddyfile
+              readOnly: true
+            - name: data
+              mountPath: /data
+            - name: config
+              mountPath: /config
+          readinessProbe:
+            tcpSocket:
+              port: https
+            periodSeconds: 5
+          resources:
+            requests: {cpu: 100m, memory: 64Mi}
+            limits: {memory: 256Mi}
+      volumes:
+        - name: caddyfile
+          configMap:
+            name: {{ include "polaris.fullname" . }}-caddy
+        - name: data
+          emptyDir: {}
+        - name: config
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "polaris.fullname" . }}-caddy
+  labels:
+    {{- include "polaris.labels" . | nindent 4 }}
+    app.kubernetes.io/component: caddy
+spec:
+  type: {{ .Values.edge.service.type }}
+  selector:
+    {{- include "polaris.selector" . | nindent 4 }}
+    app.kubernetes.io/component: caddy
+  ports:
+    - name: http
+      port: {{ .Values.edge.service.httpPort }}
+      targetPort: http
+    - name: https
+      port: {{ .Values.edge.service.httpsPort }}
+      targetPort: https

@@ -55,6 +55,13 @@ RUN apk upgrade --no-cache
 # Swap the stock binary for the plugin-enabled one; the base image's ENTRYPOINT
 # (caddy run --config /etc/caddy/Caddyfile) and non-root posture are preserved.
 COPY --from=builder /usr/bin/caddy /usr/bin/caddy
+# v9.186 (roadmap P1.5) — the runtime base sets cap_net_bind_service on the caddy
+# binary as a FILE capability; a non-root user with all capabilities dropped (the
+# restricted Pod Security Standard) then cannot exec it at all ("operation not
+# permitted", found by the kind drill). The Kubernetes profile listens on
+# 8080/8443, and the compose edge runs as root with NET_BIND_SERVICE from
+# cap_add, so the file capability is stripped.
+RUN apk add --no-cache libcap && setcap -r /usr/bin/caddy && apk del libcap
 
 # Fail the build if the plugin did not actually land in the binary (defense in
 # depth against a silently-broken xcaddy build shipping a plugin-less Caddy).

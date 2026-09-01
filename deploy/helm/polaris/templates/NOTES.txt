@@ -1,0 +1,10 @@
+Polaris {{ .Chart.AppVersion }} installed as release {{ .Release.Name }} in {{ .Release.Namespace }}.
+
+  Edge:     service/{{ include "polaris.fullname" . }}-caddy  ({{ .Values.edge.service.type }}, {{ .Values.edge.tls }} TLS for {{ .Values.domain }})
+  Health:   kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "polaris.fullname" . }}-caddy 8443:{{ .Values.edge.service.httpsPort }}
+            curl -k https://localhost:8443/api/health
+  Secrets:  {{ include "polaris.secretName" . }}{{ if not .Values.secrets.existingSecret }}  (chart-generated; add polaris_signing_key for real ML-DSA-65 custody){{ end }}
+  Policies: default-deny NetworkPolicies are {{ ternary "ON (needs an enforcing CNI)" "OFF" .Values.networkPolicy.enabled }}
+  Pod Security: label the namespace to enforce `restricted` (values.yaml).
+
+Runbook: docs/operator/KUBERNETES.md

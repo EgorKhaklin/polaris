@@ -3143,3 +3143,62 @@ def test_zero_downtime_deploy_check_discriminates(tmp_path):
     # Rotation that only recreates one colour.
     write({"scripts/polaris-rotate-secret.sh": "compose up -d --no-deps --force-recreate app\n"})
     assert checks.check_zero_downtime_deploy(tmp_path)[0].level == "FAIL", "must FAIL when rotation ignores app-green"
+
+
+def test_helm_reference_profile_check_discriminates(tmp_path):
+    HELPERS = "runAsNonRoot: true\nseccompProfile:\n  type: RuntimeDefault\ncapabilities:\n  drop: [\"ALL\"]\nallowPrivilegeEscalation: false\n"
+    NP = ("name: x-default-deny\npolicyTypes: [Ingress, Egress]\nname: x-allow-dns\n" + "kind: NetworkPolicy\n" * 7)
+    DRILL = ("kubectl apply -f calico.yaml\nkubectl label namespace polaris pod-security.kubernetes.io/enforce=restricted\n"
+             "grep -q \"violates PodSecurity\"\nhelm install polaris\ncurl /api/health custody\n"
+             "targets = [(\"polaris-postgres\", 5432)]\nprint(\"REACHED\")\nkubectl rollout restart deploy/polaris-app\n")
+    good = {
+        "deploy/helm/polaris/Chart.yaml": "apiVersion: v2\nname: polaris\nversion: 0.1.0\n",
+        "deploy/helm/polaris/values.yaml": "networkPolicy:\n  enabled: true\nsecrets:\n  existingSecret: \"\"\n",
+        "deploy/helm/polaris/templates/_helpers.tpl": HELPERS,
+        "deploy/helm/polaris/templates/networkpolicy.yaml": NP,
+        "deploy/helm/polaris/templates/app.yaml": "automountServiceAccountToken: false\nmaxUnavailable: 0\npath: /api/health/live\nkind: PodDisruptionBudget\n",
+        "deploy/helm/polaris/templates/postgres.yaml": "automountServiceAccountToken: false\n(dict \"uid\" 70 \"gid\" 70)\nvalue: /var/lib/postgresql/data/pgdata\n",
+        "deploy/helm/polaris/templates/caddy.yaml": "automountServiceAccountToken: false\n", "deploy/helm/polaris/templates/pgbouncer.yaml": "automountServiceAccountToken: false\n",
+        "deploy/helm/polaris/templates/redis.yaml": "automountServiceAccountToken: false\n", "deploy/helm/polaris/templates/secret.yaml": "x",
+        "polaris_web/Dockerfile.caddy": "COPY caddy\nRUN setcap -r /usr/bin/caddy\n",
+        "deploy/helm/polaris/templates/configmap-caddy.yaml": "x",
+        "polaris_web/Dockerfile.postgres": ("COPY --chown=postgres:postgres polaris_sql /docker-entrypoint-initdb.d/sql\n"
+                                            "COPY --chmod=0755 polaris_web/docker-init.sh /docker-entrypoint-initdb.d/00-init.sh\n"
+                                            "COPY polaris_web/pgbackrest.conf /etc/pgbackrest/pgbackrest.conf\n"),
+        "scripts/polaris-helm-drill.sh": DRILL,
+        "deploy/helm/kind-config.yaml": "networking:\n  disableDefaultCNI: true\n",
+        ".github/workflows/ci.yml": "uses: helm/kind-action@v1.14.0\nrun: bash scripts/polaris-helm-drill.sh\n",
+        "docs/operator/KUBERNETES.md": "restricted Pod Security Standard; Calico enforces NetworkPolicy\n",
+        "README.md": "[KUBERNETES](docs/operator/KUBERNETES.md)\n",
+    }
+
+    def write(overrides=None):
+        files = dict(good); files.update(overrides or {})
+        for rel, body in files.items():
+            f = tmp_path / rel
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text(body)
+
+    write()
+    assert checks.check_helm_reference_profile(tmp_path)[0].level == "OK", "must PASS on the good fixture"
+
+    # kind with its default CNI (policies would be decorative).
+    write({"deploy/helm/kind-config.yaml": "networking: {}\n"})
+    f = checks.check_helm_reference_profile(tmp_path)[0]
+    assert f.level == "FAIL" and "kindnet" in f.message, "must FAIL when the drill runs on a non-enforcing CNI"
+
+    # A pod allowed to escalate privileges.
+    write({"deploy/helm/polaris/templates/_helpers.tpl": HELPERS.replace("allowPrivilegeEscalation: false\n", "")})
+    assert checks.check_helm_reference_profile(tmp_path)[0].level == "FAIL", "must FAIL when the restricted standard is not met"
+
+    # Postgres as root.
+    write({"deploy/helm/polaris/templates/postgres.yaml": "automountServiceAccountToken: false\n(dict \"uid\" 0 \"gid\" 0)\n"})
+    assert checks.check_helm_reference_profile(tmp_path)[0].level == "FAIL", "must FAIL when postgres runs as root"
+
+    # A drill with no negative policy probe.
+    write({"scripts/polaris-helm-drill.sh": DRILL.replace("print(\"REACHED\")\n", "")})
+    assert checks.check_helm_reference_profile(tmp_path)[0].level == "FAIL", "must FAIL without the policy-denial probe"
+
+    # The SQL not baked into the postgres image.
+    write({"polaris_web/Dockerfile.postgres": "FROM postgres\n"})
+    assert checks.check_helm_reference_profile(tmp_path)[0].level == "FAIL", "must FAIL when the postgres image is not self-contained"

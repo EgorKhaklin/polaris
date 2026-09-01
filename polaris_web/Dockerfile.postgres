@@ -20,7 +20,7 @@
 # exercises against MinIO). The S3 credentials are a separately mounted secret
 # fragment, never env. See docs/operator/DR.md.
 #
-# Build context is polaris_web/ (see docker-compose.prod.yml).
+# Build context is the REPOSITORY ROOT (see docker-compose.prod.yml).
 # ============================================================================
 FROM postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
 
@@ -39,7 +39,16 @@ RUN apk upgrade --no-cache \
 # v9.173 (P0.9) — the repo-fragment renderer + the entrypoint wrapper that runs
 # it on every start. conf.d is postgres-owned above so the renderer can write
 # there whether the container starts as root (stock) or as postgres (restore).
-COPY --chmod=0755 pgbackrest-conf.sh /usr/local/bin/polaris-pgbackrest-conf.sh
-COPY --chmod=0755 pg-entrypoint.sh   /usr/local/bin/polaris-pg-entrypoint.sh
+COPY --chmod=0755 polaris_web/pgbackrest-conf.sh /usr/local/bin/polaris-pgbackrest-conf.sh
+COPY --chmod=0755 polaris_web/pg-entrypoint.sh   /usr/local/bin/polaris-pg-entrypoint.sh
+
+# v9.186 (roadmap P1.5) — the image is self-contained: the schema and its
+# migrations, the init script, and the pgBackRest stanza config are baked in,
+# so a Kubernetes pod needs no ConfigMaps for them. The compose stack keeps
+# bind-mounting the live copies over these paths (dev freshness); the build
+# context is therefore the repository root (see docker-compose.prod.yml).
+COPY --chown=postgres:postgres polaris_sql /docker-entrypoint-initdb.d/sql
+COPY --chmod=0755 polaris_web/docker-init.sh /docker-entrypoint-initdb.d/00-init.sh
+COPY --chown=postgres:postgres polaris_web/pgbackrest.conf /etc/pgbackrest/pgbackrest.conf
 ENTRYPOINT ["/usr/local/bin/polaris-pg-entrypoint.sh"]
 CMD ["postgres"]

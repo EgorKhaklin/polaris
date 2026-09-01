@@ -212,6 +212,13 @@ posture audit's migration roadmap.
   promtool-validated `polaris-alerts.yml` (6 rules) + `prometheus.yml` scrape
   config + README; ratios/quantiles stay valid per worker. Pinned by
   `check_alert_rules`. (Alertmanager backend operator-gated.)
+- [x] **Kubernetes/Helm reference profile (v9.186).** `deploy/helm/polaris`:
+  the production topology with default-deny NetworkPolicies and every pod
+  under the restricted Pod Security Standard; the postgres image is
+  self-contained. The `helm-kind` CI job boots it on kind with Calico
+  enforcing, rejects a privileged pod, denies a probe pod by policy, serves
+  `/api/health` healthy through the edge, and rolls the app. Pinned by
+  `check_helm_reference_profile`. (One postgres replica; HA is P2.)
 - [x] **Zero-downtime deploys (v9.183).** A blue-green profile
   (`docker-compose.bluegreen.yml`) behind a retrying edge with 2s liveness
   polling; `polaris-deploy.sh` brings infrastructure up, migrates (expand),

@@ -3199,6 +3199,74 @@ def check_zero_downtime_deploy(root: pathlib.Path) -> list[Finding]:
                "traffic with a negative control")
 
 
+def check_helm_reference_profile(root: pathlib.Path) -> list[Finding]:
+    """Roadmap P1.5: a Helm chart deploys the production topology with default-deny
+    NetworkPolicies and the restricted Pod Security Standard, the postgres image
+    is self-contained, and CI proves it boots to healthy on kind with an ENFORCING
+    CNI, a privileged pod rejected, and a probe pod denied by policy."""
+    chart = root / "deploy" / "helm" / "polaris"
+    values = _read(root, "deploy/helm/polaris/values.yaml")
+    helpers = _read(root, "deploy/helm/polaris/templates/_helpers.tpl")
+    np = _read(root, "deploy/helm/polaris/templates/networkpolicy.yaml")
+    app = _read(root, "deploy/helm/polaris/templates/app.yaml")
+    pg = _read(root, "deploy/helm/polaris/templates/postgres.yaml")
+    dockerfile = _read(root, "polaris_web/Dockerfile.postgres")
+    drill = _read(root, "scripts/polaris-helm-drill.sh")
+    kindcfg = _read(root, "deploy/helm/kind-config.yaml")
+    ci = _read(root, ".github/workflows/ci.yml")
+    doc = _read(root, "docs/operator/KUBERNETES.md")
+    readme = _read(root, "README.md")
+    if not ((chart / "Chart.yaml").is_file() and values and helpers and np and app and pg and dockerfile and drill
+            and kindcfg and ci and doc and readme):
+        return _fail("helm_profile", "a Helm-profile file is missing (chart, values, helpers, networkpolicy/app/postgres "
+                     "templates, Dockerfile.postgres, polaris-helm-drill.sh, kind-config.yaml, ci.yml, KUBERNETES.md)")
+    for f in ("caddy.yaml", "pgbouncer.yaml", "redis.yaml", "secret.yaml", "configmap-caddy.yaml"):
+        if not (chart / "templates" / f).is_file():
+            return _fail("helm_profile", f"chart template {f} is missing")
+    for needle in ("runAsNonRoot: true", "seccompProfile", "RuntimeDefault", 'drop: ["ALL"]', "allowPrivilegeEscalation: false"):
+        if needle not in helpers:
+            return _fail("helm_profile", f"the restricted Pod Security Standard requires {needle!r} in the shared "
+                         "securityContext helpers")
+    if "policyTypes: [Ingress, Egress]" not in np or "default-deny" not in np or "allow-dns" not in np \
+            or np.count("kind: NetworkPolicy") < 6:
+        return _fail("helm_profile", "networkpolicy.yaml must default-deny ingress+egress for every pod, allow DNS, and "
+                     "carry one allow policy per workload")
+    for f in ("app.yaml", "caddy.yaml", "pgbouncer.yaml", "postgres.yaml", "redis.yaml"):
+        if "automountServiceAccountToken: false" not in _read(root, f"deploy/helm/polaris/templates/{f}"):
+            return _fail("helm_profile", f"{f} must set automountServiceAccountToken: false (no process needs the API; "
+                         "the projected token mount under /var/run/secrets collides with the Secret mount)")
+    caddy_df = _read(root, "polaris_web/Dockerfile.caddy")
+    if "setcap -r /usr/bin/caddy" not in caddy_df:
+        return _fail("helm_profile", "Dockerfile.caddy must strip the file capability from the caddy binary: a non-root "
+                     "pod with capabilities dropped cannot exec a capability-bearing binary")
+    if "maxUnavailable: 0" not in app or "/api/health/live" not in app or "PodDisruptionBudget" not in app:
+        return _fail("helm_profile", "the app Deployment must roll with maxUnavailable 0, probe /api/health/live, and "
+                     "carry a PodDisruptionBudget")
+    if '"uid" 70' not in pg or "/var/lib/postgresql/data/pgdata" not in pg:
+        return _fail("helm_profile", "postgres must run as uid 70 with PGDATA in a subdirectory of the volume "
+                     "(non-root under the restricted standard)")
+    if "COPY --chown=postgres:postgres polaris_sql" not in dockerfile or "docker-init.sh /docker-entrypoint-initdb.d/00-init.sh" not in dockerfile \
+            or "pgbackrest.conf /etc/pgbackrest/pgbackrest.conf" not in dockerfile:
+        return _fail("helm_profile", "Dockerfile.postgres must bake the schema, the init script, and pgbackrest.conf "
+                     "(a Kubernetes pod has no bind mounts for them)")
+    if "disableDefaultCNI: true" not in kindcfg or "calico" not in drill.lower():
+        return _fail("helm_profile", "the drill must disable kind's default CNI and install Calico: kindnet does not "
+                     "enforce NetworkPolicy, so a green run would prove nothing about the policies")
+    for needle in ("pod-security.kubernetes.io/enforce=restricted", "violates PodSecurity", "polaris-postgres\", 5432",
+                   "REACHED", "helm install", "/api/health", "rollout restart", "custody"):
+        if needle not in drill:
+            return _fail("helm_profile", f"polaris-helm-drill.sh must contain {needle!r} (restricted PSS enforced, a "
+                         "privileged pod rejected, a probe pod denied on postgres, health incl. custody, a rolling restart)")
+    if "polaris-helm-drill.sh" not in ci or "helm/kind-action@" not in ci:
+        return _fail("helm_profile", "ci.yml must install kind (helm/kind-action, pinned) and run scripts/polaris-helm-drill.sh")
+    if "docs/operator/KUBERNETES.md" not in readme or "restricted" not in doc or "Calico" not in doc:
+        return _fail("helm_profile", "README.md must link docs/operator/KUBERNETES.md, which must state the restricted "
+                     "standard and the enforcing-CNI prerequisite")
+    return _ok("helm_profile", "Helm reference profile: restricted PSS on every pod, default-deny NetworkPolicies per "
+               "workload, app rolls with maxUnavailable 0, postgres non-root with a self-contained image, and a "
+               "kind+Calico CI drill with PSS rejection, policy denial, health through the edge, and a rolling restart")
+
+
 CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_csp_forbids_unsafe_inline,
     check_one_active_token_index,
@@ -3289,6 +3357,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_secrets_lifecycle_sealed,
     check_migrations_expand_contract,
     check_zero_downtime_deploy,
+    check_helm_reference_profile,
     check_local_clock_convention,
     check_c6_atlas_redacts_zk_location,
     check_coercion_evidence_retained,

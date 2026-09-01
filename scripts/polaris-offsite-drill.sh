@@ -53,7 +53,7 @@ trap cleanup EXIT
 fail() { echo "::error::$*" >&2; exit 1; }
 
 echo "== building the pgbackrest-enabled postgres image =="
-docker build -q -f "$ROOT/polaris_web/Dockerfile.postgres" -t "$PG_IMAGE" "$ROOT/polaris_web" >/dev/null
+docker build -q -f "$ROOT/polaris_web/Dockerfile.postgres" -t "$PG_IMAGE" "$ROOT" >/dev/null
 docker network create "$NET" >/dev/null 2>&1 || true
 
 echo "== 1. the container refuses S3 credentials in env =="

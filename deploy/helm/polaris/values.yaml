@@ -1,0 +1,78 @@
+# Polaris Helm reference profile (roadmap P1.5). See docs/operator/KUBERNETES.md.
+
+# The four self-built images plus the pinned Redis. Push them to your registry
+# and set the repositories; `kind load docker-image` for a local cluster.
+images:
+  app: polaris-app:prod
+  caddy: polaris-caddy:prod
+  pgbouncer: polaris-pgbouncer:prod
+  postgres: polaris-postgres:prod
+  redis: redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
+  # For the four self-built images. The drill sets Never (nothing pulled).
+  pullPolicy: IfNotPresent
+  # Redis is a digest-pinned upstream image the nodes pull themselves: `kind
+  # load` of a digest-referenced manifest list fails on the platforms it does
+  # not have ("content digest not found"), found by the first local drill.
+  redisPullPolicy: IfNotPresent
+
+# The public hostname Caddy serves. With edge.tls=acme it must resolve to the
+# edge Service's external address before the first start.
+domain: polaris.example.org
+
+edge:
+  # acme: Let's Encrypt for `domain` (needs a reachable LoadBalancer on 80/443).
+  # internal: Caddy's internal CA (evaluation, kind, private networks).
+  tls: internal
+  replicas: 1
+  service:
+    type: ClusterIP        # LoadBalancer on a real cluster
+    httpPort: 80
+    httpsPort: 443
+  # Requests per minute per client IP at the edge (the prod Caddyfile's value).
+  rateLimitPerMinute: 200
+
+app:
+  replicas: 2
+  webConcurrency: 4
+  # Real ML-DSA-65 signing needs the signing key in the secret (see secrets).
+  realPqc: true
+
+secrets:
+  # An existing Secret holding the files polaris-generate-secrets.sh writes
+  # (polaris_secret_key, polaris_db_password, polaris_db_root_password,
+  # polaris_replicator_password, polaris_signing_key, postgres_server.crt/.key,
+  # pgbouncer_server.crt/.key, pgbackrest_repo_creds.conf). Recommended:
+  #   kubectl -n polaris create secret generic polaris-secrets --from-file=polaris_web/secrets/
+  existingSecret: ""
+  # Otherwise the chart creates one: random passwords and self-signed
+  # PostgreSQL/pgbouncer certificates, kept stable across upgrades. It cannot
+  # mint an ML-DSA-65 signing key, so custody reports degraded until you add
+  # polaris_signing_key to the Secret (docs/operator/KEY-CEREMONY.md).
+  create: true
+
+persistence:
+  storageClass: ""
+  postgres: 10Gi
+  pgbackrest: 10Gi
+  redis: 1Gi
+
+pgbackrest:
+  # Continuous WAL archiving to the S3 repo (docs/operator/DR.md); the key pair
+  # is pgbackrest_repo_creds.conf in the secret.
+  enabled: false
+  s3:
+    bucket: ""
+    endpoint: ""
+    region: ""
+    path: /polaris
+
+networkPolicy:
+  # Default-deny for every pod, then only the edges the topology needs. Needs
+  # a CNI that enforces NetworkPolicy (Calico, Cilium, ...); kind's default
+  # kindnet does NOT, which is why the drill installs Calico.
+  enabled: true
+
+# Pod Security: every pod satisfies the `restricted` standard. Label the
+# namespace so the API server enforces it:
+#   kubectl label ns polaris pod-security.kubernetes.io/enforce=restricted \
+#     pod-security.kubernetes.io/warn=restricted pod-security.kubernetes.io/audit=restricted

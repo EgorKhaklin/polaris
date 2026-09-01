@@ -1,0 +1,126 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "polaris.fullname" . }}-postgres
+  labels:
+    {{- include "polaris.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+spec:
+  clusterIP: None
+  selector:
+    {{- include "polaris.selector" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "polaris.fullname" . }}-postgres
+  labels:
+    {{- include "polaris.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+spec:
+  serviceName: {{ include "polaris.fullname" . }}-postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "polaris.selector" . | nindent 6 }}
+      app.kubernetes.io/component: postgres
+  template:
+    metadata:
+      labels:
+        {{- include "polaris.selector" . | nindent 8 }}
+        app.kubernetes.io/component: postgres
+    spec:
+      # No API token (see app.yaml); the projected token mount would collide
+      # with the Secret mounts under /run/secrets.
+      automountServiceAccountToken: false
+      # postgres runs as uid 70 from the start (no root, no gosu): the image's
+      # entrypoint supports it, initdb owns PGDATA (a subdirectory of the
+      # volume, so the fsGroup-owned mount root does not trip initdb's
+      # ownership check), and docker-init.sh only chmods files it copies.
+      securityContext:
+        {{- include "polaris.podSecurity" (dict "uid" 70 "gid" 70) | nindent 8 }}
+      containers:
+        - name: postgres
+          image: {{ .Values.images.postgres }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          securityContext:
+            {{- include "polaris.containerSecurity" . | nindent 12 }}
+          # No `-c ssl=on` here: docker-init.sh copies the certificate into PGDATA
+          # and turns ssl on itself at init (ALTER SYSTEM). Forcing it as an
+          # argument made the entrypoint's TEMPORARY init server fail on the
+          # not-yet-copied certificate, aborting init half-way; every restart
+          # then skipped init and died on the missing server.crt (first drill).
+          env:
+            - {name: PGDATA, value: /var/lib/postgresql/data/pgdata}
+            - {name: POSTGRES_DB, value: polaris}
+            - {name: POSTGRES_USER, value: postgres}
+            - {name: POSTGRES_PASSWORD_FILE, value: /run/secrets/polaris_db_root_password}
+            - {name: POSTGRES_HOST_AUTH_METHOD, value: scram-sha-256}
+            - {name: POSTGRES_INITDB_ARGS, value: --auth-host=scram-sha-256}
+            - {name: POLARIS_ENV, value: production}
+            - {name: POLARIS_APP_PASSWORD_FILE, value: /run/secrets/polaris_db_password}
+            - {name: POLARIS_REPLICATOR_PASSWORD_FILE, value: /run/secrets/polaris_replicator_password}
+            - {name: POLARIS_PGBACKREST_ENABLED, value: {{ ternary "1" "0" .Values.pgbackrest.enabled | quote }}}
+            {{- if .Values.pgbackrest.enabled }}
+            - {name: POLARIS_PGBACKREST_S3_BUCKET, value: {{ .Values.pgbackrest.s3.bucket | quote }}}
+            - {name: POLARIS_PGBACKREST_S3_ENDPOINT, value: {{ .Values.pgbackrest.s3.endpoint | quote }}}
+            - {name: POLARIS_PGBACKREST_S3_REGION, value: {{ .Values.pgbackrest.s3.region | quote }}}
+            - {name: POLARIS_PGBACKREST_S3_PATH, value: {{ .Values.pgbackrest.s3.path | quote }}}
+            {{- end }}
+          ports:
+            - name: postgres
+              containerPort: 5432
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: pgbackrest
+              mountPath: /var/lib/pgbackrest
+            - {name: secrets, mountPath: /run/secrets/polaris_db_root_password, subPath: polaris_db_root_password, readOnly: true}
+            - {name: secrets, mountPath: /run/secrets/polaris_db_password, subPath: polaris_db_password, readOnly: true}
+            - {name: secrets, mountPath: /run/secrets/polaris_replicator_password, subPath: polaris_replicator_password, readOnly: true}
+            - {name: secrets, mountPath: /etc/polaris-pg-certs/server.crt, subPath: postgres_server.crt, readOnly: true}
+            - {name: secrets, mountPath: /etc/polaris-pg-certs/server.key, subPath: postgres_server.key, readOnly: true}
+            - {name: secrets, mountPath: /etc/pgbackrest/conf.d/repo-creds.conf, subPath: pgbackrest_repo_creds.conf, readOnly: true}
+          startupProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres", "-d", "polaris"]
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres", "-d", "polaris"]
+            periodSeconds: 10
+          resources:
+            requests: {cpu: 250m, memory: 512Mi}
+            limits: {memory: 1Gi}
+      volumes:
+        - name: secrets
+          secret:
+            secretName: {{ include "polaris.secretName" . }}
+            defaultMode: 0444
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- with .Values.persistence.storageClass }}
+        storageClassName: {{ . }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.persistence.postgres }}
+    - metadata:
+        name: pgbackrest
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- with .Values.persistence.storageClass }}
+        storageClassName: {{ . }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.persistence.pgbackrest }}

@@ -83,7 +83,7 @@ jobs:
           docker build -f polaris_web/Dockerfile.prod      -t polaris-app:sbom       .
           docker build -f polaris_web/Dockerfile.caddy     -t polaris-caddy:sbom     polaris_web
           docker build -f polaris_web/Dockerfile.pgbouncer -t polaris-pgbouncer:sbom polaris_web
-          docker build -f polaris_web/Dockerfile.postgres  -t polaris-postgres:sbom  polaris_web
+          docker build -f polaris_web/Dockerfile.postgres  -t polaris-postgres:sbom  .
 
       - name: Image SBOMs (SPDX)
         run: |

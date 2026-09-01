@@ -293,8 +293,8 @@ services:
     # pinned in the Dockerfile. The local tag keeps the digest-pin check's
     # 'polaris-' carve-out (it is built here, not pulled).
     build:
-      context: .
-      dockerfile: Dockerfile.postgres
+      context: ..
+      dockerfile: polaris_web/Dockerfile.postgres
     image: polaris-postgres:prod
     deploy:
       resources:

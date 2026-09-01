@@ -11,6 +11,7 @@ For developers contributing to Polaris, see
 | Doc | When you need it |
 |---|---|
 | [`LINUX-SERVER.md`](LINUX-SERVER.md) | **A fresh Linux server to a healthy production stack** under systemd, one script; day-2 commands, upgrades, uninstall |
+| [`KUBERNETES.md`](KUBERNETES.md) | The Helm reference profile: the production topology on a cluster with enforced NetworkPolicies and the restricted Pod Security Standard; compose stays the single-node path |
 | [`HARDENING.md`](HARDENING.md) | The operating system around Polaris: SSH, updates, firewall (and Docker), time, daemon, permissions, auditing |
 | [`INSTALL.md`](INSTALL.md) | Laptop / evaluation install (macOS launcher); troubleshooting |
 | [`DEPLOYMENT.md`](DEPLOYMENT.md) | Three deployment paths (dev / staging / prod) |

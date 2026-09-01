@@ -544,7 +544,7 @@ jobs:
       - name: pgBackRest archive + backup + restore round-trip
         run: |
           set -e
-          docker build -f polaris_web/Dockerfile.postgres -t polaris-postgres:ci polaris_web
+          docker build -f polaris_web/Dockerfile.postgres -t polaris-postgres:ci .
           docker volume create pgbrrepo
           # v9.173 — mount the (empty) credential fragment exactly as the prod
           # compose does, so an empty conf.d file is proven harmless here too.
@@ -855,7 +855,7 @@ jobs:
           docker build -f polaris_web/Dockerfile.prod      -t polaris-app:prod       .
           docker build -f polaris_web/Dockerfile.caddy     -t polaris-caddy:prod     polaris_web
           docker build -f polaris_web/Dockerfile.pgbouncer -t polaris-pgbouncer:prod polaris_web
-          docker build -f polaris_web/Dockerfile.postgres  -t polaris-postgres:prod  polaris_web
+          docker build -f polaris_web/Dockerfile.postgres  -t polaris-postgres:prod  .
 
       - name: Generate secrets + certs
         run: bash scripts/polaris-generate-secrets.sh
@@ -880,6 +880,41 @@ jobs:
         if: always()
         working-directory: polaris_web
         run: docker compose -f docker-compose.prod.yml -f docker-compose.citest.yml -f docker-compose.bluegreen.yml down -v || true
+
+  # --------------------------------------------------------------------------
+  # v9.186 (roadmap P1.5) — the Kubernetes reference profile boots to healthy
+  # on a stock cluster with its NetworkPolicies ENFORCED and the restricted
+  # Pod Security Standard in effect. kind with the default CNI disabled and
+  # Calico installed (kindnet does not enforce NetworkPolicy), the four
+  # self-built images loaded (pull policy Never; redis pulled by its pinned
+  # digest), the real secrets as a Secret,
+  # `helm install --wait`, health through the Caddy edge, a privileged pod
+  # rejected, a probe pod denied by policy, and a rolling restart. Pinned by
+  # check_helm_reference_profile.
+  # --------------------------------------------------------------------------
+  helm-kind:
+    name: Kubernetes reference profile boots to healthy on kind (Calico-enforced policies, restricted PSS)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Build the prod images
+        run: |
+          set -e
+          docker build -f polaris_web/Dockerfile.prod      -t polaris-app:prod       .
+          docker build -f polaris_web/Dockerfile.caddy     -t polaris-caddy:prod     polaris_web
+          docker build -f polaris_web/Dockerfile.pgbouncer -t polaris-pgbouncer:prod polaris_web
+          docker build -f polaris_web/Dockerfile.postgres  -t polaris-postgres:prod  .
+
+      - name: Install kind (kubectl + helm are on the runner)
+        uses: helm/kind-action@v1.14.0
+        with:
+          install_only: true
+          version: v0.33.0
+
+      - name: Helm/kind drill
+        run: bash scripts/polaris-helm-drill.sh
 
   pqc-real:
     name: Real PQC (ML-DSA-65) sign + verify
@@ -1066,7 +1101,7 @@ jobs:
           docker build -f polaris_web/Dockerfile.prod      -t polaris-app:cve        .
           docker build -f polaris_web/Dockerfile.caddy     -t polaris-caddy:cve      polaris_web
           docker build -f polaris_web/Dockerfile.pgbouncer -t polaris-pgbouncer:cve  polaris_web
-          docker build -f polaris_web/Dockerfile.postgres  -t polaris-postgres:cve   polaris_web
+          docker build -f polaris_web/Dockerfile.postgres  -t polaris-postgres:cve   .
 
       - name: Trivy — GATE on fixable CRITICAL (after .trivyignore)
         run: |
@@ -1122,7 +1157,7 @@ jobs:
           docker build -f polaris_web/Dockerfile.prod      -t polaris-app:prod       .
           docker build -f polaris_web/Dockerfile.caddy     -t polaris-caddy:prod     polaris_web
           docker build -f polaris_web/Dockerfile.pgbouncer -t polaris-pgbouncer:prod polaris_web
-          docker build -f polaris_web/Dockerfile.postgres  -t polaris-postgres:prod  polaris_web
+          docker build -f polaris_web/Dockerfile.postgres  -t polaris-postgres:prod  .
 
       - name: Generate secrets + certs (signing key via the built app image)
         run: bash scripts/polaris-generate-secrets.sh

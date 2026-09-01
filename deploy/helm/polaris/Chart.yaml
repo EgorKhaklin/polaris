@@ -1,0 +1,11 @@
+apiVersion: v2
+name: polaris
+description: >-
+  Polaris reference profile for Kubernetes (roadmap P1.5): the production
+  topology (Caddy edge, two app replicas, pgbouncer, PostgreSQL, Redis) with
+  default-deny NetworkPolicies and the restricted Pod Security Standard.
+  Docker Compose remains the single-node path.
+type: application
+version: 0.1.0
+appVersion: "9.186"
+kubeVersion: ">=1.29.0-0"

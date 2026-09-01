@@ -1,0 +1,78 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "polaris.fullname" . }}-caddy
+  labels:
+    {{- include "polaris.labels" . | nindent 4 }}
+data:
+  # The k8s edge config: the same proxy, headers, rate limit and liveness-based
+  # upstream retry as polaris_web/Caddyfile, with Caddy running as a non-root
+  # user on 8080/8443 (the Service maps 80/443) and logging to stdout.
+  Caddyfile: |
+    {
+        admin off
+        http_port 8080
+        https_port 8443
+        {{- if eq .Values.edge.tls "acme" }}
+        email admin@{{ .Values.domain }}
+        {{- end }}
+        log {
+            output stdout
+            format json
+            level INFO
+        }
+        servers {
+            protocols h1 h2 h3
+            metrics
+        }
+    }
+
+    {{ .Values.domain }} {
+        {{- if ne .Values.edge.tls "acme" }}
+        tls internal
+        {{- end }}
+
+        reverse_proxy {{ include "polaris.fullname" . }}-app:8000 {
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+            header_up X-Forwarded-Host {host}
+            lb_policy round_robin
+            lb_try_duration 15s
+            lb_try_interval 250ms
+            fail_duration 10s
+            health_uri /api/health/live
+            health_interval 2s
+            health_timeout 2s
+            transport http {
+                dial_timeout 5s
+                response_header_timeout 30s
+                read_timeout 60s
+                write_timeout 60s
+            }
+        }
+
+        encode gzip zstd
+
+        header {
+            {{- if eq .Values.edge.tls "acme" }}
+            Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+            {{- end }}
+            X-Frame-Options "DENY"
+            X-Content-Type-Options "nosniff"
+            Referrer-Policy "strict-origin-when-cross-origin"
+            Permissions-Policy "geolocation=(), microphone=(), camera=(), payment=(), usb=()"
+            Cross-Origin-Opener-Policy "same-origin"
+            Cross-Origin-Resource-Policy "same-origin"
+            -Server
+            -X-Powered-By
+        }
+
+        rate_limit {
+            zone polaris_global {
+                key {client_ip}
+                events {{ .Values.edge.rateLimitPerMinute }}
+                window 1m
+            }
+        }
+    }

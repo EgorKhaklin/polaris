@@ -1,0 +1,85 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "polaris.fullname" . }}-pgbouncer
+  labels:
+    {{- include "polaris.labels" . | nindent 4 }}
+    app.kubernetes.io/component: pgbouncer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "polaris.selector" . | nindent 6 }}
+      app.kubernetes.io/component: pgbouncer
+  template:
+    metadata:
+      labels:
+        {{- include "polaris.selector" . | nindent 8 }}
+        app.kubernetes.io/component: pgbouncer
+    spec:
+      # No API token: none of these processes talk to the Kubernetes API, and the
+      # projected token mount lands under /var/run/secrets, which the app's Secret
+      # mount would otherwise make read-only (the mkdir failed at runc).
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "polaris.podSecurity" (dict "uid" 1000 "gid" 1000) | nindent 8 }}
+      containers:
+        - name: pgbouncer
+          image: {{ .Values.images.pgbouncer }}
+          imagePullPolicy: {{ .Values.images.pullPolicy }}
+          securityContext:
+            {{- include "polaris.containerSecurity" . | nindent 12 }}
+          env:
+            - {name: POLARIS_DB_HOST, value: {{ include "polaris.fullname" . }}-postgres}
+            - {name: POLARIS_DB_PORT, value: "5432"}
+            - {name: POLARIS_DB_NAME, value: polaris}
+            - {name: POLARIS_DB_USER, value: polaris_app}
+            - {name: POLARIS_DB_PASSWORD_FILE, value: /run/secrets/polaris_db_password}
+            - {name: PGBOUNCER_LISTEN_PORT, value: "6432"}
+            - {name: PGBOUNCER_POOL_MODE, value: transaction}
+            - {name: PGBOUNCER_DEFAULT_POOL_SIZE, value: "20"}
+            - {name: PGBOUNCER_MIN_POOL_SIZE, value: "5"}
+            - {name: PGBOUNCER_RESERVE_POOL_SIZE, value: "5"}
+            - {name: PGBOUNCER_MAX_CLIENT_CONN, value: "500"}
+            - {name: PGBOUNCER_MAX_DB_CONNECTIONS, value: "50"}
+            - {name: PGBOUNCER_SERVER_TLS_SSLMODE, value: verify-ca}
+            - {name: PGBOUNCER_SERVER_TLS_CA_FILE, value: /etc/polaris-pg-certs/postgres.crt}
+            - {name: PGBOUNCER_CLIENT_TLS_SSLMODE, value: require}
+            - {name: PGBOUNCER_CLIENT_TLS_CERT_FILE, value: /etc/polaris-pgb-certs/pgbouncer.crt}
+            - {name: PGBOUNCER_CLIENT_TLS_KEY_FILE, value: /etc/polaris-pgb-certs/pgbouncer.key}
+          ports:
+            - name: pgbouncer
+              containerPort: 6432
+          volumeMounts:
+            - {name: secrets, mountPath: /run/secrets/polaris_db_password, subPath: polaris_db_password, readOnly: true}
+            - {name: secrets, mountPath: /etc/polaris-pg-certs/postgres.crt, subPath: postgres_server.crt, readOnly: true}
+            - {name: secrets, mountPath: /etc/polaris-pgb-certs/pgbouncer.crt, subPath: pgbouncer_server.crt, readOnly: true}
+            - {name: secrets, mountPath: /etc/polaris-pgb-certs/pgbouncer.key, subPath: pgbouncer_server.key, readOnly: true}
+          readinessProbe:
+            tcpSocket:
+              port: pgbouncer
+            periodSeconds: 5
+          resources:
+            requests: {cpu: 50m, memory: 32Mi}
+            limits: {memory: 128Mi}
+      volumes:
+        - name: secrets
+          secret:
+            secretName: {{ include "polaris.secretName" . }}
+            defaultMode: 0444
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "polaris.fullname" . }}-pgbouncer
+  labels:
+    {{- include "polaris.labels" . | nindent 4 }}
+    app.kubernetes.io/component: pgbouncer
+spec:
+  selector:
+    {{- include "polaris.selector" . | nindent 4 }}
+    app.kubernetes.io/component: pgbouncer
+  ports:
+    - name: pgbouncer
+      port: 6432
+      targetPort: pgbouncer
