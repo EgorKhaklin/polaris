@@ -5,6 +5,55 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.173 — 2026-09-01 (Roadmap P0.9: offsite backup by env alone, drilled against S3 in CI)
+
+The pgBackRest offsite repo was documented as a hand-edit of pgbackrest.conf
+plus a hand-mounted credentials file, and only the LOCAL repo was ever
+exercised. Now three env settings on the postgres service switch the repo to an
+S3-compatible bucket, and CI backs up into a bucket and restores from it on
+every push.
+
+  - `polaris_web/pgbackrest-conf.sh`, run by a new image entrypoint wrapper on
+    EVERY container start (not just first init, which is all initdb.d gets, so
+    the fragment survives container recreation), renders
+    /etc/pgbackrest/conf.d/repo.conf: the local repo when
+    POLARIS_PGBACKREST_S3_BUCKET is unset, an S3 repo (endpoint, region, path,
+    port, URI style, CA file) when it is set. A read-only operator-mounted
+    repo.conf is left alone (Azure, GCS, SFTP repos).
+  - The S3 key pair is NEVER env. It lives in secrets/pgbackrest_repo_creds.conf
+    (created as a commented template by polaris-generate-secrets.sh, mounted
+    read-only by the prod compose, required by polaris-deploy.sh's preflight),
+    and the container refuses to start if it finds the pair in its environment.
+  - `scripts/polaris-offsite-drill.sh`: MinIO (digest-pinned) over TLS with a
+    throwaway certificate handed to pgBackRest as its CA file, so verification
+    stays ON as against real S3. Proves the env refusal, the rendered
+    repo1-type=s3, backup objects present in the bucket, WAL archived after the
+    backup, and a fresh postgres restored from the bucket alone with the
+    post-backup row replayed. ci.yml runs it after the local round-trip.
+
+Two defects the drill found that reading could not, both recorded so they stay
+found:
+
+  1. pgBackRest refuses an option that appears in more than one config file
+     ("option 'repo1-path' cannot be set multiple times"). The first design put
+     the S3 fragment in conf.d assuming later files override earlier ones; they
+     do not. The repo location now lives in exactly one rendered file, and
+     `check_offsite_backup_env_driven` fails if repo1-path ever returns to
+     pgbackrest.conf.
+  2. The restore readiness loop died on its first probe: psql exits 2 while the
+     restored server is still replaying WAL, and under `set -euo pipefail` that
+     status aborted the loop with no message (stderr was discarded). The probe
+     is now tolerated and only the final value is judged. Same family as the
+     grep -q / psql -f / `_out=$(cmd); _rc=$?` defects: a collapsed exit code
+     judged instead of the outcome.
+
+Scope, honestly: the drill's endpoint is MinIO, a real S3 API but not a real
+cloud bucket; the bucket, its key pair, and the schedule are still operator
+supplied, and DR.md keeps the RPO claim gated on `pgbackrest check` passing
+against the real repo. 90 checks, 87 check-layer tests.
+
+---
+
 ## v9.172 — 2026-09-01 (Roadmap P2.12: a Plonky2 to Plonky3 evaluation, framed honestly)
 
 Prompted by an outside suggestion that Plonky3 is a newer/better version to

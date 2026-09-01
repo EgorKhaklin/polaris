@@ -2768,3 +2768,67 @@ def test_ci_ssl_probe_check_discriminates(tmp_path):
                   "      - run: echo ok\n")
     assert checks.check_ci_ssl_probe_aggregated(tmp_path)[0].level == "OK", \
         "must PASS when pg_stat_ssl appears only in a comment"
+
+
+def test_offsite_backup_env_driven_check_discriminates(tmp_path):
+    good = {
+        "polaris_web/pgbackrest.conf": "[global]\nrepo1-retention-full=2\n[polaris]\npg1-path=/data\n",
+        "polaris_web/pgbackrest-conf.sh": (
+            "#!/usr/bin/env bash\n"
+            "if [ -n \"${POLARIS_PGBACKREST_S3_KEY:-}${POLARIS_PGBACKREST_S3_KEY_SECRET:-}\" ]; then exit 3; fi\n"
+            "if [ -z \"${POLARIS_PGBACKREST_S3_BUCKET:-}\" ]; then body=repo1-path=/var/lib/pgbackrest\n"
+            "else body=\"repo1-type=s3\"; fi\n"),
+        "polaris_web/pg-entrypoint.sh": "#!/bin/sh\n/usr/local/bin/polaris-pgbackrest-conf.sh || exit 1\n"
+                                        "exec /usr/local/bin/docker-entrypoint.sh \"$@\"\n",
+        "polaris_web/Dockerfile.postgres": "FROM postgres:16-alpine@sha256:abc\nRUN apk add pgbackrest\n"
+                                           "COPY pgbackrest-conf.sh /usr/local/bin/polaris-pgbackrest-conf.sh\n"
+                                           "COPY pg-entrypoint.sh /usr/local/bin/polaris-pg-entrypoint.sh\n"
+                                           "ENTRYPOINT [\"/usr/local/bin/polaris-pg-entrypoint.sh\"]\n",
+        "polaris_web/docker-compose.prod.yml": (
+            "services:\n  postgres:\n    environment:\n"
+            "      POLARIS_PGBACKREST_S3_BUCKET: \"${POLARIS_PGBACKREST_S3_BUCKET:-}\"\n"
+            "    volumes:\n"
+            "      - ./secrets/pgbackrest_repo_creds.conf:/etc/pgbackrest/conf.d/repo-creds.conf:ro\n"),
+        "scripts/polaris-generate-secrets.sh": "write pgbackrest_repo_creds.conf\n",
+        "scripts/polaris-deploy.sh": "for secret in polaris_db_password pgbackrest_repo_creds.conf; do :; done\n",
+        "scripts/polaris-offsite-drill.sh": (
+            "MINIO_IMAGE=minio/minio@sha256:x\n"
+            "docker run -e POLARIS_PGBACKREST_S3_KEY=leaked img && exit 1\n"
+            "grep -q '^repo1-type=s3$' /etc/pgbackrest/conf.d/repo.conf\n"
+            "pgbackrest --stanza=polaris restore\n"),
+        ".github/workflows/ci.yml": "steps:\n  - run: bash scripts/polaris-offsite-drill.sh\n",
+        "docs/operator/DR.md": "export POLARIS_PGBACKREST_S3_BUCKET=<bucket>\n",
+    }
+
+    def write(overrides=None):
+        files = dict(good); files.update(overrides or {})
+        for rel, body in files.items():
+            f = tmp_path / rel
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text(body)
+
+    write()
+    assert checks.check_offsite_backup_env_driven(tmp_path)[0].level == "OK", "must PASS on the good fixture"
+
+    # The load-bearing lesson: repo1-path back in the main conf duplicates the
+    # rendered fragment and pgBackRest refuses to start.
+    write({"polaris_web/pgbackrest.conf": "[global]\nrepo1-path=/var/lib/pgbackrest\n[polaris]\npg1-path=/d\n"})
+    f = checks.check_offsite_backup_env_driven(tmp_path)[0]
+    assert f.level == "FAIL" and "multiple times" in f.message, "must FAIL when pgbackrest.conf sets repo1-path"
+
+    # The renderer that no longer refuses the key pair in env.
+    write({"polaris_web/pgbackrest-conf.sh": "body=repo1-type=s3\nbody=repo1-path=/x\n"
+                                             "echo $POLARIS_PGBACKREST_S3_BUCKET\n"})
+    assert checks.check_offsite_backup_env_driven(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the renderer does not refuse (exit 3) the key pair in env"
+
+    # The compose carrying the key pair as env.
+    write({"polaris_web/docker-compose.prod.yml": good["polaris_web/docker-compose.prod.yml"]
+           + "      POLARIS_PGBACKREST_S3_KEY: abc\n"})
+    assert checks.check_offsite_backup_env_driven(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the compose passes the S3 key pair through environment"
+
+    # CI no longer running the offsite drill.
+    write({".github/workflows/ci.yml": "steps:\n  - run: echo local round-trip only\n"})
+    assert checks.check_offsite_backup_env_driven(tmp_path)[0].level == "FAIL", \
+        "must FAIL when CI does not run the offsite drill"

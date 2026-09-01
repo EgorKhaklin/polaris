@@ -12,9 +12,13 @@
 #
 # Archiving is OPT-IN at runtime (docker-init.sh enables archive_mode +
 # archive_command only when POLARIS_PGBACKREST_ENABLED is set), so a deployment
-# that has not provisioned a repo does not accumulate WAL. The repo itself (an
-# offsite S3 bucket for real use) is operator-supplied; a local filesystem repo
-# is the default the CI round-trip exercises. See docs/operator/DR.md.
+# that has not provisioned a repo does not accumulate WAL. The repo LOCATION is
+# rendered at every container start by pg-entrypoint.sh -> pgbackrest-conf.sh
+# into /etc/pgbackrest/conf.d/repo.conf: a local filesystem repo by default
+# (what the CI round-trip exercises; NOT offsite), or an S3 bucket when the
+# POLARIS_PGBACKREST_S3_* env is set (roadmap P0.9; what the CI offsite drill
+# exercises against MinIO). The S3 credentials are a separately mounted secret
+# fragment, never env. See docs/operator/DR.md.
 #
 # Build context is polaris_web/ (see docker-compose.prod.yml).
 # ============================================================================
@@ -28,6 +32,14 @@ FROM postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95
 # and stanza ops can write them.
 RUN apk upgrade --no-cache \
     && apk add --no-cache pgbackrest \
-    && mkdir -p /var/lib/pgbackrest /etc/pgbackrest /var/log/pgbackrest \
+    && mkdir -p /var/lib/pgbackrest /etc/pgbackrest/conf.d /var/log/pgbackrest \
     && chown -R postgres:postgres /var/lib/pgbackrest /etc/pgbackrest /var/log/pgbackrest \
     && rm -rf /var/cache/apk/*
+
+# v9.173 (P0.9) — the repo-fragment renderer + the entrypoint wrapper that runs
+# it on every start. conf.d is postgres-owned above so the renderer can write
+# there whether the container starts as root (stock) or as postgres (restore).
+COPY --chmod=0755 pgbackrest-conf.sh /usr/local/bin/polaris-pgbackrest-conf.sh
+COPY --chmod=0755 pg-entrypoint.sh   /usr/local/bin/polaris-pg-entrypoint.sh
+ENTRYPOINT ["/usr/local/bin/polaris-pg-entrypoint.sh"]
+CMD ["postgres"]

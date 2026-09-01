@@ -2788,6 +2788,77 @@ def check_coverage_gated(root: pathlib.Path) -> list[Finding]:
                "with a COVERAGE_FLOOR, Rust via cargo llvm-cov --fail-under-lines")
 
 
+def check_offsite_backup_env_driven(root: pathlib.Path) -> list[Finding]:
+    """Roadmap P0.9: the offsite (S3) backup repo is configured by env alone, the
+    credentials never travel through env, and the offsite path is CI-exercised.
+
+    The load-bearing lesson is pinned first: pgBackRest refuses an option that
+    appears in more than one config file ("option 'repo1-path' cannot be set
+    multiple times"), so the repo location may live ONLY in the rendered
+    conf.d/repo.conf. A repo1-path back in pgbackrest.conf breaks every
+    deployment, local or offsite, at container start."""
+    conf = _read(root, "polaris_web/pgbackrest.conf")
+    gen = _read(root, "polaris_web/pgbackrest-conf.sh")
+    entry = _read(root, "polaris_web/pg-entrypoint.sh")
+    dockerfile = _read(root, "polaris_web/Dockerfile.postgres")
+    compose = _read(root, "polaris_web/docker-compose.prod.yml")
+    secrets = _read(root, "scripts/polaris-generate-secrets.sh")
+    deploy = _read(root, "scripts/polaris-deploy.sh")
+    drill = _read(root, "scripts/polaris-offsite-drill.sh")
+    ci = _read(root, ".github/workflows/ci.yml")
+    dr = _read(root, "docs/operator/DR.md")
+    if not (conf and gen and entry and dockerfile and compose and secrets and deploy and drill and ci and dr):
+        return _fail("offsite_backup", "an offsite-backup file is missing (renderer, entrypoint, drill, "
+                     "compose, secrets, deploy, DR.md, or ci.yml)")
+    if re.search(r"^\s*repo1-path\s*=", conf, re.M):
+        return _fail("offsite_backup",
+                     "pgbackrest.conf sets repo1-path; the repo location lives only in the rendered "
+                     "conf.d/repo.conf (pgBackRest refuses an option set in two files: 'cannot be set "
+                     "multiple times' fails every container start)")
+    if "POLARIS_PGBACKREST_S3_BUCKET" not in gen or "repo1-type=s3" not in gen or "repo1-path=" not in gen:
+        return _fail("offsite_backup",
+                     "pgbackrest-conf.sh must render BOTH the local repo1-path default and the S3 repo "
+                     "(repo1-type=s3) from POLARIS_PGBACKREST_S3_BUCKET")
+    if "POLARIS_PGBACKREST_S3_KEY_SECRET" not in gen or not re.search(r"exit 3", gen):
+        return _fail("offsite_backup",
+                     "pgbackrest-conf.sh must refuse (exit 3) when the S3 key pair is in env; the key "
+                     "pair is a root-level secret that leaks via docker inspect")
+    if "polaris-pgbackrest-conf.sh" not in entry or "docker-entrypoint.sh" not in entry:
+        return _fail("offsite_backup",
+                     "pg-entrypoint.sh must run the renderer then exec the stock docker-entrypoint.sh "
+                     "(every start, not just first init: the fragment must survive recreation)")
+    if "pgbackrest-conf.sh" not in dockerfile or "pg-entrypoint.sh" not in dockerfile \
+            or "ENTRYPOINT" not in dockerfile:
+        return _fail("offsite_backup",
+                     "Dockerfile.postgres must COPY the renderer + wrapper and set ENTRYPOINT to the wrapper")
+    if "POLARIS_PGBACKREST_S3_BUCKET" not in compose or "conf.d/repo-creds.conf" not in compose:
+        return _fail("offsite_backup",
+                     "the prod compose must pass POLARIS_PGBACKREST_S3_* to postgres and mount the "
+                     "credential fragment at conf.d/repo-creds.conf")
+    if re.search(r"POLARIS_PGBACKREST_S3_KEY", compose):
+        return _fail("offsite_backup",
+                     "the prod compose must not carry the S3 key pair in environment (it leaks via "
+                     "docker inspect); it is the mounted secret fragment only")
+    if "pgbackrest_repo_creds.conf" not in secrets or "pgbackrest_repo_creds.conf" not in deploy:
+        return _fail("offsite_backup",
+                     "polaris-generate-secrets.sh must create pgbackrest_repo_creds.conf and "
+                     "polaris-deploy.sh must require it (an unconditional mount with a missing source "
+                     "makes docker create a directory)")
+    if "minio" not in drill.lower() or "restore" not in drill or "repo1-type=s3" not in drill \
+            or "POLARIS_PGBACKREST_S3_KEY=" not in drill:
+        return _fail("offsite_backup",
+                     "polaris-offsite-drill.sh must back up to and restore from an S3 endpoint (MinIO), "
+                     "assert the rendered repo is repo1-type=s3, and prove the key-pair-in-env refusal")
+    if "polaris-offsite-drill.sh" not in ci:
+        return _fail("offsite_backup", "ci.yml must run scripts/polaris-offsite-drill.sh")
+    if "POLARIS_PGBACKREST_S3_BUCKET" not in dr:
+        return _fail("offsite_backup", "DR.md must document the POLARIS_PGBACKREST_S3_* offsite switch")
+    return _ok("offsite_backup",
+               "offsite backup by env alone: the image entrypoint renders conf.d/repo.conf every start "
+               "(local default or S3), the key pair is a mounted fragment the container refuses from env, "
+               "compose/secrets/deploy carry it, and CI drills backup+restore against MinIO")
+
+
 CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_csp_forbids_unsafe_inline,
     check_one_active_token_index,
@@ -2871,6 +2942,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_release_provenance,
     check_zk_tree_depth_synced,
     check_coverage_gated,
+    check_offsite_backup_env_driven,
     check_local_clock_convention,
     check_c6_atlas_redacts_zk_location,
     check_coercion_evidence_retained,

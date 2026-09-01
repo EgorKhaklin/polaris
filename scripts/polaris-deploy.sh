@@ -80,7 +80,9 @@ if ! docker compose version >/dev/null 2>&1; then
     echo "  ✗ docker compose v2 plugin not available"; exit 1
 fi
 
-for secret in polaris_secret_key polaris_db_password polaris_db_root_password; do
+# v9.173 — pgbackrest_repo_creds.conf is mounted unconditionally by the prod
+# compose; if the source file is missing docker creates a DIRECTORY there.
+for secret in polaris_secret_key polaris_db_password polaris_db_root_password pgbackrest_repo_creds.conf; do
     if [[ ! -s "${SECRETS_DIR}/${secret}" ]]; then
         echo "  ✗ missing secret: secrets/${secret}"
         echo "    run: ./scripts/polaris-generate-secrets.sh"
@@ -165,7 +167,8 @@ if [[ "${POLARIS_PGBACKREST_ENABLED:-0}" == "1" ]]; then
     else
         echo "  ⚠  pgBackRest stanza-create/check FAILED. Archiving is enabled but the" >&2
         echo "     repo is not ready — WAL will accumulate on disk until this is fixed." >&2
-        echo "     Check pgbackrest.conf (repo1 path / S3 creds), then re-run:" >&2
+        echo "     Check POLARIS_PGBACKREST_S3_* on the postgres service and" >&2
+        echo "     secrets/pgbackrest_repo_creds.conf (the S3 key pair), then re-run:" >&2
         echo "       docker compose -f ${COMPOSE_FILE} exec postgres pgbackrest --stanza=polaris check" >&2
     fi
 fi

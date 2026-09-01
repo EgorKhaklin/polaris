@@ -42,37 +42,48 @@ incident**, not for the engineer at design time.
 > **configuration now ships**: the postgres image carries pgBackRest
 > (`Dockerfile.postgres`), `polaris_web/pgbackrest.conf` defines the `polaris`
 > stanza, and `docker-init.sh` enables `archive_mode` + the `archive_command`
-> when `POLARIS_PGBACKREST_ENABLED=1`. A CI round-trip proves archive → backup →
-> restore (with WAL replay). What the **operator still supplies**: the offsite
-> **repo** (an S3 bucket; the default `repo1-path` is a LOCAL filesystem repo and
-> is NOT offsite), then the one-time bootstrap below. Do not quote the ≤1-min
-> figure until `pgbackrest --stanza=polaris check` actually passes against that
-> repo.
+> when `POLARIS_PGBACKREST_ENABLED=1`. Two CI round-trips prove archive → backup →
+> restore (with WAL replay): one on a local repo, and one OFFSITE against an S3
+> endpoint (`scripts/polaris-offsite-drill.sh`, v9.173). What the **operator
+> still supplies**: the bucket itself and its key pair. Do not quote the ≤1-min
+> figure until `pgbackrest --stanza=polaris check` actually passes against it.
 >
-> S3 credentials are root-level secrets (read/write/delete every backup). Do NOT
-> put them in `docker-compose.prod.yml`'s `environment:` block — env literals leak
-> via `docker inspect`. Use the file-mounted pattern the rest of the stack uses:
-> write them into a 0600 file under `polaris_web/secrets/` (gitignored) and mount
-> it into pgBackRest's config-include dir:
+> **Offsite, by env alone (v9.173, roadmap P0.9).** The repo location is
+> rendered into `/etc/pgbackrest/conf.d/repo.conf` at every container start
+> from env; nothing in `pgbackrest.conf` is edited (pgBackRest refuses an option
+> that is set in two files, so the location lives in that one rendered file).
+> Three settings on the postgres service, then enable archiving:
 > ```bash
-> cat > polaris_web/secrets/pgbackrest-s3.conf <<'EOF'
-> [global]
-> repo1-s3-key=<access-key>
-> repo1-s3-key-secret=<secret-key>
-> EOF
-> chmod 600 polaris_web/secrets/pgbackrest-s3.conf
-> # mount it into the postgres service (docker-compose.prod.yml):
-> #   - ./secrets/pgbackrest-s3.conf:/etc/pgbackrest/conf.d/pgbackrest-s3.conf:ro
+> export POLARIS_PGBACKREST_S3_BUCKET=<bucket>
+> export POLARIS_PGBACKREST_S3_ENDPOINT=s3.<region>.amazonaws.com   # any S3-compatible endpoint
+> export POLARIS_PGBACKREST_S3_REGION=<region>
+> # optional: _PATH (default /polaris), _PORT, _URI_STYLE=path (MinIO, Ceph),
+> #           _CA_FILE (a private endpoint's CA bundle), _VERIFY_TLS=n (tests only)
+> export POLARIS_PGBACKREST_ENABLED=1
 > ```
-> Bootstrap (once, after pointing `pgbackrest.conf` at the offsite repo and
-> setting `POLARIS_PGBACKREST_ENABLED=1`). `polaris-deploy.sh` runs `stanza-create`
-> + `check` automatically when archiving is enabled, but you can also run them by
-> hand:
+> The S3 key pair is a root-level secret (it can read, write, and DELETE every
+> backup). It is NEVER env: the container refuses to start if it finds
+> `POLARIS_PGBACKREST_S3_KEY*` in its environment (env leaks via `docker inspect`,
+> `docker compose config`, and the process listing). It goes in the file-mounted
+> fragment that `polaris-generate-secrets.sh` creates as a commented template
+> (mounted read-only at `/etc/pgbackrest/conf.d/repo-creds.conf`):
+> ```bash
+> $EDITOR polaris_web/secrets/pgbackrest_repo_creds.conf   # uncomment and fill in:
+> # [global]
+> # repo1-s3-key=<access-key>
+> # repo1-s3-key-secret=<secret-key>
+> ```
+> Then deploy. `polaris-deploy.sh` runs `stanza-create` + `check` automatically
+> when archiving is enabled; by hand:
 > ```bash
 > pgbackrest --stanza=polaris stanza-create
 > pgbackrest --stanza=polaris check
 > # then schedule: pgbackrest --stanza=polaris --type=full backup  (e.g. daily)
 > ```
+> A restore from the offsite repo is the same `pgbackrest --stanza=polaris restore`
+> as section 4, run in a container carrying the same env and the mounted fragment;
+> `scripts/polaris-offsite-drill.sh` is the executable reference for the exact
+> sequence, and CI runs it on every push.
 
 | Target | Value | Status / Mechanism |
 |---|---|---|

@@ -199,11 +199,14 @@ if [ "${POLARIS_PGBACKREST_ENABLED:-0}" = "1" ]; then
     # v9.130 — warn loudly if the repo is LOCAL (no repo1-type=s3). A local repo
     # on the DB host does not survive host loss, so it is not the offsite
     # durability an operator enabling archiving usually expects.
-    if ! grep -qE '^[[:space:]]*repo1-type[[:space:]]*=[[:space:]]*s3' \
-            /etc/pgbackrest/pgbackrest.conf 2>/dev/null; then
+    # v9.173 — the repo location is rendered into conf.d/repo.conf by the image
+    # entrypoint from POLARIS_PGBACKREST_S3_* env (P0.9), so look there too.
+    if ! grep -qsE '^[[:space:]]*repo1-type[[:space:]]*=[[:space:]]*s3' \
+            /etc/pgbackrest/pgbackrest.conf /etc/pgbackrest/conf.d/*.conf; then
         echo "WARNING: pgBackRest archiving is enabled but the repo is LOCAL (no repo1-type=s3)." >&2
-        echo "         A local repo does NOT survive host loss; point repo1 at an offsite S3" >&2
-        echo "         bucket in pgbackrest.conf for real durability (docs/operator/DR.md)." >&2
+        echo "         A local repo does NOT survive host loss. Set POLARIS_PGBACKREST_S3_BUCKET," >&2
+        echo "         _ENDPOINT and _REGION on the postgres service and put the S3 credentials" >&2
+        echo "         in secrets/pgbackrest_repo_creds.conf for real durability (DR.md)." >&2
     fi
 fi
 

@@ -543,10 +543,14 @@ jobs:
           set -e
           docker build -f polaris_web/Dockerfile.postgres -t polaris-postgres:ci polaris_web
           docker volume create pgbrrepo
+          # v9.173 — mount the (empty) credential fragment exactly as the prod
+          # compose does, so an empty conf.d file is proven harmless here too.
+          : > /tmp/pgbr-creds.conf
           docker run -d --name pgbr-pri \
             -e POSTGRES_PASSWORD=rootpw -e POSTGRES_DB=polaris \
             -v pgbrrepo:/var/lib/pgbackrest \
             -v "$PWD/polaris_web/pgbackrest.conf:/etc/pgbackrest/pgbackrest.conf:ro" \
+            -v /tmp/pgbr-creds.conf:/etc/pgbackrest/conf.d/repo-creds.conf:ro \
             polaris-postgres:ci \
             -c wal_level=replica -c archive_mode=on \
             -c "archive_command=pgbackrest --stanza=polaris archive-push %p" -c max_wal_senders=3
@@ -595,6 +599,16 @@ jobs:
           docker rm -f pgbr-pri pgbr-res >/dev/null 2>&1 || true
           docker volume rm pgbrrepo >/dev/null 2>&1 || true
           echo "pgBackRest archive + backup + restore round-trip OK"
+
+      # v9.173 (roadmap P0.9) — the OFFSITE path. The round-trip above uses a
+      # LOCAL repo, which is not what a real deployment relies on for durability.
+      # This drill switches the repo to S3 by env alone (the production path:
+      # POLARIS_PGBACKREST_S3_* rendered by the image entrypoint + a mounted
+      # credential fragment), backs up into a TLS MinIO bucket with verification
+      # on, and restores a fresh postgres from the bucket. Pinned by
+      # check_offsite_backup_env_driven.
+      - name: pgBackRest OFFSITE (S3) backup + restore drill against MinIO
+        run: bash scripts/polaris-offsite-drill.sh
 
   # --------------------------------------------------------------------------
   # The TLS edge (Caddy) was never built or config-validated in CI: the
