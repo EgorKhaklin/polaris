@@ -56,4 +56,4 @@ prometheus_client>=0.26.0,<1.0
 # is reachable. Without this package, security.py falls back to the
 # in-memory backend (each gunicorn worker holds its own bucket).
 # Required for accurate per-IP rate limits under POLARIS_WORKERS>1.
-redis>=5.0,<6.0
+redis>=8.1.0,<9.0
