@@ -5,6 +5,60 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.188 — 2026-09-01 (P0.9 follow-through: readiness probes were answered by postgres's temporary init server; every probe now goes over TCP)
+
+The v9.187 push went red on the offsite S3 drill, a job that ship never
+touched: pgBackRest 2.58.0 aborted the full backup with `[101]: NULL result
+required to complete request` one step after `check archive for prior
+segment`, and the same binary against the same digest-pinned MinIO had
+passed three hours earlier. Run locally, the drill failed one command
+EARLIER, with `FATAL: the database system is shutting down`. Both are one
+bug, and it is ours. The official postgres image's entrypoint first runs a
+TEMPORARY init-only server bound to the Unix socket alone
+(`listen_addresses=''`) while POSTGRES_DB and the init scripts load, stops
+it, and only then starts the real server. The drill's readiness loop
+(`docker exec ... psql -tAc 'SELECT 1'`, over that socket) passed against
+the temporary server, so stanza-create and the backup began while the
+entrypoint restarted postgres underneath them. Whether the next command
+met "shutting down" or a connection terminated mid-query (pgBackRest's
+libpq wrapper asserts `PQgetResult == NULL` after every query and throws
+[101] when the server ends the connection instead) is only a matter of
+where the restart landed. Measured on the built image: the socket answers
+at +0.9s, the temporary server stops at +1.5s, TCP answers at +1.6s; on a
+CI runner loading the full schema the window is seconds wide.
+
+  - Every probe of a containerised postgres now goes over TCP (`-h
+    127.0.0.1`), which only the real server listens on: the offsite drill;
+    the four other CI readiness loops (the backup/restore round trip, the
+    verify-ca hop, the replication primary, the pgBackRest archive check),
+    which carried a comment believing `psql -d polaris` beat `pg_isready`
+    here, when both reach the temporary server; the CI service container's
+    health command; the compose healthchecks (dev and prod); the Helm
+    StatefulSet's startup and readiness probes; and `polaris-deploy.sh`'s
+    wait before it migrates. The compose and Helm fixes matter beyond CI: a
+    first boot loads the schema for tens of seconds, during which postgres
+    reported healthy and pgbouncer and the app were started against a
+    server about to restart. That is the plausible cause of the v9.183
+    Linux-install failure at `systemctl start polaris.service` that v9.185
+    could not confirm and widened the app healthcheck window for; the
+    window stays, the false "healthy" underneath it is gone.
+  - `polaris-offsite-drill.sh` dumps the primary's last 40 log lines on any
+    failing command and on every `fail()` (the v9.186 rule: a drill that
+    dies without its logs is unfixable from CI).
+  - `check_postgres_probes_use_tcp` pins the class: every `pg_isready` and
+    every `docker exec` / `compose exec` psql readiness loop across ci.yml,
+    the scripts, the compose files, and the Helm templates must pass `-h`,
+    and the drill must keep its log dump; its discrimination test fails the
+    check on a socket healthcheck, a socket CI loop, a socket Helm probe,
+    and a drill without the dump, and passes a commented-out probe. 99
+    checks, 96 check-layer tests.
+  - Exercised before pushing: the fixed offsite drill run locally to a
+    PASSED restore (twice), `helm lint` + `helm template` on the chart, both
+    compose files rendered, and the socket-vs-TCP window measured on the
+    built image as above.
+
+---
+
 ## v9.187 — 2026-09-01 (Roadmap P1.6: opt-in distributed tracing and dashboards-as-code, the correlation id joining logs to traces)
 
 The v9.27 "no tracing system" constraint held while Polaris had no operators;

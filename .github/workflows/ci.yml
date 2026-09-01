@@ -30,7 +30,7 @@ jobs:
         ports:
           - 5432:5432
         options: >-
-          --health-cmd pg_isready
+          --health-cmd "pg_isready -h 127.0.0.1"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -356,12 +356,17 @@ jobs:
           docker run -d --name pbci-pg --network pbci \
             -e POSTGRES_PASSWORD=rootpw -e POSTGRES_DB=polaris \
             postgres:16-alpine -c password_encryption=scram-sha-256
-          # Wait until the 'polaris' DB is actually queryable, NOT just until
-          # pg_isready — pg_isready reports ready against the temporary init
-          # server before POSTGRES_DB is created, which raced "database polaris
-          # does not exist" onto the CREATE ROLE below.
+          # Wait for the REAL server, over TCP (v9.188). The official entrypoint
+          # first runs a TEMPORARY init-only server bound to the Unix socket
+          # alone (listen_addresses='') while POSTGRES_DB and the init scripts
+          # load, stops it, and only then starts the real server. pg_isready
+          # AND psql over the socket both pass against the temporary server
+          # (the earlier belief that `psql -d polaris` was immune was wrong),
+          # and the next command then lands on "the database system is
+          # shutting down" or a connection terminated mid-query, which is how
+          # the v9.187 offsite drill died. Only the real server listens on TCP.
           for i in $(seq 1 60); do
-            docker exec -e PGPASSWORD=rootpw pbci-pg psql -U postgres -d polaris -tAc 'SELECT 1' >/dev/null 2>&1 && break
+            docker exec -e PGPASSWORD=rootpw pbci-pg psql -h 127.0.0.1 -U postgres -d polaris -tAc 'SELECT 1' >/dev/null 2>&1 && break
             sleep 1
           done
           APPPW='ci-App@Pw#42'
@@ -424,8 +429,10 @@ jobs:
           chmod 644 /tmp/vca/*.crt /tmp/vca/*.key
           docker network create vcanet
           docker run -d --name vca-pg --network vcanet -e POSTGRES_PASSWORD=rootpw -e POSTGRES_DB=polaris postgres:16-alpine
+          # TCP: the entrypoint's temporary init server answers the socket only
+          # (see the pbci probe above).
           for i in $(seq 1 60); do
-            docker exec -e PGPASSWORD=rootpw vca-pg psql -U postgres -d polaris -tAc 'SELECT 1' >/dev/null 2>&1 && break
+            docker exec -e PGPASSWORD=rootpw vca-pg psql -h 127.0.0.1 -U postgres -d polaris -tAc 'SELECT 1' >/dev/null 2>&1 && break
             sleep 1
           done
           docker cp /tmp/vca/pg.crt vca-pg:/tmp/pg.crt; docker cp /tmp/vca/pg.key vca-pg:/tmp/pg.key
@@ -491,8 +498,10 @@ jobs:
             -e POSTGRES_PASSWORD=rootpw -e POSTGRES_DB=polaris \
             postgres:16-alpine \
             -c wal_level=replica -c max_wal_senders=10 -c max_replication_slots=10 -c hot_standby=on
+          # TCP: the entrypoint's temporary init server answers the socket only
+          # (see the pbci probe above).
           for i in $(seq 1 60); do
-            docker exec -e PGPASSWORD=rootpw repci-primary psql -U postgres -d polaris -tAc 'SELECT 1' >/dev/null 2>&1 && break
+            docker exec -e PGPASSWORD=rootpw repci-primary psql -h 127.0.0.1 -U postgres -d polaris -tAc 'SELECT 1' >/dev/null 2>&1 && break
             sleep 1
           done
           # A REPLICATION role + the pg_hba entry the prod docker-init.sh adds.
@@ -508,8 +517,10 @@ jobs:
           docker run -d --name repci-standby --network repci --user postgres -e PGPASSWORD=reppw \
             postgres:16-alpine sh -c \
             'rm -rf /var/lib/postgresql/data/* && pg_basebackup -h repci-primary -p 5432 -U polaris_replicator -D /var/lib/postgresql/data -R -X stream && chmod 0700 /var/lib/postgresql/data && exec postgres'
+          # The standby runs postgres directly (no entrypoint init, no temporary
+          # server); probed over TCP anyway so every probe has one shape.
           for i in $(seq 1 60); do
-            docker exec repci-standby psql -U postgres -d polaris -tAc 'SELECT 1' >/dev/null 2>&1 && break
+            docker exec -e PGPASSWORD=rootpw repci-standby psql -h 127.0.0.1 -U postgres -d polaris -tAc 'SELECT 1' >/dev/null 2>&1 && break
             sleep 1
           done
           # Write AFTER the standby is up, then read it on the standby.
@@ -557,8 +568,10 @@ jobs:
             polaris-postgres:ci \
             -c wal_level=replica -c archive_mode=on \
             -c "archive_command=pgbackrest --stanza=polaris archive-push %p" -c max_wal_senders=3
+          # TCP: the entrypoint's temporary init server answers the socket only
+          # (see the pbci probe above).
           for i in $(seq 1 60); do
-            docker exec -e PGPASSWORD=rootpw pgbr-pri psql -U postgres -d polaris -tAc 'SELECT 1' >/dev/null 2>&1 && break
+            docker exec -e PGPASSWORD=rootpw pgbr-pri psql -h 127.0.0.1 -U postgres -d polaris -tAc 'SELECT 1' >/dev/null 2>&1 && break
             sleep 1
           done
           # stanza-create + check is pgBackRest's own end-to-end archive validation.

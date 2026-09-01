@@ -393,7 +393,11 @@ services:
       # env). Created as a commented template by polaris-generate-secrets.sh.
       - ${POLARIS_SECRETS_DIR:-./secrets}/pgbackrest_repo_creds.conf:/etc/pgbackrest/conf.d/repo-creds.conf:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d polaris"]
+      # -h: only the REAL server listens on TCP. The entrypoint's temporary
+      # init-only server answers the Unix socket while the schema loads on a
+      # first boot, so a socket probe reported "healthy" and started pgbouncer
+      # and the app against a server about to restart (v9.188).
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d polaris"]
       interval: 10s
       timeout: 5s
       retries: 5

@@ -153,8 +153,12 @@ compose up -d --remove-orphans --no-deps postgres pgbouncer redis caddy
 #     they are idempotent, so this is a harmless no-op on a fresh deploy.
 # ---------------------------------------------------------------------------
 echo "  [5b]  Applying migrations + syncing DB objects (procedures/triggers/views/grants)…"
+# -h: wait for the REAL server over TCP. On a first boot the entrypoint's
+# temporary init-only server answers the Unix socket while the schema loads,
+# and migrating against it would die with "the database system is shutting
+# down" when the entrypoint swaps in the real server (v9.188).
 for _i in $(seq 1 30); do
-    if compose exec -T postgres pg_isready -U postgres >/dev/null 2>&1; then
+    if compose exec -T postgres pg_isready -h 127.0.0.1 -U postgres >/dev/null 2>&1; then
         break
     fi
     sleep 2

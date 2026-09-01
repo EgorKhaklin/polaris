@@ -3367,6 +3367,70 @@ def check_distributed_tracing(root: pathlib.Path) -> list[Finding]:
                "dashboards-as-code, and a CI wire drill proving the join with the query string absent")
 
 
+# ---------------------------------------------------------------------------
+# Postgres readiness probes must reach the REAL server (v9.188). The official
+# postgres image's entrypoint first runs a TEMPORARY init-only server bound to
+# the Unix socket alone (listen_addresses='') while POSTGRES_DB and the init
+# scripts load, stops it, and only then starts the real server. pg_isready and
+# psql over the socket therefore report ready DURING init, and whatever runs
+# next meets "the database system is shutting down" or a connection the
+# server terminates mid-command (pgBackRest's [101] "NULL result required to
+# complete request" that killed the v9.187 offsite drill). Only the real
+# server listens on TCP, so every probe of a containerised postgres passes
+# -h: the compose and Helm healthchecks, the deploy script's wait before it
+# migrates, and the CI drills' readiness loops. The offsite drill must also
+# keep dumping the primary's logs on failure (the v9.186 rule).
+# ---------------------------------------------------------------------------
+_PROBE_HOST_FLAG = re.compile(r'(?<![\w-])-h(?=[\s",])')
+_PROBE_GLOBS = (
+    ".github/workflows/ci.yml",
+    "scripts/*.sh",
+    "deploy/linux/*.sh",
+    "polaris_web/docker-compose*.yml",
+    "deploy/helm/polaris/templates/*.yaml",
+)
+
+
+def _postgres_probe_lines(text: str):
+    """Yield (lineno, code) for every readiness probe of a containerised
+    postgres: any pg_isready, or a docker/compose exec psql `SELECT 1` loop.
+    Comment text is stripped so a commented-out probe is not an offender."""
+    for n, line in enumerate(text.splitlines(), 1):
+        code = line.split("#", 1)[0]
+        if "pg_isready" in code:
+            yield n, code
+        elif ("psql" in code and "SELECT 1" in code
+              and ("docker exec" in code or "compose exec" in code)):
+            yield n, code
+
+
+def check_postgres_probes_use_tcp(root: pathlib.Path) -> list[Finding]:
+    offenders, probes = [], 0
+    for pattern in _PROBE_GLOBS:
+        for path in sorted(root.glob(pattern)):
+            if not path.is_file():
+                continue
+            for n, code in _postgres_probe_lines(path.read_text(encoding="utf-8")):
+                probes += 1
+                if not _PROBE_HOST_FLAG.search(code):
+                    offenders.append(f"{path.relative_to(root)}:{n}")
+    if probes == 0:
+        return _fail("pg_probe_tcp", "no postgres readiness probe found in ci.yml / scripts / compose / Helm")
+    if offenders:
+        return _fail("pg_probe_tcp",
+                     "postgres readiness probe(s) without -h (the Unix socket is answered by the entrypoint's "
+                     "TEMPORARY init-only server, so 'ready' arrives before the real server): "
+                     + ", ".join(offenders[:6]))
+    drill = _read(root, "scripts/polaris-offsite-drill.sh")
+    if 'docker logs "$PRI"' not in drill:
+        return _fail("pg_probe_tcp",
+                     "polaris-offsite-drill.sh no longer dumps the primary's logs on failure (a drill that "
+                     "dies without its logs is unfixable from CI)")
+    return _ok("pg_probe_tcp",
+               f"all {probes} postgres readiness probes (CI loops, compose + Helm healthchecks, the deploy "
+               "wait) go over TCP, which only the real server answers; the offsite drill dumps logs on failure")
+
+
 CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_csp_forbids_unsafe_inline,
     check_one_active_token_index,
@@ -3466,6 +3530,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_operator_scripts_validate_argv,
     check_template_endpoints_resolve,
     check_distributed_tracing,
+    check_postgres_probes_use_tcp,
 ]
 
 

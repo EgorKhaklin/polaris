@@ -50,7 +50,14 @@ cleanup() {
     rm -rf "$WORK"
 }
 trap cleanup EXIT
-fail() { echo "::error::$*" >&2; exit 1; }
+# v9.188: a drill that dies without the primary's logs is unfixable from CI
+# (the v9.186 rule), so any failing command or fail() dumps them first.
+on_error() {
+    echo "--- $PRI (primary) logs, last 40 lines ---" >&2
+    docker logs "$PRI" 2>&1 | tail -40 >&2 || true
+}
+trap on_error ERR
+fail() { on_error; echo "::error::$*" >&2; exit 1; }
 
 echo "== building the pgbackrest-enabled postgres image =="
 docker build -q -f "$ROOT/polaris_web/Dockerfile.postgres" -t "$PG_IMAGE" "$ROOT" >/dev/null
@@ -103,8 +110,14 @@ docker run -d --name "$PRI" --network "$NET" \
     "$PG_IMAGE" \
     -c wal_level=replica -c archive_mode=on \
     -c "archive_command=pgbackrest --stanza=polaris archive-push %p" -c max_wal_senders=3 >/dev/null
+# Probe over TCP (-h), which only the REAL server listens on. The official
+# entrypoint first runs a TEMPORARY init-only server bound to the Unix socket
+# alone (listen_addresses='') while the init scripts load, then stops it and
+# starts the real one; a socket probe passes against the temporary server and
+# the next command lands on "the database system is shutting down" or a
+# connection terminated mid-query (pgBackRest's [101] in the v9.187 CI run).
 for i in $(seq 1 60); do
-    docker exec -e PGPASSWORD=rootpw "$PRI" psql -U postgres -d polaris -tAc 'SELECT 1' >/dev/null 2>&1 && break
+    docker exec -e PGPASSWORD=rootpw "$PRI" psql -h 127.0.0.1 -U postgres -d polaris -tAc 'SELECT 1' >/dev/null 2>&1 && break
     sleep 1
 done
 docker exec "$PRI" grep -q '^repo1-type=s3$' /etc/pgbackrest/conf.d/repo.conf \

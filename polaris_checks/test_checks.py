@@ -3275,3 +3275,49 @@ def test_distributed_tracing_check_discriminates(tmp_path):
     # The app never wires tracing in.
     write({"polaris_web/app.py": "pass\n"})
     assert checks.check_distributed_tracing(tmp_path)[0].level == "FAIL", "must FAIL when app.py does not call tracing.init_app"
+
+
+def test_postgres_probes_use_tcp_check_discriminates(tmp_path):
+    CI = ('          --health-cmd "pg_isready -h 127.0.0.1"\n'
+          "docker exec -e PGPASSWORD=x pg psql -h 127.0.0.1 -U postgres -d polaris -tAc 'SELECT 1' && break\n"
+          'docker exec -e PGPASSWORD=x pg psql -U postgres -q -c "CREATE ROLE polaris_app LOGIN"\n')
+    DRILL = ("docker exec -e PGPASSWORD=rootpw \"$PRI\" psql -h 127.0.0.1 -U postgres -d polaris -tAc 'SELECT 1'\n"
+             'docker logs "$PRI" 2>&1 | tail -40 >&2 || true\n')
+    good = {
+        ".github/workflows/ci.yml": CI,
+        "scripts/polaris-deploy.sh": "compose exec -T postgres pg_isready -h 127.0.0.1 -U postgres\n",
+        "scripts/polaris-offsite-drill.sh": DRILL,
+        "polaris_web/docker-compose.prod.yml": 'test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d polaris"]\n',
+        "deploy/helm/polaris/templates/postgres.yaml": 'command: ["pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", "polaris"]\n',
+    }
+
+    def write(overrides=None):
+        files = dict(good); files.update(overrides or {})
+        for rel, body in files.items():
+            f = tmp_path / rel
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text(body)
+
+    write()
+    assert checks.check_postgres_probes_use_tcp(tmp_path)[0].level == "OK", "must PASS on the good fixture"
+
+    # A compose healthcheck back on the Unix socket (answered by the temporary init server).
+    write({"polaris_web/docker-compose.prod.yml": 'test: ["CMD-SHELL", "pg_isready -U postgres -d polaris"]\n'})
+    assert checks.check_postgres_probes_use_tcp(tmp_path)[0].level == "FAIL", "must FAIL on a socket healthcheck"
+
+    # A CI readiness loop back on the socket.
+    write({".github/workflows/ci.yml": CI.replace("psql -h 127.0.0.1 -U postgres -d polaris -tAc 'SELECT 1'",
+                                                  "psql -U postgres -d polaris -tAc 'SELECT 1'")})
+    assert checks.check_postgres_probes_use_tcp(tmp_path)[0].level == "FAIL", "must FAIL on a socket SELECT 1 loop"
+
+    # A Helm exec probe without the host flag.
+    write({"deploy/helm/polaris/templates/postgres.yaml": 'command: ["pg_isready", "-U", "postgres", "-d", "polaris"]\n'})
+    assert checks.check_postgres_probes_use_tcp(tmp_path)[0].level == "FAIL", "must FAIL on a socket Helm probe"
+
+    # A commented-out socket probe, and a non-probe psql line, are not offenders.
+    write({".github/workflows/ci.yml": CI + "# docker exec pg psql -U postgres -d polaris -tAc 'SELECT 1'\n"})
+    assert checks.check_postgres_probes_use_tcp(tmp_path)[0].level == "OK", "a comment is not a probe"
+
+    # The drill stopped dumping the primary's logs on failure.
+    write({"scripts/polaris-offsite-drill.sh": DRILL.replace('docker logs "$PRI" 2>&1 | tail -40 >&2 || true\n', "")})
+    assert checks.check_postgres_probes_use_tcp(tmp_path)[0].level == "FAIL", "must FAIL without the log dump"

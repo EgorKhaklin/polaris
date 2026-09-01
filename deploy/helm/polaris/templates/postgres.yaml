@@ -86,14 +86,18 @@ spec:
             - {name: secrets, mountPath: /etc/polaris-pg-certs/server.crt, subPath: postgres_server.crt, readOnly: true}
             - {name: secrets, mountPath: /etc/polaris-pg-certs/server.key, subPath: postgres_server.key, readOnly: true}
             - {name: secrets, mountPath: /etc/pgbackrest/conf.d/repo-creds.conf, subPath: pgbackrest_repo_creds.conf, readOnly: true}
+          # -h on both probes: only the REAL server listens on TCP; the
+          # entrypoint's temporary init-only server answers the Unix socket
+          # while the schema loads, and Ready must not precede the real server
+          # (v9.188).
           startupProbe:
             exec:
-              command: ["pg_isready", "-U", "postgres", "-d", "polaris"]
+              command: ["pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", "polaris"]
             periodSeconds: 5
             failureThreshold: 60
           readinessProbe:
             exec:
-              command: ["pg_isready", "-U", "postgres", "-d", "polaris"]
+              command: ["pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", "polaris"]
             periodSeconds: 10
           resources:
             requests: {cpu: 250m, memory: 512Mi}

@@ -38,7 +38,10 @@ services:
       # Persist database between restarts
       - polaris-pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d polaris_test"]
+      # -h: only the REAL server listens on TCP; the entrypoint's temporary
+      # init-only server answers the Unix socket while the schema loads
+      # (v9.188), and "healthy" must not start the app against it.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d polaris_test"]
       interval: 5s
       timeout: 5s
       retries: 10
