@@ -14,7 +14,7 @@
 #
 # Effects per secret:
 #   polaris_secret_key           — recreates app container (sessions invalidated)
-#   polaris_db_password          — rotates polaris_app password in DB, recreates app
+#   polaris_db_password          — rotates polaris_app password in DB, recreates pgbouncer then app
 #   polaris_db_root_password     — rotates postgres superuser password, recreates postgres
 #
 # Cadence + threat model: docs/operator/SECRETS.md
@@ -123,6 +123,13 @@ case "${SECRET}" in
         echo "  → updating polaris_app password in DB…"
         docker compose -f "${COMPOSE_FILE}" exec -T postgres psql -U postgres -d polaris \
             -c "ALTER USER polaris_app WITH PASSWORD '${NEW_VALUE}';"
+        # pgbouncer (v8.83+) authenticates to postgres as polaris_app with a
+        # userlist.txt it generates from the secret AT CONTAINER START, so it
+        # must be recreated too, and BEFORE the app, or every app connection
+        # fails with "SASL authentication failed" (found by the first live
+        # rotation drill in CI, v9.182; this script predates pgbouncer).
+        echo "  → recreating pgbouncer (regenerates its userlist from the new secret)…"
+        docker compose -f "${COMPOSE_FILE}" up -d --no-deps --force-recreate pgbouncer
         echo "  → recreating app container…"
         docker compose -f "${COMPOSE_FILE}" up -d --no-deps --force-recreate app
         ;;

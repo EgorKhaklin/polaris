@@ -5,6 +5,26 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.182 — 2026-09-01 (P1.3 follow-through: rotating the DB password never restarted pgbouncer)
+
+v9.181 cleared both earlier failures: the Linux install is green (with the
+custody component healthy in the payload) and the live rotation drill got
+through both rotations with write-through. It then failed on health, and the
+app log says exactly why: `connection to server at "pgbouncer" ... FATAL: SASL
+authentication failed`. pgbouncer (in the stack since v8.83) generates its
+userlist.txt from the secret at container start; polaris-rotate-secret.sh
+(written v8.77, before pgbouncer) recreated only the app after ALTER USER, so
+pgbouncer kept authenticating with the old password and every connection
+failed. On a real deployment, rotating the DB password would have taken the
+stack down. The script now recreates pgbouncer before the app, SECRETS.md
+section 3.3 says so, and `check_secrets_lifecycle_sealed` refuses a
+polaris_db_password branch that does not recreate pgbouncer. This is the
+third pre-P1.3 defect the sealed-secrets drill has surfaced, all in the
+rotation path nobody had run against the production topology. 94 checks, 91
+check-layer tests.
+
+---
+
 ## v9.181 — 2026-09-01 (P1.3 follow-through: two latent Linux defects the new drills exposed)
 
 The v9.180 run proved the sealed boot on CI: secrets sealed to a throwaway

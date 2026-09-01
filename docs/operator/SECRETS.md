@@ -174,6 +174,12 @@ What this does:
 If step 3 fails (Postgres unreachable), the rotation aborts and
 the old password remains in `secrets/`. No state divergence.
 
+> **pgbouncer (v8.83+)** generates its `userlist.txt` from this secret at container
+> start, so the script recreates pgbouncer BEFORE the app; recreating only the
+> app leaves pgbouncer authenticating with the old password and every app
+> connection fails with `SASL authentication failed` (found by the live
+> rotation drill, v9.182). If you rotate by hand, do the same.
+
 ### 3.4 Rotating `polaris_db_root_password`
 
 This one is more involved (it changes the superuser, which is

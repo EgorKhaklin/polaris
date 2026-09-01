@@ -3084,6 +3084,11 @@ def check_secrets_lifecycle_sealed(root: pathlib.Path) -> list[Finding]:
     if "seal --only" not in rot or "POLARIS_SECRETS_DIR" not in rot:
         return _fail("secrets_sealed", "polaris-rotate-secret.sh must rotate the materialized secret and write it through "
                      "to the sealed store (seal --only)")
+    m = re.search(r"polaris_db_password\)(.*?)\n\s*;;", rot, re.S)
+    if not m or "force-recreate pgbouncer" not in m.group(1):
+        return _fail("secrets_sealed", "rotating polaris_db_password must recreate pgbouncer (it generates userlist.txt "
+                     "from the secret at start) before the app, or every connection fails SASL auth after rotation "
+                     "(the v9.181 live-rotation failure)")
     if "unseal-if-configured" not in unit:
         return _fail("secrets_sealed", "polaris.service must run polaris-secrets.sh unseal-if-configured as ExecStartPre")
     for needle in ("class AgeBackendTests", "class AwsKmsBackendTests", "rotate_wrapping", "drift"):

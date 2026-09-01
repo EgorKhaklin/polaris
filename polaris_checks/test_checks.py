@@ -3016,7 +3016,9 @@ def test_secrets_lifecycle_sealed_check_discriminates(tmp_path):
         "polaris_web/secretstore.py": ST,
         "scripts/polaris-secrets.sh": "unseal-if-configured) mount -t tmpfs -o mode=0700 tmpfs $d\n",
         "scripts/polaris-deploy.sh": "polaris-secrets.sh unseal-if-configured\nSECRETS_DIR=${POLARIS_SECRETS_DIR:-x}\n",
-        "scripts/polaris-rotate-secret.sh": "SECRETS_DIR=${POLARIS_SECRETS_DIR:-x}\npolaris-secrets.sh seal --only $SECRET\n",
+        "scripts/polaris-rotate-secret.sh": ("SECRETS_DIR=${POLARIS_SECRETS_DIR:-x}\npolaris-secrets.sh seal --only $SECRET\n"
+                                            "case x in\n    polaris_db_password)\n        docker compose up -d --no-deps --force-recreate pgbouncer\n"
+                                            "        docker compose up -d --no-deps --force-recreate app\n        ;;\nesac\n"),
         "deploy/linux/polaris.service": "ExecStartPre=polaris-secrets.sh unseal-if-configured\n",
         "polaris_web/test_secretstore.py": "class AgeBackendTests: rotate_wrapping\nclass AwsKmsBackendTests: drift\n",
         "polaris_web/docker-compose.prod.yml": "secrets:\n  k:\n    file: ${POLARIS_SECRETS_DIR:-./secrets}/k\n",
@@ -3050,6 +3052,12 @@ def test_secrets_lifecycle_sealed_check_discriminates(tmp_path):
     # KMS Decrypt without the KeyId pin (a stale key would open a re-wrapped store).
     write({"polaris_web/secretstore.py": ST.replace(", KeyId=self.key_id", "")})
     assert checks.check_secrets_lifecycle_sealed(tmp_path)[0].level == "FAIL", "must FAIL without KeyId pinned on Decrypt"
+
+    # Rotation that recreates only the app (pgbouncer keeps the old password).
+    write({"scripts/polaris-rotate-secret.sh": "SECRETS_DIR=${POLARIS_SECRETS_DIR:-x}\npolaris-secrets.sh seal --only $SECRET\n"
+           "case x in\n    polaris_db_password)\n        docker compose up -d --no-deps --force-recreate app\n        ;;\nesac\n"})
+    f = checks.check_secrets_lifecycle_sealed(tmp_path)[0]
+    assert f.level == "FAIL" and "pgbouncer" in f.message, "must FAIL when rotation skips pgbouncer"
 
     # Rotation that does not write through.
     write({"scripts/polaris-rotate-secret.sh": "SECRETS_DIR=${POLARIS_SECRETS_DIR:-x}\n"})
