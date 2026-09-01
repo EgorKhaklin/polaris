@@ -5,6 +5,37 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.181 — 2026-09-01 (P1.3 follow-through: two latent Linux defects the new drills exposed)
+
+The v9.180 run proved the sealed boot on CI: secrets sealed to a throwaway
+age identity, the plaintext directory deleted, the store unsealed into a
+tmpfs, the full production stack booted from it and healthy through the TLS
+edge. Two jobs then failed on defects that predate P1.3 and had never been
+reachable before:
+
+  1. The rotation drill died on the first command of polaris-rotate-secret.sh:
+     `CUR_MODE=$(stat -f '%Lp' ... || stat -c '%a' ...)`. GNU stat treats -f as
+     file-system status and EXITS 0 with a multi-line report, so on Linux the
+     fallback never ran and chmod received garbage. The script had only ever
+     been exercised on macOS (BSD stat). The dialect is now chosen by
+     capability (`stat --version`), the result is validated as octal, and
+     `check_rotate_secret_preserves_mode` refuses the `stat -f ... ||` chain
+     on executable lines (a comment naming it does not trip the check). Proven
+     on GNU stat in a Debian container and on BSD stat locally. Same family as
+     grep -q, psql -f, and `_out=$(cmd); _rc=$?`: an exit code judged instead
+     of the outcome.
+  2. The Linux installer's polaris.service failed at start because
+     polaris.env.example set POLARIS_SECRETS_DIR=/run/polaris/secrets
+     unconditionally, so with the file backend compose resolved every secret
+     to a directory nothing populates. The variable is now left empty there
+     (the unseal defaults it only for a sealed backend), and
+     `check_secrets_lifecycle_sealed` pins that.
+
+No product change beyond the rotation script's mode detection. 94 checks,
+91 check-layer tests.
+
+---
+
 ## v9.180 — 2026-09-01 (Roadmap P1.3: production secrets from a sealed store, materialized into a tmpfs; rotation drilled live in CI)
 
 Until now every production secret (the session key, the DB and replicator

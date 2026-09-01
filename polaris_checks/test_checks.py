@@ -749,6 +749,15 @@ def test_rotate_secret_mode_check_discriminates(tmp_path):
     assert checks.check_rotate_secret_preserves_mode(tmp_path)[0].level == "OK", \
         "must PASS when rotation captures and reapplies the existing mode"
 
+    # The GNU trap (v9.181): `stat -f ... ||` never falls through on Linux (exit 0
+    # with a file-system report), so the fallback chain must be refused; the same
+    # text in a COMMENT must not trip it.
+    rs.write_text("CUR_MODE=$(stat -f '%Lp' \"${TARGET}\" 2>/dev/null || stat -c '%a' \"${TARGET}\")\nchmod \"0${CUR_MODE#0}\" \"${TARGET}.new\"\n")
+    f = checks.check_rotate_secret_preserves_mode(tmp_path)[0]
+    assert f.level == "FAIL" and "GNU stat" in f.message, "must FAIL on the stat -f || fallback chain"
+    rs.write_text("# never chain stat -f ... || stat -c\nCUR_MODE=$(stat --version >/dev/null 2>&1 && stat -c '%a' \"${TARGET}\" || stat -f '%Lp' \"${TARGET}\")\nchmod \"0${CUR_MODE#0}\" \"${TARGET}.new\"\n")
+    assert checks.check_rotate_secret_preserves_mode(tmp_path)[0].level == "OK", "a comment naming the trap must not trip it"
+
 
 def test_sbom_workflow_check_discriminates(tmp_path):
     wf = tmp_path / ".github" / "workflows"
@@ -3016,6 +3025,7 @@ def test_secrets_lifecycle_sealed_check_discriminates(tmp_path):
                                      "bash scripts/polaris-secrets.sh verify\n"),
         "docs/operator/SECRETS.md": "POLARIS_SECRETS_BACKEND=age ... rotate-wrapping\n",
         ".gitignore": "polaris_web/secrets/\npolaris_web/secrets.sealed/\n",
+        "deploy/linux/polaris.env.example": "POLARIS_SECRETS_BACKEND=file\nPOLARIS_SECRETS_DIR=\n",
     }
 
     def write(overrides=None):
@@ -3027,6 +3037,10 @@ def test_secrets_lifecycle_sealed_check_discriminates(tmp_path):
 
     write()
     assert checks.check_secrets_lifecycle_sealed(tmp_path)[0].level == "OK", "must PASS on the good fixture"
+
+    # POLARIS_SECRETS_DIR forced in the env example (the v9.180 install failure).
+    write({"deploy/linux/polaris.env.example": "POLARIS_SECRETS_BACKEND=file\nPOLARIS_SECRETS_DIR=/run/polaris/secrets\n"})
+    assert checks.check_secrets_lifecycle_sealed(tmp_path)[0].level == "FAIL", "must FAIL when the env example forces POLARIS_SECRETS_DIR"
 
     # A compose file that still reads ./secrets/ directly (the pre-P1.3 layout).
     write({"polaris_web/docker-compose.prod.yml": "secrets:\n  k:\n    file: ./secrets/k\n"})

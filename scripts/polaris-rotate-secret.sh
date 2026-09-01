@@ -80,7 +80,16 @@ NEW_VALUE=$(gen_hex)
 # A rotation that forced 0600 would crash-loop the prod stack on next deploy,
 # exactly the failure v9.140 shipped to prevent. Capture the current mode and
 # reapply it to the replacement.
-CUR_MODE=$(stat -f '%Lp' "${TARGET}" 2>/dev/null || stat -c '%a' "${TARGET}" 2>/dev/null || echo 600)
+# GNU stat treats -f as "file-system status" and EXITS 0 with a multi-line
+# report, so `stat -f ... || stat -c ...` never fell through on Linux and chmod
+# got garbage (found by the first CI run of the rotation drill, v9.181). Pick
+# the dialect by capability instead.
+if stat --version >/dev/null 2>&1; then
+    CUR_MODE=$(stat -c '%a' "${TARGET}")          # GNU coreutils
+else
+    CUR_MODE=$(stat -f '%Lp' "${TARGET}")         # BSD / macOS
+fi
+[[ "${CUR_MODE}" =~ ^[0-7]{3,4}$ ]] || { echo "error: could not read the mode of ${TARGET} (got '${CUR_MODE}')" >&2; exit 1; }
 ( umask 0177 && printf '%s\n' "${NEW_VALUE}" > "${TARGET}.new" )
 chmod "0${CUR_MODE#0}" "${TARGET}.new"
 mv "${TARGET}.new" "${TARGET}"

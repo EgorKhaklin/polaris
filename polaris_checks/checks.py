@@ -2641,6 +2641,12 @@ def check_rotate_secret_preserves_mode(root: pathlib.Path) -> list[Finding]:
         return _fail("rotate_mode",
                      "rotate-secret hardcodes chmod 0600 on the replacement; it regresses "
                      "the 0644 secrets that non-root containers must read on Linux (v9.140)")
+    code = "\n".join(l for l in sh.splitlines() if not l.lstrip().startswith("#"))
+    if re.search(r"stat -f[^|\n]*\|\|", code):
+        return _fail("rotate_mode",
+                     "polaris-rotate-secret.sh chains `stat -f ... ||` to a fallback: GNU stat's -f is "
+                     "file-system status and exits 0, so the fallback never runs on Linux and chmod gets "
+                     "garbage (the v9.181 rotation-drill failure); pick the dialect with `stat --version`")
     if "CUR_MODE" not in sh or "stat" not in sh:
         return _fail("rotate_mode",
                      "rotate-secret does not capture the existing file mode before writing "
@@ -3091,6 +3097,11 @@ def check_secrets_lifecycle_sealed(root: pathlib.Path) -> list[Finding]:
         return _fail("secrets_sealed", "SECRETS.md must document POLARIS_SECRETS_BACKEND and rotate-wrapping")
     if "polaris_web/secrets.sealed/" not in gi:
         return _fail("secrets_sealed", ".gitignore must exclude polaris_web/secrets.sealed/")
+    envx = _read(root, "deploy/linux/polaris.env.example")
+    if envx and not re.search(r"(?m)^POLARIS_SECRETS_DIR=\s*$", envx):
+        return _fail("secrets_sealed", "polaris.env.example must leave POLARIS_SECRETS_DIR empty: set it with the file "
+                     "backend, compose reads a directory nothing populates and polaris.service fails at start "
+                     "(the v9.180 CI install failure)")
     return _ok("secrets_sealed", "secrets lifecycle: age / AWS KMS envelope sealed store, compose reads only "
                "POLARIS_SECRETS_DIR (tmpfs), deploy + polaris.service unseal first, rotation writes through, "
                "wrapping-key rotation, tests for both backends, and a CI boot-from-sealed + live rotation drill")
