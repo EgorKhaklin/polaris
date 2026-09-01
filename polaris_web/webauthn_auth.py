@@ -24,6 +24,21 @@ Defense-in-depth:
     case documented in COSE spec)
   - Hardware-only enforcement via POLARIS_WEBAUTHN_HARDWARE_ONLY=1 env
     knob (default = both platform + hardware allowed)
+  - v9.189 (roadmap P1.7) attestation policy, all env-driven and validated
+    at boot by validate_policy():
+      POLARIS_WEBAUTHN_ATTESTATION         none|indirect|direct|enterprise
+                                           (conveyance asked of the browser)
+      POLARIS_WEBAUTHN_USER_VERIFICATION   preferred|required|discouraged
+                                           (required = PIN/biometric proven
+                                           on BOTH ceremonies)
+      POLARIS_WEBAUTHN_REQUIRE_ATTESTATION=1  refuse a registration whose
+                                           attestation format is "none"
+      POLARIS_WEBAUTHN_ALLOWED_AAGUIDS     comma-separated authenticator
+                                           models; anything else refused
+  - Post-quantum readiness (webauthn 3.0.0): ML-DSA-65 (COSE -49) is offered
+    FIRST in the registration options and verified through cryptography's
+    mldsa module; an authenticator that implements it enrolls a post-quantum
+    credential, every other one falls through to ES256/EdDSA/RS256.
 
 Sanctum §IV resolutions applied (architect-recommended defaults):
   1. MFA required for admin, optional for operator, not for auditor
@@ -56,8 +71,10 @@ from webauthn.helpers.structs import (
     PublicKeyCredentialDescriptor,
     AuthenticatorAttachment,
     ResidentKeyRequirement,
+    AttestationConveyancePreference,
 )
 from webauthn.helpers.cose import COSEAlgorithmIdentifier
+from webauthn.helpers.decode_credential_public_key import decode_credential_public_key
 
 
 # ----------------------------------------------------------------------------
@@ -96,6 +113,137 @@ def _hardware_only():
     """If POLARIS_WEBAUTHN_HARDWARE_ONLY=1, refuse platform authenticators
     (Touch ID / Windows Hello / Android). Default: allow both."""
     return os.environ.get('POLARIS_WEBAUTHN_HARDWARE_ONLY', '').strip() == '1'
+
+
+# ----------------------------------------------------------------------------
+# v9.189 (roadmap P1.7) — attestation policy. Read from the environment at
+# call time (a change lands on restart; the tests drive them), validated at
+# boot by validate_policy() so a typo fails the start, never an enrollment.
+# ----------------------------------------------------------------------------
+
+# COSE algorithms offered at registration, in preference order. ML-DSA-65
+# first: the same parameter set as the token signature, so a PQ-capable
+# authenticator enrolls a post-quantum credential; the classical three keep
+# every shipping authenticator working. The SAME list gates verification.
+SUPPORTED_PUB_KEY_ALGS = [
+    COSEAlgorithmIdentifier.ML_DSA_65,
+    COSEAlgorithmIdentifier.ECDSA_SHA_256,
+    COSEAlgorithmIdentifier.EDDSA,
+    COSEAlgorithmIdentifier.RSASSA_PKCS1_v1_5_SHA_256,
+]
+
+_COSE_ALG_LABELS = {
+    COSEAlgorithmIdentifier.ML_DSA_65:                 'ML-DSA-65 (post-quantum)',
+    COSEAlgorithmIdentifier.ECDSA_SHA_256:             'ES256 (ECDSA P-256)',
+    COSEAlgorithmIdentifier.EDDSA:                     'EdDSA (Ed25519)',
+    COSEAlgorithmIdentifier.RSASSA_PKCS1_v1_5_SHA_256: 'RS256 (RSA)',
+}
+
+_ATTESTATION_CHOICES = {
+    'none':       AttestationConveyancePreference.NONE,
+    'indirect':   AttestationConveyancePreference.INDIRECT,
+    'direct':     AttestationConveyancePreference.DIRECT,
+    'enterprise': AttestationConveyancePreference.ENTERPRISE,
+}
+
+_UV_CHOICES = {
+    'preferred':   UserVerificationRequirement.PREFERRED,
+    'required':    UserVerificationRequirement.REQUIRED,
+    'discouraged': UserVerificationRequirement.DISCOURAGED,
+}
+
+
+class AttestationPolicyViolation(Exception):
+    """A registration the library verified but the operator's policy refuses
+    (no verifiable attestation statement, or an authenticator model outside
+    POLARIS_WEBAUTHN_ALLOWED_AAGUIDS)."""
+
+
+def _attestation_preference():
+    raw = os.environ.get('POLARIS_WEBAUTHN_ATTESTATION', 'none').strip().lower() or 'none'
+    try:
+        return _ATTESTATION_CHOICES[raw]
+    except KeyError:
+        raise ValueError(
+            f"POLARIS_WEBAUTHN_ATTESTATION={raw!r}: expected one of "
+            f"{', '.join(_ATTESTATION_CHOICES)}") from None
+
+
+def _user_verification():
+    raw = os.environ.get('POLARIS_WEBAUTHN_USER_VERIFICATION', 'preferred').strip().lower() or 'preferred'
+    try:
+        return _UV_CHOICES[raw]
+    except KeyError:
+        raise ValueError(
+            f"POLARIS_WEBAUTHN_USER_VERIFICATION={raw!r}: expected one of "
+            f"{', '.join(_UV_CHOICES)}") from None
+
+
+def _require_user_verification():
+    """True only under POLARIS_WEBAUTHN_USER_VERIFICATION=required: then the
+    UV flag (PIN / biometric) is demanded on registration AND every assertion,
+    so a stolen security key without its PIN cannot satisfy the second factor."""
+    return _user_verification() is UserVerificationRequirement.REQUIRED
+
+
+def _require_attestation():
+    return os.environ.get('POLARIS_WEBAUTHN_REQUIRE_ATTESTATION', '').strip() == '1'
+
+
+def _allowed_aaguids():
+    """The set of permitted authenticator models (lowercase UUID strings), or
+    None when any model is allowed. Malformed entries raise."""
+    import uuid
+    raw = os.environ.get('POLARIS_WEBAUTHN_ALLOWED_AAGUIDS', '').strip()
+    if not raw:
+        return None
+    allowed = set()
+    for item in raw.split(','):
+        item = item.strip()
+        if not item:
+            continue
+        try:
+            allowed.add(str(uuid.UUID(item)))
+        except ValueError:
+            raise ValueError(
+                f"POLARIS_WEBAUTHN_ALLOWED_AAGUIDS: {item!r} is not a UUID") from None
+    if not allowed:
+        raise ValueError("POLARIS_WEBAUTHN_ALLOWED_AAGUIDS is set but names no AAGUID")
+    return allowed
+
+
+def validate_policy():
+    """Parse every policy knob once and return the effective policy as plain
+    strings, or raise ValueError. app.py calls this at import."""
+    allowed = _allowed_aaguids()
+    return {
+        'attestation':         _attestation_preference().value,
+        'user_verification':   _user_verification().value,
+        'require_attestation': _require_attestation(),
+        'allowed_aaguids':     sorted(allowed) if allowed else None,
+        'hardware_only':       _hardware_only(),
+        'algorithms':          [int(a) for a in SUPPORTED_PUB_KEY_ALGS],
+    }
+
+
+def credential_algorithm_label(public_key):
+    """Human label for the COSE algorithm of a stored credential public key."""
+    try:
+        decoded = decode_credential_public_key(bytes(public_key))
+    except Exception:
+        return 'unknown'
+    return _COSE_ALG_LABELS.get(decoded.alg, f'COSE {int(decoded.alg)}')
+
+
+def credential_is_post_quantum(public_key):
+    try:
+        return decode_credential_public_key(bytes(public_key)).alg in (
+            COSEAlgorithmIdentifier.ML_DSA_44,
+            COSEAlgorithmIdentifier.ML_DSA_65,
+            COSEAlgorithmIdentifier.ML_DSA_87,
+        )
+    except Exception:
+        return False
 
 
 # Role policy from §IV.1
@@ -153,19 +301,20 @@ def build_registration_options(user_id, username, existing_credential_ids):
       - challenge: the base64url-encoded challenge to persist server-side
                    for the matching /finish call (one-shot)
     """
-    # Authenticator selection per §IV.2
+    # Authenticator selection per §IV.2; user verification per the v9.189
+    # policy (default: preferred, the pre-v9.189 behaviour).
     if _hardware_only():
         # Hardware token only (YubiKey class): cross-platform
         selection = AuthenticatorSelectionCriteria(
             authenticator_attachment=AuthenticatorAttachment.CROSS_PLATFORM,
             resident_key=ResidentKeyRequirement.DISCOURAGED,
-            user_verification=UserVerificationRequirement.PREFERRED,
+            user_verification=_user_verification(),
         )
     else:
         # Allow both platform + cross-platform; let the user pick
         selection = AuthenticatorSelectionCriteria(
             resident_key=ResidentKeyRequirement.DISCOURAGED,
-            user_verification=UserVerificationRequirement.PREFERRED,
+            user_verification=_user_verification(),
         )
 
     # Exclude credentials already enrolled to this user (prevents accidental
@@ -183,11 +332,8 @@ def build_registration_options(user_id, username, existing_credential_ids):
         user_display_name=username,
         authenticator_selection=selection,
         exclude_credentials=exclude,
-        supported_pub_key_algs=[
-            COSEAlgorithmIdentifier.ECDSA_SHA_256,
-            COSEAlgorithmIdentifier.EDDSA,
-            COSEAlgorithmIdentifier.RSASSA_PKCS1_v1_5_SHA_256,
-        ],
+        attestation=_attestation_preference(),
+        supported_pub_key_algs=SUPPORTED_PUB_KEY_ALGS,
         # Timeout is advisory to the browser; we enforce server-side via
         # the challenge's session lifetime instead.
         timeout=60_000,
@@ -208,14 +354,17 @@ def verify_registration(
       credential_id, public_key (bytes), sign_count, transports,
       attestation_format, aaguid (str or None)
 
-    Raises webauthn.helpers.exceptions.* on invalid attestation.
+    Raises webauthn.helpers.exceptions.* on invalid attestation, and
+    AttestationPolicyViolation when the operator's v9.189 policy refuses a
+    credential the library accepted.
     """
     verification = verify_registration_response(
         credential=credential_json,
         expected_challenge=_b64url_decode(expected_challenge_b64url),
         expected_rp_id=_rp_id(),
         expected_origin=_expected_origin(),
-        require_user_verification=False,
+        require_user_verification=_require_user_verification(),
+        supported_pub_key_algs=SUPPORTED_PUB_KEY_ALGS,
     )
 
     # The library returns aaguid as a string ("00000000-...") or None
@@ -235,9 +384,23 @@ def verify_registration(
         else:
             transports = str(transports_raw)[:120]
 
+    # The wire name of the attestation format ('none', 'packed', 'tpm', ...).
+    # Pre-v9.189 this stored str(enum), i.e. 'AttestationFormat.NONE'.
     fmt = getattr(verification, 'fmt', None)
     if fmt is not None:
-        fmt = str(fmt)[:40]
+        fmt = str(getattr(fmt, 'value', fmt))[:40]
+
+    # v9.189 policy refusals: the library has verified what the authenticator
+    # said; these decide whether what it said is enough.
+    if _require_attestation() and (fmt is None or fmt == 'none'):
+        raise AttestationPolicyViolation(
+            'POLARIS_WEBAUTHN_REQUIRE_ATTESTATION=1: the authenticator returned no '
+            'verifiable attestation statement (format "none")')
+    allowed = _allowed_aaguids()
+    if allowed is not None and (aaguid is None or aaguid.lower() not in allowed):
+        raise AttestationPolicyViolation(
+            f'authenticator model {aaguid or "unreported"} is not in '
+            f'POLARIS_WEBAUTHN_ALLOWED_AAGUIDS')
 
     return {
         'credential_id':       _b64url_encode(verification.credential_id),
@@ -264,7 +427,7 @@ def build_authentication_options(allowed_credential_ids):
     options = generate_authentication_options(
         rp_id=_rp_id(),
         allow_credentials=allow,
-        user_verification=UserVerificationRequirement.PREFERRED,
+        user_verification=_user_verification(),
         timeout=60_000,
     )
     return {
@@ -297,7 +460,7 @@ def verify_authentication(
         expected_origin=_expected_origin(),
         credential_public_key=bytes(stored_public_key),
         credential_current_sign_count=int(stored_sign_count),
-        require_user_verification=False,
+        require_user_verification=_require_user_verification(),
     )
     return {'new_sign_count': int(verification.new_sign_count or 0)}
 
@@ -395,17 +558,25 @@ def days_until_webauthn_deadline(conn, user_id):
 def list_credentials_for_user(conn, user_id):
     """Return a list of dicts (one per enrolled credential) for the
     settings page. Does NOT return public_key bytes — those are not
-    user-facing."""
+    user-facing; v9.189 returns the COSE algorithm label decoded from them
+    instead ('algorithm', plus 'post_quantum')."""
     with conn.cursor() as cur:
         cur.execute(
             "SELECT credential_id, transports, device_label, "
-            "       enrolled_at, last_used_at "
+            "       enrolled_at, last_used_at, public_key, attestation_format "
             "FROM OperatorWebauthnCredential "
             "WHERE user_id = %s "
             "ORDER BY enrolled_at DESC",
             (user_id,)
         )
-        return [dict(r) for r in cur.fetchall()]
+        rows = []
+        for r in cur.fetchall():
+            d = dict(r)
+            pk = d.pop('public_key')
+            d['algorithm'] = credential_algorithm_label(pk)
+            d['post_quantum'] = credential_is_post_quantum(pk)
+            rows.append(d)
+        return rows
 
 
 def existing_credential_ids_for_user(conn, user_id):

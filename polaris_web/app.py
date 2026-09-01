@@ -491,6 +491,16 @@ def _security_before_request():
             abort(429)
 
 
+# v9.189 (P1.7) — the server-side session registry. Every authenticated
+# request is checked against OperatorSession (missing / revoked / evicted /
+# idle / deactivated account / outside the role's network policy) before any
+# view runs. Registered after the rate-limit hook so a flood never reaches the
+# registry lookup.
+@app.before_request
+def _session_before_request():
+    return security.validate_session(get_db)
+
+
 @app.after_request
 def _security_after_request(response):
     """Apply security headers (CSP, HSTS, etc.) to every response."""
@@ -561,6 +571,19 @@ def _correlation_after_request(response):
 # tracing.py for the vocation constraints (opt-in + visible, ephemeral ids,
 # nothing identity-derived, nothing persisted to the DB).
 tracing.init_app(app)
+
+# v9.189 (roadmap P1.7) — session and origin hardening. A malformed role
+# policy or WebAuthn policy value fails the boot HERE, never a login or an
+# enrollment, and the effective limits are announced once in the log stream
+# (the v9.187 rule: a control that is silently on, or silently off, is the
+# failure mode).
+_ROLE_POLICY = security.validate_role_policies()
+_WEBAUTHN_POLICY = webauthn_auth.validate_policy()
+observability.structured_log(
+    'session_policy',
+    **{f'{role}_{key}': value
+       for role, limits in _ROLE_POLICY.items() for key, value in limits.items()},
+    **{f'webauthn_{key}': value for key, value in _WEBAUTHN_POLICY.items()})
 
 
 @app.context_processor
@@ -887,7 +910,17 @@ def webauthn_register_finish():
 
     try:
         cred = webauthn_auth.verify_registration(body, challenge)
+    except webauthn_auth.AttestationPolicyViolation as e:
+        # The library accepted the authenticator; the operator's v9.189
+        # policy did not. Audited so the refusal is visible operator-side.
+        security._audit(get_db, 'WEBAUTHN_REGISTRATION_REFUSED',
+            username=user['username'], user_id=user['user_id'],
+            detail=f'policy: {str(e)[:470]}')
+        return jsonify(error=f'registration refused by policy: {e}'), 400
     except Exception as e:
+        security._audit(get_db, 'WEBAUTHN_REGISTRATION_REFUSED',
+            username=user['username'], user_id=user['user_id'],
+            detail=f'{type(e).__name__}: {str(e)[:440]}')
         return jsonify(error=f'registration verification failed: {e}'), 400
 
     conn = get_db()

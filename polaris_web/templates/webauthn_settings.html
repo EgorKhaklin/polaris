@@ -37,8 +37,9 @@
             <thead>
                 <tr>
                     <th>Label</th>
+                    <th>Algorithm</th>
                     <th>Transports</th>
-                    <th>Format</th>
+                    <th>Credential</th>
                     <th>Enrolled</th>
                     <th>Last used</th>
                     <th></th>
@@ -48,6 +49,7 @@
                 {% for c in credentials %}
                     <tr>
                         <td>{{ c.device_label or '(unnamed)' }}</td>
+                        <td>{{ c.algorithm }}</td>
                         <td>{{ c.transports or '—' }}</td>
                         <td><code>{{ (c.credential_id[:16]) }}…</code></td>
                         <td>{{ c.enrolled_at.strftime('%Y-%m-%d %H:%M') if c.enrolled_at else '—' }}</td>

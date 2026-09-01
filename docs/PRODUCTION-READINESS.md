@@ -28,7 +28,12 @@ left a real foundation. Genuinely sound today:
   counting (no lockout-bypass TOCTOU), username-enumeration resistance (uniform
   scrypt work + lockout revealed only post-auth), per-session CSRF with
   constant-time compare, session-fixation regeneration, role-based authz with
-  403 + audit, and a CSP with no `unsafe-inline` for scripts.
+  403 + audit, and a CSP with no `unsafe-inline` for scripts. v9.189 (P1.7)
+  adds a server-side session registry (per-role concurrent caps, idle
+  timeouts, revocation on deactivation / password change / logout), per-role
+  network allow-lists enforced at login and on live sessions, and a WebAuthn
+  attestation policy (user verification required, direct attestation,
+  AAGUID allow-list) on the 3.x library with ML-DSA-65 offered first.
 - **The C1-C10 invariants are enforced at the database**, not in policy: the
   v9.85 grant boundary revokes UPDATE/DELETE on append-only audit tables from
   `polaris_app`, the only DELETE path is SECURITY DEFINER, and `polaris_app` has

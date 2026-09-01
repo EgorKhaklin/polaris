@@ -136,9 +136,14 @@ surface, and the realistic exposure is bounded but real.
   transmitted, so harvest-now-decrypt-later does NOT apply to the credential. The
   threat is future signature forgery. Migration is gated on the FIDO Alliance,
   browsers, and authenticator hardware, not on Polaris as the relying party. No
-  PQC COSE authenticators ship as of 2026-06. Polaris keeps COSE algorithm
-  selection negotiated rather than hardcoded (`webauthn_auth.py`), which is the
-  correct relying-party posture.
+  PQC COSE authenticators ship as of 2026-09. Since v9.189 (webauthn 3.0.0)
+  the relying party offers ML-DSA-65 (COSE -49) FIRST in the registration
+  options and verifies it through cryptography's ML-DSA implementation, with
+  the classical three behind it, so the day an authenticator implements
+  ML-DSA its credential enrolls post-quantum with no Polaris change; the
+  ceremony is proven in `WebAuthnCeremonyTests` with a synthetic ML-DSA-65
+  authenticator. Every credential enrolled today is still classical, and
+  this surface stays in this section until the hardware exists.
 - **Recovery-code mnemonic digest (SHA-256): classical SHA-2.** This is a hash,
   not a public-key primitive, so it is NOT Shor-breakable and carries NO
   deprecation deadline. Grover leaves about 128-bit quantum preimage security on
@@ -161,7 +166,7 @@ Status maps to the NIST IR 8547 timeline (deprecate classical public-key after
 | secrets.token_* (session/CSRF/nonce RNG) | session | PQ_SECURE | CSPRNG, 256/64-bit entropy. Symmetric; acceptable. |
 | HMAC-SHA3-256 (CSRF compare) | session | PQ_SECURE | Inherits hash security; constant-time compare. No item. |
 | SHA-256 (recovery-code digest) | hashing | REDUCED_BUT_OK | Classical SHA-2 but a hash, not public-key; ~128-bit quantum preimage. No deadline. Acceptable as-is. |
-| ECDSA/EdDSA/RSA (WebAuthn MFA) | webauthn | MIGRATE_BY_2035 | Classical, Shor-breakable. Key is client-side authenticator, never sent, so no HNDL. Migration gated on FIDO/hardware, not Polaris. |
+| ECDSA/EdDSA/RSA (WebAuthn MFA) | webauthn | MIGRATE_BY_2035 | Classical, Shor-breakable. Key is client-side authenticator, never sent, so no HNDL. Migration gated on FIDO/hardware, not Polaris; the relying party already offers and verifies ML-DSA-65 (v9.189), so no Polaris change is needed when authenticators ship it. |
 | X25519MLKEM768 hybrid (client to edge) | kex_transport | PQ_SECURE (modern clients) | Hybrid PQ KEX, server offers + selects it by default (proven off a real handshake, forced + default; asserted by the caddy-edge CI job). Closes HNDL for connections from modern (ML-KEM-capable) clients; old clients negotiate classical X25519 (no PQ). Opportunistic, not required. Safe if either X25519 or ML-KEM-768 holds. |
 | TLS ECDHE (app to pgbouncer) | kex_transport | MIGRATE_BY_2030 | Classical KEX, HNDL. Internal hop, notional data; payoff near nil. Gated on BOTH ends < OpenSSL 3.5: app libpq 3.0.20 (Bookworm) and pgbouncer 3.3.7 (Alpine 3.20). |
 | TLS ECDHE (pgbouncer to postgres) | kex_transport | MIGRATE_BY_2030 | Classical KEX, HNDL. Internal hop, notional data. Gated on pgbouncer 3.3.7 (client); postgres is already OpenSSL 3.5.6. |
@@ -194,10 +199,10 @@ third-party-gated and are future work, not current defects.
    2035.
 4. **P4, edge CA cert signature.** No direct action; track the Let's Encrypt and
    CA-Browser PQC rollout, expected via hybrid/composite certs. Third-party-gated.
-5. **P5, WebAuthn COSE agility.** Keep COSE selection negotiated (already done)
-   and add ML-DSA COSE identifiers when FIDO2/CTAP PQC profiles and authenticators
-   ship. No PQC COSE authenticators exist as of 2026-06. HNDL does not apply
-   because the key never leaves the authenticator.
+5. **P5, WebAuthn COSE agility.** DONE on the relying-party side at v9.189:
+   ML-DSA-65 is offered first and verified. What remains is third-party-gated:
+   FIDO2/CTAP PQC profiles and authenticators that implement them (none as of
+   2026-09). HNDL does not apply because the key never leaves the authenticator.
 6. **P6, optional hygiene.** Optionally move the recovery-code digest from SHA-256
    to SHA3-256 or SHA-384 for extra Grover margin. Hygiene, not a quantum
    requirement; no deadline.

@@ -7860,3 +7860,543 @@ if __name__ == '__main__':
     suite = unittest.TestLoader().loadTestsFromModule(sys.modules[__name__])
     result = runner.run(suite)
     sys.exit(0 if result.wasSuccessful() else 1)
+
+
+# ============================================================================
+# v9.189 (roadmap P1.7) — SESSION AND ORIGIN HARDENING
+# ============================================================================
+# The webauthn 3.x major exercised end to end through the app's routes with a
+# synthetic authenticator (ES256 and post-quantum ML-DSA-65), the attestation
+# policy knobs, the per-role network policy at login and on live sessions, and
+# the server-side session registry (per-role caps, idle timeouts, revocation).
+
+import base64 as _b64
+import hashlib as _hashlib
+import json as _json
+
+
+class _SyntheticAuthenticator:
+    """A software WebAuthn authenticator for the ceremony tests. It produces
+    exactly the JSON a browser hands back from navigator.credentials.create()
+    / .get() (a "none"-format attestation with real signatures), so the FULL
+    library verification path runs on both ceremonies: client data, RP-id
+    hash, flags, counter, COSE key decoding, signature. Keys: ES256 (P-256)
+    or ML-DSA-65 (post-quantum, COSE -49, verified through cryptography's
+    mldsa module by webauthn 3.x)."""
+
+    def __init__(self, alg='es256', aaguid=None, uv=True):
+        from cryptography.hazmat.primitives.asymmetric import ec, mldsa
+        self.alg = alg
+        self.uv = uv
+        self.aaguid = bytes.fromhex(aaguid.replace('-', '')) if aaguid else bytes(16)
+        self.counter = 0
+        self.credential_id = os.urandom(32)
+        if alg == 'es256':
+            self._key = ec.generate_private_key(ec.SECP256R1())
+        elif alg == 'mldsa65':
+            self._key = mldsa.MLDSA65PrivateKey.generate()
+        else:
+            raise ValueError(alg)
+
+    @staticmethod
+    def b64u(raw):
+        return _b64.urlsafe_b64encode(raw).decode('ascii').rstrip('=')
+
+    @property
+    def credential_id_b64u(self):
+        return self.b64u(self.credential_id)
+
+    def _cose_public_key(self):
+        import cbor2
+        if self.alg == 'es256':
+            nums = self._key.public_key().public_numbers()
+            return cbor2.dumps({1: 2, 3: -7, -1: 1,
+                                -2: nums.x.to_bytes(32, 'big'),
+                                -3: nums.y.to_bytes(32, 'big')})
+        return cbor2.dumps({1: 7, 3: -49, -1: self._key.public_key().public_bytes_raw()})
+
+    def _sign(self, data):
+        if self.alg == 'es256':
+            from cryptography.hazmat.primitives import hashes
+            from cryptography.hazmat.primitives.asymmetric import ec
+            return self._key.sign(data, ec.ECDSA(hashes.SHA256()))
+        return self._key.sign(data)
+
+    def _authenticator_data(self, rp_id, attested):
+        flags = 0x01 | (0x04 if self.uv else 0x00) | (0x40 if attested else 0x00)
+        data = (_hashlib.sha256(rp_id.encode()).digest() + bytes([flags])
+                + self.counter.to_bytes(4, 'big'))
+        if attested:
+            data += (self.aaguid + len(self.credential_id).to_bytes(2, 'big')
+                     + self.credential_id + self._cose_public_key())
+        return data
+
+    def register(self, options_json, origin, rp_id):
+        import cbor2
+        opts = _json.loads(options_json)
+        client_data = _json.dumps({'type': 'webauthn.create',
+                                   'challenge': opts['challenge'],
+                                   'origin': origin}).encode()
+        att = cbor2.dumps({'fmt': 'none', 'attStmt': {},
+                           'authData': self._authenticator_data(rp_id, True)})
+        return {'id': self.credential_id_b64u, 'rawId': self.credential_id_b64u,
+                'type': 'public-key',
+                'response': {'clientDataJSON': self.b64u(client_data),
+                             'attestationObject': self.b64u(att),
+                             'transports': ['usb']}}
+
+    def assertion(self, options_json, origin, rp_id, bump_counter=True):
+        opts = _json.loads(options_json)
+        if bump_counter:
+            self.counter += 1
+        client_data = _json.dumps({'type': 'webauthn.get',
+                                   'challenge': opts['challenge'],
+                                   'origin': origin}).encode()
+        auth_data = self._authenticator_data(rp_id, False)
+        sig = self._sign(auth_data + _hashlib.sha256(client_data).digest())
+        return {'id': self.credential_id_b64u, 'rawId': self.credential_id_b64u,
+                'type': 'public-key',
+                'response': {'clientDataJSON': self.b64u(client_data),
+                             'authenticatorData': self.b64u(auth_data),
+                             'signature': self.b64u(sig),
+                             'userHandle': None}}
+
+
+def _sql(query, params=None, fetch='all'):
+    conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+    try:
+        with conn.cursor() as cur:
+            cur.execute(query, params or ())
+            if fetch == 'none':
+                conn.commit()
+                return None
+            rows = cur.fetchall()
+        conn.commit()
+        return rows if fetch == 'all' else (rows[0] if rows else None)
+    finally:
+        conn.close()
+
+
+def _audit_events(username=None):
+    if username:
+        return [r['event_type'] for r in _sql(
+            "SELECT event_type FROM AuthAuditLog WHERE username=%s ORDER BY audit_id", (username,))]
+    return [r['event_type'] for r in _sql("SELECT event_type FROM AuthAuditLog ORDER BY audit_id")]
+
+
+_WEBAUTHN_KNOBS = ('POLARIS_WEBAUTHN_ATTESTATION', 'POLARIS_WEBAUTHN_USER_VERIFICATION',
+                   'POLARIS_WEBAUTHN_REQUIRE_ATTESTATION', 'POLARIS_WEBAUTHN_ALLOWED_AAGUIDS',
+                   'POLARIS_WEBAUTHN_HARDWARE_ONLY')
+_SESSION_KNOBS = ('POLARIS_NETWORK_POLICY_ADMIN', 'POLARIS_NETWORK_POLICY_OPERATOR',
+                  'POLARIS_NETWORK_POLICY_AUDITOR', 'POLARIS_SESSION_MAX_ADMIN',
+                  'POLARIS_SESSION_MAX_OPERATOR', 'POLARIS_SESSION_IDLE_MINUTES_ADMIN',
+                  'POLARIS_TRUST_PROXY')
+
+
+class WebAuthnCeremonyTests(PolarisTestCase):
+    """webauthn 3.0.0 through the app's own routes: enrollment and the second
+    factor with a synthetic ES256 authenticator and a synthetic ML-DSA-65 one,
+    the negative paths (replayed counter, wrong origin, stale challenge,
+    malformed payload), and the v9.189 policy knobs."""
+
+    def setUp(self):
+        super().setUp()
+        for k in _WEBAUTHN_KNOBS:
+            self.addCleanup(os.environ.pop, k, None)
+        self.wa = flask_app.webauthn_auth
+        self.origin = self.wa._expected_origin()
+        self.rp_id = self.wa._rp_id()
+
+    def _csrf(self):
+        return self._csrf_token_from('/settings/webauthn')
+
+    def _begin_registration(self):
+        r = self.client.post('/auth/webauthn/register/begin',
+                             headers={'X-CSRFToken': self._csrf()})
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        return r.get_data(as_text=True)
+
+    def _enroll(self, auth, label='synthetic', expect=200):
+        payload = auth.register(self._begin_registration(), self.origin, self.rp_id)
+        payload['device_label'] = label
+        r = self.client.post('/auth/webauthn/register/finish', json=payload,
+                             headers={'X-CSRFToken': self._csrf()})
+        self.assertEqual(r.status_code, expect, r.get_data(as_text=True))
+        return r
+
+    def _second_factor(self, auth, client=None, bump_counter=True, origin=None,
+                       stale_options=None, expect=200):
+        client = client or flask_app.app.test_client()
+        r = client.post('/login', data={'username': 'admin',
+                                        'password': TEST_PASSWORDS['admin']})
+        self.assertEqual(r.status_code, 302, r.get_data(as_text=True))
+        self.assertIn('/auth/webauthn/assert', r.headers['Location'],
+                      'an admin with a credential must be sent to the second factor')
+        r = client.post('/auth/webauthn/assert/begin')
+        self.assertEqual(r.status_code, 200, r.get_data(as_text=True))
+        options = stale_options or r.get_data(as_text=True)
+        payload = auth.assertion(options, origin or self.origin, self.rp_id, bump_counter)
+        r = client.post('/auth/webauthn/assert/finish', json=payload)
+        self.assertEqual(r.status_code, expect, r.get_data(as_text=True))
+        return client, r
+
+    def _credential_row(self, auth):
+        return _sql("SELECT sign_count, attestation_format, aaguid::text AS aaguid "
+                    "FROM OperatorWebauthnCredential WHERE credential_id = %s",
+                    (self.wa._canonical_credential_id(auth.credential_id_b64u),), fetch='one')
+
+    # ---- the two ceremonies, both key types ----------------------------------
+
+    def test_es256_credential_enrolls_and_satisfies_the_second_factor(self):
+        auth = _SyntheticAuthenticator('es256')
+        self._enroll(auth, label='yubikey-desk')
+        row = self._credential_row(auth)
+        self.assertIsNotNone(row, 'the verified credential must be persisted')
+        self.assertEqual(row['attestation_format'], 'none',
+                         'the wire format name is stored, not the enum repr')
+        self.assertEqual(row['sign_count'], 0)
+
+        client, r = self._second_factor(auth)
+        body = r.get_json()
+        self.assertTrue(body['ok'])
+        with client.session_transaction() as sess:
+            self.assertTrue(sess.get('logged_in'))
+            self.assertRegex(sess.get('sid', ''), r'^[0-9a-f]{64}$',
+                             'the promoted session must be registered server-side')
+        self.assertEqual(self._credential_row(auth)['sign_count'], 1)
+        self.assertEqual(client.get('/dashboard').status_code, 200)
+        events = _audit_events('admin')
+        self.assertIn('WEBAUTHN_REGISTERED', events)
+        self.assertIn('WEBAUTHN_ASSERTED', events)
+
+    def test_mldsa65_is_offered_first_and_a_pq_credential_verifies(self):
+        opts = _json.loads(self._begin_registration())
+        algs = [p['alg'] for p in opts['pubKeyCredParams']]
+        self.assertEqual(algs[0], -49, 'ML-DSA-65 (COSE -49) must be the first offer')
+        self.assertEqual(set(algs), {-49, -7, -8, -257})
+
+        auth = _SyntheticAuthenticator('mldsa65')
+        self._enroll(auth, label='pq-token')
+        self.assertIsNotNone(self._credential_row(auth))
+        page = self.client.get('/settings/webauthn').get_data(as_text=True)
+        self.assertIn('ML-DSA-65 (post-quantum)', page)
+        self.assertIn('pq-token', page)
+
+        client, r = self._second_factor(auth)
+        self.assertTrue(r.get_json()['ok'])
+        self.assertEqual(self._credential_row(auth)['sign_count'], 1)
+
+    # ---- negative paths --------------------------------------------------------
+
+    def test_replayed_counter_is_rejected(self):
+        auth = _SyntheticAuthenticator('es256')
+        self._enroll(auth)
+        self._second_factor(auth)                                   # counter -> 1
+        client, r = self._second_factor(auth, bump_counter=False, expect=401)
+        self.assertIn('invalid assertion', r.get_json()['error'])
+        with client.session_transaction() as sess:
+            self.assertFalse(sess.get('logged_in'))
+        self.assertIn('WEBAUTHN_ASSERTION_FAILED', _audit_events('admin'))
+
+    def test_wrong_origin_is_rejected(self):
+        auth = _SyntheticAuthenticator('es256')
+        self._enroll(auth)
+        client, _ = self._second_factor(auth, origin='https://evil.example', expect=401)
+        with client.session_transaction() as sess:
+            self.assertFalse(sess.get('logged_in'))
+
+    def test_stale_challenge_is_rejected(self):
+        auth = _SyntheticAuthenticator('es256')
+        self._enroll(auth)
+        client = flask_app.app.test_client()
+        client.post('/login', data={'username': 'admin', 'password': TEST_PASSWORDS['admin']})
+        first = client.post('/auth/webauthn/assert/begin').get_data(as_text=True)
+        # A second /begin replaces the one-shot challenge; signing the first is a replay.
+        self._second_factor(auth, client=client, stale_options=first, expect=401)
+
+    def test_malformed_registration_payload_is_400_not_500(self):
+        self._begin_registration()
+        r = self.client.post('/auth/webauthn/register/finish',
+                             json={'id': 'x', 'rawId': 'x', 'type': 'public-key',
+                                   'response': {'clientDataJSON': 'AAAA',
+                                                'attestationObject': 'AAAA'}},
+                             headers={'X-CSRFToken': self._csrf()})
+        self.assertEqual(r.status_code, 400)
+        self.assertIn('WEBAUTHN_REGISTRATION_REFUSED', _audit_events('admin'))
+
+    # ---- the v9.189 policy knobs ------------------------------------------------
+
+    def test_user_verification_required_on_both_ceremonies(self):
+        os.environ['POLARIS_WEBAUTHN_USER_VERIFICATION'] = 'required'
+        opts = _json.loads(self._begin_registration())
+        self.assertEqual(opts['authenticatorSelection']['userVerification'], 'required')
+
+        no_uv = _SyntheticAuthenticator('es256', uv=False)
+        r = self._enroll(no_uv, expect=400)
+        self.assertIsNone(self._credential_row(no_uv))
+        self.assertIn('WEBAUTHN_REGISTRATION_REFUSED', _audit_events('admin'))
+
+        auth = _SyntheticAuthenticator('es256', uv=True)
+        self._enroll(auth)
+        client = flask_app.app.test_client()
+        client.post('/login', data={'username': 'admin', 'password': TEST_PASSWORDS['admin']})
+        assert_opts = _json.loads(client.post('/auth/webauthn/assert/begin').get_data(as_text=True))
+        self.assertEqual(assert_opts['userVerification'], 'required')
+        auth.uv = False                     # the key without its PIN / biometric
+        self._second_factor(auth, expect=401)
+        auth.uv = True
+        self._second_factor(auth, expect=200)
+
+    def test_attestation_conveyance_policy_reaches_the_browser(self):
+        self.assertEqual(_json.loads(self._begin_registration())['attestation'], 'none')
+        os.environ['POLARIS_WEBAUTHN_ATTESTATION'] = 'direct'
+        self.assertEqual(_json.loads(self._begin_registration())['attestation'], 'direct')
+
+    def test_require_attestation_refuses_a_none_format_registration(self):
+        os.environ['POLARIS_WEBAUTHN_REQUIRE_ATTESTATION'] = '1'
+        auth = _SyntheticAuthenticator('es256')
+        r = self._enroll(auth, expect=400)
+        self.assertIn('refused by policy', r.get_json()['error'])
+        self.assertIsNone(self._credential_row(auth))
+        row = _sql("SELECT detail FROM AuthAuditLog WHERE event_type='WEBAUTHN_REGISTRATION_REFUSED' "
+                   "ORDER BY audit_id DESC LIMIT 1", fetch='one')
+        self.assertIn('policy', row['detail'])
+
+    def test_allowed_aaguids_policy(self):
+        allowed = 'f8a011f3-8c0a-4d15-8006-17111f9edc7d'
+        os.environ['POLARIS_WEBAUTHN_ALLOWED_AAGUIDS'] = allowed.upper()
+        unknown = _SyntheticAuthenticator('es256')                  # zero AAGUID
+        r = self._enroll(unknown, expect=400)
+        self.assertIn('POLARIS_WEBAUTHN_ALLOWED_AAGUIDS', r.get_json()['error'])
+        listed = _SyntheticAuthenticator('es256', aaguid=allowed)
+        self._enroll(listed)
+        self.assertEqual(self._credential_row(listed)['aaguid'], allowed)
+
+    def test_hardware_only_requests_cross_platform_attachment(self):
+        os.environ['POLARIS_WEBAUTHN_HARDWARE_ONLY'] = '1'
+        opts = _json.loads(self._begin_registration())
+        self.assertEqual(opts['authenticatorSelection']['authenticatorAttachment'], 'cross-platform')
+
+    def test_invalid_policy_values_fail_validation_loudly(self):
+        for knob, bad in (('POLARIS_WEBAUTHN_ATTESTATION', 'always'),
+                          ('POLARIS_WEBAUTHN_USER_VERIFICATION', 'maybe'),
+                          ('POLARIS_WEBAUTHN_ALLOWED_AAGUIDS', 'yubikey')):
+            os.environ[knob] = bad
+            with self.assertRaises(ValueError, msg=f'{knob}={bad!r} must be refused'):
+                self.wa.validate_policy()
+            os.environ.pop(knob)
+        self.assertEqual(self.wa.validate_policy()['attestation'], 'none')
+
+
+class NetworkPolicyTests(UnauthenticatedTestCase):
+    """POLARIS_NETWORK_POLICY_<ROLE>: a per-role CIDR allow-list enforced at
+    login (with the generic error, so it is not a password oracle) and on
+    every live session, through the proxy-aware client_ip()."""
+
+    def setUp(self):
+        super().setUp()
+        for k in _SESSION_KNOBS:
+            self.addCleanup(os.environ.pop, k, None)
+
+    def _login(self, role='admin', **kw):
+        return self.client.post('/login', data={'username': role,
+                                                'password': TEST_PASSWORDS[role]}, **kw)
+
+    def test_admin_login_refused_outside_the_policy_with_the_generic_error(self):
+        os.environ['POLARIS_NETWORK_POLICY_ADMIN'] = '10.0.0.0/8'
+        r = self._login('admin')
+        self.assertEqual(r.status_code, 401)
+        self.assertHTML(r, 'Invalid username or password')
+        events = _audit_events('admin')
+        self.assertIn('NETWORK_POLICY_DENIED', events)
+        self.assertNotIn('LOGIN_SUCCESS', events)
+        self.assertNotIn('LOGIN_FAILED', events, 'a correct password is not a failure')
+        row = _sql("SELECT failed_login_count FROM AppUser WHERE username='admin'", fetch='one')
+        self.assertEqual(row['failed_login_count'], 0)
+
+    def test_admin_login_allowed_inside_the_policy(self):
+        os.environ['POLARIS_NETWORK_POLICY_ADMIN'] = '10.0.0.0/8, 127.0.0.0/8'
+        self.assertEqual(self._login('admin').status_code, 302)
+        self.assertEqual(self.client.get('/dashboard').status_code, 200)
+
+    def test_policy_is_per_role(self):
+        os.environ['POLARIS_NETWORK_POLICY_ADMIN'] = '10.0.0.0/8'
+        self.assertEqual(self._login('operator').status_code, 302)
+
+    def test_forwarded_for_is_honoured_only_behind_a_trusted_proxy(self):
+        os.environ['POLARIS_NETWORK_POLICY_ADMIN'] = '10.0.0.0/8'
+        spoof = {'X-Forwarded-For': '10.1.1.1'}
+        self.assertEqual(self._login('admin', headers=spoof).status_code, 401,
+                         'an untrusted client must not choose its own address')
+        os.environ['POLARIS_TRUST_PROXY'] = '1'
+        self.assertEqual(self._login('admin', headers=spoof).status_code, 302)
+
+    def test_live_session_ends_when_its_address_leaves_the_policy(self):
+        self.assertEqual(self._login('admin').status_code, 302)
+        with self.client.session_transaction() as sess:
+            sid = sess['sid']
+        os.environ['POLARIS_NETWORK_POLICY_ADMIN'] = '10.0.0.0/8'
+        r = self.client.get('/dashboard')
+        self.assertEqual(r.status_code, 302)
+        self.assertIn('/login', r.headers['Location'])
+        with self.client.session_transaction() as sess:
+            self.assertFalse(sess.get('logged_in'))
+        row = _sql("SELECT revoked_at, revoke_reason FROM OperatorSession WHERE session_id=%s",
+                   (sid,), fetch='one')
+        self.assertIsNotNone(row['revoked_at'])
+        self.assertEqual(row['revoke_reason'], 'network_policy')
+        self.assertIn('NETWORK_POLICY_DENIED', _audit_events('admin'))
+
+    def test_malformed_policy_fails_loudly_instead_of_allowing_everything(self):
+        from app import security as sec
+        os.environ['POLARIS_NETWORK_POLICY_ADMIN'] = '10.0.0.0/8, not-a-network'
+        with self.assertRaises(ValueError):
+            sec.validate_role_policies()
+        with self.assertRaises(ValueError):
+            sec.network_policy_allows('admin', '10.0.0.1')
+        os.environ['POLARIS_NETWORK_POLICY_ADMIN'] = ' , '
+        with self.assertRaises(ValueError):
+            sec.validate_role_policies()
+        os.environ['POLARIS_SESSION_MAX_ADMIN'] = 'many'
+        with self.assertRaises(ValueError):
+            sec.validate_role_policies()
+
+
+class SessionLimitTests(UnauthenticatedTestCase):
+    """The server-side registry: per-role concurrent caps (least-recently-seen
+    eviction, exact under real threads), idle timeouts, activity touches,
+    revocation on deactivation and logout, and a cookie that is anonymous
+    without a live registry row."""
+
+    def setUp(self):
+        super().setUp()
+        for k in _SESSION_KNOBS:
+            self.addCleanup(os.environ.pop, k, None)
+        self.admin_id = _sql("SELECT user_id FROM AppUser WHERE username='admin'", fetch='one')['user_id']
+
+    def _client_as(self, role):
+        c = flask_app.app.test_client()
+        r = c.post('/login', data={'username': role, 'password': TEST_PASSWORDS[role]})
+        self.assertEqual(r.status_code, 302, f'login as {role} failed: {r.get_data(as_text=True)[:200]}')
+        return c
+
+    def _sid(self, client):
+        with client.session_transaction() as sess:
+            return sess.get('sid')
+
+    def _row(self, sid):
+        return _sql("SELECT role, client_ip, revoked_at, revoke_reason, last_seen_at "
+                    "FROM OperatorSession WHERE session_id=%s", (sid,), fetch='one')
+
+    def _live(self, user_id):
+        return _sql("SELECT count(*) AS n FROM OperatorSession WHERE user_id=%s AND revoked_at IS NULL",
+                    (user_id,), fetch='one')['n']
+
+    def test_registry_row_records_role_and_address(self):
+        c = self._client_as('admin')
+        sid = self._sid(c)
+        self.assertRegex(sid, r'^[0-9a-f]{64}$')
+        row = self._row(sid)
+        self.assertEqual(row['role'], 'admin')
+        self.assertEqual(row['client_ip'], '127.0.0.1')
+        self.assertIsNone(row['revoked_at'])
+
+    def test_admin_cap_evicts_the_least_recently_seen_session(self):
+        os.environ['POLARIS_SESSION_MAX_ADMIN'] = '2'
+        c1 = self._client_as('admin'); s1 = self._sid(c1)
+        c2 = self._client_as('admin')
+        c3 = self._client_as('admin')
+        r = c1.get('/dashboard')
+        self.assertEqual(r.status_code, 302, 'the oldest session must be evicted')
+        self.assertIn('/login', r.headers['Location'])
+        self.assertEqual(c2.get('/dashboard').status_code, 200)
+        self.assertEqual(c3.get('/dashboard').status_code, 200)
+        self.assertEqual(self._row(s1)['revoke_reason'], 'evicted')
+        self.assertEqual(self._live(self.admin_id), 2)
+        self.assertEqual(_audit_events('admin').count('SESSION_EVICTED'), 1)
+
+    def test_admin_default_cap_is_three_and_operators_are_unlimited(self):
+        clients = [self._client_as('admin') for _ in range(4)]
+        self.assertEqual(clients[0].get('/dashboard').status_code, 302)
+        for c in clients[1:]:
+            self.assertEqual(c.get('/dashboard').status_code, 200)
+        self.assertEqual(self._live(self.admin_id), 3)
+        ops = [self._client_as('operator') for _ in range(5)]
+        for c in ops:
+            self.assertEqual(c.get('/dashboard').status_code, 200)
+
+    def test_concurrent_logins_respect_the_cap_exactly(self):
+        """C9: eight admins logging in at once with a cap of three leave
+        exactly three live rows (the account row is locked per login)."""
+        os.environ['POLARIS_SESSION_MAX_ADMIN'] = '3'
+        import threading
+        outcomes, lock = [], threading.Lock()
+
+        def login():
+            c = flask_app.app.test_client()
+            r = c.post('/login', data={'username': 'admin', 'password': TEST_PASSWORDS['admin']})
+            with lock:
+                outcomes.append(r.status_code)
+
+        threads = [threading.Thread(target=login) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        self.assertEqual(outcomes, [302] * 8)
+        self.assertEqual(self._live(self.admin_id), 3)
+        self.assertEqual(_sql("SELECT count(*) AS n FROM OperatorSession WHERE user_id=%s "
+                              "AND revoke_reason='evicted'", (self.admin_id,), fetch='one')['n'], 5)
+
+    def test_idle_timeout_ends_the_session(self):
+        os.environ['POLARIS_SESSION_IDLE_MINUTES_ADMIN'] = '5'
+        c = self._client_as('admin'); sid = self._sid(c)
+        _sql("UPDATE OperatorSession SET last_seen_at = now() - INTERVAL '6 minutes' WHERE session_id=%s",
+             (sid,), fetch='none')
+        r = c.get('/dashboard')
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(self._row(sid)['revoke_reason'], 'idle')
+        self.assertIn('SESSION_EXPIRED', _audit_events('admin'))
+
+    def test_activity_refreshes_last_seen(self):
+        c = self._client_as('admin'); sid = self._sid(c)
+        _sql("UPDATE OperatorSession SET last_seen_at = now() - INTERVAL '2 minutes' WHERE session_id=%s",
+             (sid,), fetch='none')
+        self.assertEqual(c.get('/dashboard').status_code, 200)
+        age = _sql("SELECT extract(epoch FROM now() - last_seen_at) AS s FROM OperatorSession "
+                   "WHERE session_id=%s", (sid,), fetch='one')['s']
+        self.assertLess(float(age), 30, 'a request older than the touch bound must refresh last_seen_at')
+
+    def test_deactivated_account_loses_its_live_session(self):
+        c = self._client_as('operator'); sid = self._sid(c)
+        _sql("UPDATE AppUser SET is_active = FALSE WHERE username='operator'", fetch='none')
+        r = c.get('/dashboard')
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(self._row(sid)['revoke_reason'], 'deactivated')
+        self.assertIn('SESSION_REVOKED', _audit_events('operator'))
+
+    def test_logout_revokes_the_registry_row(self):
+        c = self._client_as('admin'); sid = self._sid(c)
+        page = c.get('/dashboard').get_data(as_text=True)
+        token = re.search(r'name="csrf_token" value="([^"]+)"', page).group(1)
+        r = c.post('/logout', data={'csrf_token': token})
+        self.assertEqual(r.status_code, 302)
+        self.assertEqual(self._row(sid)['revoke_reason'], 'logout')
+
+    def test_cookie_without_a_live_registry_row_is_anonymous(self):
+        c = flask_app.app.test_client()
+        with c.session_transaction() as sess:
+            sess['logged_in'] = True
+            sess['user_id'] = self.admin_id
+            sess['username'] = 'admin'
+            sess['role'] = 'admin'
+        r = c.get('/dashboard')
+        self.assertEqual(r.status_code, 302, 'a pre-v9.189 or forged cookie without sid is anonymous')
+        with c.session_transaction() as sess:
+            sess['logged_in'] = True
+            sess['user_id'] = self.admin_id
+            sess['username'] = 'admin'
+            sess['role'] = 'admin'
+            sess['sid'] = 'ab' * 32
+        self.assertEqual(c.get('/dashboard').status_code, 302,
+                         'an sid with no registry row is anonymous')

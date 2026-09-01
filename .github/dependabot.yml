@@ -19,9 +19,8 @@
 #     0.2->1.x major was taken deliberately in v9.170 after that revalidation
 #     (roots bit-identical, two-witness re-passing). The ignore stays so a
 #     FUTURE major (2.x) gets the same bit-for-bit treatment, never a blind bump.
-#   - webauthn major (the operator-MFA library; a major of the credential
-#     verification path needs its own test pass, folded into roadmap P1.7's
-#     session/authn hardening)
+#   - (webauthn major: taken in v9.189 / roadmap P1.7 with its own ceremony
+#     test pass; its ignore block was removed then, which IS the record)
 #   - redis major (the cross-worker rate-limiter backend; redis-py majors
 #     change connection/script semantics, folded into roadmap P1.8)
 # Removing an ignore block IS the decision record for taking that major.
@@ -38,14 +37,6 @@ updates:
     commit-message:
       prefix: deps
     ignore:
-      - dependency-name: "webauthn"
-        update-types: ["version-update:semver-major"]
-      # webauthn 2.8.0 specifically: it tightened its dependency cap to
-      # cbor2<6 while this surface pins cbor2 6.x (current), so taking it
-      # forces cbor2 backward. Verified by clean-resolve failure at v9.165.
-      # Take 2.8.x when a release lifts the cap, or with the 3.x major in P1.7.
-      - dependency-name: "webauthn"
-        versions: ["2.8.0"]
       # redis is ignored for ALL update forms, not just semver-major: the
       # requirement is a RANGE (>=5,<6), and Dependabot proposes a jump to a
       # new major as a "requirement update" that the semver-major filter does

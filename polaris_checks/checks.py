@@ -3431,6 +3431,149 @@ def check_postgres_probes_use_tcp(root: pathlib.Path) -> list[Finding]:
                "wait) go over TCP, which only the real server answers; the offsite drill dumps logs on failure")
 
 
+# ---------------------------------------------------------------------------
+# Roadmap P1.7 (v9.189) — session and origin hardening. Pins: the webauthn 3.x
+# major is taken (and no longer ignored by Dependabot, the ignore block being
+# the un-decision); the attestation policy knobs exist and the user-verification
+# requirement is policy-driven on BOTH ceremonies (never hardcoded off); the
+# registration offer includes ML-DSA-65; the per-role network policy is enforced
+# inside authenticate() (login) and validate_session() (live sessions) through
+# the proxy-aware client_ip(); the server-side registry is written at login,
+# revoked at logout, checked on every request (revoked / deactivated / idle /
+# policy), wired into app.py, validated at boot, migrated with the five audit
+# event types, revoked by the CLI on password change and deactivation, covered
+# by the three test classes, documented, and passed through the prod compose.
+# ---------------------------------------------------------------------------
+def _fn_body(src: str, name: str) -> str:
+    """The text of `def name(` up to the next top-level def (or the end)."""
+    head = f"def {name}("
+    if head not in src:
+        return ""
+    body = src.split(head, 1)[1]
+    nxt = body.find("\ndef ")
+    return body if nxt < 0 else body[:nxt]
+
+
+def check_session_origin_hardening(root: pathlib.Path) -> list[Finding]:
+    req = _read(root, "polaris_web/requirements.txt")
+    if not re.search(r"(?m)^webauthn==3\.", req):
+        return _fail("session_hardening", "requirements.txt must pin the webauthn 3.x major (P1.7 took it with "
+                     "its own ceremony test pass; ML-DSA COSE support lives there)")
+    if "pyasn1-modules==" not in req:
+        return _fail("session_hardening", "webauthn 3.x needs pyasn1-modules pinned on the runtime surface")
+    dep = _read(root, ".github/dependabot.yml")
+    if re.search(r'dependency-name:\s*"webauthn"', dep):
+        return _fail("session_hardening", "dependabot.yml still ignores webauthn: the ignore block is the "
+                     "un-decision; remove it now that the major is taken")
+    wa = _read(root, "polaris_web/webauthn_auth.py")
+    for knob in ("POLARIS_WEBAUTHN_ATTESTATION", "POLARIS_WEBAUTHN_USER_VERIFICATION",
+                 "POLARIS_WEBAUTHN_REQUIRE_ATTESTATION", "POLARIS_WEBAUTHN_ALLOWED_AAGUIDS"):
+        if knob not in wa:
+            return _fail("session_hardening", f"webauthn_auth.py does not read {knob}")
+    if "ML_DSA_65" not in wa:
+        return _fail("session_hardening", "registration options must offer ML-DSA-65 (the PQ-ready credential)")
+    if re.search(r"require_user_verification\s*=\s*False", wa):
+        return _fail("session_hardening", "user verification is hardcoded off; it must follow "
+                     "POLARIS_WEBAUTHN_USER_VERIFICATION on both ceremonies")
+    if wa.count("require_user_verification=_require_user_verification()") < 2:
+        return _fail("session_hardening", "both verify_registration and verify_authentication must take the "
+                     "user-verification policy")
+    if "class AttestationPolicyViolation" not in wa:
+        return _fail("session_hardening", "policy refusals need their own exception (AttestationPolicyViolation)")
+    sec = _read(root, "polaris_web/security.py")
+    for name in ("def network_policy_allows", "def validate_session", "def register_session",
+                 "def revoke_session", "def validate_role_policies", "POLARIS_NETWORK_POLICY_",
+                 "POLARIS_SESSION_MAX_", "POLARIS_SESSION_IDLE_MINUTES_"):
+        if name not in sec:
+            return _fail("session_hardening", f"security.py lacks {name}")
+    auth = _fn_body(sec, "authenticate")
+    if "network_policy_allows(" not in auth or "NETWORK_POLICY_DENIED" not in auth:
+        return _fail("session_hardening", "authenticate() does not enforce the role network policy at login "
+                     "(with an audited NETWORK_POLICY_DENIED)")
+    if re.search(r"network_policy_allows\([^)]*remote_addr", sec):
+        return _fail("session_hardening", "the network policy must be evaluated on client_ip() (proxy-aware), "
+                     "never on request.remote_addr directly")
+    vs = _fn_body(sec, "validate_session")
+    for marker in ("revoked_at", "is_active", "idle", "network_policy_allows("):
+        if marker not in vs:
+            return _fail("session_hardening", f"validate_session() no longer checks {marker!r} on live sessions")
+    if "register_session(" not in _fn_body(sec, "login_user"):
+        return _fail("session_hardening", "login_user() must register the session server-side")
+    if "revoke_session(" not in _fn_body(sec, "logout_user"):
+        return _fail("session_hardening", "logout_user() must revoke the registry row")
+    app = _read(root, "polaris_web/app.py")
+    if "security.validate_session(get_db)" not in app:
+        return _fail("session_hardening", "app.py does not run security.validate_session on every request")
+    if "security.validate_role_policies()" not in app or "webauthn_auth.validate_policy()" not in app:
+        return _fail("session_hardening", "app.py must validate the role and WebAuthn policies at boot")
+    if "AttestationPolicyViolation" not in app:
+        return _fail("session_hardening", "the register/finish route does not surface (and audit) policy refusals")
+    ups = list((root / "polaris_sql" / "migrations").glob("*-operator-session.up.sql"))
+    if not ups:
+        return _fail("session_hardening", "no operator-session migration in polaris_sql/migrations/")
+    mig = ups[0].read_text(encoding="utf-8")
+    if "CREATE TABLE IF NOT EXISTS OperatorSession" not in mig:
+        return _fail("session_hardening", f"{ups[0].name} does not create OperatorSession idempotently")
+    for ev in ("NETWORK_POLICY_DENIED", "SESSION_EVICTED", "SESSION_EXPIRED", "SESSION_REVOKED",
+               "WEBAUTHN_REGISTRATION_REFUSED"):
+        if ev not in mig:
+            return _fail("session_hardening", f"{ups[0].name} does not admit the {ev} audit event")
+    if not ups[0].with_name(ups[0].name.replace(".up.sql", ".down.sql")).exists():
+        return _fail("session_hardening", f"{ups[0].name} has no .down.sql")
+    if "DROP TABLE IF EXISTS OperatorSession" not in _read(root, "polaris_sql/01_schema.sql"):
+        return _fail("session_hardening", "01_schema.sql's drop list must include OperatorSession (reload path)")
+    if _read(root, "polaris_cli/polaris.py").count("UPDATE OperatorSession") < 2:
+        return _fail("session_hardening", "the CLI must revoke live sessions on user-passwd AND user-deactivate")
+    tests = _read(root, "polaris_web/test_app.py")
+    for cls in ("class WebAuthnCeremonyTests", "class NetworkPolicyTests", "class SessionLimitTests"):
+        if cls not in tests:
+            return _fail("session_hardening", f"test_app.py lacks {cls}")
+    for rel, needle in (("docs/operator/HARDENING.md", "POLARIS_NETWORK_POLICY_"),
+                        ("docs/operator/HARDENING.md", "POLARIS_SESSION_MAX_"),
+                        ("docs/operator/WEBAUTHN-ROLLOUT.md", "POLARIS_WEBAUTHN_ATTESTATION"),
+                        ("docs/operator/SECURITY.md", "SESSION_EVICTED")):
+        if needle not in _read(root, rel):
+            return _fail("session_hardening", f"{rel} does not document {needle}")
+    compose = _read(root, "polaris_web/docker-compose.prod.yml")
+    for var in ("POLARIS_NETWORK_POLICY_ADMIN", "POLARIS_SESSION_MAX_ADMIN", "POLARIS_WEBAUTHN_ATTESTATION"):
+        if var not in compose:
+            return _fail("session_hardening", f"docker-compose.prod.yml does not pass {var} to the app")
+    return _ok("session_hardening",
+               "P1.7: webauthn 3.x taken (ML-DSA-65 offered, UV policy on both ceremonies, attestation "
+               "policy knobs), per-role network policy at login + on live sessions via client_ip(), "
+               "server-side session registry (caps, idle, revocation) wired, migrated, CLI-revoked, "
+               "tested, documented, and passed through compose")
+
+
+# ---------------------------------------------------------------------------
+# The documented reload path is `00_load_all.sql` (which resets schema_version)
+# followed by `polaris-migrate.sh --up`, which then re-applies EVERY migration.
+# It only works if 01_schema.sql's top-of-file drop list names every table that
+# 01_schema.sql or a migration creates; a plain CREATE TABLE on a survivor stops
+# the whole load. v9.189 found ZkVerificationNonce and AuditAccessLog missing.
+# ---------------------------------------------------------------------------
+def check_schema_reload_idempotent(root: pathlib.Path) -> list[Finding]:
+    schema = _read(root, "polaris_sql/01_schema.sql")
+    if not schema:
+        return _fail("schema_reload", "polaris_sql/01_schema.sql is missing")
+    dropped = {n.lower() for n in re.findall(r"(?im)^DROP TABLE IF EXISTS\s+(\w+)", schema)}
+    sources = [("01_schema.sql", schema)]
+    mig_dir = root / "polaris_sql" / "migrations"
+    if mig_dir.is_dir():
+        sources += [(p.name, p.read_text(encoding="utf-8")) for p in sorted(mig_dir.glob("*.up.sql"))]
+    missing = []
+    for rel, text in sources:
+        for name in re.findall(r"(?im)^CREATE TABLE(?:\s+IF NOT EXISTS)?\s+(\w+)", text):
+            if name.lower() not in dropped:
+                missing.append(f"{rel}:{name}")
+    if missing:
+        return _fail("schema_reload", "table(s) created but absent from 01_schema.sql's drop list, so a "
+                     "00_load_all.sql reload + migrate --up fails on a non-empty database: "
+                     + ", ".join(missing[:6]))
+    return _ok("schema_reload", f"every table created by 01_schema.sql or a migration is in the schema's drop "
+               f"list ({len(dropped)} entries): the reload + re-migrate path is idempotent")
+
+
 CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_csp_forbids_unsafe_inline,
     check_one_active_token_index,
@@ -3531,6 +3674,8 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_template_endpoints_resolve,
     check_distributed_tracing,
     check_postgres_probes_use_tcp,
+    check_session_origin_hardening,
+    check_schema_reload_idempotent,
 ]
 
 

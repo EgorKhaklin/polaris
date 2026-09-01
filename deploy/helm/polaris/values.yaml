@@ -36,6 +36,15 @@ app:
   webConcurrency: 4
   # Real ML-DSA-65 signing needs the signing key in the secret (see secrets).
   realPqc: true
+  # Extra environment for the app pods: the v9.189 session and origin knobs
+  # (POLARIS_NETWORK_POLICY_<ROLE>, POLARIS_SESSION_MAX_<ROLE>,
+  # POLARIS_SESSION_IDLE_MINUTES_<ROLE>, POLARIS_WEBAUTHN_ATTESTATION,
+  # POLARIS_WEBAUTHN_USER_VERIFICATION, POLARIS_WEBAUTHN_REQUIRE_ATTESTATION,
+  # POLARIS_WEBAUTHN_ALLOWED_AAGUIDS, POLARIS_WEBAUTHN_HARDWARE_ONLY; see
+  # docs/operator/HARDENING.md section 13). A bad value refuses the boot.
+  extraEnv: []
+  #  - {name: POLARIS_NETWORK_POLICY_ADMIN, value: "10.20.0.0/16"}
+  #  - {name: POLARIS_WEBAUTHN_USER_VERIFICATION, value: required}
 
 secrets:
   # An existing Secret holding the files polaris-generate-secrets.sh writes

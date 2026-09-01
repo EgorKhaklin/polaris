@@ -26,6 +26,11 @@ Implements the controls applied during the security-patching pass:
   Body size limit       Flask's MAX_CONTENT_LENGTH set to 1 MiB
   Auth audit logging    Every login / logout / failure / lockout / CSRF
                         rejection / authz denial recorded in AuthAuditLog
+  Network policy        Per-role CIDR allow-lists (POLARIS_NETWORK_POLICY_<ROLE>)
+                        enforced at login and on every live session (v9.189)
+  Session registry      Server-side OperatorSession rows: per-role concurrent
+                        caps, idle timeouts, revocation on deactivation,
+                        logout, password change (v9.189)
 
 Frameworks:
   - OWASP ASVS L2 controls
@@ -44,6 +49,7 @@ import hmac
 import time
 import secrets
 import functools
+import ipaddress
 from datetime import datetime
 from collections import deque, OrderedDict
 from urllib.parse import urlsplit
@@ -634,6 +640,22 @@ def authenticate(get_conn, username, password):
                            detail=f"failure {new_count}/{LOGIN_FAILURE_THRESHOLD}")
                     return None, GENERIC_ERROR
 
+            # v9.189 (P1.7): per-role network policy. Evaluated only once the
+            # password is right, and answered with GENERIC_ERROR, so a caller
+            # on a disallowed network learns nothing about the password; the
+            # operator reads the real reason in AuthAuditLog. No counter bump:
+            # the credential was correct. client_ip() honours X-Forwarded-For
+            # only behind POLARIS_TRUST_PROXY, so the address cannot be chosen
+            # by the caller.
+            ip = client_ip()
+            if not network_policy_allows(user['role'], ip):
+                conn.rollback()
+                _audit(get_conn, 'NETWORK_POLICY_DENIED', username=username,
+                       user_id=user['user_id'],
+                       detail=f"login from {ip} outside "
+                              f"POLARIS_NETWORK_POLICY_{user['role'].upper()}")
+                return None, GENERIC_ERROR
+
             # Success — reset counter, update last login
             cur.execute(
                 "UPDATE AppUser SET failed_login_count=0, locked_until=NULL, "
@@ -653,9 +675,14 @@ def authenticate(get_conn, username, password):
         conn.close()
 
 
-def login_user(user):
+def login_user(user, get_conn=None):
     """Establish a session for the authenticated user. Regenerate session
     ID by clearing/recreating the session dict to prevent fixation (CWE-384).
+
+    v9.189 (P1.7): the session is also registered server-side
+    (OperatorSession) and the role's concurrent cap enforced; the registry
+    id rides in the signed cookie as 'sid' and validate_session() checks it
+    on every request. `get_conn` defaults to the app's configured GET_DB.
     """
     session.clear()
     session['user_id']   = user['user_id']
@@ -665,14 +692,19 @@ def login_user(user):
     session.permanent    = True
     # Issue a fresh CSRF token on login
     session['csrf_token'] = secrets.token_urlsafe(32)
+    if get_conn is None:
+        get_conn = current_app.config['GET_DB']
+    session['sid'] = register_session(get_conn, user)
 
 
 def logout_user(get_conn):
-    """Audit-log the logout, then clear the session."""
+    """Audit-log the logout, revoke the registry row, then clear the session."""
     if session.get('logged_in'):
         _audit(get_conn, 'LOGOUT',
                username=session.get('username'),
                user_id=session.get('user_id'))
+        if session.get('sid'):
+            revoke_session(get_conn, session['sid'], 'logout')
     session.clear()
 
 
@@ -685,6 +717,272 @@ def current_user():
         'username': session.get('username'),
         'role':     session.get('role'),
     }
+
+
+# ----------------------------------------------------------------------------
+# v9.189 (roadmap P1.7) — per-role network policy + the server-side session
+# registry with per-role limits.
+#
+# Both are OFF unless the operator configures them (admin keeps a default
+# cap and idle timeout: an admin session is the highest-value cookie in the
+# system), both are read from the environment at call time so a change
+# lands on restart and the tests can drive them, and both fail LOUDLY on a
+# malformed value instead of silently allowing everything:
+# validate_role_policies() runs at app import and refuses the boot.
+#
+#   POLARIS_NETWORK_POLICY_<ROLE>        comma-separated CIDRs / addresses the
+#                                        role may log in from and keep a live
+#                                        session on (unset = anywhere)
+#   POLARIS_SESSION_MAX_<ROLE>           concurrent live sessions per account;
+#                                        0 = unlimited (admin default 3)
+#   POLARIS_SESSION_IDLE_MINUTES_<ROLE>  idle timeout; 0 = none (admin default 30)
+#
+# <ROLE> is ADMIN / OPERATOR / AUDITOR. The client address is always
+# client_ip(): X-Forwarded-For is honoured only behind POLARIS_TRUST_PROXY,
+# exactly as for the rate limiter and AuthAuditLog, so an untrusted client
+# cannot spoof its way inside an allowed network.
+#
+# The registry (OperatorSession, migration 2026-09-01-001) is consulted on
+# every authenticated request by validate_session(): a cookie whose row is
+# missing, revoked, idle past the role's timeout, owned by a deactivated
+# account, or presented from outside the role's policy is cleared and the
+# browser sent back to /login. Evictions, expiries, and policy denials are
+# written to AuthAuditLog; the registry itself is working state, not audit.
+# ----------------------------------------------------------------------------
+
+SESSION_DEFAULT_MAX   = {'admin': 3}     # concurrent live sessions per account
+SESSION_DEFAULT_IDLE  = {'admin': 30}    # minutes without a request
+SESSION_TOUCH_SECONDS = 60               # last_seen_at write amplification bound
+SESSION_PURGE_DAYS    = 30               # registry rows older than this are deleted
+
+_NETWORK_POLICY_CACHE = {}
+
+
+def _role_env(prefix, role):
+    return os.environ.get(f"{prefix}_{str(role).upper()}", '').strip()
+
+
+def role_network_policy(role):
+    """The parsed allow-list for `role` (a tuple of ip_network), or None when
+    the role has no policy. Raises ValueError on a malformed entry: a typo in
+    an allow-list must never degrade to "allow everything"."""
+    raw = _role_env('POLARIS_NETWORK_POLICY', role)
+    if not raw:
+        return None
+    cached = _NETWORK_POLICY_CACHE.get(raw)
+    if cached is not None:
+        return cached
+    nets = []
+    for item in raw.split(','):
+        item = item.strip()
+        if not item:
+            continue
+        try:
+            nets.append(ipaddress.ip_network(item, strict=False))
+        except ValueError as exc:
+            raise ValueError(
+                f"POLARIS_NETWORK_POLICY_{str(role).upper()}: {item!r} is not "
+                f"an IP address or CIDR ({exc})") from None
+    if not nets:
+        raise ValueError(
+            f"POLARIS_NETWORK_POLICY_{str(role).upper()} is set but names no "
+            f"network (unset it to allow every address)")
+    nets = tuple(nets)
+    _NETWORK_POLICY_CACHE[raw] = nets
+    return nets
+
+
+def network_policy_allows(role, ip):
+    """True when `role` has no policy or `ip` lies inside one of its networks.
+    An address that does not parse never matches an allow-list."""
+    nets = role_network_policy(role)
+    if nets is None:
+        return True
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    return any(addr in net for net in nets)
+
+
+def _role_int_env(prefix, role, default):
+    raw = _role_env(prefix, role)
+    if raw == '':
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        raise ValueError(
+            f"{prefix}_{str(role).upper()} must be a non-negative integer, "
+            f"got {raw!r}") from None
+    if value < 0:
+        raise ValueError(
+            f"{prefix}_{str(role).upper()} must be a non-negative integer, "
+            f"got {raw!r}")
+    return value
+
+
+def session_max_for_role(role):
+    """Concurrent live sessions allowed per account of `role`; 0 = unlimited."""
+    return _role_int_env('POLARIS_SESSION_MAX', role, SESSION_DEFAULT_MAX.get(role, 0))
+
+
+def session_idle_minutes_for_role(role):
+    """Idle timeout in minutes for `role`; 0 = none (the 8h cookie lifetime
+    still applies)."""
+    return _role_int_env('POLARIS_SESSION_IDLE_MINUTES', role,
+                         SESSION_DEFAULT_IDLE.get(role, 0))
+
+
+def validate_role_policies():
+    """Parse every role's policy once and return the effective limits, or
+    raise ValueError on the first malformed value. app.py calls this at
+    import so a bad value fails the boot, never a login."""
+    summary = {}
+    for role in ROLES:
+        nets = role_network_policy(role)
+        summary[role] = {
+            'network_policy': [str(n) for n in nets] if nets else None,
+            'max_sessions':   session_max_for_role(role),
+            'idle_minutes':   session_idle_minutes_for_role(role),
+        }
+    return summary
+
+
+def register_session(get_conn, user):
+    """INSERT the OperatorSession row for a fresh login, enforce the role's
+    concurrent cap, purge stale rows, and return the new session id.
+
+    The cap evicts the LEAST-RECENTLY-SEEN live sessions beyond it rather
+    than refusing the new login: an operator locked out of their own account
+    by their own stale tabs would be the wrong failure. The account row is
+    locked for the transaction so concurrent logins serialize and the cap is
+    exact (C9: the count is tested with real threads).
+    """
+    sid = secrets.token_hex(32)
+    role = user['role']
+    cap = session_max_for_role(role)
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT user_id FROM AppUser WHERE user_id = %s FOR UPDATE",
+                        (user['user_id'],))
+            cur.execute(
+                "INSERT INTO OperatorSession (session_id, user_id, role, client_ip) "
+                "VALUES (%s, %s, %s, %s)",
+                (sid, user['user_id'], role, client_ip()[:45]))
+            evicted = []
+            if cap > 0:
+                cur.execute(
+                    "UPDATE OperatorSession "
+                    "   SET revoked_at = now(), revoke_reason = 'evicted' "
+                    " WHERE session_id IN ("
+                    "       SELECT session_id FROM OperatorSession "
+                    "        WHERE user_id = %s AND revoked_at IS NULL "
+                    "        ORDER BY last_seen_at DESC, created_at DESC "
+                    "       OFFSET %s) "
+                    "RETURNING session_id",
+                    (user['user_id'], cap))
+                evicted = [r['session_id'] for r in cur.fetchall()]
+            # Hygiene: rows nobody can present any more.
+            cur.execute(
+                "DELETE FROM OperatorSession "
+                " WHERE COALESCE(revoked_at, last_seen_at) < now() - make_interval(days => %s)",
+                (SESSION_PURGE_DAYS,))
+        conn.commit()
+    finally:
+        conn.close()
+    for old in evicted:
+        _audit(get_conn, 'SESSION_EVICTED',
+               username=user['username'], user_id=user['user_id'],
+               detail=f"POLARIS_SESSION_MAX_{role.upper()}={cap}; "
+                      f"evicted the least-recently-seen session {old[:12]}")
+    return sid
+
+
+def revoke_session(get_conn, sid, reason):
+    """Mark one registry row revoked (idempotent)."""
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE OperatorSession SET revoked_at = now(), revoke_reason = %s "
+                " WHERE session_id = %s AND revoked_at IS NULL",
+                (reason, sid))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _end_session():
+    """Clear the cookie session and send the browser to /login (GETs keep a
+    ?next= so the operator lands back where they were after re-authenticating)."""
+    session.clear()
+    if request.method == 'GET':
+        return redirect(url_for('login', next=request.url))
+    return redirect(url_for('login'))
+
+
+def validate_session(get_conn):
+    """before_request hook for the registry. Returns None when the request may
+    proceed, or a redirect response after ending the session because its
+    registry row is missing / revoked, its account is deactivated, it idled
+    past the role's timeout, or the client's address is outside the role's
+    network policy. Touches last_seen_at at most once per SESSION_TOUCH_SECONDS.
+    """
+    if not session.get('logged_in') or request.endpoint == 'static':
+        return None
+    sid      = session.get('sid')
+    role     = session.get('role')
+    user_id  = session.get('user_id')
+    username = session.get('username')
+    if not sid or not isinstance(sid, str):
+        # A cookie from before v9.189, or one without a registry id: anonymous.
+        return _end_session()
+    idle = session_idle_minutes_for_role(role)
+    ip = client_ip()
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT s.revoked_at, u.is_active, "
+                "       (%(idle)s > 0 AND s.last_seen_at < now() - make_interval(mins => %(idle)s)) AS idle_expired, "
+                "       (s.last_seen_at < now() - make_interval(secs => %(touch)s)) AS stale "
+                "  FROM OperatorSession s JOIN AppUser u ON u.user_id = s.user_id "
+                " WHERE s.session_id = %(sid)s AND s.user_id = %(uid)s",
+                {'idle': idle, 'touch': SESSION_TOUCH_SECONDS, 'sid': sid, 'uid': user_id})
+            row = cur.fetchone()
+            if row is None or row['revoked_at'] is not None:
+                ended = None          # already audited when it was revoked, or never registered
+            elif not row['is_active']:
+                ended = ('deactivated', 'SESSION_REVOKED', 'account deactivated')
+            elif row['idle_expired']:
+                ended = ('idle', 'SESSION_EXPIRED',
+                         f"idle longer than POLARIS_SESSION_IDLE_MINUTES_{role.upper()}={idle}")
+            elif not network_policy_allows(role, ip):
+                ended = ('network_policy', 'NETWORK_POLICY_DENIED',
+                         f"live session presented from {ip} outside "
+                         f"POLARIS_NETWORK_POLICY_{role.upper()}")
+            else:
+                ended = False
+            if ended:
+                cur.execute(
+                    "UPDATE OperatorSession SET revoked_at = now(), revoke_reason = %s "
+                    " WHERE session_id = %s AND revoked_at IS NULL",
+                    (ended[0], sid))
+                conn.commit()
+            elif ended is False and row['stale']:
+                cur.execute("UPDATE OperatorSession SET last_seen_at = now() WHERE session_id = %s",
+                            (sid,))
+                conn.commit()
+    finally:
+        conn.close()
+    if row is None or row['revoked_at'] is not None:
+        return _end_session()
+    if ended:
+        _audit(get_conn, ended[1], username=username, user_id=user_id, detail=ended[2])
+        return _end_session()
+    return None
 
 
 def is_safe_next_url(next_url):

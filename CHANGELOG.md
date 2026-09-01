@@ -5,6 +5,106 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.189 — 2026-09-01 (Roadmap P1.7: session and origin hardening; the webauthn 3.x major with its own ceremony test pass, ML-DSA-65 offered first, per-role network policy, and a server-side session registry)
+
+A Polaris session was, until this ship, a signed cookie and nothing else:
+the server could not count, expire, or revoke one, a deactivated account
+kept its live session until the cookie aged out, and the second factor's
+library had a major waiting since P0.3 that nobody had exercised. P1.7
+closes all of it, and every new control is on by configuration only,
+validated at boot, announced in the log stream, and audited.
+
+  - **webauthn 2.7.1 to 3.0.0, with its own test pass.** The API Polaris
+    calls is unchanged; what changed underneath is that malformed client
+    payloads now surface as `InvalidRegistrationResponse` /
+    `InvalidAuthenticationResponse` instead of raw parser errors, duplicate
+    CBOR keys are rejected, the Android and TPM attestation roots are
+    refreshed, and the library gained the ML-DSA COSE algorithms (-48/-49/
+    -50) verified through cryptography's ML-DSA implementation. The pass is
+    `WebAuthnCeremonyTests`: a synthetic authenticator (a real P-256 key, or
+    a real ML-DSA-65 key) driven through the app's OWN register/begin,
+    register/finish, login, assert/begin, and assert/finish routes, so the
+    full verification path runs on both ceremonies; then the refusals:
+    a replayed signature counter, a wrong origin, a stale challenge, and a
+    malformed payload that is a 400, never a 500. `pyasn1-modules` joins
+    the runtime pins; pip-audit strict is clean; the Dependabot ignore block
+    is gone (removing it is the decision record).
+  - **Post-quantum ready on the relying-party side.** ML-DSA-65 (COSE -49),
+    the token signature's own parameter set, is offered FIRST in the
+    registration options and accepted at verification, ahead of ES256,
+    EdDSA, and RS256. An authenticator that implements ML-DSA enrolls a
+    post-quantum credential with no Polaris change; the settings page now
+    labels every credential's algorithm ("ML-DSA-65 (post-quantum)",
+    "ES256 (ECDSA P-256)", ...). PQC-POSTURE.md stays honest: no shipping
+    authenticator implements it as of 2026-09, so WebAuthn remains in the
+    still-classical section, with the gate now stated as hardware-only.
+  - **Attestation policy** (`docs/operator/WEBAUTHN-ROLLOUT.md` Phase 6):
+    `POLARIS_WEBAUTHN_USER_VERIFICATION=required` demands the PIN or
+    biometric on enrollment AND every assertion (the UV flag is checked
+    server-side on both ceremonies; it was hardcoded off before);
+    `POLARIS_WEBAUTHN_ATTESTATION` sets the conveyance asked of the browser;
+    `POLARIS_WEBAUTHN_REQUIRE_ATTESTATION=1` refuses an enrollment whose
+    attestation format is `none`; `POLARIS_WEBAUTHN_ALLOWED_AAGUIDS` pins
+    the fleet to listed authenticator models. Refusals are audited as
+    `WEBAUTHN_REGISTRATION_REFUSED`. The stored attestation format is now
+    the wire name (`none`, `packed`, ...) rather than the enum repr the old
+    code wrote, which the rollout doc's Phase 5 filter had always assumed.
+  - **Per-role network policy.** `POLARIS_NETWORK_POLICY_<ROLE>` is a
+    comma-separated allow-list of CIDRs or addresses. Enforced inside
+    `authenticate()` only once the password is right and answered with the
+    generic error, so it is not a password oracle (audited
+    `NETWORK_POLICY_DENIED`, no failed-login bump), and on every live
+    session, so a cookie replayed from outside the range, or a range
+    tightened after login, ends the session on that request. Always on the
+    proxy-aware `client_ip()`: X-Forwarded-For counts only behind
+    `POLARIS_TRUST_PROXY`, and the tests prove a spoofed header is ignored
+    without it. A malformed entry raises at boot instead of allowing all.
+  - **Server-side session registry.** `OperatorSession` (migration
+    `2026-09-01-001`): one row per login, consulted on every authenticated
+    request. `POLARIS_SESSION_MAX_<ROLE>` caps concurrent sessions per
+    account by evicting the least-recently-seen one (never the new login;
+    the account row is locked per login so the cap is exact under real
+    threads, C9); `POLARIS_SESSION_IDLE_MINUTES_<ROLE>` idles a session out;
+    a deactivated account's session ends on its next request; logout,
+    `polaris user-passwd`, and `polaris user-deactivate` revoke rows
+    themselves; a cookie without a live row is anonymous (every operator
+    re-authenticates once after this upgrade). Admin defaults: 3 sessions,
+    30 minutes idle; other roles unlimited unless configured. `last_seen_at`
+    is written at most once a minute; rows purge after 30 days. The
+    registry is working state; every eviction, expiry, and denial is an
+    `AuthAuditLog` row (`SESSION_EVICTED`, `SESSION_EXPIRED`,
+    `SESSION_REVOKED`), which stays append-only. The CLI's `audit-log
+    --event-type` now knows all twenty-one event types.
+  - Found by exercising the reload path while proving the migration
+    (up, down, idempotent re-up, and the refusal while v9.189 audit rows
+    exist): `01_schema.sql`'s drop list was missing `ZkVerificationNonce`
+    (a plain CREATE TABLE further down the same file) and `AuditAccessLog`
+    (a plain CREATE TABLE in migration 2026-05-15-003), so a
+    `00_load_all.sql` re-run on a non-empty database stopped at the first,
+    and `polaris-migrate.sh --up` after a reload (which resets
+    `schema_version` and re-applies every migration) failed on the second.
+    Both are in the list; `check_schema_reload_idempotent` pins every table
+    created by the schema or a migration against it, and the reload plus a
+    full re-migration was run on a populated database to prove it.
+  - Plumbing and docs: the prod compose passes every knob through from
+    `polaris.env` (which also, for the first time, makes the documented
+    `POLARIS_WEBAUTHN_HARDWARE_ONLY` reach the container); the Helm chart
+    gains `app.extraEnv`; `polaris.env.example` documents the block;
+    HARDENING.md section 13, WEBAUTHN-ROLLOUT.md Phase 6, DEPLOYMENT.md,
+    SECRETS.md, SECURITY.md (events and recommendations 9 and 10),
+    DATA-MODEL.md, KUBERNETES.md, PRODUCTION-READINESS.md, PQC-POSTURE.md.
+  - `check_session_origin_hardening` pins the whole shape (the 3.x pin
+    and the removed ignore, the policy knobs and the UV wiring on both
+    ceremonies, the login and live-session policy enforcement on
+    `client_ip()`, the registry's boot validation, hook, migration, CLI
+    revocation, tests, docs, and compose pass-through) with a
+    discrimination test per failure mode. 101 checks, 98 check-layer
+    tests; the product suite runs 463 web, 66 CLI, and 88 constraint and
+    property tests green on the migrated database. Next opener: P1.8
+    abuse controls, where the redis-py major waits the same way.
+
+---
+
 ## v9.188 — 2026-09-01 (P0.9 follow-through: readiness probes were answered by postgres's temporary init server; every probe now goes over TCP)
 
 The v9.187 push went red on the offsite S3 drill, a job that ship never

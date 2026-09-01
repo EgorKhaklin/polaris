@@ -3321,3 +3321,104 @@ def test_postgres_probes_use_tcp_check_discriminates(tmp_path):
     # The drill stopped dumping the primary's logs on failure.
     write({"scripts/polaris-offsite-drill.sh": DRILL.replace('docker logs "$PRI" 2>&1 | tail -40 >&2 || true\n', "")})
     assert checks.check_postgres_probes_use_tcp(tmp_path)[0].level == "FAIL", "must FAIL without the log dump"
+
+
+def test_session_origin_hardening_check_discriminates(tmp_path):
+    WA = ("POLARIS_WEBAUTHN_ATTESTATION POLARIS_WEBAUTHN_USER_VERIFICATION "
+          "POLARIS_WEBAUTHN_REQUIRE_ATTESTATION POLARIS_WEBAUTHN_ALLOWED_AAGUIDS\n"
+          "COSEAlgorithmIdentifier.ML_DSA_65\nclass AttestationPolicyViolation(Exception): pass\n"
+          "def verify_registration():\n    x(require_user_verification=_require_user_verification())\n"
+          "def verify_authentication():\n    x(require_user_verification=_require_user_verification())\n")
+    SEC = ("POLARIS_NETWORK_POLICY_ POLARIS_SESSION_MAX_ POLARIS_SESSION_IDLE_MINUTES_\n"
+           "def network_policy_allows(role, ip):\n    pass\n"
+           "def validate_role_policies():\n    pass\n"
+           "def register_session(get_conn, user):\n    pass\n"
+           "def revoke_session(get_conn, sid, reason):\n    pass\n"
+           "def authenticate(get_conn, username, password):\n"
+           "    ip = client_ip()\n    if not network_policy_allows(user['role'], ip):\n"
+           "        _audit(get_conn, 'NETWORK_POLICY_DENIED')\n"
+           "def login_user(user, get_conn=None):\n    session['sid'] = register_session(get_conn, user)\n"
+           "def logout_user(get_conn):\n    revoke_session(get_conn, session['sid'], 'logout')\n"
+           "def validate_session(get_conn):\n    row['revoked_at']; row['is_active']; idle = 1\n"
+           "    network_policy_allows(role, client_ip())\n")
+    APP = ("_ROLE_POLICY = security.validate_role_policies()\n"
+           "_WEBAUTHN_POLICY = webauthn_auth.validate_policy()\n"
+           "@app.before_request\ndef _session_before_request():\n    return security.validate_session(get_db)\n"
+           "except webauthn_auth.AttestationPolicyViolation as e:\n    pass\n")
+    MIG = ("CREATE TABLE IF NOT EXISTS OperatorSession (\n"
+           "'NETWORK_POLICY_DENIED', 'SESSION_EVICTED', 'SESSION_EXPIRED', 'SESSION_REVOKED', "
+           "'WEBAUTHN_REGISTRATION_REFUSED'\n")
+    COMPOSE = ('POLARIS_NETWORK_POLICY_ADMIN: "${POLARIS_NETWORK_POLICY_ADMIN:-}"\n'
+               'POLARIS_SESSION_MAX_ADMIN: "${POLARIS_SESSION_MAX_ADMIN:-}"\n'
+               'POLARIS_WEBAUTHN_ATTESTATION: "${POLARIS_WEBAUTHN_ATTESTATION:-none}"\n')
+    good = {
+        "polaris_web/requirements.txt": "webauthn==3.0.0\npyasn1-modules==0.4.2\n",
+        ".github/dependabot.yml": 'ignore:\n  - dependency-name: "redis"\n',
+        "polaris_web/webauthn_auth.py": WA,
+        "polaris_web/security.py": SEC,
+        "polaris_web/app.py": APP,
+        "polaris_sql/migrations/2026-09-01-001-operator-session.up.sql": MIG,
+        "polaris_sql/migrations/2026-09-01-001-operator-session.down.sql": "DROP TABLE IF EXISTS OperatorSession;\n",
+        "polaris_sql/01_schema.sql": "DROP TABLE IF EXISTS OperatorSession CASCADE;\n",
+        "polaris_cli/polaris.py": "UPDATE OperatorSession\nUPDATE OperatorSession\n",
+        "polaris_web/test_app.py": "class WebAuthnCeremonyTests: ...\nclass NetworkPolicyTests: ...\nclass SessionLimitTests: ...\n",
+        "docs/operator/HARDENING.md": "POLARIS_NETWORK_POLICY_<ROLE> POLARIS_SESSION_MAX_<ROLE>\n",
+        "docs/operator/WEBAUTHN-ROLLOUT.md": "POLARIS_WEBAUTHN_ATTESTATION\n",
+        "docs/operator/SECURITY.md": "SESSION_EVICTED\n",
+        "polaris_web/docker-compose.prod.yml": COMPOSE,
+    }
+
+    def write(overrides=None):
+        files = dict(good); files.update(overrides or {})
+        for rel, body in files.items():
+            f = tmp_path / rel
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text(body)
+
+    write()
+    assert checks.check_session_origin_hardening(tmp_path)[0].level == "OK", "must PASS on the good fixture"
+
+    write({"polaris_web/requirements.txt": "webauthn==2.7.1\npyasn1-modules==0.4.2\n"})
+    assert checks.check_session_origin_hardening(tmp_path)[0].level == "FAIL", "must FAIL on the 2.x pin"
+
+    write({".github/dependabot.yml": 'ignore:\n  - dependency-name: "webauthn"\n'})
+    assert checks.check_session_origin_hardening(tmp_path)[0].level == "FAIL", "must FAIL while Dependabot still ignores webauthn"
+
+    write({"polaris_web/webauthn_auth.py": WA.replace(
+        "def verify_authentication():\n    x(require_user_verification=_require_user_verification())\n",
+        "def verify_authentication():\n    x(require_user_verification=False)\n")})
+    assert checks.check_session_origin_hardening(tmp_path)[0].level == "FAIL", "must FAIL when UV is hardcoded off"
+
+    write({"polaris_web/security.py": SEC.replace(
+        "    ip = client_ip()\n    if not network_policy_allows(user['role'], ip):\n"
+        "        _audit(get_conn, 'NETWORK_POLICY_DENIED')\n", "    pass\n")})
+    assert checks.check_session_origin_hardening(tmp_path)[0].level == "FAIL", "must FAIL when login skips the network policy"
+
+    write({"polaris_web/security.py": SEC.replace("row['is_active']; ", "")})
+    assert checks.check_session_origin_hardening(tmp_path)[0].level == "FAIL", "must FAIL when live sessions ignore deactivation"
+
+    write({"polaris_web/app.py": APP.replace("    return security.validate_session(get_db)\n", "    return None\n")})
+    assert checks.check_session_origin_hardening(tmp_path)[0].level == "FAIL", "must FAIL when the registry hook is not wired"
+
+    write({"polaris_web/docker-compose.prod.yml": COMPOSE.replace('POLARIS_SESSION_MAX_ADMIN: "${POLARIS_SESSION_MAX_ADMIN:-}"\n', "")})
+    assert checks.check_session_origin_hardening(tmp_path)[0].level == "FAIL", "must FAIL when compose drops a knob"
+
+
+def test_schema_reload_idempotent_check_discriminates(tmp_path):
+    SCHEMA = ("DROP TABLE IF EXISTS Beta CASCADE;\nDROP TABLE IF EXISTS Alpha CASCADE;\n"
+              "CREATE TABLE Alpha (id int);\n")
+    MIG = "CREATE TABLE IF NOT EXISTS Beta (id int);\n"
+
+    def write(schema=SCHEMA, mig=MIG):
+        (tmp_path / "polaris_sql" / "migrations").mkdir(parents=True, exist_ok=True)
+        (tmp_path / "polaris_sql" / "01_schema.sql").write_text(schema)
+        (tmp_path / "polaris_sql" / "migrations" / "2026-01-01-001-beta.up.sql").write_text(mig)
+
+    write()
+    assert checks.check_schema_reload_idempotent(tmp_path)[0].level == "OK", "must PASS when every table is dropped"
+
+    write(mig="CREATE TABLE Gamma (id int);\n")
+    assert checks.check_schema_reload_idempotent(tmp_path)[0].level == "FAIL", "must FAIL on a migration table missing from the drop list"
+
+    write(schema="DROP TABLE IF EXISTS Beta CASCADE;\nCREATE TABLE Alpha (id int);\n")
+    assert checks.check_schema_reload_idempotent(tmp_path)[0].level == "FAIL", "must FAIL on a schema table missing from the drop list"

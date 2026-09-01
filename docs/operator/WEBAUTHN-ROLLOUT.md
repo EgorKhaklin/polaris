@@ -36,6 +36,16 @@ As of v8.97, WebAuthn is:
   external security key like YubiKey). Default: software authenticators
   permitted (lets the operator self-bootstrap with platform
   authenticator before procuring hardware keys).
+- **Attestation policy (v9.189).** `POLARIS_WEBAUTHN_ATTESTATION`,
+  `POLARIS_WEBAUTHN_USER_VERIFICATION`, `POLARIS_WEBAUTHN_REQUIRE_ATTESTATION`,
+  and `POLARIS_WEBAUTHN_ALLOWED_AAGUIDS` raise the bar step by step
+  (Phase 6 below). Defaults reproduce the pre-v9.189 behaviour exactly.
+- **Post-quantum ready (v9.189).** The registration options offer ML-DSA-65
+  (COSE -49) first, the same parameter set as the token signature, then
+  ES256, EdDSA, and RS256. An authenticator that implements ML-DSA enrolls
+  a post-quantum credential and the settings page labels it; every
+  shipping authenticator today enrolls a classical one. The relying party
+  is ready before the hardware is.
 
 The four states the system can be in for a given user:
 
@@ -206,6 +216,48 @@ path (second admin or printed recovery code) is in place first.
 
 ---
 
+## Phase 6: attestation policy (optional, v9.189)
+
+Phase 5 restricts the KIND of authenticator. Phase 6 restricts what the
+authenticator must PROVE. Each step is one environment variable, read at
+start (a bad value refuses the boot), and each refusal is audited as
+`WEBAUTHN_REGISTRATION_REFUSED` with `policy:` in the detail.
+
+1. **Require user verification.** `POLARIS_WEBAUTHN_USER_VERIFICATION=required`
+   makes the PIN or biometric mandatory on enrollment AND on every
+   assertion (the UV flag is checked server-side on both ceremonies), so a
+   security key lifted from a desk cannot complete the second factor without
+   its PIN. `preferred` (the default) asks for it but accepts a key that did
+   not perform it; `discouraged` never asks.
+2. **Ask for a real attestation.** `POLARIS_WEBAUTHN_ATTESTATION=direct`
+   asks the browser to pass the authenticator's own attestation statement
+   through (`indirect` lets the client anonymise it; `enterprise` requests
+   the enterprise attestation an authenticator may hold; `none`, the
+   default, asks for nothing). The library verifies packed, TPM, FIDO-U2F,
+   Android-key, Android-SafetyNet, and Apple statements against their roots.
+3. **Refuse enrollments without one.**
+   `POLARIS_WEBAUTHN_REQUIRE_ATTESTATION=1` refuses a registration whose
+   attestation format is `none`, which is what a browser returns when the
+   authenticator cannot or will not attest. Only meaningful together with
+   `direct`.
+4. **Pin the fleet.** `POLARIS_WEBAUTHN_ALLOWED_AAGUIDS=<uuid>,<uuid>` refuses
+   any authenticator model not on the list. An AAGUID is only trustworthy
+   inside a verified attestation (under `none` the client zeroes it, so the
+   list would refuse everything), so this step presumes steps 2 and 3.
+
+Existing enrollments are not re-examined when a knob changes; the policy
+applies to new registrations and, for user verification, to every assertion.
+The pre-v9.189 credential rows stored the attestation format as the enum
+repr (`AttestationFormat.NONE`); v9.189 stores the wire name (`none`,
+`packed`, ...), which is what the Phase 5 filter above matches.
+
+The credential's algorithm is visible on `/settings/webauthn`
+("ML-DSA-65 (post-quantum)" or "ES256 (ECDSA P-256)" and so on), so an
+operator can see which enrollments are already post-quantum once such
+authenticators exist.
+
+---
+
 ## Recovery procedures
 
 ### Operator lost their authenticator + deadline passed
@@ -274,7 +326,8 @@ These verify the operator runbook + script ship together.
 
 ## Related
 
-- `polaris_web/webauthn_auth.py` (459 lines, full implementation)
+- `polaris_web/webauthn_auth.py` (full implementation; v9.189 adds the
+  attestation policy and the ML-DSA-65 offer)
 - `scripts/polaris-recover-admin.sh` (v8.97 recovery flow)
 - `scripts/polaris-set-webauthn-deadline.sh` (v9.23 deadline-set
   helper)

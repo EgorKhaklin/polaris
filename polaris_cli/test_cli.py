@@ -548,6 +548,30 @@ class UserPasswdCommandTests(CLIBaseTestCase):
         self.assertEqual(row['failed_login_count'], 0)
         self.assertIsNone(row['locked_until'])
 
+    def test_passwd_revokes_live_web_sessions(self):
+        """v9.189 (P1.7): rotating a password ends the account's live web
+        sessions; the app treats the revoked registry rows as anonymous."""
+        conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        with conn.cursor() as cur:
+            cur.execute("SELECT user_id FROM AppUser WHERE username='admin'")
+            uid = cur.fetchone()['user_id']
+            cur.execute("INSERT INTO OperatorSession (session_id, user_id, role, client_ip) "
+                        "VALUES (%s, %s, 'admin', '127.0.0.1')", ('a1' * 32, uid))
+            conn.commit()
+        conn.close()
+
+        r = run_cli('user-passwd', 'admin', '--password', 'NewAdminPass123!')
+        self.assertIn('Revoked 1 live web session', r.stdout)
+
+        conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        with conn.cursor() as cur:
+            cur.execute("SELECT revoked_at, revoke_reason FROM OperatorSession WHERE session_id=%s",
+                        ('a1' * 32,))
+            row = cur.fetchone()
+        conn.close()
+        self.assertIsNotNone(row['revoked_at'])
+        self.assertEqual(row['revoke_reason'], 'password_changed')
+
     def test_passwd_unknown_user_fails(self):
         r = run_cli('user-passwd', 'nobody', '--password', 'Whatever123!',
                     expect_success=False)
@@ -561,6 +585,28 @@ class UserPasswdCommandTests(CLIBaseTestCase):
 
 
 class UserDeactivateCommandTests(CLIBaseTestCase):
+
+    def test_deactivate_revokes_live_web_sessions(self):
+        """v9.189 (P1.7): deactivation ends the account's live web sessions now,
+        not at their next request."""
+        conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        with conn.cursor() as cur:
+            cur.execute("SELECT user_id FROM AppUser WHERE username='operator'")
+            uid = cur.fetchone()['user_id']
+            cur.execute("INSERT INTO OperatorSession (session_id, user_id, role, client_ip) "
+                        "VALUES (%s, %s, 'operator', '127.0.0.1')", ('b2' * 32, uid))
+            conn.commit()
+        conn.close()
+
+        r = run_cli('user-deactivate', 'operator')
+        self.assertIn('Revoked 1 live web session', r.stdout)
+
+        conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        with conn.cursor() as cur:
+            cur.execute("SELECT revoke_reason FROM OperatorSession WHERE session_id=%s", ('b2' * 32,))
+            row = cur.fetchone()
+        conn.close()
+        self.assertEqual(row['revoke_reason'], 'deactivated')
 
     def test_deactivate_sets_is_active_false(self):
         r = run_cli('user-deactivate', 'operator')

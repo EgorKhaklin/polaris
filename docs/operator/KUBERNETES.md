@@ -70,6 +70,12 @@ cannot mint a signing key, so `/api/health` reports custody degraded until you
 add `polaris_signing_key` to the Secret ([`KEY-CEREMONY.md`](KEY-CEREMONY.md);
 the PKCS#11 and KMS custody drivers work here too, through the same env).
 
+The v9.189 session and origin controls (`POLARIS_NETWORK_POLICY_<ROLE>`,
+`POLARIS_SESSION_MAX_<ROLE>`, `POLARIS_SESSION_IDLE_MINUTES_<ROLE>`, and the
+`POLARIS_WEBAUTHN_*` attestation policy) go in `app.extraEnv` as
+`{name, value}` pairs; a malformed value refuses the pod's boot, which the
+startup probe surfaces. [`HARDENING.md`](HARDENING.md) section 13.
+
 ## Verify
 
 ```bash

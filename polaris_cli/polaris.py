@@ -915,8 +915,18 @@ def cmd_user_passwd(args):
             if row is None:
                 sys.stderr.write(red(f"No such user: {args.username}\n"))
                 sys.exit(1)
+            # v9.189 (P1.7): a rotated password ends every live web session of
+            # the account; the app treats the revoked registry rows as anonymous
+            # on their next request.
+            cur.execute("""
+                UPDATE OperatorSession
+                   SET revoked_at = now(), revoke_reason = 'password_changed'
+                 WHERE user_id = %s AND revoked_at IS NULL
+            """, (row['user_id'],))
+            revoked = cur.rowcount
             conn.commit()
         print(green(f"✓ Password updated for {args.username} (#{row['user_id']})"))
+        print(dim(f"  Revoked {revoked} live web session(s)."))
     except psycopg2.Error as e:
         conn.rollback()
         sys.stderr.write(red(f"Database error: {db_error_message(e)}\n"))
@@ -943,8 +953,17 @@ def cmd_user_deactivate(args):
             if row is None:
                 sys.stderr.write(red(f"No such user: {args.username}\n"))
                 sys.exit(1)
+            # v9.189 (P1.7): deactivation ends the account's live web sessions
+            # now (the app would also catch is_active on their next request).
+            cur.execute("""
+                UPDATE OperatorSession
+                   SET revoked_at = now(), revoke_reason = 'deactivated'
+                 WHERE user_id = %s AND revoked_at IS NULL
+            """, (row['user_id'],))
+            revoked = cur.rowcount
             conn.commit()
         print(green(f"✓ Deactivated {args.username} (#{row['user_id']}, role={row['role']})"))
+        print(dim(f"  Revoked {revoked} live web session(s)."))
         print(dim(f"  Audit history preserved. To reactivate:"))
         print(dim(f"    polaris query \"UPDATE AppUser SET is_active=TRUE WHERE username='{args.username.lower()}'\""))
     except psycopg2.Error as e:
@@ -1224,7 +1243,15 @@ def build_parser():
                       choices=['LOGIN_SUCCESS', 'LOGIN_FAILED', 'LOGIN_LOCKED',
                                'LOGOUT', 'PASSWORD_CHANGED', 'ACCOUNT_CREATED',
                                'ACCOUNT_DEACTIVATED', 'CSRF_REJECTED',
-                               'AUTH_REQUIRED', 'AUTHZ_DENIED', 'RATE_LIMITED'],
+                               'AUTH_REQUIRED', 'AUTHZ_DENIED', 'RATE_LIMITED',
+                               # v8.97 WebAuthn lifecycle
+                               'WEBAUTHN_REGISTERED', 'WEBAUTHN_ASSERTED',
+                               'WEBAUTHN_ASSERTION_FAILED', 'WEBAUTHN_DEREGISTERED',
+                               'EMERGENCY_PASSWORD_LOGIN_AUTHORIZED',
+                               # v9.189 session/origin hardening
+                               'NETWORK_POLICY_DENIED', 'SESSION_EVICTED',
+                               'SESSION_EXPIRED', 'SESSION_REVOKED',
+                               'WEBAUTHN_REGISTRATION_REFUSED'],
                       help='Filter by event type')
     p_al.add_argument('--username', help='Filter by username')
     p_al.add_argument('--since-minutes', type=int,

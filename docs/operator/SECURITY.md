@@ -326,6 +326,12 @@ existed). With auth in place this becomes mandatory for forensics and compliance
 | `AUTHZ_DENIED`    | Logged-in user with wrong role |
 | `AUTH_REQUIRED`   | Non-GET request without session |
 | `RATE_LIMITED`    | IP exceeded login or write rate limit |
+| `WEBAUTHN_REGISTERED` / `WEBAUTHN_ASSERTED` / `WEBAUTHN_ASSERTION_FAILED` / `WEBAUTHN_DEREGISTERED` / `EMERGENCY_PASSWORD_LOGIN_AUTHORIZED` | v8.97 WebAuthn lifecycle |
+| `NETWORK_POLICY_DENIED` | v9.189. A correct password from outside the role's `POLARIS_NETWORK_POLICY_<ROLE>` (answered with the generic error), or a live session presented from outside it (ended) |
+| `SESSION_EVICTED` | v9.189. A login exceeded `POLARIS_SESSION_MAX_<ROLE>`; the least-recently-seen session was revoked |
+| `SESSION_EXPIRED` | v9.189. A session idled past `POLARIS_SESSION_IDLE_MINUTES_<ROLE>` |
+| `SESSION_REVOKED` | v9.189. A live session of a deactivated account was ended on its next request |
+| `WEBAUTHN_REGISTRATION_REFUSED` | v9.189. An enrollment the library rejected, or one the attestation policy refused (`policy:` in the detail) |
 
 Each row records IP address (honoring X-Forwarded-For only when `POLARIS_TRUST_PROXY=1`,
 mitigating CWE-345/348 IP-spoofing), user agent (truncated), and free-text detail.
@@ -681,6 +687,30 @@ See `DEVNOTES/ships/duress-codes.md` for the full mechanism design.
     WHERE is_active
     ORDER BY last_login_at NULLS FIRST;
    ```
+
+9. **Pin admin sessions to the networks they should come from (v9.189).** Set
+   `POLARIS_NETWORK_POLICY_ADMIN` to the office / VPN / bastion ranges; a correct
+   password from anywhere else is answered with the generic error and audited as
+   `NETWORK_POLICY_DENIED`, and a live session that moves outside the range ends
+   on its next request. Keep the default admin cap (3 concurrent sessions) and
+   idle timeout (30 minutes) unless the operation needs otherwise; review live
+   sessions and end one by hand when needed:
+   ```sql
+   SELECT session_id, u.username, s.role, s.client_ip, s.created_at, s.last_seen_at
+     FROM OperatorSession s JOIN AppUser u USING (user_id)
+    WHERE s.revoked_at IS NULL ORDER BY s.last_seen_at DESC;
+   UPDATE OperatorSession SET revoked_at = now(), revoke_reason = 'operator'
+    WHERE session_id = '<id>';
+   ```
+   `polaris user-passwd` and `polaris user-deactivate` revoke the account's
+   sessions themselves. [HARDENING.md](HARDENING.md) section 13 has the full model.
+
+10. **Raise the WebAuthn bar once every operator has a hardware key (v9.189):**
+    `POLARIS_WEBAUTHN_USER_VERIFICATION=required` (PIN or biometric on every
+    assertion), then `POLARIS_WEBAUTHN_ATTESTATION=direct` with
+    `POLARIS_WEBAUTHN_REQUIRE_ATTESTATION=1` and, for a fixed fleet,
+    `POLARIS_WEBAUTHN_ALLOWED_AAGUIDS`. [WEBAUTHN-ROLLOUT.md](WEBAUTHN-ROLLOUT.md)
+    Phase 6.
 
 ---
 

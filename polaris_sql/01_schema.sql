@@ -41,11 +41,26 @@
 --     doesn't leave it stale-with-no-FK-target after AppUser is
 --     recreated. The migration --up will recreate it when
 --     polaris-migrate.sh --up runs after the load.)
+--   - OperatorSession (migration-added v9.189 via
+--     2026-09-01-001-operator-session.up.sql; the server-side session
+--     registry, same treatment as OperatorWebauthnCredential: it
+--     references AppUser, so it is dropped here and recreated by the
+--     migration.)
 -- Pre-v9.02 these were missing, so 00_load_all.sql wasn't fully
 -- idempotent against a non-empty polaris_test — operators had to
 -- dropdb+createdb before re-running. Filed against v8.99 → v8.100
 -- → v9.01; closed v9.02.
+-- v9.189: ZkVerificationNonce (baseline-added at R2, also created by migration
+-- 2026-06-04-001) was missing here, so a 00_load_all.sql re-run on a non-empty
+-- database stopped at its plain CREATE TABLE. check_schema_reload_idempotent pins
+-- the list against every CREATE TABLE below.
+DROP TABLE IF EXISTS ZkVerificationNonce    CASCADE;
+-- v9.189: AuditAccessLog (migration-added 2026-05-15-003, plain CREATE TABLE)
+-- was missing too, so `polaris-migrate.sh --up` after a reload (which resets
+-- schema_version and re-applies every migration) failed on it.
+DROP TABLE IF EXISTS AuditAccessLog         CASCADE;
 DROP TABLE IF EXISTS IndividualErasureEvent CASCADE;
+DROP TABLE IF EXISTS OperatorSession         CASCADE;
 DROP TABLE IF EXISTS OperatorWebauthnCredential CASCADE;
 DROP TABLE IF EXISTS LifecycleArchiveCheckpoint CASCADE;
 DROP TABLE IF EXISTS DuressEvent            CASCADE;

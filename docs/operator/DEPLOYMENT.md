@@ -67,6 +67,13 @@ The seeded accounts still apply and must be rotated on first login (below).
 | `POLARIS_RATE_LIMIT_BACKEND`   | `auto` / `memory` / `redis`. `auto` picks Redis when `POLARIS_REDIS_URL` is set, otherwise in-memory             | `auto`       |
 | `POLARIS_REDIS_URL`            | Redis URL (e.g. `redis://127.0.0.1:6379/0`). REQUIRED for accurate per-IP rate limiting when `POLARIS_WORKERS>1` | unset        |
 | `POLARIS_WORKERS`              | Gunicorn worker count. `gunicorn.conf.py` re-exports the resolved value so security.py sees it                   | 4 (gunicorn) |
+| `POLARIS_NETWORK_POLICY_<ROLE>` | v9.189. Comma-separated CIDRs/addresses the role (ADMIN/OPERATOR/AUDITOR) may log in from and keep a session on; evaluated on the proxy-aware client address. A malformed value refuses the boot | unset (any) |
+| `POLARIS_SESSION_MAX_<ROLE>`   | v9.189. Concurrent live sessions per account; 0 = unlimited. The least-recently-seen seat is evicted (audited `SESSION_EVICTED`) | ADMIN 3, others 0 |
+| `POLARIS_SESSION_IDLE_MINUTES_<ROLE>` | v9.189. Idle timeout for the role's sessions; 0 = none. The 8h absolute lifetime always applies | ADMIN 30, others 0 |
+| `POLARIS_WEBAUTHN_ATTESTATION` | v9.189. Attestation conveyance asked of the browser at enrollment: `none` / `indirect` / `direct` / `enterprise` | `none` |
+| `POLARIS_WEBAUTHN_USER_VERIFICATION` | v9.189. `preferred` / `required` / `discouraged`; `required` demands PIN or biometric on enrollment AND every assertion | `preferred` |
+| `POLARIS_WEBAUTHN_REQUIRE_ATTESTATION` | v9.189. When `1`, an enrollment whose attestation format is `none` is refused (audited `WEBAUTHN_REGISTRATION_REFUSED`) | unset |
+| `POLARIS_WEBAUTHN_ALLOWED_AAGUIDS` | v9.189. Comma-separated authenticator model AAGUIDs; any other model is refused at enrollment (meaningful with `direct` attestation) | unset (any) |
 
 ### Rate-limiter backend (R8-2 / v7.5)
 

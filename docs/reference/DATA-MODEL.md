@@ -210,6 +210,24 @@ raises `insufficient_privilege`. Constraint C1.
 | `event_timestamp` | TIMESTAMP NOT NULL DEFAULT now() |
 | `extra` | JSONB |
 
+### `OperatorSession` (v9.189 / roadmap P1.7)
+
+The server-side registry of operator web sessions, added by migration
+`2026-09-01-001-operator-session`. One row per login; consulted on every
+authenticated request by `security.validate_session`. Working state, not
+audit-of-record: it is updated in place and purged 30 days after last
+activity, while every eviction, expiry, and policy denial it causes is
+written to `AuthAuditLog`.
+
+| column | type | notes |
+|---|---|---|
+| `session_id` | VARCHAR(64) PK | 32 random bytes as hex; carried in the signed cookie as `sid` |
+| `user_id` | INTEGER NOT NULL FK AppUser | ON DELETE NO ACTION |
+| `role` | VARCHAR(20) NOT NULL | `admin` \| `operator` \| `auditor` at login |
+| `client_ip` | VARCHAR(45) | proxy-aware client address at login |
+| `created_at` / `last_seen_at` | TIMESTAMPTZ NOT NULL | `last_seen_at` touched at most once a minute |
+| `revoked_at` / `revoke_reason` | TIMESTAMPTZ / VARCHAR(20) | co-NULL; reason in `logout`, `evicted`, `idle`, `deactivated`, `network_policy`, `password_changed`, `operator` |
+
 ---
 
 ## Records & substrate tables

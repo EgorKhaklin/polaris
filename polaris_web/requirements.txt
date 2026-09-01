@@ -38,12 +38,18 @@ packaging==26.3
 # ---- Runtime: Postgres driver ----
 psycopg2-binary==2.9.12
 
-# ---- Runtime: WebAuthn (operator MFA, v8.97) ----
-webauthn==2.7.1
+# ---- Runtime: WebAuthn (operator MFA, v8.97; the 3.x major taken in v9.189,
+# roadmap P1.7, with its own ceremony test pass: it adds the ML-DSA COSE
+# algorithms (-48/-49/-50, verified through cryptography's mldsa module), wraps
+# malformed client payloads in InvalidRegistrationResponse /
+# InvalidAuthenticationResponse instead of raw parser errors, rejects
+# duplicate CBOR keys, and refreshes the Android/TPM attestation roots) ----
+webauthn==3.0.0
 cbor2==6.1.4
 cryptography==50.0.1
 pyOpenSSL==26.4.0
 pyasn1==0.6.4
+pyasn1-modules==0.4.2
 cffi==2.1.1
 pycparser==3.0
 typing_extensions==4.16.0

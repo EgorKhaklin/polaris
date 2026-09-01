@@ -511,6 +511,18 @@ a follow-up gated on operator demand).
   the WebAuthn prompt. Default: `Polaris`.
 - `POLARIS_DOMAIN` — used as the WebAuthn relying-party ID;
   assertions are origin-bound to this domain.
+- `POLARIS_WEBAUTHN_ATTESTATION` (v9.189) — `none` (default), `indirect`,
+  `direct`, or `enterprise`: the attestation conveyance asked of the
+  browser at enrollment.
+- `POLARIS_WEBAUTHN_USER_VERIFICATION` (v9.189) — `preferred` (default),
+  `required`, or `discouraged`. `required` demands the PIN or biometric on
+  enrollment AND every assertion, so a stolen key without its PIN cannot
+  satisfy the second factor.
+- `POLARIS_WEBAUTHN_REQUIRE_ATTESTATION=1` (v9.189) — refuse an enrollment
+  whose attestation format is `none`; pair with `direct`.
+- `POLARIS_WEBAUTHN_ALLOWED_AAGUIDS` (v9.189) — comma-separated authenticator
+  model AAGUIDs; any other model is refused at enrollment.
+  WEBAUTHN-ROLLOUT.md Phase 6 has the full policy discussion.
 
 ### 7.5 Disabling MFA on an account
 

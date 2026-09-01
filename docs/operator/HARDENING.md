@@ -181,6 +181,67 @@ is configured by env alone and drilled in CI ([`DR.md`](DR.md)).
 - `firewalld` and Docker cooperate better than ufw does, but the same rule
   applies: publish nothing beyond 80/443.
 
+## 13. Application-level origin and session limits (v9.189)
+
+The firewall in section 3 decides which addresses reach the edge. These
+controls decide which addresses may hold WHICH ROLE, and how long a session
+lives. They are enforced by the app, on the client address it trusts
+(`X-Forwarded-For` counts only behind `POLARIS_TRUST_PROXY`, which the
+compose stack sets for the caddy hop), and every decision is written to
+`AuthAuditLog`. All of them are read from `/etc/polaris/polaris.env` and a
+malformed value refuses the start, so a typo can never mean "allow all".
+
+```bash
+# Per-role allow-lists (comma-separated CIDRs or addresses). Unset = anywhere.
+POLARIS_NETWORK_POLICY_ADMIN=10.20.0.0/16,203.0.113.7
+POLARIS_NETWORK_POLICY_OPERATOR=10.20.0.0/16
+# Concurrent live sessions per account (0 = unlimited) and idle minutes (0 = none).
+POLARIS_SESSION_MAX_ADMIN=3                # default 3
+POLARIS_SESSION_IDLE_MINUTES_ADMIN=30      # default 30
+POLARIS_SESSION_MAX_OPERATOR=0             # default 0 (unlimited)
+POLARIS_SESSION_IDLE_MINUTES_OPERATOR=0    # default 0 (none)
+```
+
+What each control does:
+
+- **Network policy at login.** A correct password presented from outside the
+  role's networks is answered with the same generic error as a wrong one (so
+  the policy is not a password oracle) and audited as `NETWORK_POLICY_DENIED`;
+  the failed-login counter is not touched. Policies are per role: an operator
+  policy never constrains an admin and vice versa.
+- **Network policy on live sessions.** Every authenticated request re-checks
+  the address; a session that moves outside the range (a stolen cookie
+  replayed from elsewhere, or a range tightened after login) ends on that
+  request, audited the same way.
+- **Concurrent cap.** The server keeps one `OperatorSession` row per login.
+  Above the cap the least-recently-seen session is revoked (`SESSION_EVICTED`),
+  never the new login, so an operator's own stale tabs cannot lock them out.
+  The cap is exact under concurrent logins.
+- **Idle timeout.** A session with no request for the configured minutes ends
+  on its next request (`SESSION_EXPIRED`). The 8-hour absolute lifetime of the
+  cookie still applies on top.
+- **Revocation.** A deactivated account's live sessions end on their next
+  request (`SESSION_REVOKED`); `polaris user-passwd` and
+  `polaris user-deactivate` revoke them immediately; logout revokes its own row;
+  a cookie without a live registry row is anonymous, which is also why every
+  operator re-authenticates once after the v9.189 upgrade.
+
+Review and end sessions by hand:
+
+```sql
+SELECT s.session_id, u.username, s.role, s.client_ip, s.created_at, s.last_seen_at
+  FROM OperatorSession s JOIN AppUser u USING (user_id)
+ WHERE s.revoked_at IS NULL ORDER BY s.last_seen_at DESC;
+UPDATE OperatorSession SET revoked_at = now(), revoke_reason = 'operator'
+ WHERE session_id = '<id>';
+```
+
+The registry is working state, purged 30 days after last activity; the audit
+trail of every eviction, expiry, and denial is `AuthAuditLog`, which stays
+append-only. On Kubernetes the same variables go in `app.extraEnv` of the
+Helm values. The WebAuthn attestation policy that pairs with these controls
+is [WEBAUTHN-ROLLOUT.md](WEBAUTHN-ROLLOUT.md) Phase 6.
+
 ## Verify
 
 ```bash

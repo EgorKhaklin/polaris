@@ -58,6 +58,9 @@ spec:
             - {name: POLARIS_USE_REAL_PQC, value: {{ ternary "1" "0" .Values.app.realPqc | quote }}}
             - {name: POLARIS_PQC_SIGNING_KEY_FILE, value: /run/secrets/polaris_signing_key}
             - {name: POLARIS_TRUST_PROXY, value: "1"}
+            {{- range .Values.app.extraEnv }}
+            - {name: {{ .name | quote }}, value: {{ .value | quote }}}
+            {{- end }}
           ports:
             - name: http
               containerPort: 8000
