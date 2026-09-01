@@ -1103,6 +1103,52 @@ groups:
 (ad-hoc dev environment without the prod image), `/metrics`
 returns HTTP 503 with a plain-text message rather than crashing.
 
+### Distributed tracing (v9.187 / roadmap P1.6)
+
+Opt-in OpenTelemetry traces across the app and the database, joined to the
+structured logs by the v9.122 correlation id. OFF by default; one knob:
+
+```bash
+POLARIS_OTEL=1                                   # the switch (announced in the log stream)
+OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo:4318    # your collector (this is the overlay default)
+```
+
+With it on, every request gets a server span (name = the route template;
+`http.target` is the query-stripped path; `polaris.request_id` carries the
+correlation id) and every psycopg2 call a client span inside it carrying the
+parameterized statement template only — never values, never identity. An
+inbound `traceparent` is honoured only behind `POLARIS_TRUST_PROXY`,
+symmetric with `X-Request-ID`. Health probes are excluded by default
+(`POLARIS_OTEL_EXCLUDE=/api/health/live,/api/health/ready`). Sampling uses
+the standard `OTEL_TRACES_SAMPLER[_ARG]` knobs.
+
+**The join, in practice:** a caller quotes an `X-Request-ID` → TraceQL
+`{span.polaris.request_id="<id>"}` finds the trace; a log line's `trace_id`
+field finds the same trace; `docker logs polaris-app | jq
+'select(.trace_id=="<id>")'` goes the other way. `tracing.py` documents the
+vocation constraints (ephemeral ids, nothing persisted to the DB, exception
+class names only).
+
+### Grafana dashboards-as-code (v9.187)
+
+The dashboards are committed JSON, not UI state:
+[`deploy/observability/grafana/`](../../deploy/observability/grafana/)
+provisions two dashboards (`polaris-overview` — the /metrics headliners with
+the alert thresholds drawn in; `polaris-traces` — TraceQL panels keyed on
+the correlation id) plus the Prometheus and Tempo datasources. Run the whole
+stack as an overlay:
+
+```bash
+docker compose -f docker-compose.prod.yml -f docker-compose.observability.yml up -d
+```
+
+(Prometheus, Alertmanager, Tempo, Grafana on the stack network; Grafana on
+`127.0.0.1:3000` only — it can display the duress signal, so it never faces
+the public internet. See
+[`deploy/observability/README.md`](../../deploy/observability/README.md).)
+CI validates the dashboards and drills the OTLP wire path on every push
+(`scripts/polaris-trace-drill.sh`).
+
 ---
 
 ## Encryption at rest (v8.93)

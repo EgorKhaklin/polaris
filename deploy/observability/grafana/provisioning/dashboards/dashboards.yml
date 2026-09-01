@@ -1,0 +1,17 @@
+# Polaris — Grafana dashboard provisioning (v9.187 / roadmap P1.6).
+#
+# Loads every committed dashboard JSON from the mounted folder. The dashboards
+# are code: edit the JSON in deploy/observability/grafana/dashboards/, commit,
+# redeploy — the UI copies are disposable.
+apiVersion: 1
+
+providers:
+  - name: polaris
+    folder: Polaris
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

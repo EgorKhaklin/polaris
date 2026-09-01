@@ -1,0 +1,27 @@
+# Polaris — Grafana datasource provisioning (v9.187 / roadmap P1.6).
+#
+# Dashboards-as-code: Grafana boots with its datasources DECLARED, not
+# clicked together. The service names match docker-compose.observability.yml;
+# point url at your own Prometheus/Tempo if you run them elsewhere.
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: polaris-prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+
+  - name: Tempo
+    uid: polaris-tempo
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
+    editable: false
+    jsonData:
+      # The X-Request-ID a caller quotes finds its traces directly:
+      # {span.polaris.request_id="<id>"} in the TraceQL search.
+      search:
+        hide: false

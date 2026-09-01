@@ -113,7 +113,7 @@ Four layers. The schema is the core; everything else is a client of it.
 | [`polaris_zk/`](polaris_zk/) | Plonky2 Merkle-inclusion prover (Rust), plus [`witness2/`](polaris_zk/witness2/), an independent Python reimplementation that must agree with it. |
 | [`polaris_cli/`](polaris_cli/) | Operator CLI: issuance, revocation, recovery, audit queries, without a browser. |
 | [`polaris_checks/`](polaris_checks/) | The invariant layer. 77 checks, each with a tested failure mode. `python3 -m polaris_checks.run` gates CI. |
-| [`scripts/`](scripts/), [`deploy/`](deploy/) | Operator tooling (backup, restore, archive, purge, migrate, recover-admin) and observability config. |
+| [`scripts/`](scripts/), [`deploy/`](deploy/) | Operator tooling (backup, restore, archive, purge, migrate, recover-admin) and observability config (Prometheus alerts, Grafana dashboards-as-code, opt-in OTel tracing). |
 
 The production topology is five services: a self-built Caddy TLS edge, gunicorn, PgBouncer, PostgreSQL with pgBackRest WAL archiving, and Redis. Every service runs as non-root with all Linux capabilities dropped.
 

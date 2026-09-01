@@ -5,6 +5,67 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.187 — 2026-09-01 (Roadmap P1.6: opt-in distributed tracing and dashboards-as-code, the correlation id joining logs to traces)
+
+The v9.27 "no tracing system" constraint held while Polaris had no operators;
+this ship supersedes it for deployments that need cross-request latency
+attribution, keeping what made the refusal right: nothing traces unless the
+operator switches it on, the switch announces itself in the log stream, and
+nothing identity-shaped leaves the app.
+
+  - `polaris_web/tracing.py`: opt-in OpenTelemetry tracing, gated on
+    `POLARIS_OTEL` (off = the request hooks are inert no-ops; on = a
+    `tracing_enabled` log line at startup, `tracing_unavailable` if the
+    packages are missing — a silent no-op in either direction is the
+    invisible-telemetry failure mode). The server span is HAND-ROLLED, not
+    auto-instrumented, so its attribute surface is exactly what the vocation
+    allows: the route template as the span name (unmatched paths collapse to
+    `UNMATCHED`, the v9.130 cardinality rule), the query-stripped path in
+    `http.target` (filters and cursors stay out of telemetry), the v9.122
+    correlation id as `polaris.request_id`, and on exceptions the CLASS name
+    only (messages can embed user input or DB coordinates). psycopg2 client
+    spans ride inside the request trace carrying the parameterized statement
+    template, never values. An inbound `traceparent` is honoured only behind
+    `POLARIS_TRUST_PROXY`, symmetric with X-Request-ID: an untrusted client
+    does not choose how its requests correlate. gunicorn workers each build
+    their own provider post-fork (no preload, no dead-exporter-thread hazard).
+  - The correlation id now joins logs to traces BOTH ways:
+    `observability.structured_log` lines carry `trace_id`/`span_id` while a
+    span is recording (via a provider hook — observability.py still imports
+    no telemetry backend), and the id a caller quotes finds its trace with
+    TraceQL `{span.polaris.request_id="<id>"}`. The id's own v9.122 semantics
+    are untouched: ephemeral, minted per request, never in a DB row.
+  - Dashboards as code: `deploy/observability/grafana/` provisions the
+    Prometheus and Tempo datasources plus two committed dashboards —
+    `polaris-overview` (the /metrics headliners with the alert thresholds of
+    polaris-alerts.yml drawn in; the duress panel is the alarm on a wall) and
+    `polaris-traces` (TraceQL panels keyed on the correlation id, slow and
+    errored requests). `docker-compose.observability.yml` runs Prometheus,
+    Alertmanager, Tempo, and the provisioned Grafana as an overlay on the
+    production stack, images digest-pinned, Grafana on 127.0.0.1:3000 only
+    (it can display the duress signal: the /metrics access rule applies).
+    `deploy/observability/tempo.yml` bounds trace retention to 7 days.
+  - CI job `trace-drill` runs `scripts/polaris-trace-drill.sh` with the
+    RUNTIME requirements only (tracing must work with exactly what the prod
+    image ships): dashboards validated as provisionable JSON querying the
+    real metric names, the overlay rendered against the production compose
+    file, and the OTLP wire path proven — the exported span's payload
+    carries the caller's exact X-Request-ID and the request's query string
+    is asserted ABSENT from the bytes. The DB half (client spans inside the
+    request trace, template-only statements) is `DistributedTracingTests`
+    (12 tests) in the product suite, which also proves the log join on a
+    real `auth_failure` line and both traceparent postures.
+  - The check layer caught the ship's one real bug before CI did:
+    `check_dockerfile_modules` flagged that the prod image COPYs modules
+    explicitly and `tracing.py` was not among them (a startup
+    ModuleNotFoundError in the container). Fixed; `check_distributed_tracing`
+    (with its discrimination test) pins the rest: the opt-in gate, the proxy
+    gate on traceparent, the duress panel on the overview dashboard, the
+    wire-scrub assertion in the drill, and the app wiring. 98 checks, 95
+    check-layer tests. Next opener: P1.7 session and origin hardening.
+
+---
+
 ## v9.186 — 2026-09-01 (Roadmap P1.5: the Kubernetes/Helm reference profile, boots to healthy on kind with enforced policies and the restricted standard)
 
 Compose on one Linux host stays the single-node path (P1.1); this gives an

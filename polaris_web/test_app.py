@@ -7626,6 +7626,206 @@ class UiLinkIntegrityTests(PolarisTestCase):
         self.assertIn('Apply Transition', r.get_data(as_text=True))
 
 
+
+# ============================================================================
+# DISTRIBUTED TRACING TESTS (v9.187 / roadmap P1.6)
+# ============================================================================
+
+try:
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
+        InMemorySpanExporter,
+    )
+    _OTEL_TEST_OK = True
+except ImportError:
+    _OTEL_TEST_OK = False
+
+import tracing as polaris_tracing
+import observability as observability_mod
+import json
+
+
+@unittest.skipUnless(_OTEL_TEST_OK, 'opentelemetry packages not installed')
+class DistributedTracingTests(UnauthenticatedTestCase):
+    """v9.187 — OTel traces across app and DB, and the vocation constraints.
+
+    The wiring under test is tracing.py: opt-in activation, a hand-rolled
+    server span carrying the route template and the v9.122 correlation id
+    (never the query string), psycopg2 client spans inside the same trace,
+    structured_log lines carrying trace_id/span_id (the log half of the
+    join), and an untrusted client unable to choose its trace context.
+
+    Uses the activate() test seam with an in-memory exporter — no env
+    mutation, no OTLP wire; the wire path is scripts/polaris-trace-drill.sh.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.exporter = InMemorySpanExporter()
+        self.assertTrue(polaris_tracing.activate(
+            span_processor=SimpleSpanProcessor(self.exporter)))
+
+    def tearDown(self):
+        polaris_tracing.shutdown()
+        super().tearDown()
+
+    # ------ helpers ------
+
+    def _server_spans(self):
+        return [s for s in self.exporter.get_finished_spans()
+                if s.kind.name == 'SERVER']
+
+    # ------ off by default ------
+
+    def test_tracing_is_opt_in(self):
+        # The default environment must not enable tracing: the env gate is
+        # POLARIS_OTEL (unset in the suites), and with tracing shut down the
+        # registered hooks are inert no-ops on a working app.
+        self.assertNotIn(os.environ.get('POLARIS_OTEL', '').strip().lower(),
+                         ('1', 'true', 'yes'),
+                         'the suite must run with tracing NOT opted in')
+        polaris_tracing.shutdown()
+        self.exporter.clear()
+        r = self.client.get('/login')
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(self.exporter.get_finished_spans(), (),
+                         'no spans may be produced while tracing is off')
+
+    # ------ the request span ------
+
+    def test_request_span_carries_correlation_id(self):
+        r = self.client.get('/login')
+        rid = r.headers['X-Request-ID']
+        spans = self._server_spans()
+        self.assertEqual(len(spans), 1)
+        self.assertEqual(spans[0].attributes.get('polaris.request_id'), rid,
+                         'the span must carry the id the caller was echoed')
+        self.assertEqual(spans[0].name, 'GET /login',
+                         'the span name is the route template')
+        self.assertEqual(spans[0].attributes.get('http.status_code'), 200)
+
+    def test_query_string_never_reaches_the_span(self):
+        marker = 'zz-vocation-scrub-marker'
+        self.client.get(f'/login?filter={marker}')
+        for span in self.exporter.get_finished_spans():
+            self.assertNotIn(marker, repr(dict(span.attributes)),
+                             'query strings (filters, cursors) must not '
+                             'appear in any span attribute')
+
+    def test_unmatched_path_span_name_is_bounded(self):
+        # Same rule as the v9.130 metrics-cardinality test: a probe string
+        # must not mint a per-path span name.
+        marker = 'zzz-unmatched-' + 'x' * 16
+        self.client.get('/' + marker)
+        spans = self._server_spans()
+        self.assertEqual(len(spans), 1)
+        self.assertEqual(spans[0].name, 'GET UNMATCHED')
+
+    def test_health_probes_excluded_by_default(self):
+        self.client.get('/api/health/live')
+        self.client.get('/api/health/ready')
+        self.assertEqual(self._server_spans(), [],
+                         'the 5s probes must not generate spans by default')
+
+    # ------ traces across app AND db ------
+
+    def test_db_client_span_joins_the_request_trace(self):
+        self.client.get('/api/health')  # readiness does a real DB round trip
+        spans = self.exporter.get_finished_spans()
+        server = [s for s in spans if s.kind.name == 'SERVER']
+        db = [s for s in spans if s.attributes.get('db.system') == 'postgresql']
+        self.assertTrue(server and db, f'need both span kinds, got '
+                        f'{[s.name for s in spans]}')
+        self.assertEqual(db[0].context.trace_id, server[0].context.trace_id,
+                         'the DB span must be part of the request trace')
+
+    def test_db_statement_is_template_only(self):
+        # C2 posture: the parameterized template ships, the values never do.
+        self.client.post('/login', data={'username': 'admin',
+                                         'password': 'wrong-password-zz'})
+        db = [s for s in self.exporter.get_finished_spans()
+              if s.attributes.get('db.system') == 'postgresql']
+        self.assertTrue(db)
+        for span in db:
+            stmt = span.attributes.get('db.statement', '')
+            self.assertNotIn('wrong-password-zz', stmt)
+            self.assertNotIn("'admin'", stmt,
+                             'parameter VALUES must never appear in db.statement')
+
+    # ------ logs join traces ------
+
+    def test_structured_log_carries_trace_id_of_the_request_span(self):
+        import contextlib
+        import io as _io
+        buf = _io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            # A failed login emits structured_log('auth_failure') INSIDE the
+            # traced request — the realistic join, not a synthetic one.
+            self.client.post('/login', data={'username': 'admin',
+                                             'password': 'wrong-password-zz'})
+        lines = [json.loads(l) for l in buf.getvalue().splitlines()
+                 if l.startswith('{')]
+        joined = [l for l in lines if l.get('event') == 'auth_failure']
+        self.assertTrue(joined, 'expected an auth_failure structured log line')
+        server = self._server_spans()
+        self.assertTrue(server)
+        want = format(server[-1].context.trace_id, '032x')
+        self.assertEqual(joined[-1].get('trace_id'), want,
+                         'the log line must carry the trace id of the span '
+                         'it was emitted inside')
+        self.assertEqual(joined[-1].get('request_id'),
+                         server[-1].attributes.get('polaris.request_id'),
+                         'log line and span must agree on the correlation id')
+
+    def test_log_lines_clean_after_shutdown(self):
+        import contextlib
+        import io as _io
+        polaris_tracing.shutdown()
+        buf = _io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            observability_mod.structured_log('post_shutdown_probe')
+        line = json.loads(buf.getvalue())
+        self.assertNotIn('trace_id', line,
+                         'with tracing off, log lines carry no trace fields')
+
+    # ------ untrusted clients cannot steer correlation ------
+
+    def test_untrusted_traceparent_not_honoured(self):
+        inbound = '00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbb-01'
+        self.client.get('/login', headers={'traceparent': inbound})
+        spans = self._server_spans()
+        self.assertEqual(len(spans), 1)
+        self.assertNotEqual(format(spans[0].context.trace_id, '032x'),
+                            'a' * 32,
+                            'an untrusted client must not choose the trace '
+                            'context (symmetric with X-Request-ID)')
+
+    def test_traceparent_honoured_behind_trusted_proxy(self):
+        os.environ['POLARIS_TRUST_PROXY'] = '1'
+        try:
+            inbound = ('00-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-'
+                       'bbbbbbbbbbbbbbbb-01')
+            self.client.get('/login', headers={'traceparent': inbound})
+            spans = self._server_spans()
+            self.assertEqual(len(spans), 1)
+            self.assertEqual(format(spans[0].context.trace_id, '032x'),
+                             'a' * 32,
+                             'behind a trusted proxy the edge trace context '
+                             'is joined, matching X-Request-ID semantics')
+        finally:
+            os.environ.pop('POLARIS_TRUST_PROXY', None)
+
+    def test_distinct_trace_per_request(self):
+        self.client.get('/login')
+        self.client.get('/login')
+        spans = self._server_spans()
+        self.assertEqual(len(spans), 2)
+        self.assertNotEqual(spans[0].context.trace_id,
+                            spans[1].context.trace_id,
+                            'trace context must not leak across requests '
+                            '(the teardown detach is load-bearing)')
+
+
 if __name__ == '__main__':
     # Pull in property-based invariant tests (C1, C2, C3) so they run as
     # part of the main suite. The import is at the bottom so test_app.py

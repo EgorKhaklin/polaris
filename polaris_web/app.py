@@ -76,6 +76,7 @@ import zk
 import webauthn_auth
 import observability  # v9.31 freeze condition 6 — operator-readable metrics surface
 import pqc_signing    # v9.58 — issuance signature comes from the signing module
+import tracing        # v9.187 (P1.6) — opt-in OpenTelemetry distributed tracing
 
 # v8.93 — Prometheus-compatible /metrics endpoint. The dependency is
 # optional at runtime: if prometheus_client is unavailable, /metrics
@@ -547,6 +548,19 @@ def _metrics_after_request(response):
 def _correlation_after_request(response):
     response.headers['X-Request-ID'] = observability.get_request_id()
     return response
+
+
+# v9.187 (roadmap P1.6) — opt-in distributed tracing. A no-op unless the
+# operator sets POLARIS_OTEL truthy AND the opentelemetry packages are
+# installed; then every request gets a server span (route template, query
+# string scrubbed, the v9.122 correlation id stamped as polaris.request_id)
+# and every psycopg2 call a client span inside it — traces across app and DB.
+# The correlation id joins logs to traces: observability.structured_log lines
+# carry trace_id/span_id whenever a span is recording. Registered AFTER the
+# correlation hooks above so the id is bound before the span is stamped. See
+# tracing.py for the vocation constraints (opt-in + visible, ephemeral ids,
+# nothing identity-derived, nothing persisted to the DB).
+tracing.init_app(app)
 
 
 @app.context_processor

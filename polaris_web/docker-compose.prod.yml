@@ -170,6 +170,15 @@ services:
       # aggregates them (else a scrape reports only one worker's counts).
       # gunicorn.conf.py clears this dir at master start.
       PROMETHEUS_MULTIPROC_DIR: /tmp/prometheus-multiproc
+      # v9.187 (roadmap P1.6) — opt-in distributed tracing. Empty = OFF (the
+      # default; tracing.py is a no-op). Set POLARIS_OTEL=1 to trace; the
+      # endpoint default matches the observability overlay's Tempo service
+      # (docker-compose.observability.yml). The health probes are excluded by
+      # default — they fire every 5s per worker and are not user requests.
+      POLARIS_OTEL: "${POLARIS_OTEL:-}"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-http://tempo:4318}"
+      OTEL_TRACES_SAMPLER: "${OTEL_TRACES_SAMPLER:-parentbased_always_on}"
+      POLARIS_OTEL_EXCLUDE: "${POLARIS_OTEL_EXCLUDE:-/api/health/live,/api/health/ready}"
       POLARIS_ZK_BINARY: /opt/polaris/zk
       WEB_CONCURRENCY: ${WEB_CONCURRENCY:-4}
       # v9.116: real ML-DSA-65 signing is the production default (liboqs ships in

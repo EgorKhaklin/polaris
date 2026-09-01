@@ -1,0 +1,118 @@
+# ============================================================================
+# docker-compose.observability.yml — the dashboards-as-code stack
+# (v9.187 / roadmap P1.6)
+#
+# An OVERLAY on the production stack, same pattern as the blue-green and
+# custody templates:
+#
+#   docker compose -f docker-compose.prod.yml \
+#                  -f docker-compose.observability.yml up -d
+#
+# What it adds, all on the existing polaris-net:
+#   prometheus    scrapes the app, evaluates the shipped alert rules
+#   alertmanager  routes them to your pager (the P0.10 page path)
+#   tempo         receives the app's OTLP traces (POLARIS_OTEL=1 turns the
+#                 app's exporter on; its endpoint already defaults to
+#                 http://tempo:4318 in docker-compose.prod.yml)
+#   grafana       boots PROVISIONED: datasources and the committed dashboards
+#                 under deploy/observability/grafana/ — nothing clicked
+#                 together, everything reviewable in git
+#
+# Before first up:
+#   echo -n '<a strong password>' > "${POLARIS_SECRETS_DIR:-./secrets}/grafana_admin_password"
+#   echo -n '<your pager webhook url>' > "${POLARIS_SECRETS_DIR:-./secrets}/pager_webhook_url"
+#   and point deploy/observability/prometheus.yml's scrape target at this
+#   stack's app (targets: ['app:8000'], scheme: http — inside polaris-net the
+#   scrape does not cross the TLS edge).
+#
+# Grafana listens on 127.0.0.1:3000 only (operator-internal, like /metrics:
+# it can display the duress signal, so it must never face the public
+# internet). Reach it over SSH forwarding or your management network.
+#
+# Images are digest-pinned (the repo standard): prometheus/alertmanager use
+# the same digests scripts/polaris-page-drill.sh drills with.
+# ============================================================================
+
+services:
+  prometheus:
+    image: prom/prometheus@sha256:5ce7540c3c00ef4ab0c9d2c995c6a5b9c421f44b4a115d97a2c7af3b1c21cbb0
+    container_name: polaris-prometheus
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=30d'
+    volumes:
+      - ../deploy/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../deploy/observability/polaris-alerts.yml:/etc/prometheus/polaris-alerts.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - polaris-net
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options: { max-size: 10m, max-file: '3' }
+
+  alertmanager:
+    image: prom/alertmanager@sha256:690c7b525f4367aa91f73e2f91c632206d32e97c6384bdbf2fb7a861b420340d
+    container_name: polaris-alertmanager
+    restart: unless-stopped
+    volumes:
+      - ../deploy/observability/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      # One line, NOT committed (see deploy/observability/README.md):
+      - ${POLARIS_SECRETS_DIR:-./secrets}/pager_webhook_url:/etc/alertmanager/secrets/pager_webhook_url:ro
+      - alertmanager_data:/alertmanager
+    networks:
+      - polaris-net
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options: { max-size: 10m, max-file: '3' }
+
+  tempo:
+    image: grafana/tempo@sha256:f0561deb1c68ec44d6e6e7e4487f30106c4e5e768642077695b37958b105812a  # 2.10.8
+    container_name: polaris-tempo
+    restart: unless-stopped
+    command: ['-config.file=/etc/tempo.yml']
+    volumes:
+      - ../deploy/observability/tempo.yml:/etc/tempo.yml:ro
+      - tempo_data:/var/tempo
+    networks:
+      - polaris-net
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options: { max-size: 10m, max-file: '3' }
+
+  grafana:
+    image: grafana/grafana@sha256:f772d434e8fab0049deb2b1b30abd43342bcfca1537614aa8d36080232cf4283  # 13.2.1
+    container_name: polaris-grafana
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin_password
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+      GF_ANALYTICS_REPORTING_ENABLED: 'false'
+      GF_ANALYTICS_CHECK_FOR_UPDATES: 'false'
+    volumes:
+      - ../deploy/observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../deploy/observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ${POLARIS_SECRETS_DIR:-./secrets}/grafana_admin_password:/run/secrets/grafana_admin_password:ro
+      - grafana_data:/var/lib/grafana
+    ports:
+      - '127.0.0.1:3000:3000'
+    networks:
+      - polaris-net
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options: { max-size: 10m, max-file: '3' }
+
+volumes:
+  prometheus_data:
+  alertmanager_data:
+  tempo_data:
+  grafana_data:

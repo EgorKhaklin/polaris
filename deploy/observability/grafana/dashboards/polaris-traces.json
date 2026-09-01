@@ -1,0 +1,68 @@
+{
+  "__comment": "Polaris traces (v9.187 / roadmap P1.6). Dashboards-as-code over the Tempo datasource. The correlation id is the join key: an X-Request-ID from a caller or a structured-log line finds its trace via span.polaris.request_id.",
+  "uid": "polaris-traces",
+  "title": "Polaris — Traces",
+  "tags": ["polaris", "provisioned"],
+  "timezone": "utc",
+  "editable": false,
+  "graphTooltip": 0,
+  "refresh": "30s",
+  "schemaVersion": 39,
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "request_id",
+        "label": "X-Request-ID (correlation id)",
+        "type": "textbox",
+        "query": "",
+        "current": { "text": "", "value": "" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "How the correlation join works",
+      "gridPos": { "h": 5, "w": 24, "x": 0, "y": 0 },
+      "options": {
+        "mode": "markdown",
+        "content": "**Log line → trace:** every `structured_log` JSON line carries `trace_id`/`span_id` while its request's span was recording — paste the `trace_id` into Tempo's TraceQL search or Explore.\n\n**X-Request-ID → trace:** the id echoed to a caller (and stamped on every log line as `request_id`) is on the request span as `polaris.request_id`. Type it into the *X-Request-ID* box above; the panel below finds the trace. TraceQL: `{span.polaris.request_id=\"<id>\"}`.\n\n**Trace → log lines:** `docker logs polaris-app | jq 'select(.trace_id==\"<trace_id>\")'`.\n\nIds are ephemeral by design (v9.122): minted per request, never derived from identity, never written to the database. Traces live only in your Tempo under its retention (7 days in the shipped config)."
+      }
+    },
+    {
+      "id": 2,
+      "type": "traces",
+      "title": "Find by correlation id",
+      "description": "Fill the X-Request-ID variable above. Empty matches nothing (by design — this panel answers a quoted id, it is not a firehose).",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 5 },
+      "datasource": { "type": "tempo", "uid": "polaris-tempo" },
+      "targets": [
+        { "refId": "A", "queryType": "traceql", "query": "{resource.service.name=\"polaris-web\" && span.polaris.request_id=\"$request_id\"}", "limit": 20 }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "traces",
+      "title": "Slow requests (> 500ms)",
+      "description": "The P1.9 performance-baseline conversation starts here: which spans inside the request carry the time — the DB client span (statement template, never values) or the app between them?",
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 13 },
+      "datasource": { "type": "tempo", "uid": "polaris-tempo" },
+      "targets": [
+        { "refId": "A", "queryType": "traceql", "query": "{resource.service.name=\"polaris-web\" && kind=server && duration > 500ms}", "limit": 20 }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "traces",
+      "title": "Errored requests",
+      "description": "Server spans marked ERROR (5xx or an unhandled exception; status carries the exception CLASS only — messages and stacks stay in the logs, joined by trace_id).",
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 13 },
+      "datasource": { "type": "tempo", "uid": "polaris-tempo" },
+      "targets": [
+        { "refId": "A", "queryType": "traceql", "query": "{resource.service.name=\"polaris-web\" && kind=server && status=error}", "limit": 20 }
+      ]
+    }
+  ]
+}

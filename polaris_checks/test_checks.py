@@ -3202,3 +3202,76 @@ def test_helm_reference_profile_check_discriminates(tmp_path):
     # The SQL not baked into the postgres image.
     write({"polaris_web/Dockerfile.postgres": "FROM postgres\n"})
     assert checks.check_helm_reference_profile(tmp_path)[0].level == "FAIL", "must FAIL when the postgres image is not self-contained"
+
+
+def test_distributed_tracing_check_discriminates(tmp_path):
+    TRACING = (
+        "POLARIS_OTEL\ndef is_enabled():\n    pass\n"
+        "tracing_enabled tracing_unavailable\n"
+        "Psycopg2Instrumentor().instrument(tracer_provider=provider)\n"
+        "rule = request.url_rule.rule if request.url_rule else 'UNMATCHED'\n"
+        "span.set_status(StatusCode.ERROR, type(exc).__name__)\n"
+        "if os.environ.get('POLARIS_TRUST_PROXY', '').lower() in _TRUTHY:\n"
+        "    parent = _otel_extract(...)\n"
+        "attributes={'http.target': path}\n"
+    )
+    OVERVIEW = ('{"uid": "polaris-overview", "title": "x", "panels": [{"targets": ['
+                '{"expr": "sum(rate(polaris_requests_total[5m]))"},'
+                '{"expr": "polaris_duress_events_total"}]}]}')
+    TRACES = ('{"uid": "polaris-traces", "title": "x", "panels": [{"targets": ['
+              '{"queryType": "traceql", "query": "{span.polaris.request_id=\\"$id\\"}"}]}]}')
+    DRILL = ("POST /v1/traces\nassert rid.encode() in payload  # X-Request-ID join\n"
+             "assert MARKER.encode() not in payload\n")
+    good = {
+        "polaris_web/tracing.py": TRACING,
+        "polaris_web/observability.py": "def set_trace_context_provider(fn):\n    pass\n_ids = _trace_context_provider()\n",
+        "polaris_web/app.py": "tracing.init_app(app)\n",
+        "polaris_web/requirements.txt": ("opentelemetry-sdk==1.44.0\nopentelemetry-exporter-otlp-proto-http==1.44.0\n"
+                                          "opentelemetry-instrumentation-psycopg2==0.65b0\n"),
+        "polaris_web/docker-compose.prod.yml": 'POLARIS_OTEL: "x"\nOTEL_EXPORTER_OTLP_ENDPOINT: "x"\n',
+        "polaris_web/docker-compose.observability.yml": (
+            "image: grafana/tempo@sha256:x\nimage: grafana/grafana@sha256:y\n"
+            "- ../deploy/observability/grafana/provisioning:/etc/grafana/provisioning:ro\n"
+            "- ../deploy/observability/tempo.yml:/etc/tempo.yml:ro\n"),
+        "deploy/observability/grafana/provisioning/datasources/datasources.yml": "uid: polaris-prometheus\nuid: polaris-tempo\n",
+        "deploy/observability/grafana/provisioning/dashboards/dashboards.yml": "path: /var/lib/grafana/dashboards\n",
+        "deploy/observability/grafana/dashboards/polaris-overview.json": OVERVIEW,
+        "deploy/observability/grafana/dashboards/polaris-traces.json": TRACES,
+        "deploy/observability/tempo.yml": "receivers:\n  otlp:\n",
+        "scripts/polaris-trace-drill.sh": DRILL,
+        ".github/workflows/ci.yml": "run: bash scripts/polaris-trace-drill.sh\n",
+        "polaris_web/test_app.py": "class DistributedTracingTests: ...\n",
+        "docs/operator/OPERATIONS.md": "### Distributed tracing (v9.187)\n",
+        "deploy/observability/README.md": "docker-compose.observability.yml\n",
+    }
+
+    def write(overrides=None):
+        files = dict(good); files.update(overrides or {})
+        for rel, body in files.items():
+            f = tmp_path / rel
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text(body)
+
+    write()
+    assert checks.check_distributed_tracing(tmp_path)[0].level == "OK", "must PASS on the good fixture"
+
+    # Tracing without the opt-in gate (always-on telemetry).
+    write({"polaris_web/tracing.py": TRACING.replace("POLARIS_OTEL\ndef is_enabled():\n    pass\n", "")})
+    assert checks.check_distributed_tracing(tmp_path)[0].level == "FAIL", "must FAIL without the POLARIS_OTEL gate"
+
+    # Inbound traceparent honoured from anyone (untrusted client steers correlation).
+    write({"polaris_web/tracing.py": TRACING.replace("POLARIS_TRUST_PROXY", "ANY_CLIENT")})
+    assert checks.check_distributed_tracing(tmp_path)[0].level == "FAIL", "must FAIL when traceparent is not proxy-gated"
+
+    # A dashboard that dropped the duress panel (the alarm off the wall).
+    write({"deploy/observability/grafana/dashboards/polaris-overview.json":
+           OVERVIEW.replace('{"expr": "polaris_duress_events_total"}', '{"expr": "polaris_up"}')})
+    assert checks.check_distributed_tracing(tmp_path)[0].level == "FAIL", "must FAIL when the overview omits the duress metric"
+
+    # A drill that stopped asserting the query string absent from the wire.
+    write({"scripts/polaris-trace-drill.sh": DRILL.replace("assert MARKER.encode() not in payload\n", "")})
+    assert checks.check_distributed_tracing(tmp_path)[0].level == "FAIL", "must FAIL when the wire scrub is unproven"
+
+    # The app never wires tracing in.
+    write({"polaris_web/app.py": "pass\n"})
+    assert checks.check_distributed_tracing(tmp_path)[0].level == "FAIL", "must FAIL when app.py does not call tracing.init_app"

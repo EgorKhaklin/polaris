@@ -3267,6 +3267,106 @@ def check_helm_reference_profile(root: pathlib.Path) -> list[Finding]:
                "kind+Calico CI drill with PSS rejection, policy denial, health through the edge, and a rolling restart")
 
 
+def check_distributed_tracing(root: pathlib.Path) -> list[Finding]:
+    """Roadmap P1.6: opt-in OTel traces across app and DB (POLARIS_OTEL-gated,
+    announced in the log stream, vocation-scrubbed), the correlation id joining
+    logs to traces in both directions, Grafana dashboards committed as code and
+    provisioned, and CI proving the wire path with the query string absent."""
+    import json as _json
+    tr = _read(root, "polaris_web/tracing.py")
+    ob = _read(root, "polaris_web/observability.py")
+    ap = _read(root, "polaris_web/app.py")
+    rq = _read(root, "polaris_web/requirements.txt")
+    prod = _read(root, "polaris_web/docker-compose.prod.yml")
+    ovl = _read(root, "polaris_web/docker-compose.observability.yml")
+    ds = _read(root, "deploy/observability/grafana/provisioning/datasources/datasources.yml")
+    dp = _read(root, "deploy/observability/grafana/provisioning/dashboards/dashboards.yml")
+    ov_raw = _read(root, "deploy/observability/grafana/dashboards/polaris-overview.json")
+    trc_raw = _read(root, "deploy/observability/grafana/dashboards/polaris-traces.json")
+    tempo = _read(root, "deploy/observability/tempo.yml")
+    drill = _read(root, "scripts/polaris-trace-drill.sh")
+    ci = _read(root, ".github/workflows/ci.yml")
+    tests = _read(root, "polaris_web/test_app.py")
+    ops = _read(root, "docs/operator/OPERATIONS.md")
+    obs_readme = _read(root, "deploy/observability/README.md")
+    if not (tr and ob and ap and rq and prod and ovl and ds and dp and ov_raw and trc_raw
+            and tempo and drill and ci and tests and ops and obs_readme):
+        return _fail("distributed_tracing", "a P1.6 file is missing (tracing.py, the compose overlay, the grafana "
+                     "provisioning + dashboards, tempo.yml, polaris-trace-drill.sh, or the docs)")
+    if "POLARIS_OTEL" not in tr or "def is_enabled" not in tr:
+        return _fail("distributed_tracing", "tracing.py must gate on POLARIS_OTEL (opt-in is the vocation posture: "
+                     "no telemetry the operator did not switch on)")
+    if "tracing_enabled" not in tr or "tracing_unavailable" not in tr:
+        return _fail("distributed_tracing", "tracing.py must ANNOUNCE both states in the log stream (hidden "
+                     "instrumentation, and silently-missing instrumentation, are both coercion-shaped failures)")
+    for needle, why in (("Psycopg2Instrumentor", "DB client spans (traces across app AND db)"),
+                        ("UNMATCHED", "a bounded span name for unmatched paths (the metrics-cardinality rule)"),
+                        ("type(exc).__name__", "exception CLASS only — messages can carry user input"),
+                        ("POLARIS_TRUST_PROXY", "inbound traceparent honoured only behind a trusted proxy"),
+                        ("'http.target': path", "the query-stripped path (filters/cursors stay out of telemetry)")):
+        if needle not in tr:
+            return _fail("distributed_tracing", f"tracing.py must contain {needle!r}: {why}")
+    if "def set_trace_context_provider" not in ob or "_trace_context_provider()" not in ob:
+        return _fail("distributed_tracing", "observability.structured_log must carry trace_id/span_id via the "
+                     "trace-context hook (the log half of the correlation join)")
+    if "tracing.init_app(app)" not in ap:
+        return _fail("distributed_tracing", "app.py must wire tracing.init_app(app) at import (Flask 3 accepts "
+                     "hooks only before the first request)")
+    for pkg in ("opentelemetry-sdk==", "opentelemetry-exporter-otlp-proto-http==",
+                "opentelemetry-instrumentation-psycopg2=="):
+        if pkg not in rq:
+            return _fail("distributed_tracing", f"requirements.txt must pin {pkg}<version> (the runtime surface "
+                         "ships the optional tracing deps like it ships prometheus_client)")
+    if "POLARIS_OTEL" not in prod or "OTEL_EXPORTER_OTLP_ENDPOINT" not in prod:
+        return _fail("distributed_tracing", "docker-compose.prod.yml must pass the POLARIS_OTEL switch and the "
+                     "OTLP endpoint through to the app service")
+    for needle in ("grafana/tempo@sha256:", "grafana/grafana@sha256:",
+                   "deploy/observability/grafana/provisioning", "tempo.yml"):
+        if needle not in ovl:
+            return _fail("distributed_tracing", f"docker-compose.observability.yml must contain {needle!r} "
+                         "(digest-pinned images, provisioned grafana, the shipped tempo config)")
+    if "polaris-prometheus" not in ds or "polaris-tempo" not in ds:
+        return _fail("distributed_tracing", "datasource provisioning must declare the polaris-prometheus and "
+                     "polaris-tempo uids the dashboards reference")
+    if "/var/lib/grafana/dashboards" not in dp:
+        return _fail("distributed_tracing", "dashboard provisioning must load the mounted dashboards folder")
+    try:
+        ov = _json.loads(ov_raw)
+        trc = _json.loads(trc_raw)
+    except ValueError as exc:
+        return _fail("distributed_tracing", f"a committed dashboard is not valid JSON: {exc}")
+    if ov.get("uid") != "polaris-overview" or not ov.get("panels"):
+        return _fail("distributed_tracing", "polaris-overview.json must be provisionable (uid polaris-overview, panels)")
+    ov_exprs = " ".join(t.get("expr", "") for pnl in ov.get("panels", []) for t in pnl.get("targets", []))
+    for metric in ("polaris_requests_total", "polaris_duress_events_total"):
+        if metric not in ov_exprs:
+            return _fail("distributed_tracing", f"the overview dashboard must query {metric} (the duress panel is "
+                         "the anti-coercion alarm on a wall; dashboards that omit it are decorative)")
+    trc_queries = " ".join(str(t.get("query", "")) for pnl in trc.get("panels", []) for t in pnl.get("targets", []))
+    if trc.get("uid") != "polaris-traces" or "polaris.request_id" not in trc_queries:
+        return _fail("distributed_tracing", "the traces dashboard must join on span.polaris.request_id (the "
+                     "X-Request-ID a caller quotes must find its trace)")
+    if "otlp" not in tempo:
+        return _fail("distributed_tracing", "tempo.yml must receive OTLP (the app exporter speaks OTLP/HTTP)")
+    for needle, why in (("/v1/traces", "the OTLP wire path"),
+                        ("not in payload", "the query string asserted ABSENT from the exported bytes"),
+                        ("X-Request-ID", "the correlation join proven on the wire")):
+        if needle not in drill:
+            return _fail("distributed_tracing", f"polaris-trace-drill.sh must contain {needle!r}: {why}")
+    if "polaris-trace-drill.sh" not in ci:
+        return _fail("distributed_tracing", "ci.yml must run scripts/polaris-trace-drill.sh")
+    if "DistributedTracingTests" not in tests:
+        return _fail("distributed_tracing", "test_app.py must carry DistributedTracingTests (the DB half: psycopg2 "
+                     "client spans inside the request trace, statement templates only)")
+    if "Distributed tracing" not in ops or "docker-compose.observability.yml" not in obs_readme:
+        return _fail("distributed_tracing", "the operator docs must cover tracing (OPERATIONS.md) and the "
+                     "observability overlay (deploy/observability/README.md)")
+    return _ok("distributed_tracing", "P1.6: opt-in OTel tracing (POLARIS_OTEL-gated, announced, vocation-scrubbed: "
+               "route templates, no query strings, statement templates, exception classes only), the correlation id "
+               "joining logs to traces both ways, digest-pinned Tempo+Grafana overlay with provisioned "
+               "dashboards-as-code, and a CI wire drill proving the join with the query string absent")
+
+
 CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_csp_forbids_unsafe_inline,
     check_one_active_token_index,
@@ -3365,6 +3465,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_no_migration_column_drift,
     check_operator_scripts_validate_argv,
     check_template_endpoints_resolve,
+    check_distributed_tracing,
 ]
 
 

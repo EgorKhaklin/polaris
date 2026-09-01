@@ -741,6 +741,36 @@ jobs:
         run: bash scripts/polaris-page-drill.sh
 
   # --------------------------------------------------------------------------
+  # v9.187 (roadmap P1.6) — distributed tracing and dashboards-as-code. The
+  # drill validates the committed Grafana dashboards + provisioning, renders
+  # the observability compose overlay against the production compose file,
+  # and proves the OTLP wire path: the app with POLARIS_OTEL=1 exports a
+  # request span whose payload carries the caller's X-Request-ID (the
+  # correlation join) and never the query string. Deliberately installs the
+  # RUNTIME requirements only — tracing must work with exactly what the prod
+  # image ships. The DB half (psycopg2 client spans inside the request trace)
+  # runs in the `test` job's DistributedTracingTests. Pinned by
+  # check_distributed_tracing.
+  # --------------------------------------------------------------------------
+  trace-drill:
+    name: Tracing wire drill + dashboards-as-code validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install runtime deps (the prod image surface, no dev extras)
+        run: pip install -r polaris_web/requirements.txt
+
+      - name: Trace drill
+        run: bash scripts/polaris-trace-drill.sh
+
+  # --------------------------------------------------------------------------
   # v9.176 (roadmap P1.1) — a fresh Linux server reaches a healthy production
   # stack from deploy/linux/install.sh alone. The packages stage executes for
   # real inside Debian 12 and Rocky Linux 9 containers (Docker's official apt

@@ -9,6 +9,12 @@ RUNNING APPLICATION in production terms.
 1. No new metrics backend. No Prometheus exporter, no StatsD, no
    tracing system. Polaris is a reference implementation; operators
    pipe stdout structured logs wherever they like.
+   (Amended v9.187 / roadmap P1.6: an OPT-IN OpenTelemetry tracing
+   layer now lives in tracing.py — off by default, announced in the
+   log stream when on, nothing identity-derived, nothing persisted
+   to the DB. This module stays backend-free; tracing.py registers
+   the trace-context hook below so structured_log lines can carry
+   trace_id/span_id while a span is recording.)
 
 2. Duress events are the headline metric. An unobservable duress
    signal is the coercion-cover failure mode (a coerced operator's
@@ -59,7 +65,9 @@ from dataclasses import dataclass, field
 # log line to the response a caller saw. This is deliberately NOT a tracing
 # system (no spans, no cross-service propagation, no backend) — it is one field
 # stamped into the existing stdout JSON stream, consistent with the
-# anti-architect constraints above.
+# anti-architect constraints above. (v9.187 / P1.6: tracing.py adds the
+# OPT-IN tracing layer on top; this id becomes the join key between the log
+# stream and the trace — its own semantics are unchanged.)
 #
 # Vocation (anti-coercion): the id is per-request and ephemeral. It lives only
 # in the contextvar below and the X-Request-ID response header. It is NEVER
@@ -115,6 +123,21 @@ def reset_request_id(token: contextvars.Token) -> None:
         _request_id_var.reset(token)
     except (ValueError, LookupError, RuntimeError):
         _request_id_var.set("-")
+
+
+# ---------------------------------------------------------------------------
+# Trace-context hook (v9.187 / roadmap P1.6). tracing.py registers a callable
+# returning {'trace_id': ..., 'span_id': ...} while a span is recording, or
+# None. This module never imports opentelemetry (backend-free by charter);
+# the hook is how structured_log joins the log stream to traces without a
+# dependency. Default None = tracing off = logs exactly as before.
+_trace_context_provider = None
+
+
+def set_trace_context_provider(fn) -> None:
+    """Install (or clear, with None) the trace-context callable."""
+    global _trace_context_provider
+    _trace_context_provider = fn
 
 
 class Counter:
@@ -235,6 +258,16 @@ def structured_log(event: str, **fields) -> None:
         "event": event,
         "request_id": get_request_id(),
     }
+    # v9.187 (P1.6) — the log half of the correlation join: while a span is
+    # recording, every log line carries the trace/span ids. The hook must
+    # never break logging (tracing is an accessory, the log stream is not).
+    if _trace_context_provider is not None:
+        try:
+            _ids = _trace_context_provider()
+            if _ids:
+                record.update(_ids)
+        except Exception:
+            pass
     record.update(fields)
     try:
         sys.stdout.write(json.dumps(record, default=str) + "\n")
