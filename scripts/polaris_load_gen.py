@@ -62,7 +62,6 @@ async def run_load(target, rps, duration, max_concurrency=200):
 
     latencies = []
     statuses = Counter()
-    errors = 0
 
     tasks = []
     next_emit = time.perf_counter()
@@ -111,26 +110,46 @@ async def run_load(target, rps, duration, max_concurrency=200):
             last_report_at = now
             last_report_count = done
 
-    # Drain remaining tasks
+    # Drain remaining tasks. `statuses` is the SINGLE ledger: every request
+    # lands exactly once, under its HTTP status (int key) or an err:* key.
+    # The previous version counted transport errors into BOTH `errors` and
+    # statuses['err:*'], then summarize() summed both: a dead target reported
+    # total = 2x the real request count with rates halved. It also routed
+    # every HTTPError (any 4xx/5xx) into the error branch, so statuses never
+    # held a 429/500 key: the "rate-limited" counter read from statuses.get(429)
+    # was dead code, and the tool could not do its own stated job of smoking
+    # the rate limiter. An HTTP response IS an outcome: ledger it by code,
+    # keep its latency; only a transport failure is an err:* entry.
     if tasks:
         results = await asyncio.gather(*tasks, return_exceptions=True)
         for res in results:
             if isinstance(res, Exception):
-                errors += 1
+                statuses['err:TaskException'] += 1
                 continue
             status, lat, err = res
-            if err:
-                errors += 1
-                statuses[f'err:{err.split(":")[0]}'] += 1
-            else:
+            if status is not None:
                 statuses[status] += 1
                 latencies.append(lat)
+            else:
+                statuses[f'err:{err.split(":")[0]}'] += 1
 
-    return latencies, statuses, errors
+    return latencies, statuses
 
 
-def summarize(latencies, statuses, errors, target, rps, duration, wall):
-    total = sum(statuses.values()) + errors
+def _error_count(statuses):
+    """Transport-level failures, DERIVED from the single ledger."""
+    return sum(v for k, v in statuses.items()
+               if isinstance(k, str) and k.startswith('err:'))
+
+
+def _5xx_count(statuses):
+    return sum(v for k, v in statuses.items()
+               if isinstance(k, int) and k >= 500)
+
+
+def summarize(latencies, statuses, target, rps, duration, wall):
+    errors = _error_count(statuses)
+    total = sum(statuses.values())
     print()
     print("  " + "─" * 60)
     print(f"  total requests:   {total}")
@@ -178,18 +197,22 @@ def main():
     print(f"polaris-load-test: {args.target} @ {args.rps:g} rps for {args.duration:g}s")
     t0 = time.perf_counter()
     try:
-        latencies, statuses, errors = asyncio.run(
+        latencies, statuses = asyncio.run(
             run_load(args.target, args.rps, args.duration)
         )
     except KeyboardInterrupt:
         print("\n  interrupted; partial results follow:", file=sys.stderr)
-        latencies, statuses, errors = [], Counter(), 0
+        latencies, statuses = [], Counter()
     wall = time.perf_counter() - t0
-    summarize(latencies, statuses, errors, args.target, args.rps, args.duration, wall)
+    summarize(latencies, statuses, args.target, args.rps, args.duration, wall)
 
-    # Exit non-zero if more than 1% errored — useful for CI.
-    total = sum(statuses.values()) + errors
-    if total > 0 and errors / total > 0.01:
+    # Exit non-zero if more than 1% failed at the transport level OR more
+    # than 1% were 5xx. The header's own purpose statement is "confirming a
+    # deployment serves expected RPS without 5xx"; before this clause a run
+    # of 100% server errors exited green.
+    total = sum(statuses.values())
+    if total > 0 and (_error_count(statuses) / total > 0.01
+                      or _5xx_count(statuses) / total > 0.01):
         sys.exit(1)
 
 

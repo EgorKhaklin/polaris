@@ -69,7 +69,29 @@ done
 
 cd "${POLARIS_ROOT}"
 
-python3 - "${LIST}" "${JSON}" "${TARGET_SCENARIO}" <<'PY'
+# v9.166 — resolve an interpreter that can import the app modules. The
+# harness previously ran under bare `python3`; on a dev box where that is
+# 3.9, importing polaris_web/zk.py raises on its 3.10+ annotations, and the
+# zk_binary_absent scenario silently mistook that import failure for a
+# verifier refusal: permanently fail-safe, never exercising anything. Same
+# discovery order as scripts/ai-test.sh.
+PY_BIN="${POLARIS_TEST_PYTHON:-}"
+if [[ -z "${PY_BIN}" ]]; then
+    for cand in \
+        "${POLARIS_ROOT}/polaris_web/venv/bin/python" \
+        "/private/tmp/polaris-codex-venv312/bin/python" \
+        "$(command -v python3.12 || true)" \
+        "$(command -v python3 || true)"
+    do
+        if [[ -x "${cand}" ]] && "${cand}" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null; then
+            PY_BIN="${cand}"
+            break
+        fi
+    done
+fi
+PY_BIN="${PY_BIN:-python3}"
+
+"${PY_BIN}" - "${LIST}" "${JSON}" "${TARGET_SCENARIO}" <<'PY'
 import json
 import os
 import re
@@ -240,22 +262,37 @@ def scenario_zk_binary_absent():
                     "passed": False,
                     "reason": f"polaris_web/zk.py missing; cannot test"}
 
-        # Try to import + call verify. The Python wrapper should
-        # propagate the missing-binary failure.
+        # Try to import + call verify. The Python wrapper should propagate
+        # the missing-binary failure.
+        #
+        # v9.166 rewrite: this scenario was VACUOUS from the day it shipped.
+        # It spawned bare `python3` (the system 3.9), whose import of zk.py
+        # raises TypeError on the module's 3.10+ annotations before any
+        # verification code runs, and the classifier below counted ANY raise
+        # as a refusal. Result: permanent fail-safe verdicts from a probe that
+        # never reached the wrapper; a fail-open verify_proof was undetectable
+        # (proven live by planting a binary answering verified=true; the
+        # scenario still reported FAIL-SAFE). Three fixes:
+        #   1. sys.executable, not "python3": the interpreter running this
+        #      harness, which can import the app modules.
+        #   2. A WRAPPER_READY sentinel printed only after the import: a raise
+        #      BEFORE the sentinel is an inconclusive probe, never a pass.
+        #   3. POLARIS_ZK_BINARY stripped from the env: with the release
+        #      binaries moved aside, a stale operator override would otherwise
+        #      point past the simulated absence.
         env = os.environ.copy()
+        env.pop("POLARIS_ZK_BINARY", None)
         proc = subprocess.run(
-            ["python3", "-c", (
-                "import sys; "
-                "sys.path.insert(0, 'polaris_web'); "
-                "try:\n"
-                "    import zk\n"
-                "    # Construct a syntactically valid but vacuous "
-                "ProofBundle-shaped dict and try to verify.\n"
-                "    bundle = {'proof_hex': '00' * 64, "
+            [sys.executable, "-c", (
+                "import sys\n"
+                "sys.path.insert(0, 'polaris_web')\n"
+                "import zk\n"
+                "print('WRAPPER_READY')\n"
+                "bundle = {'proof_hex': '00' * 64, "
                 "'public_inputs_hex': ['00' * 32], "
                 "'verifier_data_hex': '00' * 64}\n"
-                "    result = zk.verify_proof(bundle) "
-                "if hasattr(zk, 'verify_proof') else None\n"
+                "try:\n"
+                "    result = zk.verify_proof(bundle)\n"
                 "    print(f'VERIFY_RESULT={result}')\n"
                 "except Exception as e:\n"
                 "    print(f'VERIFY_RAISED={type(e).__name__}: {str(e)[:200]}')\n"
@@ -265,18 +302,34 @@ def scenario_zk_binary_absent():
         )
         out = proc.stdout.decode() + proc.stderr.decode()
 
-        # FAIL-OPEN: VERIFY_RESULT=True with binary missing
+        # The probe must actually reach the wrapper. If the import itself
+        # failed, we learned nothing about the verifier: INCONCLUSIVE.
+        if "WRAPPER_READY" not in out:
+            return {"scenario": "zk_binary_absent",
+                    "passed": None,
+                    "reason": f"INCONCLUSIVE — the probe interpreter could not "
+                              f"import polaris_web/zk.py, so the verifier was "
+                              f"never exercised. out: {out[-300:]}"}
+
+        # FAIL-OPEN: verify returned True with the binary absent.
         if "VERIFY_RESULT=True" in out:
             return {"scenario": "zk_binary_absent",
                     "passed": False,
                     "reason": f"verify returned True without binary present. "
                               f"out: {out[-300:]}"}
 
-        # PASS: either raised, returned False, or returned None
+        # PASS: the wrapper was reached AND it refused (raised, or returned
+        # False/None).
+        if "VERIFY_RAISED=" in out or "VERIFY_RESULT=" in out:
+            return {"scenario": "zk_binary_absent",
+                    "passed": True,
+                    "exit_code": proc.returncode,
+                    "evidence": out[-300:]}
+
         return {"scenario": "zk_binary_absent",
-                "passed": True,
-                "exit_code": proc.returncode,
-                "evidence": out[-300:]}
+                "passed": None,
+                "reason": f"INCONCLUSIVE — probe produced no verdict marker. "
+                          f"out: {out[-300:]}"}
 
     finally:
         # Restore moved binaries

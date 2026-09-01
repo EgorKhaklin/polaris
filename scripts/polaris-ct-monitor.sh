@@ -165,12 +165,47 @@ echo "  Allowlist:        $ALLOWLIST_FILE"
 echo "  Anomaly log:      $ANOMALY_LOG"
 echo
 
-ct_response=$(curl -fsS --max-time 30 \
-    "https://crt.sh/?q=$(printf '%s' "$DOMAIN" | tr -d '\n' | jq -sRr @uri)&output=json" \
-    2>/dev/null || true)
+# crt.sh is a single-operator public service and flaps: it returns transient
+# 502s and connection timeouts under load (observed live during the v9.166
+# sweep, six 502s in a row). The original made ONE `curl -fsS` attempt and
+# treated any failure, transient 5xx included, as terminal "unreachable". That
+# is correct as a verdict (fail inconclusive, never fabricate an all-clear) but
+# needlessly noisy: a daily cron would false-alarm inconclusive on every crt.sh
+# hiccup. Retry with linear backoff so a brief flap self-heals within one run;
+# only a sustained outage reaches the inconclusive exit.
+#
+# POLARIS_CT_FIXTURE points at a local JSON file to use INSTEAD of the network,
+# so the parse/anomaly path is testable offline (the whole tool was otherwise
+# unverifiable except against a live, flaky third party).
+fetch_ct_json() {
+    if [[ -n "${POLARIS_CT_FIXTURE:-}" ]]; then
+        cat "${POLARIS_CT_FIXTURE}" 2>/dev/null || true
+        return
+    fi
+    local url attempt out
+    url="https://crt.sh/?q=$(printf '%s' "$DOMAIN" | tr -d '\n' | jq -sRr @uri)&output=json"
+    for attempt in 1 2 3; do
+        out=$(curl -fsS --max-time 30 "$url" 2>/dev/null || true)
+        if [[ -n "$out" ]]; then
+            printf '%s' "$out"
+            return
+        fi
+        [[ "$attempt" -lt 3 ]] && sleep "$((attempt * 3))"
+    done
+}
+
+ct_response=$(fetch_ct_json)
 
 if [[ -z "$ct_response" ]]; then
-    echo "  ⚠ crt.sh unreachable; treat as inconclusive (will retry next cycle)" >&2
+    echo "  ⚠ crt.sh unreachable after 3 attempts; treat as inconclusive (will retry next cycle)" >&2
+    exit "${EXIT_NETWORK}"
+fi
+
+# A non-empty response that is not a JSON array is crt.sh serving an HTML error
+# page (its 502s carry a body). Treat as inconclusive, never parse it as certs.
+if ! printf '%s' "$ct_response" | jq -e 'type == "array"' >/dev/null 2>&1; then
+    echo "  ⚠ crt.sh returned a non-JSON response (likely a transient error page);" >&2
+    echo "    treat as inconclusive (will retry next cycle)" >&2
     exit "${EXIT_NETWORK}"
 fi
 
@@ -197,9 +232,15 @@ while IFS= read -r cert_json; do
     common_name=$(printf '%s' "$cert_json" | jq -r '.common_name')
     logged_at=$(printf '%s' "$cert_json" | jq -r '.logged_at')
 
-    # Fetch PEM + compute SHA-256 fingerprint
-    pem=$(curl -fsS --max-time 15 \
-        "https://crt.sh/?d=${cert_id}" 2>/dev/null || true)
+    # Fetch PEM + compute SHA-256 fingerprint. Under a fixture, read the PEM
+    # from ${POLARIS_CT_FIXTURE%.json}.<id>.pem so the anomaly path is testable
+    # offline without a second crt.sh round-trip per cert.
+    if [[ -n "${POLARIS_CT_FIXTURE:-}" ]]; then
+        pem=$(cat "${POLARIS_CT_FIXTURE%.json}.${cert_id}.pem" 2>/dev/null || true)
+    else
+        pem=$(curl -fsS --max-time 15 \
+            "https://crt.sh/?d=${cert_id}" 2>/dev/null || true)
+    fi
     if [[ -z "$pem" ]]; then
         echo "    ⚠ id=$cert_id  (could not fetch PEM; skipped fingerprint check)"
         continue

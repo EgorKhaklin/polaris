@@ -1,3 +1,7 @@
+% fix-cm: declare Computer Modern at arbitrary sizes (loaded before the
+% class per its documentation) so the 56pt title page wordmark renders at
+% true 56pt instead of being silently substituted at 35.83pt.
+\RequirePackage{fix-cm}
 \documentclass[11pt,letterpaper]{article}
 
 % ============================================================================
@@ -9,8 +13,12 @@
 % === ENCODING & TYPOGRAPHY ===
 \usepackage[T1]{fontenc}
 \usepackage[utf8]{inputenc}
+\usepackage{textcomp}  % straight-quote glyphs for code (listings upquote)
+% Latin Modern typewriter in place of cmtt: metric-compatible, but provides
+% a real bold weight, so \pk{...} primary keys, heading code phrases, and
+% listing keywords render genuinely bold instead of silently medium.
+\renewcommand{\ttdefault}{lmtt}
 \usepackage[expansion=false]{microtype}
-\usepackage{amsmath}
 
 % === MATH ===
 \usepackage{amsmath}
@@ -89,6 +97,21 @@
 % Prevents orphan section headers
 \usepackage{needspace}
 
+% === LINE- AND PAGE-BREAKING QUALITY ===
+% Tuned tolerances instead of a global \sloppy: microtype plus a modest
+% emergency stretch resolves long-identifier lines without the gaping
+% interword spacing that \tolerance=9999 permits.
+\tolerance=2500
+\setlength{\emergencystretch}{3em}
+\hbadness=2500
+% Never leave a lone first/last line of a paragraph across a page break.
+\clubpenalty=10000
+\widowpenalty=10000
+\displaywidowpenalty=10000
+% With this many [H] floats and \needspace early breaks, ragged bottoms
+% beat stretched interparagraph glue.
+\raggedbottom
+
 % === TIKZ ===
 \usepackage{tikz}
 \usetikzlibrary{positioning,arrows.meta,calc,backgrounds,fit,shapes.geometric}
@@ -101,7 +124,9 @@
   linktoc=all,
   hypertexnames=false,
   pdfauthor={Egor Khaklin},
-  pdftitle={Polaris - Identity Token System},
+  pdftitle={Polaris: The Identity Token System},
+  pdfsubject={Database Management Systems project report},
+  pdfkeywords={identity, post-quantum cryptography, database design, ER model, SQL},
 ]{hyperref}
 
 % === CAPTION ===
@@ -118,8 +143,15 @@
 \usepackage{graphicx}
 \lstset{
   basicstyle=\ttfamily\footnotesize,
+  columns=fullflexible,       % natural mono spacing (no gappy fixed grid)
+  keepspaces=true,            % ...while preserving hand-aligned columns
+  upquote=true,               % straight quotes in SQL strings, not curly
   breaklines=true,
+  breakatwhitespace=true,
+  postbreak=\mbox{{\color{steelgray}\scriptsize$\hookrightarrow$}\enspace},
   frame=single,
+  rulecolor=\color{navylight},
+  framesep=4pt,
   backgroundcolor=\color{tabstripe},
   keywordstyle=\color{navymid}\bfseries,
   commentstyle=\color{steelgray}\itshape,
@@ -127,7 +159,11 @@
   showstringspaces=false,
   tabsize=2,
   numbers=left,
-  numberstyle=\tiny\color{steelgray}
+  numberstyle=\tiny\color{steelgray},
+  numbersep=8pt,
+  aboveskip=10pt plus 2pt,
+  belowskip=10pt plus 2pt,
+  morekeywords={RETURNING,INTERVAL,REPLACE,SERIAL}
 }
 
 % === TABLE OF CONTENTS STYLING ===
@@ -139,6 +175,11 @@
 \setlength{\cftbeforesecskip}{0pt}
 \setlength{\cftbeforesubsecskip}{0pt}
 \setcounter{tocdepth}{2}  % sections + subsections
+% The TOC heading is typeset manually before \tableofcontents (and
+% \contentsname is emptied), so collapse tocloft's own title spacing to
+% avoid a stray gap between the rule and the first entry.
+\setlength{\cftbeforetoctitleskip}{-\baselineskip}
+\setlength{\cftaftertoctitleskip}{2pt}
 
 % === CUSTOM COMMANDS ===
 \newcommand{\classmark}[1]{%
@@ -169,9 +210,6 @@
 
 % Front matter: title page is unnumbered; TOC starts at i (roman).
 % Body matter switches to arabic and resets to page 1 just before Section 1.
-
-% Allow more flexible line breaking for paragraphs heavy with long identifiers.
-\sloppy
 
 % ============================================================================
 % TITLE PAGE
@@ -849,7 +887,7 @@ The attribute set for each entity is the minimum needed to answer the operationa
 \setlength{\tabcolsep}{5pt}
 \renewcommand{\arraystretch}{1.15}
 \rowcolors{2}{tabstripe}{white}
-\begin{tabularx}{\textwidth}{>{\bfseries}p{1.55in} >{\RaggedRight\arraybackslash}X}
+\begin{tabularx}{\textwidth}{>{\bfseries}p{1.62in} >{\RaggedRight\arraybackslash}X}
 \toprule
 \rowcolor{tabheader}
 \thead{Entity} & \thead{Attributes} \\
@@ -884,7 +922,7 @@ RevocationList & \pk{revocation\_id}, \fk{token\_id}, \fk{revoked\_by\_agency\_i
 \setlength{\tabcolsep}{4pt}
 \renewcommand{\arraystretch}{1.1}
 \rowcolors{2}{tabstripe}{white}
-\begin{tabularx}{\textwidth}{>{\RaggedRight\arraybackslash}p{1.95in} >{\centering\arraybackslash}p{0.75in} >{\RaggedRight\arraybackslash}X}
+\begin{tabularx}{\textwidth}{>{\RaggedRight\arraybackslash}p{1.95in} >{\centering\arraybackslash}p{0.85in} >{\RaggedRight\arraybackslash}X}
 \toprule
 \rowcolor{tabheader}
 \thead{Relationship} & \thead{Cardinality} & \thead{Notes} \\
@@ -1205,7 +1243,9 @@ $\pi_{\text{token\_id, legal\_name, name}} \Bigl(
 Drives UC-1 step 1 (the issuing officer's authorization check) for the most-used post-quantum algorithm.
 
 \vspace{2pt}
-\noindent\scalebox{0.74}{%
+% Fit-to-width: this formula's natural width slightly exceeds \textwidth
+% at the 0.74 scale used for its neighbors.
+\noindent\resizebox{\textwidth}{!}{%
 $\pi_{\text{Agency.name, jurisdiction}} \Bigl(
   \sigma_{\text{CA.name='ML-DSA-65' } \land \text{ authorization\_type='BOTH'}} \bigl(
     \rho_{\text{CA}}(\text{CryptographicAlgorithm}) \bowtie \text{AgencyAlgorithmAuth} \bowtie \text{Agency}
@@ -1221,7 +1261,8 @@ $\pi_{\text{Agency.name, jurisdiction}} \Bigl(
 Operational query for verifiers that accept digital presentation: enumerate which tokens currently project to which devices.
 
 \vspace{2pt}
-\noindent\scalebox{0.74}{%
+% Fit-to-width, as in Query 3.
+\noindent\resizebox{\textwidth}{!}{%
 $\pi_{\text{legal\_name, device\_type, device\_fingerprint, db.status}} \Bigl(
   \rho_{\text{db}}(\text{DeviceBinding}) \bowtie_{\text{db.token\_id} = \text{it.token\_id}} 
   \rho_{\text{it}}(\sigma_{\text{status='ACTIVE'}} \text{IdentityToken}) \bowtie 

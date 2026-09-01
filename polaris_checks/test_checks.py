@@ -660,6 +660,96 @@ def test_ci_atlas_e2e_check_discriminates(tmp_path):
         "must FAIL when the suite no longer honors POLARIS_E2E_REQUIRE"
 
 
+# ---------------------------------------------------------------------------
+# Operator-tooling sweep tier 2 (P0.4 / v9.166). Each pins a defect found by
+# RUNNING the tool: the load generator double-counted failures, the chaos
+# probe never reached the verifier, ct-monitor was untestable offline, and
+# rotate-secret regressed container-readable secret perms.
+# ---------------------------------------------------------------------------
+
+def test_load_gen_single_ledger_check_discriminates(tmp_path):
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    lg = scripts / "polaris_load_gen.py"
+
+    lg.write_text("def run():\n    errors = 0\n    errors += 1\n"
+                  "    statuses['err:x'] += 1\n")
+    assert checks.check_load_gen_single_ledger(tmp_path)[0].level == "FAIL", \
+        "must FAIL when an independent errors counter is incremented"
+
+    lg.write_text("def _error_count(s):\n    return 1\n"
+                  "def _5xx_count(s):\n    return 0\n"
+                  "def run():\n    statuses[code] += 1\n")
+    assert checks.check_load_gen_single_ledger(tmp_path)[0].level == "OK", \
+        "must PASS with a single ledger and a 5xx gate"
+
+    lg.write_text("def run():\n    statuses[code] += 1\n")
+    assert checks.check_load_gen_single_ledger(tmp_path)[0].level == "FAIL", \
+        "must FAIL when there is no 5xx exit gate"
+
+
+def test_chaos_probe_check_discriminates(tmp_path):
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    ch = scripts / "polaris-chaos-test.sh"
+
+    ch.write_text('PY_BIN=python3\nproc = subprocess.run(["python3", "-c", code])\n'
+                  'if "WRAPPER_READY" in out: pass\n')
+    assert checks.check_chaos_probe_reaches_wrapper(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the probe spawns bare python3"
+
+    ch.write_text('proc = subprocess.run([sys.executable, "-c", code])\n'
+                  'print("WRAPPER_READY")\n')
+    assert checks.check_chaos_probe_reaches_wrapper(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the harness resolves no >=3.10 interpreter (no PY_BIN)"
+
+    ch.write_text('PY_BIN="${POLARIS_TEST_PYTHON:-}"\n'
+                  'proc = subprocess.run([sys.executable, "-c", code])\n'
+                  'if "WRAPPER_READY" not in out: inconclusive()\n')
+    assert checks.check_chaos_probe_reaches_wrapper(tmp_path)[0].level == "OK", \
+        "must PASS with sys.executable, PY_BIN resolution, and the sentinel"
+
+
+def test_ct_monitor_check_discriminates(tmp_path):
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    ct = scripts / "polaris-ct-monitor.sh"
+
+    ct.write_text('ct_response=$(curl -fsS "$url")\n'
+                  'in_window=$(echo "$ct_response" | jq ...)\n')
+    assert checks.check_ct_monitor_testable_and_guarded(tmp_path)[0].level == "FAIL", \
+        "must FAIL with no fixture seam"
+
+    ct.write_text('if [[ -n "${POLARIS_CT_FIXTURE:-}" ]]; then cat "$f"; fi\n'
+                  'ct_response=$(fetch)\n')
+    assert checks.check_ct_monitor_testable_and_guarded(tmp_path)[0].level == "FAIL", \
+        "must FAIL with a fixture seam but no array-type guard"
+
+    ct.write_text('if [[ -n "${POLARIS_CT_FIXTURE:-}" ]]; then cat "$f"; fi\n'
+                  'jq -e \'type == "array"\' || exit 4\n')
+    assert checks.check_ct_monitor_testable_and_guarded(tmp_path)[0].level == "OK", \
+        "must PASS with both the fixture seam and the array guard"
+
+
+def test_rotate_secret_mode_check_discriminates(tmp_path):
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    rs = scripts / "polaris-rotate-secret.sh"
+
+    rs.write_text('printf "%s" "$NEW" > "${TARGET}.new"\n'
+                  'chmod 0600 "${TARGET}.new"\n'
+                  'mv "${TARGET}.new" "${TARGET}"\n')
+    assert checks.check_rotate_secret_preserves_mode(tmp_path)[0].level == "FAIL", \
+        "must FAIL when rotation hardcodes chmod 0600 on the replacement"
+
+    rs.write_text('CUR_MODE=$(stat -f "%Lp" "${TARGET}")\n'
+                  'printf "%s" "$NEW" > "${TARGET}.new"\n'
+                  'chmod "0${CUR_MODE#0}" "${TARGET}.new"\n'
+                  'mv "${TARGET}.new" "${TARGET}"\n')
+    assert checks.check_rotate_secret_preserves_mode(tmp_path)[0].level == "OK", \
+        "must PASS when rotation captures and reapplies the existing mode"
+
+
 def test_dockerfile_copies_app_modules_check_discriminates(tmp_path):
     web = tmp_path / "polaris_web"
     web.mkdir()

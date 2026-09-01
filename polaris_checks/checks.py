@@ -2550,6 +2550,106 @@ def check_ci_runs_atlas_e2e(root: pathlib.Path) -> list[Finding]:
                "read as green")
 
 
+# P0.4 — the load generator keeps ONE outcome ledger. The original kept an
+# independent `errors` counter next to statuses['err:*'] and summed both, so a
+# dead target reported twice the real request count with rates halved; it also
+# routed every HTTPError away from the status ledger, which made the
+# rate-limited counter (statuses.get(429)) dead code and let a run of 100%
+# 5xx exit green. The invariant: no independent error counter (errors are
+# DERIVED from the err:* ledger entries), and the exit gate covers 5xx.
+def check_load_gen_single_ledger(root: pathlib.Path) -> list[Finding]:
+    src = _read(root, "scripts/polaris_load_gen.py")
+    if not src:
+        return _fail("load_gen_ledger", "scripts/polaris_load_gen.py is missing")
+    if re.search(r"^\s*errors\s*\+=", src, re.M):
+        return _fail("load_gen_ledger",
+                     "polaris_load_gen.py increments an independent `errors` counter; "
+                     "outcomes must land exactly once in the statuses ledger and errors "
+                     "be derived, or totals double-count on failure")
+    if "_5xx_count" not in src:
+        return _fail("load_gen_ledger",
+                     "polaris_load_gen.py has no 5xx exit gate; a run of 100% server "
+                     "errors would exit green against the tool's own purpose statement")
+    return _ok("load_gen_ledger",
+               "the load generator keeps a single outcome ledger with derived errors "
+               "and gates its exit on transport errors and 5xx")
+
+
+# P0.4 — the chaos harness must run under an interpreter that can import the
+# app, and its zk_binary_absent scenario must distinguish a verifier refusal
+# from a probe that never loaded. The original spawned bare `python3`; where
+# that is <3.10 the import of zk.py raises on its annotations, and the
+# scenario counted that raise as a fail-safe pass: a permanently green probe
+# that never exercised the verifier (a planted fail-open binary went
+# undetected). Require the sys.executable probe and the WRAPPER_READY sentinel.
+def check_chaos_probe_reaches_wrapper(root: pathlib.Path) -> list[Finding]:
+    sh = _read(root, "scripts/polaris-chaos-test.sh")
+    if not sh:
+        return _fail("chaos_probe", "scripts/polaris-chaos-test.sh is missing")
+    if re.search(r'\[\s*"python3"\s*,\s*"-c"', sh):
+        return _fail("chaos_probe",
+                     "the zk_binary_absent probe spawns bare python3; on a <3.10 "
+                     "interpreter the zk.py import fails and the scenario mistakes that "
+                     "for a verifier refusal. Use sys.executable")
+    if "WRAPPER_READY" not in sh:
+        return _fail("chaos_probe",
+                     "the zk_binary_absent probe has no post-import sentinel; it cannot "
+                     "tell a real refusal from an import that never reached the verifier")
+    if "PY_BIN" not in sh:
+        return _fail("chaos_probe",
+                     "the chaos harness does not resolve a >=3.10 interpreter; it may run "
+                     "under a python3 that cannot import the app modules")
+    return _ok("chaos_probe",
+               "the chaos harness runs under an app-capable interpreter and its "
+               "zk_binary_absent probe proves it reached the verifier (WRAPPER_READY)")
+
+
+# P0.4 — ct-monitor must be verifiable offline and must not parse a crt.sh
+# error page as certificate data. crt.sh is a flaky single-operator service
+# (transient 502s with HTML bodies); the tool was previously testable only
+# against that live third party, and a non-array 200 body would have flowed
+# into the jq filters. The fixture seam (POLARIS_CT_FIXTURE) makes the anomaly
+# path testable, and the array-type guard fails closed to inconclusive.
+def check_ct_monitor_testable_and_guarded(root: pathlib.Path) -> list[Finding]:
+    sh = _read(root, "scripts/polaris-ct-monitor.sh")
+    if not sh:
+        return _fail("ct_monitor", "scripts/polaris-ct-monitor.sh is missing")
+    if "POLARIS_CT_FIXTURE" not in sh:
+        return _fail("ct_monitor",
+                     "ct-monitor has no fixture seam; its parse/anomaly path is only "
+                     "testable against the live, flaky crt.sh service")
+    if "type == \"array\"" not in sh and "type==\"array\"" not in sh:
+        return _fail("ct_monitor",
+                     "ct-monitor does not verify the crt.sh response is a JSON array; a "
+                     "transient HTML error page would be parsed as certificate data")
+    return _ok("ct_monitor",
+               "ct-monitor is offline-testable (fixture seam) and rejects non-array "
+               "responses as inconclusive rather than parsing an error page")
+
+
+# P0.4 — polaris-rotate-secret.sh must PRESERVE a secret file's mode, not force
+# 0600. polaris-generate-secrets.sh deliberately makes several secrets 0644
+# (inside a 0700 dir) so non-root containers can read the bind-mount on Linux
+# (the v9.140 fix). A rotation that hardcoded 0600 silently regressed that and
+# would crash-loop the prod stack on next deploy. Pin: no bare `chmod 0600` on
+# the rotated target, and the current mode must be captured.
+def check_rotate_secret_preserves_mode(root: pathlib.Path) -> list[Finding]:
+    sh = _read(root, "scripts/polaris-rotate-secret.sh")
+    if not sh:
+        return _fail("rotate_mode", "scripts/polaris-rotate-secret.sh is missing")
+    if re.search(r'chmod\s+0600\s+"\$\{TARGET\}\.new"', sh):
+        return _fail("rotate_mode",
+                     "rotate-secret hardcodes chmod 0600 on the replacement; it regresses "
+                     "the 0644 secrets that non-root containers must read on Linux (v9.140)")
+    if "CUR_MODE" not in sh or "stat" not in sh:
+        return _fail("rotate_mode",
+                     "rotate-secret does not capture the existing file mode before writing "
+                     "the replacement; the rotated secret's perms are not preserved")
+    return _ok("rotate_mode",
+               "rotate-secret preserves each secret file's existing mode, so a 0644 "
+               "container-readable secret stays 0644 after rotation")
+
+
 CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_csp_forbids_unsafe_inline,
     check_one_active_token_index,
@@ -2624,6 +2724,10 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_migrate_docker_stdin_safe,
     check_rust_toolchain_pinned,
     check_ci_runs_atlas_e2e,
+    check_load_gen_single_ledger,
+    check_chaos_probe_reaches_wrapper,
+    check_ct_monitor_testable_and_guarded,
+    check_rotate_secret_preserves_mode,
     check_local_clock_convention,
     check_c6_atlas_redacts_zk_location,
     check_coercion_evidence_retained,

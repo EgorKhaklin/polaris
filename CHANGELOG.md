@@ -5,6 +5,58 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.166 — 2026-09-01 (Roadmap P0.4: the last four operator tools exercised, four real defects)
+
+The final un-swept tier from the ops-reliability arc. All four tools run end to
+end; all four had a runtime defect invisible to reading, and two were security
+tools that could not do their stated job.
+
+**polaris_load_gen.py counted failures twice and exited green on a dead
+backend.** It kept an independent `errors` counter alongside `statuses['err:*']`
+and summed both, so a dead target reported 2x the real request count with all
+rates halved. It also routed every HTTP error away from the status ledger,
+which made the "rate-limited" counter (`statuses.get(429)`) permanent dead code
+and meant a run of 100% 5xx exited 0, against the header's own stated purpose
+("serves expected RPS without 5xx"). Now one ledger, errors derived, exit
+gated on transport errors AND 5xx. Proven across the matrix: healthy (exit 0),
+dead port (counts once, exit 1), 404 (ledgered by code), 100% 500 (exit 1).
+
+**The chaos zk_binary_absent scenario was VACUOUS from day one.** It spawned
+bare `python3`; where that is 3.9 the import of zk.py raises on its 3.10+
+annotations before any verification runs, and the classifier counted ANY raise
+as a fail-safe pass. So the security scenario reported a permanent all-clear
+from a probe that never reached the verifier: a planted binary answering
+verified=true still produced FAIL-SAFE. Fixed to run under sys.executable, gate
+on a WRAPPER_READY sentinel (a pre-verifier raise is now INCONCLUSIVE, never a
+pass), and strip POLARIS_ZK_BINARY so a stale override can't point past the
+simulated absence. Now proven both directions: a fail-open verify_proof makes
+the scenario exit 1.
+
+**polaris-ct-monitor.sh was untestable and would parse an error page as
+certs.** crt.sh is a flaky single-operator service (six live 502s in a row
+during this sweep), and the whole tool was verifiable only against it; a
+non-array 200 body would flow into the jq cert filters. Added a
+POLARIS_CT_FIXTURE seam (the anomaly path is now exercised offline: a rogue-CA
+cert with an un-allowlisted fingerprint alerts at exit 5, allowlisting it
+clears to exit 0), retry-with-backoff so a transient flap self-heals, and a
+JSON-array-type guard that fails closed to inconclusive.
+
+**polaris-rotate-secret.sh regressed container-readable secret perms.** It
+hardcoded chmod 0600 on every rotated secret, but generate-secrets.sh sets
+polaris_db_password (and others) to 0644-inside-a-0700-dir on purpose: the
+non-root app/pgbouncer containers cannot read a host-owned 0600 bind-mount on
+Linux (the v9.140 fix). A rotated db password would crash-loop the prod stack
+on next deploy, exactly the failure v9.140 shipped to prevent. Now the rotation
+captures and reapplies the existing file mode; proven that 0644 stays 0644 and
+0600 stays 0600.
+
+Four detection-tested checks: load_gen_ledger, chaos_probe, ct_monitor,
+rotate_mode. 84 checks, 81 check-layer tests. The exercise-don't-read rule from
+the ops-reliability arc now stands at 19 real defects across the tools swept,
+none ever visible to a static read.
+
+---
+
 ## v9.165 — 2026-09-01 (Wave five: two floors taken, one minor caught narrowing its deps, one major caught sneaking past the filter)
 
 Four PRs in the fifth wave, and two of them earned their scrutiny.

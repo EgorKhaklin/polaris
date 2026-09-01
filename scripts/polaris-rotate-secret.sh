@@ -69,9 +69,18 @@ gen_hex() {
 }
 NEW_VALUE=$(gen_hex)
 
-# Write replacement atomically (mv preserves the file as 0600).
+# Write replacement atomically, PRESERVING the existing file's mode. The
+# original hardcoded 0600, which silently regressed the perms that
+# polaris-generate-secrets.sh sets deliberately: polaris_db_password (and the
+# session/replicator/signing secrets) are 0644-inside-a-0700-dir so the
+# NON-ROOT app/pgbouncer containers can read the bind-mount on Linux (the
+# v9.140 fix; a host-owned 0600 file is unreadable by a uid-1000 container).
+# A rotation that forced 0600 would crash-loop the prod stack on next deploy,
+# exactly the failure v9.140 shipped to prevent. Capture the current mode and
+# reapply it to the replacement.
+CUR_MODE=$(stat -f '%Lp' "${TARGET}" 2>/dev/null || stat -c '%a' "${TARGET}" 2>/dev/null || echo 600)
 ( umask 0177 && printf '%s\n' "${NEW_VALUE}" > "${TARGET}.new" )
-chmod 0600 "${TARGET}.new"
+chmod "0${CUR_MODE#0}" "${TARGET}.new"
 mv "${TARGET}.new" "${TARGET}"
 
 echo "  ✓ rotated ${SECRET} (previous archived at ${ARCHIVE_PATH})"
