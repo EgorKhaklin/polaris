@@ -5,6 +5,35 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.167 — 2026-09-01 (Roadmap P0.5: an SPDX bill of materials attached to every release)
+
+A new `.github/workflows/sbom.yml` fires on every published release and
+attaches five SPDX-2.3 SBOMs to it: one for the Python runtime surface
+(requirements.txt) and one each for the four self-built images (app, caddy,
+pgbouncer, postgres). A downstream operator can now answer "what is in this
+exact release" from a signed, versioned document instead of rebuilding and
+inspecting.
+
+The generator is the SAME Trivy the image-cve-scan job already pins (0.58.1),
+not a new tool. One tool for the CVE gate and the SBOM means the bill of
+materials describes the exact package set the scanner evaluated, and
+`check_sbom_trivy_matches_scan` fails CI if the two versions ever drift, which
+is the v9.155 duplicated-pin lesson applied to workflows instead of
+requirements.
+
+Both surfaces were exercised locally against the real Trivy image before
+wiring: the Python SBOM captures 20 packages (Flask, Werkzeug, cryptography,
+the runtime pins), an image SBOM captures 60 (the Alpine OS package set), and
+the workflow's own SPDX-version + package-count validation step was run by hand
+against the generated files. The job self-demonstrates: this very release is
+the first to carry the attached SBOMs.
+
+`check_sbom_workflow` pins that the workflow exists, triggers on release,
+covers the Python surface plus all four images in SPDX, and attaches the
+documents. 86 checks, 83 check-layer tests.
+
+---
+
 ## v9.166 — 2026-09-01 (Roadmap P0.4: the last four operator tools exercised, four real defects)
 
 The final un-swept tier from the ops-reliability arc. All four tools run end to

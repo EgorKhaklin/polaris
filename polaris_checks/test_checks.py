@@ -750,6 +750,54 @@ def test_rotate_secret_mode_check_discriminates(tmp_path):
         "must PASS when rotation captures and reapplies the existing mode"
 
 
+def test_sbom_workflow_check_discriminates(tmp_path):
+    wf = tmp_path / ".github" / "workflows"
+    wf.mkdir(parents=True)
+    sbom = wf / "sbom.yml"
+
+    # No workflow at all -> releases ship no SBOM.
+    assert checks.check_sbom_workflow(tmp_path)[0].level == "FAIL", \
+        "must FAIL when sbom.yml is absent"
+
+    # Present but missing an image and the upload step.
+    sbom.write_text("on:\n  release:\n    types: [published]\n"
+                    "jobs:\n  sbom:\n    steps:\n"
+                    "      - run: trivy fs --format spdx-json /src\n"
+                    "      - run: docker build -t polaris-app:sbom .\n"
+                    "      - run: echo sbom-python\n")
+    assert checks.check_sbom_workflow(tmp_path)[0].level == "FAIL", \
+        "must FAIL when not all four images are covered"
+
+    sbom.write_text("on:\n  release:\n    types: [published]\n"
+                    "jobs:\n  sbom:\n    steps:\n"
+                    "      - run: trivy fs --format spdx-json --output sbom-python.spdx.json /src\n"
+                    "      - run: |\n"
+                    "          docker build -t polaris-app:sbom .\n"
+                    "          docker build -t polaris-caddy:sbom .\n"
+                    "          docker build -t polaris-pgbouncer:sbom .\n"
+                    "          docker build -t polaris-postgres:sbom .\n"
+                    "      - run: gh release upload \"$TAG\" sbom/*.spdx.json\n")
+    assert checks.check_sbom_workflow(tmp_path)[0].level == "OK", \
+        "must PASS with release trigger, SPDX, all four images, python, and upload"
+
+
+def test_sbom_trivy_match_check_discriminates(tmp_path):
+    wf = tmp_path / ".github" / "workflows"
+    wf.mkdir(parents=True)
+    ci = wf / "ci.yml"
+    sbom = wf / "sbom.yml"
+
+    # Drift: the scanner and the SBOM generator use different Trivy versions.
+    ci.write_text("run: docker run aquasec/trivy:0.58.1 image x\n")
+    sbom.write_text("env:\n  TRIVY_IMAGE: aquasec/trivy:0.59.0\n")
+    assert checks.check_sbom_trivy_matches_scan(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the two Trivy versions differ"
+
+    sbom.write_text("env:\n  TRIVY_IMAGE: aquasec/trivy:0.58.1\n")
+    assert checks.check_sbom_trivy_matches_scan(tmp_path)[0].level == "OK", \
+        "must PASS when both use the same Trivy version"
+
+
 def test_dockerfile_copies_app_modules_check_discriminates(tmp_path):
     web = tmp_path / "polaris_web"
     web.mkdir()

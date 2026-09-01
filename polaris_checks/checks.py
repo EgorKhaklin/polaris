@@ -2650,6 +2650,52 @@ def check_rotate_secret_preserves_mode(root: pathlib.Path) -> list[Finding]:
                "container-readable secret stays 0644 after rotation")
 
 
+# P0.5 — every release ships an SPDX SBOM for each artifact. The workflow must
+# exist, trigger on release, cover the Python surface plus all four self-built
+# images, and attach the documents to the release. A release whose contents
+# cannot be enumerated from a bill of materials is a supply-chain blind spot.
+def check_sbom_workflow(root: pathlib.Path) -> list[Finding]:
+    wf = _read(root, ".github/workflows/sbom.yml")
+    if not wf:
+        return _fail("sbom", ".github/workflows/sbom.yml is missing; releases ship no SBOM")
+    if "release:" not in wf:
+        return _fail("sbom", "sbom.yml is not triggered on release")
+    if "spdx-json" not in wf:
+        return _fail("sbom", "sbom.yml does not generate SPDX-format SBOMs")
+    # All four images plus the python surface must be covered.
+    for img in ("app", "caddy", "pgbouncer", "postgres"):
+        if f"polaris-{img}:sbom" not in wf:
+            return _fail("sbom", f"sbom.yml does not build/scan the {img} image")
+    if "sbom-python" not in wf:
+        return _fail("sbom", "sbom.yml does not generate the Python-surface SBOM")
+    if "gh release upload" not in wf:
+        return _fail("sbom", "sbom.yml does not attach the SBOMs to the release")
+    return _ok("sbom",
+               "every release generates SPDX SBOMs for the Python surface + all four "
+               "self-built images and attaches them to the release")
+
+
+# P0.5 — the SBOM generator and the CVE scanner must be the SAME Trivy version.
+# If they drift, the bill of materials describes a package set the gate never
+# scanned (or vice versa), and the two documents stop corroborating each other.
+def check_sbom_trivy_matches_scan(root: pathlib.Path) -> list[Finding]:
+    ci = _read(root, ".github/workflows/ci.yml")
+    sbom = _read(root, ".github/workflows/sbom.yml")
+    if not sbom:
+        return _fail("sbom_trivy", ".github/workflows/sbom.yml is missing")
+    versions = set(re.findall(r"aquasec/trivy:([0-9][0-9.]*)", ci + sbom))
+    if not versions:
+        return _fail("sbom_trivy", "no aquasec/trivy version found in the workflows")
+    if len(versions) > 1:
+        return _fail("sbom_trivy",
+                     f"the SBOM generator and the CVE scanner use different Trivy "
+                     f"versions {sorted(versions)}; they must match so the SBOM "
+                     f"describes what the scanner saw")
+    return _ok("sbom_trivy",
+               f"the SBOM generator and CVE scanner share one Trivy version "
+               f"({versions.pop()})")
+
+
 CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_csp_forbids_unsafe_inline,
     check_one_active_token_index,
@@ -2728,6 +2774,8 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_chaos_probe_reaches_wrapper,
     check_ct_monitor_testable_and_guarded,
     check_rotate_secret_preserves_mode,
+    check_sbom_workflow,
+    check_sbom_trivy_matches_scan,
     check_local_clock_convention,
     check_c6_atlas_redacts_zk_location,
     check_coercion_evidence_retained,
