@@ -820,35 +820,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: PKCS#11 custody suite inside Fedora 43 (kryoptic + python-pkcs11 + liboqs + cryptography)
+      - name: PKCS#11 custody drill inside Fedora 43 (kryoptic token, ML-DSA-65 in-token, both witnesses)
+        # The recipe is scripts/polaris-custody-pkcs11-drill.sh, run identically
+        # here and locally; v9.178's inline bash -c block died on an apostrophe.
         run: |
-          docker run --rm -v "$PWD:/src:ro" \
+          docker run --rm -v "$PWD:/src:ro" -e POLARIS_CUSTODY_PKCS11_REQUIRE=1 \
             fedora@sha256:a651ddf48ea28a06ed4e1e6519f51c9f47e7a5a138722ade87369b8fbb7e5b42 \
-            bash -c '
-              set -eo pipefail
-              # git + openssl-devel: liboqs-python builds liboqs from source (Fedora's
-              # liboqs 0.12 is older than the binding wants); the experiments died on
-              # a missing git, then on CMake not finding OpenSSL.
-              dnf -y -q install kryoptic python3 python3-pip python3-devel gcc cmake ninja-build git openssl-devel opensc >/dev/null
-              pip -q install "$(grep -E "^python-pkcs11==" /src/polaris_web/requirements-custody.txt)" \
-                "$(grep -E "^cryptography==" /src/polaris_web/requirements.txt)" liboqs-python 2>&1 | grep -v WARNING || true
-              # The first import builds liboqs into /root/_oqs; Fedora's CMake installs it
-              # under lib64 only, and the binding then failed to load it until the lib
-              # symlink + OQS_INSTALL_PATH were added (found by running this, not reading).
-              python3 -c "import oqs" >/dev/null 2>&1 || true
-              [ -e /root/_oqs/lib ] || ln -s /root/_oqs/lib64 /root/_oqs/lib
-              export OQS_INSTALL_PATH=/root/_oqs
-              python3 -c "import io,sys; _s=sys.stdout; sys.stdout=io.StringIO(); import oqs; sys.stdout=_s; print(\"liboqs\", oqs.oqs_version(), \"loaded: both witnesses present\")"
-              MOD=/usr/lib64/pkcs11/libkryoptic_pkcs11.so
-              export KRYOPTIC_CONF=/tmp/kryoptic.sql
-              pkcs11-tool --module "$MOD" --init-token --label polaris --so-pin 12345678 >/dev/null
-              pkcs11-tool --module "$MOD" --login --so-pin 12345678 --init-pin --pin 1234 >/dev/null
-              echo 1234 > /tmp/pin && chmod 0600 /tmp/pin
-              cp -r /src/polaris_web /work && cd /work
-              export POLARIS_CUSTODY_PKCS11_MODULE="$MOD" POLARIS_CUSTODY_PKCS11_PIN_FILE=/tmp/pin \
-                     POLARIS_CUSTODY_PKCS11_REQUIRE=1
-              python3 -m unittest test_custody.Pkcs11CustodyTests -v 2>&1 | grep -v faulthandler
-            '
+            bash /src/scripts/polaris-custody-pkcs11-drill.sh
+
 
   pqc-real:
     name: Real PQC (ML-DSA-65) sign + verify

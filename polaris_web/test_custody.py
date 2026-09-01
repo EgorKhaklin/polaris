@@ -318,8 +318,12 @@ class Pkcs11CustodyTests(unittest.TestCase):
             self.skipTest("no PKCS#11 module configured")
         self.module = _P11
         self.token = os.environ.get("POLARIS_CUSTODY_PKCS11_TOKEN_LABEL", "polaris")
-        self.pin = open(os.environ["POLARIS_CUSTODY_PKCS11_PIN_FILE"]).read().strip()
-        self.label = "polaris-test-%d" % os.getpid()
+        with open(os.environ["POLARIS_CUSTODY_PKCS11_PIN_FILE"]) as fh:
+            self.pin = fh.read().strip()
+        # One key per TEST, not per process: the driver refuses a duplicate label
+        # by design, and a per-process label made the second setUp trip it (found
+        # by running the drill, v9.179).
+        self.label = "polaris-test-%d-%s" % (os.getpid(), self._testMethodName)
         self.pk = custody.pkcs11_generate_key(self.module, self.token, self.pin, self.label)
 
     def test_key_is_generated_in_token_and_signatures_verify_by_both_witnesses(self):

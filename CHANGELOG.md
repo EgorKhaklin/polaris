@@ -5,6 +5,30 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.179 — 2026-09-01 (P1.2 follow-through: the PKCS#11 CI recipe moves out of an inline bash -c block)
+
+The v9.178 run was green on nine of ten jobs, including test_custody in
+pqc-real with both witnesses (file driver real, KMS stand-in, rotation, env
+refusals). The new custody-pkcs11 job failed before touching the driver:
+its recipe was a single-quoted `bash -c '...'` block in ci.yml, and two
+comments inside it contained an apostrophe ("Fedora's"), which ended the
+quoted string, so `dnf` ran on the Ubuntu runner ("dnf: command not found").
+
+The recipe is now `scripts/polaris-custody-pkcs11-drill.sh`, run by the job
+and locally with the identical `docker run ... bash /src/scripts/...` line
+(the same shape as the offsite and page drills). Quoting is not a place to
+be clever.
+
+Running that script locally, exactly as CI does, then found a second thing the
+one-off experiment had not: Pkcs11CustodyTests generated its in-token key
+under a per-PROCESS label, so with all three tests in one process the second
+setUp tripped the driver's own duplicate-label refusal (the refusal working as
+designed; the test's label was wrong). The label is now per test method, and
+the PIN file handle is closed. No product change; the driver itself was proven
+against Kryoptic before v9.178 shipped. 93 checks, 90 check-layer tests.
+
+---
+
 ## v9.178 — 2026-09-01 (Roadmap P1.2: the issuer signing key behind a custody interface, HSM/PKCS#11 and AWS KMS drivers)
 
 Polaris has one long-lived private key, the issuer's ML-DSA-65 token-signing
