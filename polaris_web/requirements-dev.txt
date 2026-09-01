@@ -30,3 +30,9 @@ pytest>=9.1.1,<10.0
 # to download the browser binary (~250MB). polaris_web/test_e2e_atlas.py
 # gracefully skips if either the package OR the browser is unavailable.
 playwright>=1.62.0,<2.0
+
+# ---- Test-only: coverage.py (v9.171 / roadmap P0.8) ----
+# scripts/ai-coverage.sh runs the suites under coverage, combines them, and
+# gates CI on a line-coverage floor. Subprocess coverage (test_cli shells into
+# polaris.py) relies on coverage.process_startup(), which this provides.
+coverage>=7.6,<8.0

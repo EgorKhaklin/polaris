@@ -864,6 +864,44 @@ def test_zk_tree_depth_synced_check_discriminates(tmp_path):
         "must PASS when both read the env var and share the default"
 
 
+def test_coverage_gated_check_discriminates(tmp_path):
+    scripts = tmp_path / "scripts"
+    wf = tmp_path / ".github" / "workflows"
+    scripts.mkdir()
+    wf.mkdir(parents=True)
+    cov = scripts / "ai-coverage.sh"
+    ci = wf / "ci.yml"
+
+    # No coverage script -> coverage not measured.
+    ci.write_text("jobs:\n  test:\n    steps:\n      - run: python -m unittest\n")
+    assert checks.check_coverage_gated(tmp_path)[0].level == "FAIL", \
+        "must FAIL when ai-coverage.sh is absent"
+
+    # Script measures but does not gate.
+    cov.write_text("coverage report\n")
+    assert checks.check_coverage_gated(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the script has no --fail-under floor"
+
+    # Gates in the script, but CI never runs it.
+    cov.write_text("coverage report --fail-under=$COVERAGE_FLOOR\n")
+    assert checks.check_coverage_gated(tmp_path)[0].level == "FAIL", \
+        "must FAIL when CI does not run ai-coverage.sh"
+
+    # CI runs it with a floor, but no Rust coverage gate.
+    ci.write_text("jobs:\n  test:\n    steps:\n"
+                  "      - env:\n          COVERAGE_FLOOR: \"72\"\n"
+                  "        run: bash scripts/ai-coverage.sh\n")
+    assert checks.check_coverage_gated(tmp_path)[0].level == "FAIL", \
+        "must FAIL when Rust coverage is not gated (no fail-under-lines)"
+
+    ci.write_text("jobs:\n  test:\n    steps:\n"
+                  "      - env:\n          COVERAGE_FLOOR: \"72\"\n"
+                  "        run: bash scripts/ai-coverage.sh\n"
+                  "      - run: cargo llvm-cov --fail-under-lines 85\n")
+    assert checks.check_coverage_gated(tmp_path)[0].level == "OK", \
+        "must PASS with the Python script+floor, CI running it, and the Rust gate"
+
+
 def test_dockerfile_copies_app_modules_check_discriminates(tmp_path):
     web = tmp_path / "polaris_web"
     web.mkdir()

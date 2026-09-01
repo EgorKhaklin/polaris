@@ -96,18 +96,15 @@ jobs:
         run: for f in scripts/*.sh; do bash -n "$f" || exit 1; done
 
       - name: polaris-checks (C1-C10 invariant layer)
-        run: |
-          python3 -m polaris_checks.run
-          python3 -m pytest polaris_checks/test_checks.py -q
+        run: python3 -m polaris_checks.run
 
-      - name: CHECK-constraint regression suite (DB)
-        run: cd polaris_web && python3 -m unittest test_check_constraints -v
-
-      - name: Property tests (invariants + redaction, DB)
-        run: |
-          cd polaris_web
-          python3 -m unittest test_invariants_property -v
-          python3 -m unittest test_redaction_property -v
+      # P0.8 — the DB suites (check-constraints, property, app, CLI) + the
+      # detection tests run once under coverage via scripts/ai-coverage.sh, which
+      # combines them and fails on a red suite OR a coverage drop below the
+      # floor. Consolidated here (rather than as separate steps) so nothing runs
+      # twice; the script prints `::error::suite failed: <which>` for granularity.
+      # It runs AFTER the ZK binary build below, which test_app needs, so the
+      # coverage step is placed after that build.
 
       # Rust + the ZK binary are built BEFORE the app suite so test_app's
       # ZKSnarkTests run (Merkle/Plonky2 proof round-trips + the demo-epoch
@@ -137,10 +134,10 @@ jobs:
           rustc --version | grep -qE "nightly" || { echo "::error::pinned nightly not active"; exit 1; }
           cargo build --release --bin polaris-zk
 
-      - name: Application + CLI suites (DB, with ZK binary)
-        run: |
-          cd polaris_web && python3 -m unittest test_app test_pqc_signing -v
-          cd ../polaris_cli && python3 -m unittest test_cli -v
+      - name: Python suites under coverage + floor gate (DB, with ZK binary)
+        env:
+          COVERAGE_FLOOR: "72"
+        run: bash scripts/ai-coverage.sh
 
       - name: ai-link-check
         run: bash scripts/ai-link-check.sh --ci
@@ -148,6 +145,23 @@ jobs:
       - name: ZK crate tests
         working-directory: polaris_zk
         run: cargo test --release
+
+      # P0.8 — Rust coverage floor for the crypto LIBRARY (lib.rs: circuit,
+      # prover, verifier). main.rs (the thin CLI dispatch) is excluded because
+      # it is exercised end to end by the prove-verify roundtrip below and the
+      # app shelling into the binary, not by `cargo test`, so counting it would
+      # understate the tested surface. The floor is a ratchet set below the
+      # measured baseline (~92% lines); raise it as coverage climbs.
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+      - name: ZK library coverage floor
+        working-directory: polaris_zk
+        run: |
+          cargo llvm-cov --summary-only --ignore-filename-regex 'main\.rs' \
+            --fail-under-lines 85
+          echo "### ZK library coverage" >> "$GITHUB_STEP_SUMMARY"
+          cargo llvm-cov --summary-only --ignore-filename-regex 'main\.rs' 2>/dev/null \
+            | grep -E 'lib.rs|TOTAL' >> "$GITHUB_STEP_SUMMARY" || true
 
       - name: ZK prove-verify roundtrip + two-witness differential
         run: |

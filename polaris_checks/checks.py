@@ -2759,6 +2759,35 @@ def check_zk_tree_depth_synced(root: pathlib.Path) -> list[Finding]:
                f"(default {m_rs.group(1)}, both read POLARIS_ZK_TREE_DEPTH)")
 
 
+# P0.8 — coverage must be measured AND gated, on both surfaces. A test suite
+# with no coverage floor silently rots: a refactor that stops exercising a
+# module reads as green as long as the remaining tests pass. The floor is a
+# ratchet (fails on a drop). Pin that the Python gate script exists and CI runs
+# it with a floor, and that CI gates the Rust library coverage too.
+def check_coverage_gated(root: pathlib.Path) -> list[Finding]:
+    sh = _read(root, "scripts/ai-coverage.sh")
+    if not sh:
+        return _fail("coverage_gate", "scripts/ai-coverage.sh is missing; coverage is not measured")
+    if "--fail-under" not in sh:
+        return _fail("coverage_gate",
+                     "ai-coverage.sh does not gate on a floor (--fail-under); it measures "
+                     "coverage without failing on a regression")
+    ci = _read(root, ".github/workflows/ci.yml")
+    if "ai-coverage.sh" not in ci:
+        return _fail("coverage_gate",
+                     "CI does not run scripts/ai-coverage.sh; the Python coverage floor is "
+                     "never enforced")
+    if "COVERAGE_FLOOR" not in ci:
+        return _fail("coverage_gate", "CI runs coverage without setting a COVERAGE_FLOOR")
+    if "fail-under-lines" not in ci:
+        return _fail("coverage_gate",
+                     "CI does not gate the Rust library coverage (cargo llvm-cov "
+                     "--fail-under-lines); only Python is floored")
+    return _ok("coverage_gate",
+               "coverage is measured and gated on both surfaces: Python via ai-coverage.sh "
+               "with a COVERAGE_FLOOR, Rust via cargo llvm-cov --fail-under-lines")
+
+
 CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_csp_forbids_unsafe_inline,
     check_one_active_token_index,
@@ -2841,6 +2870,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_sbom_trivy_matches_scan,
     check_release_provenance,
     check_zk_tree_depth_synced,
+    check_coverage_gated,
     check_local_clock_convention,
     check_c6_atlas_redacts_zk_location,
     check_coercion_evidence_retained,

@@ -1,0 +1,29 @@
+# Coverage config for scripts/ai-coverage.sh (roadmap P0.8).
+# Measures PRODUCT coverage: the test files, venvs, and generated code are
+# omitted so the number reflects how much of the shipped code the suites
+# exercise, not how much of the tests run.
+[run]
+branch = false
+parallel = true
+omit =
+    */test_*.py
+    */tests/*
+    */venv/*
+    */__pycache__/*
+    */witness2/poseidon_constants.py
+    polaris_checks/run.py
+    # The subprocess-coverage bootstrap ai-coverage.sh drops in a temp dir; it
+    # is not product code, and recording it leaves a dangling source reference
+    # once the temp dir is cleaned (a "No source for code" report error).
+    */sitecustomize.py
+
+[report]
+# The CLI entrypoints are exercised end to end (the app shells into the ZK
+# binary; polaris_checks.run gates CI) rather than by unit tests, so counting
+# them as "uncovered" would understate the product coverage. They are omitted
+# above and exercised by integration.
+exclude_lines =
+    pragma: no cover
+    if __name__ == .__main__.:
+    raise NotImplementedError
+skip_empty = true

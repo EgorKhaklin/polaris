@@ -5,6 +5,48 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.171 — 2026-09-01 (Roadmap P0.8: coverage measured, and a floor that fails CI on a regression)
+
+There was no coverage measurement at all; a refactor that stopped exercising a
+module would have read as green. Now both surfaces are measured and gated.
+
+`scripts/ai-coverage.sh` runs the Python suites under coverage.py in
+parallel-append mode, combines them across their different working directories
+(a pinned absolute `COVERAGE_FILE`, since test_app runs from polaris_web/ and
+test_cli from polaris_cli/), reports, and fails below a floor. CI runs it with
+`COVERAGE_FLOOR=72`; the measured baseline is 78%, so there is honest headroom
+and a real drop fails while noise does not. The floor is a ratchet: raise it as
+coverage climbs, never silently lower it.
+
+The measurement found its own blind spot. `polaris_cli/polaris.py` (664 lines)
+first reported 0% despite 64 passing CLI tests, because test_cli shells into it
+as a subprocess that the parent's coverage cannot see. Wiring the coverage
+subprocess pattern (a sitecustomize on PYTHONPATH calling
+`coverage.process_startup()` under `COVERAGE_PROCESS_START`) makes the child
+record its own data: polaris.py is actually 77% covered, and the combined total
+rose from a misleading 66% to a true 78%. Measuring honestly changed the number
+by twelve points.
+
+Rust: CI gates the crypto library (lib.rs: circuit, prover, verifier) at
+`cargo llvm-cov --fail-under-lines 85`, baseline ~92%. main.rs (thin CLI
+dispatch) is excluded because it is exercised by the prove-verify roundtrip and
+the app shell-out, not by `cargo test`, so counting it would understate the
+tested surface. Both coverage numbers are published to the CI step summary.
+
+Scope note, recorded honestly: the DoD said "published per release." A coverage
+run needs the Postgres the release workflow does not have, so publication is
+the CI step summary on every run, not a per-release asset. The load-bearing
+half (the floor gate that fails on regression) is fully delivered.
+
+The four scattered Python test steps were consolidated into the one
+coverage-instrumented step so nothing runs twice; the script prints
+`::error::suite failed: <which>` so a red suite fails CI with granularity, and
+SUITE_FAIL gates the exit alongside the floor (an early version swallowed suite
+failures and would have passed CI on a broken test as long as coverage held).
+`check_coverage_gated` pins both gates. 89 checks, 86 check-layer tests.
+
+---
+
 ## v9.170 — 2026-09-01 (Roadmap P0.7 part 2: the plonky2 0.2 to 1.x major, evaluated then taken)
 
 The proving-system major Dependabot proposed and v9.161 deferred as unevaluated
