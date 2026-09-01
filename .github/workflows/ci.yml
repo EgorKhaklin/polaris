@@ -714,6 +714,29 @@ jobs:
   # across signs (a real trust anchor), signatures verify, and forgeries fail.
   # Heavy (liboqs builds from source ~minutes), so it runs as its own job.
   # --------------------------------------------------------------------------
+  # --------------------------------------------------------------------------
+  # v9.175 (roadmap P0.10) — the duress PAGE PATH, end to end. The rules file
+  # said "promtool-validated" in a comment and no CI step ever ran promtool; the
+  # Alertmanager side was a commented-out block, so nothing proved that a
+  # duress increment reaches a pager. This job validates the shipped
+  # prometheus.yml / polaris-alerts.yml / alertmanager.yml with promtool +
+  # amtool, then runs real Prometheus + real Alertmanager (digest-pinned)
+  # against a stub /metrics that flips polaris_duress_events_total 0 -> 1 and a
+  # webhook sink, and asserts the PolarisDuressEvent page arrives (receiver
+  # `pager`, severity sev1, firing) with no page beforehand. The app half (a
+  # duress-code match increments the counter) is test_duress_increments_
+  # prometheus_counter in the product suite. Pinned by check_pager_integration.
+  # --------------------------------------------------------------------------
+  page-drill:
+    name: Duress page path (Prometheus rules -> Alertmanager -> pager webhook)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: promtool + amtool validate the shipped configs, then the page drill
+        run: bash scripts/polaris-page-drill.sh
+
   pqc-real:
     name: Real PQC (ML-DSA-65) sign + verify
     runs-on: ubuntu-latest

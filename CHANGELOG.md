@@ -5,6 +5,50 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.175 — 2026-09-01 (Roadmap P0.10: pager integration, and the duress page path proven end to end)
+
+Polaris shipped alert rules and a scrape config, but the Alertmanager side was
+a commented-out block, no receiver existed, "promtool-validated" was a claim in
+a comment that no CI step ever checked, and nothing proved that a duress event
+reaches a human. Now:
+
+  - `deploy/observability/alertmanager.yml`: routing and a `pager` receiver.
+    PolarisDuressEvent is routed with `group_wait: 0s` and re-paged every 15
+    minutes until a human resolves the situation (the alert clearing is not
+    resolution); other SEV-1 page immediately with hourly repeats; SEV-2/3 are
+    batched. PolarisAppInfoAbsent is inhibited while PolarisAppDown fires. The
+    default route is the pager: an alert with no route is the wrong failure
+    mode. The pager URL is read from a mounted file (`url_file`), never written
+    into config, because it usually embeds the integration key; the native
+    PagerDuty/Opsgenie/Slack blocks are sketched with file-based keys too, and
+    `check_pager_integration` fails on any inline url/routing_key/api_key.
+  - `prometheus.yml` is wired to that Alertmanager instead of carrying a
+    commented example.
+  - `scripts/polaris-page-drill.sh`, run by the new `page-drill` CI job:
+    promtool checks the rules and config, amtool checks the receiver config,
+    then real Prometheus and real Alertmanager (digest-pinned) run on the
+    SHIPPED files against a stub /metrics and a webhook sink. The drill asserts
+    silence while polaris_duress_events_total is 0, flips it to 1, and asserts
+    the PolarisDuressEvent page arrives at the webhook with receiver=pager,
+    severity=sev1, status=firing. Measured time-to-page: 2 seconds. The app
+    half, a duress-code match incrementing that counter, is the existing
+    `test_duress_increments_prometheus_counter` (v9.128), which the check now
+    requires to stay; the two halves together cover the path from a holder's
+    duress code to the pager URL.
+  - RUNBOOKS.md gains "Paging: wiring the receiver": mount the URL file, run
+    `amtool alert add alertname=PolarisDuressEvent ...` through the real
+    receiver before you need it for real, what the page payload carries (and
+    does not: no token, no holder), and the routing as shipped. The
+    observability README, OPERATIONS.md checklist, and PRODUCTION-READINESS
+    are updated; the stale "five rules" count is fixed to six.
+
+Scope, honestly: the drill's pager is a webhook sink, not PagerDuty; the on-call
+product and its URL remain operator-supplied. What is no longer a claim is
+everything between the counter and that URL. 91 checks, 88 check-layer tests.
+P0 buildable rows are now complete (P0.11 is externally gated).
+
+---
+
 ## v9.174 — 2026-09-01 (P0.9 follow-through: generate-secrets called its new function before defining it)
 
 The v9.173 CI prod-stack boot died in "Generate secrets + certs" with

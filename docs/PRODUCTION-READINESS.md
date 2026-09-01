@@ -212,6 +212,14 @@ posture audit's migration roadmap.
   promtool-validated `polaris-alerts.yml` (6 rules) + `prometheus.yml` scrape
   config + README; ratios/quantiles stay valid per worker. Pinned by
   `check_alert_rules`. (Alertmanager backend operator-gated.)
+- [x] **Pager integration + the duress page path proven (v9.175).**
+  `deploy/observability/alertmanager.yml` ships routing (duress: no wait,
+  re-page 15m) and a `pager` webhook receiver whose URL is a mounted secret file;
+  `prometheus.yml` is wired to it; the `page-drill` CI job runs promtool/amtool on
+  the shipped configs and then real Prometheus + Alertmanager against a stub
+  `/metrics`, asserting a `polaris_duress_events_total` increment reaches the
+  webhook. Pinned by `check_pager_integration`. (The pager product and its URL
+  stay operator-supplied.)
 - [x] **Prometheus multiprocess metrics (v9.120).** `/metrics` aggregates across
   all gunicorn workers (`PROMETHEUS_MULTIPROC_DIR` + a `MultiProcessCollector`;
   gunicorn `child_exit` reaps dead workers) — no more 4x undercount. Pinned by

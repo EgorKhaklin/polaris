@@ -2839,3 +2839,56 @@ def test_offsite_backup_env_driven_check_discriminates(tmp_path):
     write({".github/workflows/ci.yml": "steps:\n  - run: echo local round-trip only\n"})
     assert checks.check_offsite_backup_env_driven(tmp_path)[0].level == "FAIL", \
         "must FAIL when CI does not run the offsite drill"
+
+
+def test_pager_integration_check_discriminates(tmp_path):
+    AM = ("route:\n  receiver: pager\n  routes:\n"
+          "    - matchers: ['alertname=\"PolarisDuressEvent\"']\n      receiver: pager\n      group_wait: 0s\n"
+          "receivers:\n  - name: pager\n    webhook_configs:\n"
+          "      - url_file: /etc/alertmanager/secrets/pager_webhook_url\n")
+    good = {
+        "deploy/observability/alertmanager.yml": AM,
+        "deploy/observability/prometheus.yml": "alerting:\n  alertmanagers:\n    - static_configs:\n"
+                                               "        - targets: ['alertmanager:9093']\n",
+        "scripts/polaris-page-drill.sh": ("promtool check rules x\namtool check-config alertmanager.yml\n"
+                                          "polaris_duress_events_total 1\ngrep PolarisDuressEvent webhook\n"),
+        ".github/workflows/ci.yml": "steps:\n  - run: bash scripts/polaris-page-drill.sh\n",
+        "docs/operator/RUNBOOKS.md": "## Paging\nmount pager_webhook_url\n",
+        "polaris_web/test_app.py": "def test_duress_increments_prometheus_counter(self):\n    pass\n",
+    }
+
+    def write(overrides=None):
+        files = dict(good); files.update(overrides or {})
+        for rel, body in files.items():
+            f = tmp_path / rel
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text(body)
+
+    write()
+    assert checks.check_pager_integration(tmp_path)[0].level == "OK", "must PASS on the good fixture"
+
+    # The pager URL inline in the config (the integration key would be committed).
+    write({"deploy/observability/alertmanager.yml": AM.replace(
+        "      - url_file: /etc/alertmanager/secrets/pager_webhook_url\n",
+        "      - url: https://events.pagerduty.com/x/abc123\n")})
+    f = checks.check_pager_integration(tmp_path)[0]
+    assert f.level == "FAIL" and "url_file" in f.message, "must FAIL on an inline pager URL"
+
+    # Duress routed with a grouping wait.
+    write({"deploy/observability/alertmanager.yml": AM.replace("group_wait: 0s", "group_wait: 30s")})
+    f = checks.check_pager_integration(tmp_path)[0]
+    assert f.level == "FAIL" and "group_wait" in f.message, "must FAIL when duress waits on grouping"
+
+    # prometheus.yml with the alerting block commented out (the pre-P0.10 state).
+    write({"deploy/observability/prometheus.yml": "# alerting:\n#   alertmanagers:\n"})
+    assert checks.check_pager_integration(tmp_path)[0].level == "FAIL", \
+        "must FAIL when prometheus.yml does not reach an Alertmanager"
+
+    # CI no longer running the drill.
+    write({".github/workflows/ci.yml": "steps:\n  - run: echo no drill\n"})
+    assert checks.check_pager_integration(tmp_path)[0].level == "FAIL", "must FAIL when CI skips the drill"
+
+    # The app-half test removed.
+    write({"polaris_web/test_app.py": "def test_something_else(self):\n    pass\n"})
+    assert checks.check_pager_integration(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the duress-counter test is gone"

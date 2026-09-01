@@ -2866,6 +2866,55 @@ def check_offsite_backup_env_driven(root: pathlib.Path) -> list[Finding]:
                "compose/secrets/deploy carry it, and CI drills backup+restore against MinIO")
 
 
+def check_pager_integration(root: pathlib.Path) -> list[Finding]:
+    """Roadmap P0.10: alerts reach a pager, and the duress page path is proven.
+
+    Ships an Alertmanager receiver template whose pager URL/keys are mounted
+    files (never inline: the URL usually embeds the integration key), routes
+    PolarisDuressEvent with no grouping wait, wires prometheus.yml to it, and
+    proves the path in CI: the product suite proves a duress match increments
+    polaris_duress_events_total, and scripts/polaris-page-drill.sh proves the
+    counter increment reaches the webhook through the shipped rules + config
+    with real Prometheus and Alertmanager (after promtool/amtool validate them)."""
+    am = _read(root, "deploy/observability/alertmanager.yml")
+    prom = _read(root, "deploy/observability/prometheus.yml")
+    drill = _read(root, "scripts/polaris-page-drill.sh")
+    ci = _read(root, ".github/workflows/ci.yml")
+    book = _read(root, "docs/operator/RUNBOOKS.md")
+    tests = _read(root, "polaris_web/test_app.py")
+    if not (am and prom and drill and ci and book and tests):
+        return _fail("pager", "a pager-integration file is missing (alertmanager.yml, prometheus.yml, "
+                     "polaris-page-drill.sh, ci.yml, RUNBOOKS.md, or test_app.py)")
+    if "webhook_configs" not in am or "url_file" not in am:
+        return _fail("pager", "alertmanager.yml must ship a webhook receiver whose URL comes from url_file "
+                     "(the pager URL embeds the integration key; it is a mounted secret, not config)")
+    if re.search(r"(?m)^\s*(url|routing_key|api_key|api_url|service_key)\s*:", am):
+        return _fail("pager", "alertmanager.yml carries a pager URL or key INLINE; use url_file / "
+                     "routing_key_file / api_key_file / api_url_file so the secret is a mounted file")
+    if not re.search(r"matchers:\s*\[\s*'alertname=\"PolarisDuressEvent\"'\s*\][^-]*?group_wait:\s*0s", am, re.S):
+        return _fail("pager", "alertmanager.yml must route PolarisDuressEvent with group_wait: 0s (a "
+                     "coerced person cannot wait out a grouping window)")
+    if not re.search(r"(?m)^alerting:", prom) or not re.search(r"(?m)^\s+alertmanagers:", prom):
+        return _fail("pager", "prometheus.yml must have a live (uncommented) alerting.alertmanagers block; "
+                     "rules that reach no Alertmanager page no one")
+    for needle in ("promtool check rules", "amtool check-config", "polaris_duress_events_total",
+                   "PolarisDuressEvent", "webhook", "alertmanager.yml"):
+        if needle not in drill:
+            return _fail("pager", f"polaris-page-drill.sh must contain '{needle}': validate the shipped "
+                         "configs, flip the duress counter, and assert the PolarisDuressEvent webhook")
+    if "polaris-page-drill.sh" not in ci:
+        return _fail("pager", "ci.yml must run scripts/polaris-page-drill.sh")
+    if "def test_duress_increments_prometheus_counter" not in tests:
+        return _fail("pager", "test_app.py must keep test_duress_increments_prometheus_counter (the app half "
+                     "of the page path: a duress match increments the counter the drill starts from)")
+    if "pager_webhook_url" not in book:
+        return _fail("pager", "RUNBOOKS.md must document wiring the pager (the pager_webhook_url secret file)")
+    return _ok("pager", "pager integration: a file-secret webhook receiver template, PolarisDuressEvent "
+               "routed with no wait, prometheus.yml wired to it, promtool/amtool + a real "
+               "Prometheus->Alertmanager->webhook duress drill in CI, the app-half test kept, and a "
+               "wiring runbook")
+
+
 CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_csp_forbids_unsafe_inline,
     check_one_active_token_index,
@@ -2950,6 +2999,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_zk_tree_depth_synced,
     check_coverage_gated,
     check_offsite_backup_env_driven,
+    check_pager_integration,
     check_local_clock_convention,
     check_c6_atlas_redacts_zk_location,
     check_coercion_evidence_retained,

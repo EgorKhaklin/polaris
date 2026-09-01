@@ -2,8 +2,8 @@
 #
 # A ready-to-use Prometheus config: scrape the app's /metrics and load the
 # Polaris alerting rules. Point `static_configs.targets` at your deployment and
-# wire `alerting` to your Alertmanager (the alerting backend is operator-provided
-# — see deploy/observability/README.md). Validate with: promtool check config prometheus.yml
+# `alerting` targets the shipped alertmanager.yml (v9.175); the pager URL it
+# notifies is operator-supplied (see README.md). Validate with: promtool check config prometheus.yml
 global:
   scrape_interval: 30s
   evaluation_interval: 30s
@@ -11,11 +11,13 @@ global:
 rule_files:
   - polaris-alerts.yml
 
-# Operator-provided: point this at your Alertmanager and remove the comment.
-# alerting:
-#   alertmanagers:
-#     - static_configs:
-#         - targets: ['alertmanager:9093']
+# v9.175 (P0.10) — the shipped Alertmanager (alertmanager.yml routes to the
+# pager receiver). `alertmanager:9093` is the service name on the deployment's
+# network; change the host if yours differs.
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ['alertmanager:9093']
 
 scrape_configs:
   - job_name: polaris

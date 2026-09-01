@@ -5,12 +5,14 @@ One runbook per shipped Prometheus alert. When an alert in
 fires, find its section here by the exact alert name and work the
 Trigger / Likely cause / Diagnosis / Remediation steps.
 
-> **Honest status (v9.123).** Polaris ships the alert rules and the metrics they
-> read; it does not ship the pager. The Alertmanager backend that routes these
-> alerts to an on-call is **operator-gated**
-> ([`../../deploy/observability/README.md`](../../deploy/observability/README.md)).
-> These runbooks are reference procedures for a notional deployment, not a
-> claim that Polaris is paging anyone.
+> **Status (v9.175).** Polaris ships the alert rules, the metrics they read,
+> and the Alertmanager routing + receiver template
+> ([`../../deploy/observability/alertmanager.yml`](../../deploy/observability/alertmanager.yml)),
+> and CI proves that a duress increment reaches the pager webhook
+> (`scripts/polaris-page-drill.sh`). What Polaris does not ship is the pager
+> itself: the on-call product and its URL are yours, wired as described in
+> [Paging](#paging-wiring-the-receiver). Until that file is mounted, these are
+> reference procedures, not a claim that Polaris is paging anyone.
 
 The severity labels (`sev1`/`sev2`/`sev3`) map to the SEV ladder in
 [`DR.md`](DR.md) §2. The SLO thresholds these alerts
@@ -31,7 +33,8 @@ edit either file.
 4. [PolarisHigh5xx](#polarishigh5xx)
 5. [PolarisHighDBLatency](#polarishighdblatency)
 6. [PolarisHighRequestLatency](#polarishighrequestlatency)
-7. [Cross-references](#cross-references)
+7. [Paging: wiring the receiver](#paging-wiring-the-receiver)
+8. [Cross-references](#cross-references)
 
 ---
 
@@ -125,7 +128,9 @@ they may be acting under coercion.
 
 **Trigger.** `polaris_duress_events_total` increased in the last 5 minutes (at
 least one duress-code match). The alert pages immediately (no `for` window):
-duress cannot wait out a debounce.
+duress cannot wait out a debounce. The shipped Alertmanager route matches it
+with `group_wait: 0s` and re-pages every 15 minutes until a human resolves
+the situation (see [Paging](#paging-wiring-the-receiver)).
 
 **Likely cause.**
 - A genuine duress-code entry: a holder forced to authenticate under coercion
@@ -272,6 +277,55 @@ This matches the latency SLO boundary in [`SLOS.md`](SLOS.md) §3.
 - Post-deploy cold cache → if the p99 is trending back down on its own within
   the `for` window after a restart, monitor rather than act.
 - Confirm recovery: the p99 quantile falls back under 2s and the alert clears.
+
+---
+
+## Paging: wiring the receiver
+
+Alerts page through the `pager` receiver in
+[`alertmanager.yml`](../../deploy/observability/alertmanager.yml): a generic
+webhook whose URL is read from a mounted file, never written into config (the
+URL usually embeds the integration key).
+
+**Wire it.**
+1. Create the pager integration in your on-call product and copy its webhook
+   URL (PagerDuty Events v2, Opsgenie, Splunk On-Call, or a Slack/Teams incoming
+   webhook all work; a bridge of your own works too).
+2. Write the URL, one line, to a file outside the repo, and mount it read-only
+   at `/etc/alertmanager/secrets/pager_webhook_url` in the Alertmanager
+   container. Native `pagerduty_configs` / `opsgenie_configs` / `slack_configs`
+   blocks are sketched in the file; their keys are mounted files as well.
+3. `amtool check-config alertmanager.yml`, then reload Alertmanager.
+
+**Prove it, before a real page.** Send a synthetic `PolarisDuressEvent`
+through the real receiver and confirm the on-call is paged within seconds:
+```bash
+amtool --alertmanager.url=http://alertmanager:9093 alert add \
+  alertname=PolarisDuressEvent severity=sev1 job=polaris \
+  --annotation=summary="Drill: synthetic duress page"
+```
+Tell the on-call it is a drill first. Repeat after any change to the routing or
+the pager product.
+
+**What a PolarisDuressEvent page carries.** The webhook body is Alertmanager's
+standard JSON: `receiver: pager`, `status: firing`, and an `alerts[]` entry with
+`labels.alertname = PolarisDuressEvent`, `labels.severity = sev1`, and the
+summary "Duress code matched". It does NOT carry the token or the holder; read
+those out of band on the operator duress dashboard, as the
+[PolarisDuressEvent](#polarisduressevent) runbook directs.
+
+**Routing, as shipped.** `PolarisDuressEvent`: no grouping wait, re-page every
+15 minutes. Other SEV-1: immediate, re-page hourly. SEV-2/3: 30s grouping,
+re-page every 4 hours. `PolarisAppInfoAbsent` is inhibited while
+`PolarisAppDown` fires (one page for one fact). Everything falls through to
+`pager` by default: an alert with no route is the wrong failure mode.
+
+**How this is verified.** `scripts/polaris-page-drill.sh` (the `page-drill` CI
+job) runs the real Prometheus and Alertmanager on the shipped rules and config,
+flips `polaris_duress_events_total` from 0 to 1 on a stub `/metrics`, and asserts
+the page arrives at a webhook sink, with none arriving before the flip. The
+product suite's `test_duress_increments_prometheus_counter` proves the app
+increments that counter on a duress-code match.
 
 ---
 

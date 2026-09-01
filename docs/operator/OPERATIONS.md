@@ -104,8 +104,10 @@ Out-bound: the host must reach Let's Encrypt
       secrets/polaris_secret_key`)
 - [ ] Backup destination configured (S3 bucket, local volume, or
       remote tarball drop)
-- [ ] Monitoring endpoint configured (a place to receive alerts —
-      PagerDuty / OpsGenie / a simple cron-curl)
+- [ ] Pager wired: the on-call product's webhook URL written to a file
+      mounted at `/etc/alertmanager/secrets/pager_webhook_url` (see
+      `docs/operator/RUNBOOKS.md`, Paging), and a synthetic
+      `PolarisDuressEvent` sent through it with `amtool alert add`
 - [ ] Admin operator email known (for the initial seeded account)
 - [ ] Production invariants (TLS, no secrets in env, structured
       /api/health) verified by `python3 -m polaris_checks.run`
@@ -1035,12 +1037,16 @@ scrape_configs:
 | `polaris_db_query_latency_seconds` | histogram | — | DB round-trip (sampled on `/api/health` probes) |
 | `polaris_app_info` | gauge | version | App metadata; value always 1; the label carries the data |
 
-**Alerting rules:** a ready-to-deploy, promtool-validated rules file ships at
+**Alerting rules:** a ready-to-deploy rules file ships at
 [`deploy/observability/polaris-alerts.yml`](../../deploy/observability/polaris-alerts.yml)
-(five rules, severity-labelled to the SEV ladder), alongside a
-[`prometheus.yml`](../../deploy/observability/prometheus.yml) scrape config and a
-[README](../../deploy/observability/README.md). Wire it to your Alertmanager
-(operator-provided). Example of one rule (`PolarisHigh5xx`):
+(six rules, severity-labelled to the SEV ladder), alongside a
+[`prometheus.yml`](../../deploy/observability/prometheus.yml) scrape config wired
+to the shipped
+[`alertmanager.yml`](../../deploy/observability/alertmanager.yml) routing and
+pager receiver, and a [README](../../deploy/observability/README.md). CI runs
+`promtool` and `amtool` on all three and drills the duress page path end to end
+(`scripts/polaris-page-drill.sh`); the pager URL itself is yours (mounted file).
+Example of one rule (`PolarisHigh5xx`):
 
 ```yaml
 groups:

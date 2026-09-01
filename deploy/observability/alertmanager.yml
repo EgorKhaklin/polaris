@@ -1,0 +1,73 @@
+# Polaris — Alertmanager routing + pager receiver template (v9.175, roadmap P0.10)
+#
+# A real, amtool-validated Alertmanager config. Prometheus (prometheus.yml)
+# sends the Polaris alerts here; this routes them to ONE receiver, `pager`, a
+# generic webhook that every pager product accepts (PagerDuty Events v2,
+# Opsgenie, Splunk On-Call, a Slack/Teams incoming webhook, or your own bridge).
+#
+# THE PAGER URL IS A SECRET (it usually embeds the integration/routing key).
+# It is never written into this file: `url_file` reads it from a file the
+# operator mounts at /etc/alertmanager/secrets/pager_webhook_url (one line, the
+# URL). The same rule applies to the native integrations sketched at the bottom:
+# routing_key_file / api_key_file / api_url_file, never inline keys.
+#
+# The duress route is the point of this file. PolarisDuressEvent means a person
+# may be under coercion right now: no grouping wait, no batching interval, and
+# it re-pages every 15 minutes until a human resolves the human situation
+# (the alert itself clears after 5 minutes of no new events; that is not
+# resolution). scripts/polaris-page-drill.sh proves this path end to end, and CI
+# runs it: a duress increment on /metrics reaches the webhook.
+#
+# Validate: amtool check-config alertmanager.yml
+global:
+  resolve_timeout: 5m
+
+route:
+  # Everything reaches the pager by default. A Polaris deployment that drops an
+  # alert on the floor because no route matched is the wrong failure mode.
+  receiver: pager
+  group_by: ['alertname']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    # SEV-1, coercion signal. Page NOW, keep paging until a human acts.
+    - matchers: ['alertname="PolarisDuressEvent"']
+      receiver: pager
+      group_wait: 0s
+      group_interval: 1m
+      repeat_interval: 15m
+    # Other SEV-1 (app down / not reporting). Immediate, hourly re-page.
+    - matchers: ['severity="sev1"']
+      receiver: pager
+      group_wait: 0s
+      repeat_interval: 1h
+    # SEV-2 / SEV-3 (degraded). Batched, re-paged every 4h.
+    - matchers: ['severity=~"sev2|sev3"']
+      receiver: pager
+      group_wait: 30s
+      repeat_interval: 4h
+
+receivers:
+  - name: pager
+    webhook_configs:
+      - url_file: /etc/alertmanager/secrets/pager_webhook_url
+        send_resolved: true
+        # 0 = never truncate the alert list in one notification.
+        max_alerts: 0
+    # Native integrations, if you prefer them to a webhook. Secrets stay in
+    # mounted files. Uncomment ONE block and mount the file it names.
+    # pagerduty_configs:
+    #   - routing_key_file: /etc/alertmanager/secrets/pagerduty_routing_key
+    #     severity: '{{ if eq .CommonLabels.severity "sev1" }}critical{{ else }}warning{{ end }}'
+    # opsgenie_configs:
+    #   - api_key_file: /etc/alertmanager/secrets/opsgenie_api_key
+    # slack_configs:
+    #   - api_url_file: /etc/alertmanager/secrets/slack_webhook_url
+    #     channel: '#polaris-oncall'
+
+inhibit_rules:
+  # If the app is down, "its info gauge is absent" is the same fact; page once.
+  - source_matchers: ['alertname="PolarisAppDown"']
+    target_matchers: ['alertname="PolarisAppInfoAbsent"']
+    equal: ['job']
