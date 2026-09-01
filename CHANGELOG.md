@@ -5,6 +5,32 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.165 — 2026-09-01 (Wave five: two floors taken, one minor caught narrowing its deps, one major caught sneaking past the filter)
+
+Four PRs in the fifth wave, and two of them earned their scrutiny.
+
+The pytest 9.1.1 and playwright 1.62 floors were taken per policy, along with
+the prometheus floor already applied in v9.164.
+
+**webauthn 2.8.0 was attempted and REVERTED on evidence.** The minor looked
+routine, and the running venv even accepted it. The clean-resolve check told
+the truth: 2.8.0 tightened its dependency cap to cbor2<6 while this surface
+pins cbor2 6.x (current), so requirements.txt stopped resolving in a fresh
+environment; CI's own pip install would have failed. Taking a minor is not
+worth forcing a direct dependency backward. Reverted to the proven
+webauthn 2.7.1 + cbor2 6.1.4 pair (clean resolve, audit clean, 440-test suite
+green), and 2.8.0 is version-ignored in dependabot.yml with the reason; it is
+taken when a release lifts the cap, or with the 3.x major in P1.7.
+
+**The redis major came back through a side door.** The semver-major ignore
+does not catch RANGE-requirement updates, and Dependabot proposed
+>=8.1.0,<9.0 straight past it. Declined per the recorded P1.8 decision, and
+the ignore hardened to all update forms for redis, with the observation
+documented in the config: patches inside 5.x resolve automatically because
+the range is open, so ignoring redis PRs costs nothing.
+
+---
+
 ## v9.164 — 2026-09-01 (Wave four: one floor line, and the tide goes out)
 
 Dependabot's fourth wave was a single PR: the prometheus-client floor to
