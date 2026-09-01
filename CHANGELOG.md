@@ -5,6 +5,20 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.184 — 2026-09-01 (P1.4 follow-through: the installer now shows WHY polaris.service failed)
+
+The v9.183 run was green on ten of eleven jobs, including the first run of
+the rolling-deploy drill on a GitHub runner (264 served, 0 drops, both
+colours replaced, control detected the outage). The Linux install job failed
+at `systemctl start polaris.service` and the log holds only systemd's one-line
+summary, because the installer never dumped the journal; this is the second
+time that gap has cost a round trip. install.sh now prints the last 60
+journal lines, the compose state, and the tail of every polaris container's
+log when the unit fails to start. No product change; the next run diagnoses
+itself.
+
+---
+
 ## v9.183 — 2026-09-01 (Roadmap P1.4: zero-downtime deploys; blue-green behind a retrying edge, expand-contract enforced, zero drops proven with a control)
 
 OPERATIONS.md called the deploy a "blue-green swap"; it was `docker compose up

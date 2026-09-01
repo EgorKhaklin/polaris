@@ -220,7 +220,20 @@ stage_app() {
     [ "$NO_START" = 1 ] && { skip "stack start (--no-start)"; return 0; }
 
     # 6. Start, migrate/sync, and prove health through the TLS edge.
-    systemctl start polaris.service && ok "polaris.service started (compose up)"
+    if ! systemctl start polaris.service; then
+        # The one line systemd prints is never the cause; show the journal and the
+        # compose state so a CI failure is diagnosable from the log (v9.184).
+        echo "== journalctl -u polaris.service (last 60 lines) ==" >&2
+        journalctl -u polaris.service -n 60 --no-pager >&2 || true
+        echo "== docker compose ps -a ==" >&2
+        ( cd "$INSTALL_DIR/polaris_web" && docker compose -f docker-compose.prod.yml $COMPOSE_EXTRA ps -a ) >&2 || true
+        for c in $(docker ps -aq --filter "name=polaris-" 2>/dev/null); do
+            echo "== docker logs $(docker inspect --format '{{.Name}}' "$c") (tail) ==" >&2
+            docker logs --tail 25 "$c" >&2 2>&1 || true
+        done
+        die "polaris.service failed to start"
+    fi
+    ok "polaris.service started (compose up)"
     ( cd "$INSTALL_DIR" && bash scripts/polaris-migrate.sh --up --target=docker-stack >/dev/null \
         && bash scripts/polaris-migrate.sh --sync-objects --target=docker-stack >/dev/null ) \
         && ok "migrations applied + DB objects synced"
