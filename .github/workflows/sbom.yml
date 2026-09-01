@@ -1,15 +1,25 @@
 # ============================================================================
-# SBOM per release (roadmap P0.5 / v9.167).
+# SBOM + provenance per release (roadmap P0.5 / v9.167, P0.6 / v9.168).
 #
 # On every published release, generate an SPDX 2.3 Software Bill of Materials
-# for each shipped artifact and attach them to the release. A downstream
-# operator can then answer "what is in this exact release" from a signed,
-# versioned document instead of rebuilding and inspecting.
+# for each shipped artifact, attach them to the release, and produce a signed
+# SLSA build-provenance attestation over them. A downstream operator can then
+# answer "what is in this exact release" from an SBOM AND cryptographically
+# verify "this SBOM was built by this repo's release workflow, not forged"
+# with a single `gh attestation verify` (see SECURITY.md).
 #
-# Tooling: Trivy, the SAME version the image-cve-scan job in ci.yml already
-# pins. One tool for the CVE gate and the SBOM keeps the bill of materials
-# consistent with what the scanner actually saw; check_sbom_trivy_matches_scan
-# fails CI if the two versions drift.
+# SBOM tooling: Trivy, the SAME version the image-cve-scan job in ci.yml pins.
+# One tool for the CVE gate and the SBOM keeps the bill of materials consistent
+# with what the scanner saw; check_sbom_trivy_matches_scan fails CI on drift.
+#
+# Signing (P0.6): actions/attest-build-provenance signs keyless via GitHub's
+# OIDC identity through Sigstore (Fulcio cert + Rekor transparency log). No
+# long-lived key exists to leak or rotate; the signer identity is the workflow
+# itself. Scope note: this attests the RELEASE ARTIFACTS (the SBOMs). Signing
+# the four container images at a registry digest is deferred until the images
+# are actually published to a registry, which is a separate decision paired
+# with the P1.5 Kubernetes/registry work; there is nothing at a registry ref
+# to sign today.
 #
 # Five artifacts: the Python runtime surface (requirements.txt) and the four
 # self-built images (app, caddy, pgbouncer, postgres). Image SBOMs require the
@@ -17,7 +27,7 @@
 # work, not per-push, so the cost is acceptable.
 # ============================================================================
 
-name: SBOM per release
+name: SBOM + provenance per release
 
 on:
   release:
@@ -29,7 +39,9 @@ on:
         required: true
 
 permissions:
-  contents: write   # upload assets to the release
+  contents: write        # upload assets to the release
+  id-token: write        # OIDC identity for keyless Sigstore signing
+  attestations: write    # store the SLSA provenance attestation
 
 env:
   # The one place the SBOM generator's Trivy version lives in THIS file. It
@@ -102,3 +114,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release upload "${{ steps.tag.outputs.tag }}" sbom/*.spdx.json --clobber
+
+      # P0.6 — SLSA build-provenance over every SBOM, signed keyless through
+      # GitHub OIDC + Sigstore (Fulcio cert, Rekor transparency log). Each SBOM
+      # gets a provenance attestation binding its sha256 to this repo + this
+      # workflow run; a consumer verifies with:
+      #   gh attestation verify sbom-python.spdx.json --repo ${{ github.repository }}
+      - name: Attest SBOM provenance (SLSA, keyless)
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: "sbom/*.spdx.json"

@@ -2696,6 +2696,35 @@ def check_sbom_trivy_matches_scan(root: pathlib.Path) -> list[Finding]:
                f"({versions.pop()})")
 
 
+# P0.6 — every release artifact carries a signed SLSA provenance attestation,
+# and the docs carry a verify command. Keyless Sigstore signing (GitHub OIDC)
+# means no long-lived key; the attestation binds each SBOM's digest to this
+# repo + workflow. An SBOM without provenance is unforgeable-adjacent but not
+# unforgeable: anyone could publish a plausible SBOM. The attestation closes
+# that.
+def check_release_provenance(root: pathlib.Path) -> list[Finding]:
+    wf = _read(root, ".github/workflows/sbom.yml")
+    if not wf:
+        return _fail("provenance", ".github/workflows/sbom.yml is missing")
+    if "attest-build-provenance" not in wf:
+        return _fail("provenance",
+                     "the release workflow generates SBOMs but does not attest their "
+                     "provenance; a forged SBOM would be indistinguishable from a real one")
+    # Keyless Sigstore signing needs the OIDC + attestations permissions.
+    if "id-token: write" not in wf or "attestations: write" not in wf:
+        return _fail("provenance",
+                     "the provenance step lacks id-token:write / attestations:write; "
+                     "keyless signing cannot mint its Sigstore identity")
+    sec = _read(root, "SECURITY.md")
+    if "gh attestation verify" not in sec:
+        return _fail("provenance",
+                     "SECURITY.md carries no `gh attestation verify` command; a signed "
+                     "artifact nobody knows how to verify is not much of a control")
+    return _ok("provenance",
+               "release SBOMs get a keyless SLSA provenance attestation and SECURITY.md "
+               "documents the verify command")
+
+
 CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_csp_forbids_unsafe_inline,
     check_one_active_token_index,
@@ -2776,6 +2805,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_rotate_secret_preserves_mode,
     check_sbom_workflow,
     check_sbom_trivy_matches_scan,
+    check_release_provenance,
     check_local_clock_convention,
     check_c6_atlas_redacts_zk_location,
     check_coercion_evidence_retained,

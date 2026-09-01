@@ -5,6 +5,41 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.168 — 2026-09-01 (Roadmap P0.6: keyless SLSA provenance signs every release SBOM)
+
+The SBOM workflow from v9.167 now also signs what it produces. Each release
+SBOM gets an SLSA build-provenance attestation via
+`actions/attest-build-provenance@v4`, keyless through GitHub's OIDC identity
+and Sigstore (Fulcio certificate, Rekor transparency log). There is no
+long-lived signing key to leak or rotate; the signer identity is the release
+workflow itself. An SBOM tells you what is in a release; the attestation proves
+the SBOM was built by this repo and not forged. A consumer verifies both in one
+command, now documented in SECURITY.md:
+
+    gh attestation verify sbom-python.spdx.json --repo EgorKhaklin/polaris-id
+
+**The DoD was amended honestly, in the roadmap row and here.** It asked for
+"images and release artifacts cosign-signed." The four container images are
+built and CVE-scanned in CI but published to no registry, so there is no
+registry digest to sign; cosign image signing is not actionable without first
+deciding to publish the images, which is separate work paired with the P1.5
+Kubernetes/registry profile. Signing what actually ships (the release SBOMs)
+with keyless SLSA provenance is the correct scope for today, and the deferral
+is recorded rather than silently skipped.
+
+The action was pinned to the current major v4, not the v2 that first came to
+mind: the latest release is v4.2.2, and a signing control two majors behind is
+the wrong default. Because the OIDC/Fulcio/Rekor flow only exists inside GitHub
+Actions, this ship cannot be dry-run locally; like v9.167 it self-demonstrates,
+and the release's attestation is verified after the fact with the documented
+command.
+
+`check_release_provenance` pins the attestation step, the id-token +
+attestations write permissions keyless signing needs, and the presence of the
+verify command in SECURITY.md. 87 checks, 84 check-layer tests.
+
+---
+
 ## v9.167 — 2026-09-01 (Roadmap P0.5: an SPDX bill of materials attached to every release)
 
 A new `.github/workflows/sbom.yml` fires on every published release and

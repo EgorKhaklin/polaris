@@ -798,6 +798,41 @@ def test_sbom_trivy_match_check_discriminates(tmp_path):
         "must PASS when both use the same Trivy version"
 
 
+def test_release_provenance_check_discriminates(tmp_path):
+    wf = tmp_path / ".github" / "workflows"
+    wf.mkdir(parents=True)
+    sbom = wf / "sbom.yml"
+    sec = tmp_path / "SECURITY.md"
+    sec.write_text("## Verifying a release\n"
+                   "gh attestation verify sbom-python.spdx.json --repo x\n")
+
+    # SBOMs generated but never attested.
+    sbom.write_text("permissions:\n  id-token: write\n  attestations: write\n"
+                    "jobs:\n  sbom:\n    steps:\n"
+                    "      - run: trivy fs --format spdx-json /src\n")
+    assert checks.check_release_provenance(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the workflow does not attest provenance"
+
+    # Attests, but missing the keyless-signing permissions.
+    sbom.write_text("permissions:\n  contents: write\n"
+                    "jobs:\n  sbom:\n    steps:\n"
+                    "      - uses: actions/attest-build-provenance@v2\n")
+    assert checks.check_release_provenance(tmp_path)[0].level == "FAIL", \
+        "must FAIL when id-token/attestations write permissions are absent"
+
+    # Attests with permissions, but the docs carry no verify command.
+    sbom.write_text("permissions:\n  id-token: write\n  attestations: write\n"
+                    "jobs:\n  sbom:\n    steps:\n"
+                    "      - uses: actions/attest-build-provenance@v2\n")
+    sec.write_text("## Security Policy\nReport things.\n")
+    assert checks.check_release_provenance(tmp_path)[0].level == "FAIL", \
+        "must FAIL when SECURITY.md has no verify command"
+
+    sec.write_text("gh attestation verify file --repo x\n")
+    assert checks.check_release_provenance(tmp_path)[0].level == "OK", \
+        "must PASS with attestation, permissions, and a documented verify command"
+
+
 def test_dockerfile_copies_app_modules_check_discriminates(tmp_path):
     web = tmp_path / "polaris_web"
     web.mkdir()

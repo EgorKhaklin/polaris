@@ -87,6 +87,30 @@ report, extended for Critical findings as the patch warrants.
 
 ---
 
+## Verifying a release (supply chain)
+
+Every published release carries an SPDX 2.3 SBOM for each artifact (the Python
+runtime surface and the four self-built images), and each SBOM carries a signed
+SLSA build-provenance attestation. The attestation is keyless: it is signed
+through GitHub's OIDC identity via Sigstore (Fulcio certificate, Rekor
+transparency log), so there is no long-lived signing key to leak.
+
+To confirm an SBOM you downloaded from a release was produced by this repo's
+release workflow and not tampered with or forged:
+
+```bash
+gh attestation verify sbom-python.spdx.json --repo EgorKhaklin/polaris-id
+```
+
+A passing check binds the file's SHA-256 to this repository and the release
+workflow that built it. The SBOM itself then lets you enumerate the exact
+package set of that release. Image signing at a registry digest is deferred
+until the container images are published to a registry (tracked in the roadmap
+alongside the Kubernetes/registry work); today the images are built and scanned
+in CI but not published, so there is no registry reference to sign.
+
+---
+
 ## Vocation alignment
 
 Vulnerability disclosure is itself anti-coercion-aligned. A coerced
