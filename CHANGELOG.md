@@ -5,6 +5,28 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.174 — 2026-09-01 (P0.9 follow-through: generate-secrets called its new function before defining it)
+
+The v9.173 CI prod-stack boot died in "Generate secrets + certs" with
+`write_pgbackrest_creds_if_missing: command not found` (exit 127). The v9.173
+edit inserted the function's DEFINITION just above the closing banner, which
+is after the line that CALLS it; bash resolves functions at call time, and
+`bash -n` (the only thing v9.173 ran on this script) passes on that. Every other
+v9.173 step was green, including both pgBackRest round-trips and the offsite
+drill on the runner.
+
+The definition now sits with the other write_*_if_missing definitions, the
+script was actually run this time (template created, non-empty so the deploy
+preflight's `-s` passes, parsed as empty by pgBackRest), and
+`check_offsite_backup_env_driven` asserts the definition precedes the call so a
+future move cannot repeat it.
+
+The lesson is the session's standing one, applied to my own change: `bash -n`
+is syntax, not execution. A script I edit gets RUN before it ships, not linted.
+90 checks, 87 check-layer tests.
+
+---
+
 ## v9.173 — 2026-09-01 (Roadmap P0.9: offsite backup by env alone, drilled against S3 in CI)
 
 The pgBackRest offsite repo was documented as a hand-edit of pgbackrest.conf

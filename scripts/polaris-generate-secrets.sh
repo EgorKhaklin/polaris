@@ -138,6 +138,40 @@ print(json.dumps(pqc_signing.generate_keypair()))'
     echo "  ✓ ${name}  (ML-DSA-65 keypair generated; mode 0644)"
 }
 
+# v9.173 (roadmap P0.9) — the S3 key pair for the OFFSITE backup repo. The prod
+# compose mounts this file read-only at /etc/pgbackrest/conf.d/repo-creds.conf
+# UNCONDITIONALLY (a compose mount cannot be optional, and a missing source
+# path would make docker create a directory there), so it must exist even for a
+# deployment on the local repo: it ships as a commented template that pgBackRest
+# parses as empty. The key pair is NEVER put in env (the container refuses to
+# start if it finds it there). 0644 for the same reason as the replicator
+# password: pgBackRest reads it as the non-root postgres user (uid 70) and a
+# 0600 host-owned mount source is unreadable on Linux; the 0700 secrets dir is
+# the host boundary.
+write_pgbackrest_creds_if_missing() {
+    local target="${SECRETS_DIR}/pgbackrest_repo_creds.conf"
+    if [[ -s "${target}" ]]; then
+        echo "  ✓ pgbackrest_repo_creds.conf  (exists; not overwriting)"
+        return 0
+    fi
+    ( umask 0022 && cat > "${target}" <<'TPL'
+# pgbackrest_repo_creds.conf — S3 key pair for the OFFSITE backup repo (P0.9).
+# Mounted read-only at /etc/pgbackrest/conf.d/repo-creds.conf. Empty = local
+# repo. To go offsite: fill in the two keys below AND set
+# POLARIS_PGBACKREST_S3_BUCKET / _ENDPOINT / _REGION for the postgres service,
+# then ./scripts/polaris-deploy.sh prod (it runs stanza-create + check).
+# Rotate with the bucket's IAM tooling; then update here and redeploy.
+#
+# [global]
+# repo1-s3-key=<access-key>
+# repo1-s3-key-secret=<secret-key>
+TPL
+    )
+    chmod 0644 "${target}"
+    echo "  ✓ pgbackrest_repo_creds.conf  (template; fill in for an offsite S3 repo)"
+}
+
+
 # v9.121 — a self-signed TLS server cert for Postgres, so the app<->DB hop is
 # encrypted (sslmode=require). The cert is mounted into the postgres container,
 # which copies it into its data dir and enables ssl at init (docker-init.sh).
@@ -226,39 +260,6 @@ write_signing_key_if_missing
 write_postgres_cert_if_missing
 write_pgbouncer_cert_if_missing
 write_pgbackrest_creds_if_missing
-
-# v9.173 (roadmap P0.9) — the S3 key pair for the OFFSITE backup repo. The prod
-# compose mounts this file read-only at /etc/pgbackrest/conf.d/repo-creds.conf
-# UNCONDITIONALLY (a compose mount cannot be optional, and a missing source
-# path would make docker create a directory there), so it must exist even for a
-# deployment on the local repo: it ships as a commented template that pgBackRest
-# parses as empty. The key pair is NEVER put in env (the container refuses to
-# start if it finds it there). 0644 for the same reason as the replicator
-# password: pgBackRest reads it as the non-root postgres user (uid 70) and a
-# 0600 host-owned mount source is unreadable on Linux; the 0700 secrets dir is
-# the host boundary.
-write_pgbackrest_creds_if_missing() {
-    local target="${SECRETS_DIR}/pgbackrest_repo_creds.conf"
-    if [[ -s "${target}" ]]; then
-        echo "  ✓ pgbackrest_repo_creds.conf  (exists; not overwriting)"
-        return 0
-    fi
-    ( umask 0022 && cat > "${target}" <<'TPL'
-# pgbackrest_repo_creds.conf — S3 key pair for the OFFSITE backup repo (P0.9).
-# Mounted read-only at /etc/pgbackrest/conf.d/repo-creds.conf. Empty = local
-# repo. To go offsite: fill in the two keys below AND set
-# POLARIS_PGBACKREST_S3_BUCKET / _ENDPOINT / _REGION for the postgres service,
-# then ./scripts/polaris-deploy.sh prod (it runs stanza-create + check).
-# Rotate with the bucket's IAM tooling; then update here and redeploy.
-#
-# [global]
-# repo1-s3-key=<access-key>
-# repo1-s3-key-secret=<secret-key>
-TPL
-    )
-    chmod 0644 "${target}"
-    echo "  ✓ pgbackrest_repo_creds.conf  (template; fill in for an offsite S3 repo)"
-}
 
 cat <<BANNER
 

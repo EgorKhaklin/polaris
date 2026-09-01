@@ -2789,7 +2789,7 @@ def test_offsite_backup_env_driven_check_discriminates(tmp_path):
             "      POLARIS_PGBACKREST_S3_BUCKET: \"${POLARIS_PGBACKREST_S3_BUCKET:-}\"\n"
             "    volumes:\n"
             "      - ./secrets/pgbackrest_repo_creds.conf:/etc/pgbackrest/conf.d/repo-creds.conf:ro\n"),
-        "scripts/polaris-generate-secrets.sh": "write pgbackrest_repo_creds.conf\n",
+        "scripts/polaris-generate-secrets.sh": "write_pgbackrest_creds_if_missing() {\n  : > pgbackrest_repo_creds.conf\n}\nwrite_pgbackrest_creds_if_missing\n",
         "scripts/polaris-deploy.sh": "for secret in polaris_db_password pgbackrest_repo_creds.conf; do :; done\n",
         "scripts/polaris-offsite-drill.sh": (
             "MINIO_IMAGE=minio/minio@sha256:x\n"
@@ -2827,6 +2827,13 @@ def test_offsite_backup_env_driven_check_discriminates(tmp_path):
            + "      POLARIS_PGBACKREST_S3_KEY: abc\n"})
     assert checks.check_offsite_backup_env_driven(tmp_path)[0].level == "FAIL", \
         "must FAIL when the compose passes the S3 key pair through environment"
+
+    # The v9.173 CI failure: the function called before it is defined.
+    write({"scripts/polaris-generate-secrets.sh": "write_pgbackrest_creds_if_missing\n"
+           "write_pgbackrest_creds_if_missing() {\n  : > pgbackrest_repo_creds.conf\n}\n"})
+    f = checks.check_offsite_backup_env_driven(tmp_path)[0]
+    assert f.level == "FAIL" and "DEFINE" in f.message, \
+        "must FAIL when generate-secrets calls the function before defining it"
 
     # CI no longer running the offsite drill.
     write({".github/workflows/ci.yml": "steps:\n  - run: echo local round-trip only\n"})
