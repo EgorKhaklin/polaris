@@ -5,6 +5,22 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.185 — 2026-09-01 (P1.4 follow-through: a wider app healthcheck window for cold starts)
+
+v9.184 was green on all eleven jobs with no product change since v9.183, so
+the v9.183 Linux-install failure at `systemctl start polaris.service` did not
+reproduce and its cause is unconfirmed (that run predates the journal dump).
+What v9.183 introduced at start time is the app healthcheck, which caddy's
+`depends_on: condition: service_healthy` now genuinely waits on: `compose up`
+fails the unit if the app is not healthy within the window. A cold start on
+a slow host (fresh image, first gunicorn boot, liboqs initialisation) is the
+plausible way to exceed the first window (20s start period, 12 retries at
+5s). The window is now 40s + 36 retries; the rolling deploy still waits on
+the same healthcheck, so nothing else changes. If the failure recurs, the
+v9.184 diagnostics will show the journal. 96 checks, 93 check-layer tests.
+
+---
+
 ## v9.184 — 2026-09-01 (P1.4 follow-through: the installer now shows WHY polaris.service failed)
 
 The v9.183 run was green on ten of eleven jobs, including the first run of

@@ -100,12 +100,17 @@ services:
     # the other colour, and Caddy's depends_on can key on it. /api/health/live
     # is process liveness (no DB), so a healthy-but-DB-less app still reports
     # 'healthy' here; the DB-backed roll-up is the deploy smoke test.
+    # Window: caddy's depends_on keys on this (service_healthy), so `compose up`
+    # fails the whole start if the app is not healthy in time. A cold start on a
+    # slow host (fresh image, first gunicorn boot, liboqs init) needs more than
+    # the first 80s window gave; v9.185 widened it after an unreproduced CI
+    # install failure with that signature.
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health/live"]
       interval: 5s
       timeout: 3s
-      retries: 12
-      start_period: 20s
+      retries: 36
+      start_period: 40s
     # gunicorn graceful_timeout is 30s: in-flight requests finish on SIGTERM.
     stop_grace_period: 35s
     # v9.141 — container hardening. The app already runs non-root (USER polaris,
