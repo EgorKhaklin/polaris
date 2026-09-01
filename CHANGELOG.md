@@ -5,6 +5,31 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.172 — 2026-09-01 (Roadmap P2.12: a Plonky2 to Plonky3 evaluation, framed honestly)
+
+Prompted by an outside suggestion that Plonky3 is a newer/better version to
+migrate to. Verified against crates.io first, and the premise needed
+correcting before it went on the plan:
+
+  - There is no `plonky3` crate. It ships as modular `p3-*` components
+    (`p3-field`, `p3-uni-stark`, `p3-merkle-tree`), a STARK/AIR TOOLKIT, at
+    0.7.0-rc.1 (a release candidate, active as of 2026-08).
+  - Plonky2 is stable at 1.1.0 but last released 2025-05 (16 months quiet).
+  - So it is not a version bump: Plonky3 has no drop-in for Plonky2's
+    ready-made recursive-SNARK CircuitBuilder + Merkle gadget, so adopting it
+    rewrites polaris_zk as an AIR and re-anchors the two-witness from scratch.
+
+The real signal (Plonky2 staleness vs. Plonky3 momentum) is a legitimate
+long-term supply-chain question for a national system, so it is added as
+P2.12: an EVALUATION SPIKE with a keep-or-migrate decision record, NOT a
+committed migration. It sits in P2 deliberately, because you do not rewrite a
+prover before Plonky3 stabilizes past RC and before the scale requirements
+(P2.5) justify the cost. The nearer-term ZK step stays the sibling-path witness
+optimization named in P0.7. Roadmap-only change; 89 checks, all references
+resolve.
+
+---
+
 ## v9.171 — 2026-09-01 (Roadmap P0.8: coverage measured, and a floor that fails CI on a regression)
 
 There was no coverage measurement at all; a refactor that stopped exercising a
