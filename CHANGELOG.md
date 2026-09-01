@@ -5,6 +5,22 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.177 — 2026-09-01 (P1.1 follow-through: the CI assertion could not read the backup directory it was checking)
+
+The v9.176 `linux-install` job proved the substance of P1.1 on a real Linux
+host: both package stages executed (deb and rpm keys verified, docker-ce
+installed), the full installer reached a healthy stack under real systemd
+(database, redis, zk_binary, atlas_cache, disk all healthy through the TLS
+edge), `polaris.service` was active, both timers were scheduled, and
+`systemctl start polaris-backup.service` succeeded. It then failed on my own
+assertion: a non-root `ls` of `/var/backups/polaris`, which is 0750 root-owned
+on purpose (HARDENING.md). The listing now runs under sudo and the backup
+unit's journal is printed; the tarball and the post-restart health assertions
+that follow it get their first real run in this version's CI. No product
+change. 92 checks, 89 check-layer tests.
+
+---
+
 ## v9.176 — 2026-09-01 (Roadmap P1.1: a fresh Linux server to a healthy production stack, under systemd)
 
 P1 opens. Until now the production path was "any Docker host" plus a deploy

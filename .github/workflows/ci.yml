@@ -778,8 +778,11 @@ jobs:
           systemctl is-active polaris.service
           systemctl list-timers --all | grep -E 'polaris-backup(-verify)?\.timer'
           sudo systemctl start polaris-backup.service
-          ls -la /var/backups/polaris/
-          ls /var/backups/polaris/*.tar.gz
+          sudo journalctl -u polaris-backup.service --no-pager | tail -8
+          # /var/backups/polaris is 0750 root-owned by design (HARDENING.md), so
+          # the listing needs root; the v9.176 run failed here on a plain `ls`.
+          sudo ls -la /var/backups/polaris/
+          sudo sh -c 'ls /var/backups/polaris/*.tar.gz'
           sudo systemctl restart polaris.service
           code=""
           for i in $(seq 1 60); do
