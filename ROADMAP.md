@@ -122,6 +122,11 @@ Polaris for its population, on Linux, around the clock, without the author.
 | [x] P1.10 | DR to targets, on a schedule (v9.192) | M | low | P0.9 | `scripts/polaris-dr-drill.sh`: a pgBackRest-archiving primary (the shipped image, `archive_timeout=60s`, which docker-init now sets so the RPO is actually bounded) is backed up, written to once a second for 90 s, SIGKILLed with its volume destroyed, restored from the repo with the archive replayed and promoted, and the application started against it; RPO = age of the newest recovered marker at the kill, RTO = time to a healthy service (and to the database), token and schema_version counts must match; pass is RPO <= 300 s and RTO <= 14400 s. `.github/workflows/dr-drill.yml` runs it on the 1st of every month with `--record` and COMMITS the row to `docs/operator/DR-DRILLS.md` pass or fail (ci.yml ignores that path so the row does not spend a run); the `dr-drill` CI job runs it on every push; `polaris-dr-drill.timer` runs it monthly on a Linux host into `/var/lib/polaris/dr-drills.md`. DR.md's targets table now states the proven numbers with the ledger as the source. `check_dr_drill_scheduled` pins it |
 | [ ] P1.11 | Retention and lifecycle engine | M | med | - | Per-table-class retention configuration with jurisdiction templates; the archive/purge chain drives it; the C1 carve-out rules unchanged |
 | [ ] P1.12 | External penetration test | M | ext | P1.1-P1.8 | [EXT: funding, firm] The readiness pack is ours to build; findings triaged, fixed, and pinned; a summary published |
+| [ ] P1.13 | Human-facing documentation, reworked for the national-deployment reader | L | med | - | [OWNER-AUTHORIZED REWORK, 2026-09-02] Every document a person reads (README, `docs/`, the operator runbooks, the reference set, the in-code docstrings and comments that face an operator or assessor) is rewritten or removed against one standard: a named reader (operator, integrator, assessor, contributor), one job per document, one voice (declarative, no version archaeology in the body, no em-dashes), stamps only where a number lives, and nothing stale, internal, or ambiguous to a first-time assessor of a national identity system. Duplicated and superseded documents are merged or deleted, not annotated. `docs/README.md` and `SYSTEM-MAP.md` match the tree exactly. An observer-confusion audit (a read-through as a first-time assessor, recorded) finds nothing to ask. Pinned by a check on the doc index and the stamp discipline |
+| [ ] P1.14 | The GitHub presence as the front door | M | med | P1.13 | [OWNER-AUTHORIZED REWORK] The repository's About, topics, README above the fold, SECURITY.md, CONTRIBUTING.md, release notes, and the Pages site present one accurate, professional story of what Polaris is, what it proves, and what it is not; templates and community files that a national-deployment reader expects exist and nothing demo-era or internal remains visible. Pinned by a check |
+| [ ] P1.15 | The demo website, accurate and professional | M | med | P1.13 | [OWNER-AUTHORIZED REWORK] `site/` (egorkhaklin.github.io/polaris-id) mirrors the product's current state and the honesty ledger, in the intelligence-report visual system, with no claim the repository does not prove; built and link-checked in CI |
+| [ ] P1.16 | Repository organization, matched to reality | M | med | - | [OWNER-AUTHORIZED REWORK] Directory layout, script names, `DEVNOTES/`, `meta/`, `assets/`, and every committed artifact are triaged: kept with a stated reader, moved, or deleted; dead scripts and historical apparatus are gone; the tree a first-time reader opens explains itself. `SYSTEM-MAP.md` and the checks that pin file locations are updated in the same ship |
+| [ ] P1.17 | The software's own presentation, visually and structurally | L | med | P1.13 | [OWNER-AUTHORIZED REWORK] The web application (templates, CSS, navigation, copy, error and flash messages), the CLI's output and help, the health and metrics naming, and the log stream present one restrained, consistent, national-deployment tone; demo-only surfaces are removed or gated behind an explicit demo mode; the test-pinned markup contract is honoured so the rework is safe; nothing an operator sees is internal jargon or leftover scaffolding. Pinned by checks and the existing UI tests |
 
 Exit gate: a non-author operator performs a witnessed clean install and a
 simulated month of operations (issuance, revocation, recovery, backup, restore,
@@ -293,6 +298,14 @@ of the reference implementation.
    (P1.1) and narrow RP API authentication (P3.4) against earlier
    retirements, with reasons inline. Banking and payments stay out
    permanently: C10 is not a phase.
+8. **Presentation is a deliverable, and its rework is pre-authorized.** On
+   2026-09-02 the owner authorized wholesale rework of any human-facing
+   surface (documentation, the GitHub presence, the demo site, the
+   repository's organization, the software's own UI, CLI, and messages)
+   wherever that serves national-deployment readiness, including removal of
+   bloat, unneeded material, and anything that could confuse an observer.
+   Rows P1.13-P1.17 are therefore autonomous-eligible despite their medium
+   risk; the constitution (rule 1) and the honesty ledger still bound them.
 
 ## Permanent non-goals
 

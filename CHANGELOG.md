@@ -5,6 +5,30 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.193 — 2026-09-02 (Roadmap amended: the national-deployment presentation pass, P1.13 to P1.17, with wholesale rework pre-authorized)
+
+An owner decision, recorded where decisions live. Five rows join P1 and a
+standing rule joins the list:
+
+  - **P1.13** human-facing documentation reworked for the national-deployment
+    reader (a named reader and one job per document, one voice, no version
+    archaeology, duplicates merged or deleted, the index matching the tree, an
+    observer-confusion read-through recorded); **P1.14** the GitHub presence as
+    the front door; **P1.15** the demo website, accurate and professional;
+    **P1.16** repository organization matched to reality (every committed
+    artifact kept with a stated reader, moved, or deleted); **P1.17** the
+    software's own presentation, visually and structurally (web UI, CLI, health
+    and metrics naming, messages, the log stream), demo-only surfaces removed
+    or gated.
+  - **Standing rule 8:** presentation is a deliverable, and on 2026-09-02 the
+    owner authorized wholesale rework of any human-facing surface wherever it
+    serves national-deployment readiness, including removal of bloat, unneeded
+    material, and anything that could confuse an observer. The five rows are
+    autonomous-eligible despite their medium risk; the constitution and the
+    honesty ledger still bound them.
+
+---
+
 ## v9.192 — 2026-09-02 (Roadmap P1.10: DR to targets, on a schedule; RPO and RTO measured by a drill that kills the primary, monthly with the row committed)
 
 DR.md carried targets; nothing measured them, and one setting that decides
