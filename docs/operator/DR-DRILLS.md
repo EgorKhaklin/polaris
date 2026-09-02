@@ -26,3 +26,4 @@ the repo size (`pgbackrest info` reports it). It does not touch a live stack.
 | Date (UTC) | Version | Commit | Mode | RPO s | RTO s (database) | RTO s (service) | Backup s | Markers recovered/written | Status | Note |
 |---|---|---|---|---:|---:|---:|---:|---:|---|---|
 | 2026-09-02T00:52Z | v9.192 | 31b6946+dirty | local | 41.6 | 2.8 | 4.7 | 1.5 | 54/90 | PASS | markers recovered 54/90 |
+| 2026-09-02T00:55Z | v9.192 | 59dc602 | ci-monthly | 36.0 | 2.7 | 4.4 | 1.7 | 57/90 | PASS | markers recovered 57/90 |
