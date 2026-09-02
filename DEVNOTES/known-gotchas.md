@@ -53,7 +53,7 @@ down -v && docker compose up`.
 
 ### `script-src 'self'` blocks all inline scripts and event handlers
 
-CSP is set in `security.py::secure_headers()`. It blocks all inline
+CSP is set in `security.py::apply_security_headers()`. It blocks all inline
 executable `<script>` blocks AND all inline event-handler attributes
 (`onclick=`, `onsubmit=`, `onchange=`, etc.). **v8.46 cleaned this up
 in templates** — the heartbeat moved to `static/heartbeat.js`; the

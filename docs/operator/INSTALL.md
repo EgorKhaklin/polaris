@@ -122,7 +122,7 @@ This requires the stack to be up first (the tests connect to the
 running Postgres). Expected output:
 
 ```
-Ran ~342 tests in ~70s
+462 passed, 12 skipped        # polaris_web/test_app.py (v9.194; skips need optional backends)
 OK
 ```
 
@@ -130,10 +130,10 @@ Plus the C1-C10 invariant check layer (`python3 -m polaris_checks.run`)
 and the optional property tests (`test_invariants_property.py`,
 `test_redaction_property.py`, if Hypothesis is installed).
 
-The 171 SQL self-tests run automatically when the Postgres container
-initializes (distributed across `08_tests.sql` sections A–R,
-`12_v7_constraints.sql`, and `13_substrate.sql`) — their results are
-visible in `./polaris_mac_launch.sh logs db`.
+The SQL self-tests (78 assertions in `08_tests.sql` at v9.194, plus
+`12_v7_constraints.sql` and `13_substrate.sql`) run automatically when
+the Postgres container initializes; their results are visible in
+`./polaris_mac_launch.sh logs db`.
 
 
 ## Troubleshooting

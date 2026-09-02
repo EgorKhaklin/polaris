@@ -69,7 +69,8 @@ A ship is a coherent change, verified:
 2. **Test:** add a `check_*` to `polaris_checks/checks.py` (+ a detection test in
    `polaris_checks/test_checks.py`) for a new invariant, or a DB-backed test in
    `polaris_web/test_*.py` for behavior. `python3 -m polaris_checks.run` must pass.
-3. **Bump** `polaris_web/__version__.py` (`MAJOR.MINOR`).
+3. **Bump** `polaris_web/__version__.py` (`MAJOR.MINOR`) and `appVersion` in
+   `deploy/helm/polaris/Chart.yaml` to match (`check_helm_chart_version_current`).
 4. **CHANGELOG:** prepend a `## vX.Y — DATE (subtitle)` block.
 5. **Gate:** `bash scripts/ai-done.sh` must report READY; `ai-link-check.sh --ci`
    must resolve.

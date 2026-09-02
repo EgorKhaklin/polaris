@@ -2,7 +2,8 @@
 
 This directory contains the complete SQL realization of the Polaris
 database design specified in `docs/paper/polaris_project_report.pdf`. The schema
-is in BCNF (proven in §6.5 of the report), implements **26 tables**
+is in BCNF (proven in §6.5 of the report), implements **29 tables** (v9.194; a migrated deployment holds 33, with the
+`schema_version` registry and the three migration-added tables)
 (12 core entities + `GenomicAnchor` from M2-4 + `QuantumObserverBinding`
 scaffold from M2-5 + `IssuerDiscretionPolicy` from M2-11 +
 `EnrollmentStatusEvent` from M2-9 + `RecoveryRequest` from M2-7 +
@@ -10,22 +11,23 @@ scaffold from M2-5 + `IssuerDiscretionPolicy` from M2-11 +
 `AgencyTrustAttestation` from M2-8 / R11-3 + `TokenStateEpoch` and
 `TokenStateEpochLeaf` from M2-1 / R10-1 + `DuressEvent` from M2-10 +
 `LifecycleArchiveCheckpoint` + `AppUser` and `AuthAuditLog`
-(v6 web auth)), 54
-foreign keys, 74 `CHECK` constraints, the partial unique index that
+(v6 web auth) + `AgencyQuota` (v9.190) + `IndividualErasureEvent` +
+`ZkVerificationNonce`), foreign keys and `CHECK` constraints throughout, the partial unique index that
 enforces one-active-token-per-person, the state-machine trigger from
-Appendix A, **14 stored procedures** (UC-1, UC-4, UC-5, UC-6, UC-7,
+Appendix A, **15 stored procedures** (UC-1, UC-4, UC-5, UC-6, UC-7,
 UC-8, UC-9 initiate + complete, `close_anchor_batch`,
 `uc10_attest_trust`, `uc10_revoke_attestation`, `uc11_close_epoch`,
-`uc12_record_duress`, `uc_archive_purge`) plus the
+`uc12_record_duress`, `uc_archive_purge`, `uc_pseudonymize_individual`) plus the
 **`civic_enrollment_summary` civic-query function** (R11-4), the
 **v6 atlas SQL functions** for scale (≥ 1M events), the v7
 schema-hardening tests, the **M2-3 substrate-dependency view**, and an
 **out-of-tree stress seed** that synthesizes 2M+ events for scale
 testing.
 
-A **171-assertion test suite** distributed across three files
-(`08_tests.sql` sections A–R, `12_v7_constraints.sql`,
-`13_substrate.sql`) exercises every constraint and integration point.
+A self-test suite distributed across three files (`08_tests.sql`,
+78 assertions in sections A to R; `12_v7_constraints.sql`;
+`13_substrate.sql`; counts at v9.194) exercises every constraint and
+integration point.
 
 **Tested against PostgreSQL 16 on Ubuntu 24.04 and macOS 15.** Compatible
 with PostgreSQL 14 or later.
@@ -42,7 +44,7 @@ psql -d polaris -f 00_load_all.sql
 
 That single command:
 
-1. Creates all 26 tables (`01_schema.sql`)
+1. Creates all 29 tables (`01_schema.sql`)
 2. Adds the partial unique index, the v6 spatial index on
    `VerificationEvent(latitude, longitude)`, the genomic-anchor
    indexes, the revocation-rate index (R11-6), the enrollment-event
@@ -53,15 +55,15 @@ That single command:
    views (`03_view.sql`)
 4. Loads sample data including two closed `AnchorBatch` rows
    (R10-2) (`04_data.sql`)
-5. Defines 14 stored procedures (UC-1 / UC-4 / UC-5 / UC-6 / UC-7 /
+5. Defines 15 stored procedures (UC-1 / UC-4 / UC-5 / UC-6 / UC-7 /
    UC-8 / UC-9 initiate + complete / `close_anchor_batch` /
    `uc10_attest_trust` / `uc10_revoke_attestation` /
-   `uc11_close_epoch` / `uc12_record_duress` / `uc_archive_purge`)
+   `uc11_close_epoch` / `uc12_record_duress` / `uc_archive_purge` /
+   `uc_pseudonymize_individual`)
    (`05_procedures.sql`)
-6. Installs the state-machine trigger, append-only triggers (now
-   covering `TokenLifecycleEvent`, `VerificationEvent`,
-   `EnrollmentStatusEvent`, `AnchorBatch`, `TokenStateEpochLeaf`,
-   and `DuressEvent`), auto-audit trigger,
+6. Installs the state-machine trigger, the append-only triggers on
+   every audit-of-record table (thirteen surfaces at v9.194; the list
+   is in `docs/story/PRINCIPLES.md`), auto-audit trigger,
    revocation-velocity-bound trigger (R11-6), enrollment-seed
    trigger (R11-4), active-signature + signature-immutability
    triggers (R11-1), attestation immutability (R11-3),
@@ -91,14 +93,14 @@ labels valid` (plus all assertion-suite messages).
 | File | Purpose |
 |------|---------|
 | `00_load_all.sql` | Master driver that runs every file in order |
-| `01_schema.sql` | DDL: 26 tables (incl. GenomicAnchor, QuantumObserverBinding, IssuerDiscretionPolicy, EnrollmentStatusEvent, RecoveryRequest, TokenSignature, AnchorBatch, AgencyTrustAttestation, TokenStateEpoch, TokenStateEpochLeaf, DuressEvent, LifecycleArchiveCheckpoint, AppUser, AuthAuditLog), 54 FKs, 74 CHECK constraints |
+| `01_schema.sql` | DDL: 29 tables (incl. GenomicAnchor, QuantumObserverBinding, IssuerDiscretionPolicy, EnrollmentStatusEvent, RecoveryRequest, TokenSignature, AnchorBatch, AgencyTrustAttestation, TokenStateEpoch, TokenStateEpochLeaf, DuressEvent, LifecycleArchiveCheckpoint, AppUser, AuthAuditLog) |
 | `02_indexes.sql` | Partial unique indexes + spatial + genomic + revocation-rate + enrollment-event + recovery-queue + active-signature indexes + secondary indexes |
 | `03_view.sql` | `ActiveTokens` + `IndividualCurrentEnrollment` views |
 | `04_data.sql` | Coherent sample data with 8 individuals across all five enrollment states + TokenSignature backfill |
-| `05_procedures.sql` | 14 stored procedures: UC-1 / UC-4 / UC-5 / UC-6 / UC-7 / UC-8 / UC-9 (initiate + complete) / `close_anchor_batch` (R10-2) / `uc10_attest_trust` + `uc10_revoke_attestation` (R11-3) / `uc11_close_epoch` (R10-1) / `uc12_record_duress` (R11-5) / `uc_archive_purge` (audit-log archive+purge framework, v8.87) |
-| `06_triggers.sql` | State-machine + auto-audit + append-only triggers (three tables) + revocation-velocity bound (R11-6) + enrollment-seed (R11-4) + active-signature + signature-immutability (R11-1) |
+| `05_procedures.sql` | 15 stored procedures: UC-1 / UC-4 / UC-5 / UC-6 / UC-7 / UC-8 / UC-9 (initiate + complete) / `close_anchor_batch` (R10-2) / `uc10_attest_trust` + `uc10_revoke_attestation` (R11-3) / `uc11_close_epoch` (R10-1) / `uc12_record_duress` (R11-5) / `uc_archive_purge` (audit-log archive+purge framework, v8.87) |
+| `06_triggers.sql` | State-machine + auto-audit + append-only triggers (every audit-of-record table) + revocation-velocity bound (R11-6) + enrollment-seed (R11-4) + active-signature + signature-immutability (R11-1) |
 | `07_queries.sql` | Relational-algebra queries from §8 + UC-6 bonus + `civic_enrollment_summary` (R11-4) |
-| `08_tests.sql` | Core 170-assertion test suite (sections A–R) |
+| `08_tests.sql` | Core self-test suite, 78 assertions (sections A to R; v9.194) |
 | `09_grants.sql` | `polaris_app` role + application-layer privileges + revocation-bound GUC defaults |
 | `10_auth.sql` | `AppUser` (web auth) + `AuthAuditLog` + 3 seed accounts |
 | `11_atlas.sql` | v6 atlas SQL functions + v8.3 filter-aware variants |

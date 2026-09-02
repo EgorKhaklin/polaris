@@ -22,7 +22,7 @@ your map.
 | 1 | Egor Khaklin | 1995-08-12 | US-PA | The author. Token T1 RESERVE. |
 | 2 | Maria Santos | 1988-03-21 | US-CA | Token T2 ACTIVE. **Has demo duress code enrolled** (`911911`, scrypt hash in `IdentityToken.duress_code_hash`). |
 | 3 | James Chen | 1979-11-04 | US-NY | Token T3 ACTIVE. Federal NY issued. |
-| 4 | Priya Patel | 1992-06-17 | US-TX | Token T4 ACTIVE. SLH-DSA-128s (algorithm diversity). |
+| 4 | Priya Patel | 1992-06-17 | US-TX | Token T4 ACTIVE. Filed under SLH-DSA-128s (registry row; no SLH-DSA signer is wired). |
 | 5 | David Okafor | 1985-01-28 | US-FL | Token T5 REVOKED. Demo recovery PENDING (UC-9). |
 | 6 | R11-6 Test under-bound | 1990-01-01 | US-PA | Token T6 REVOKED (R11-6 demo). |
 | 7 | Exempt Sample | 1950-04-10 | US-PA | Enrollment EXEMPT (R11-4 demo). |
@@ -45,8 +45,8 @@ your map.
 |---|---|---|---|---|
 | 1 | ML-DSA-65 | ML-DSA | yes | Default operational |
 | 2 | ML-DSA-87 | ML-DSA | yes | High-assurance |
-| 3 | SLH-DSA-128s | SLH-DSA | yes | Hedge against ML-DSA |
-| 4 | SLH-DSA-256s | SLH-DSA | yes | High-security hedge |
+| 3 | SLH-DSA-128s | SLH-DSA | yes | Registered hash-based rotation target; no signer wired |
+| 4 | SLH-DSA-256s | SLH-DSA | yes | Registered hash-based rotation target; no signer wired |
 | 5 | ECDSA-P256 | ECDSA | no | Migration semantics only (deprecation_date scheduled) |
 
 ### VerificationContext (7)
@@ -73,7 +73,7 @@ Werkzeug scrypt hashes stored. Production deployments must rotate.
 | T1 | Egor (#1) | RESERVE | ML-DSA-65 | NONE | Agency 2 (PA) | Never activated; awaits biometric enrollment |
 | T2 | Maria (#2) | ACTIVE | ML-DSA-65 | IRIS | Agency 3 (CA) | **Has duress code `911911`.** Anchored on Algorand-PQ (anchor #1) |
 | T3 | James (#3) | ACTIVE | ML-DSA-87 | FINGERPRINT | Agency 1 (federal) | High-assurance |
-| T4 | Priya (#4) | ACTIVE | SLH-DSA-128s | FACE | Agency 1 (federal) | Anchored on Hyperledger Indy (anchor #2). Algorithm diversity demo |
+| T4 | Priya (#4) | ACTIVE | SLH-DSA-128s | FACE | Agency 1 (federal) | Anchored on Hyperledger Indy (anchor #2). Registry-diversity row; no SLH-DSA signer is wired |
 | T5 | David (#5) | REVOKED | ML-DSA-65 | NONE | Agency 1 (federal) | Administratively voided. Demo recovery request PENDING |
 | T6 | R11-6 Test | REVOKED | ML-DSA-65 | IRIS | Agency 2 (PA) | R11-6 boundary-bound demo (added by tests) |
 

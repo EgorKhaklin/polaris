@@ -69,6 +69,8 @@ Each row records:
 - **Fail mode:** If SLH-DSA breaks, the hedge is gone — but only ML-DSA
   tokens issued under the same hedge assumption are at risk. SLH-DSA
   itself is not the operational default.
+- **Status at v9.194:** registry rows only; no SLH-DSA signer is wired
+  (PQC-POSTURE.md, REGISTERED_NOT_WIRED).
 - **Replacement:** Same multi-signature path as ML-DSA. The whole
   rationale for keeping SLH-DSA in the schema is that it was vetted
   under different mathematical assumptions; if both break together,

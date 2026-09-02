@@ -1,22 +1,36 @@
 # DATA-MODEL.md — schema reference
 
-The Polaris schema is **26 tables** organized into six functional groups:
+The Polaris schema is **29 tables** in `01_schema.sql` (v9.194), organized
+into six functional groups. A migrated deployment holds **33 tables**: those,
+the `schema_version` migration registry that `00_migrations_table.sql`
+creates, and the three tables the migrations under `polaris_sql/migrations/`
+add to a running database (`OperatorWebauthnCredential`, `OperatorSession`,
+`AuditAccessLog`).
 
-- **Entities** (Individual, Agency, AppUser, CryptographicAlgorithm,
-  VerificationContext) — the things that exist in the world
-- **Identity tokens** (IdentityToken, RevocationList) — the canonical
-  state-bearing objects
-- **Audit log** (TokenLifecycleEvent, VerificationEvent) — append-only
-  history. Constraint C1.
-- **Records & substrate** (DeviceBinding, BlockchainAnchor,
-  GenomicAnchor, QuantumObserverBinding) — non-mutable commitments
-  recorded alongside the token at issuance time. GenomicAnchor (M2-4)
-  and QuantumObserverBinding (M2-5) are the substrate-arc additions
-  from v2.
-- **Junctions** (AgencyAlgorithmAuth, TokenPermission) — M:N
-  resolutions with composite primary keys
-- **Operational** (AuthAuditLog) — the auth audit log; append-only
-  by trigger
+- **Entities** (Individual, Agency, CryptographicAlgorithm,
+  VerificationContext, AppUser): the things that exist in the world,
+  and the operator accounts that act on them.
+- **Tokens and signatures** (IdentityToken, TokenSignature,
+  RevocationList, TokenPermission): the canonical state-bearing
+  objects. TokenSignature carries one or more signatures per token
+  so an algorithm rotation is a new row, not a rewrite (C7).
+- **Audit of record** (TokenLifecycleEvent, VerificationEvent,
+  EnrollmentStatusEvent, DuressEvent, IndividualErasureEvent,
+  AuthAuditLog): append-only history, rejected on UPDATE and DELETE
+  by trigger. Constraint C1.
+- **Anchoring and epochs** (BlockchainAnchor, AnchorBatch,
+  TokenStateEpoch, TokenStateEpochLeaf, ZkVerificationNonce): Merkle
+  commitments over token state, the epoch roots the ZK prover proves
+  membership in, and the single-use nonces that stop proof replay.
+- **Bindings and substrate** (DeviceBinding, GenomicAnchor,
+  QuantumObserverBinding): commitments recorded alongside a token.
+  QuantumObserverBinding is a scaffold with no planned use.
+- **Policy, federation and operations** (AgencyAlgorithmAuth,
+  IssuerDiscretionPolicy, AgencyQuota, AgencyTrustAttestation,
+  RecoveryRequest, LifecycleArchiveCheckpoint): which agency may sign
+  under which algorithm, per-agency issuance and verification
+  ceilings, cross-agency trust, account recovery, and the archive
+  watermark that bounds purges.
 
 Schema is in `polaris_sql/01_schema.sql`. Indexes in
 `polaris_sql/02_indexes.sql`. Triggers (state machine, append-only,

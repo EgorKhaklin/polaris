@@ -46,20 +46,29 @@ polaris/                          ← repo root
 ├── assets/             ← branding (logo)
 │
 ├── .git/               ← genesis 2026-05-15
-├── .github/workflows/  ← CI (ci.yml; 7 jobs, named below)
+├── .github/workflows/  ← CI (ci.yml; 14 jobs, named below; dr-drill.yml monthly)
 ├── .gitignore          ← venv, caches, secrets, .DS_Store, .hypothesis
 └── .pre-commit-config.yaml  ← local hooks (link-check, invariants)
 ```
 
 **CI jobs** ([`.github/workflows/ci.yml`](../../.github/workflows/ci.yml)):
 
-- `test`: the product suite against Postgres 16; checks layer, DB suites, ZK build + prove-verify roundtrip, encrypted backup/restore round-trip.
-- `docker-image`: builds + smoke-boots the dev and prod images; pgbouncer, verify-ca pinning, streaming-replication, and pgBackRest round-trips.
+- `test`: the product suite against Postgres 16 and Redis; the checks layer, the DB suites, the ZK build and prove-verify round trip, the encrypted backup and restore round trip, the abuse drill, the performance smoke.
+- `docker-image`: builds and smoke-boots the dev and prod images; PgBouncer, verify-ca pinning, streaming replication and pgBackRest round trips, including the off-site S3 drill.
 - `caddy-edge`: builds the self-built Caddy image, validates the real prod Caddyfile, proves the X25519MLKEM768 post-quantum hybrid KEX.
-- `pqc-real`: real ML-DSA-65 sign + verify (liboqs), cross-checked by the cryptography second witness.
-- `cve-scan`: dependency CVE audit (pip-audit) + SAST (bandit).
+- `page-drill`: the duress page path, Prometheus rules through Alertmanager to the pager webhook.
+- `trace-drill`: the tracing wire drill and dashboards-as-code validation.
+- `dr-drill`: kills the primary, restores from the WAL archive, measures RPO and RTO against the targets in DR.md.
+- `linux-install`: the Linux server install, systemd on the runner plus Debian 12 and Rocky 9 package stages.
+- `custody-pkcs11`: key custody through PKCS#11 (Kryoptic token, ML-DSA-65 in-token, two-witness verified).
+- `rolling-deploy`: a rolling deploy under traffic drops zero requests (blue-green profile and control).
+- `helm-kind`: the Kubernetes reference profile boots to healthy on kind with Calico-enforced policies and restricted PSS.
+- `pqc-real`: real ML-DSA-65 sign and verify (liboqs), cross-checked by the cryptography second witness.
+- `cve-scan`: dependency CVE audit (pip-audit) plus SAST (bandit).
 - `image-cve-scan`: Trivy scan of the self-built prod images; gates on fixable CRITICALs.
-- `prod-stack-boot`: boots the full prod compose end to end on Linux and asserts `/api/health` serves through the TLS edge.
+- `prod-stack-boot`: boots the full prod compose end to end and asserts `/api/health` serves through the TLS edge.
+
+`dr-drill.yml` runs the same drill monthly and commits the measured row to [`docs/operator/DR-DRILLS.md`](../operator/DR-DRILLS.md).
 
 ---
 

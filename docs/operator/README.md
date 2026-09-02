@@ -20,10 +20,12 @@ For developers contributing to Polaris, see
 | [`KEY-CEREMONY.md`](KEY-CEREMONY.md) | The issuer signing key: custody drivers (file / PKCS#11 HSM / AWS KMS), the witnessed key ceremony, rotation with trust anchors |
 | [`SECURITY.md`](SECURITY.md) | Cybersecurity posture + audit + controls |
 | [`PRIVACY.md`](PRIVACY.md) | Data minimization + operational privacy posture |
-| [`DR.md`](DR.md) | Disaster recovery procedures (RPO ≤1min / RTO ≤30min) |
+| [`DR.md`](DR.md) | Disaster recovery procedures; targets RPO 300 s and RTO 4 h |
+| [`DR-DRILLS.md`](DR-DRILLS.md) | The drill ledger: every measured RPO and RTO, local and the monthly CI run |
 | [`FAILOVER.md`](FAILOVER.md) | Streaming replication + hot standby + promotion runbook; the HA complement to DR.md (standby host operator-supplied) |
 | [`ENCRYPTION-AT-REST.md`](ENCRYPTION-AT-REST.md) | At-rest posture: what is plaintext on disk, what is already encrypted, and the operator-gated host volume encryption path |
 | [`SLOS.md`](SLOS.md) | Reference SLO targets (availability / request-latency / DB-latency) + error budget, grounded in exposed metrics; backend operator-gated |
+| [`WEBAUTHN-ROLLOUT.md`](WEBAUTHN-ROLLOUT.md) | Rolling WebAuthn MFA out to operators in phases, with the attestation and network policies |
 | [`RUNBOOKS.md`](RUNBOOKS.md) | One alert-response runbook per shipped Prometheus alert (Trigger / Diagnosis / Remediation) |
 
 ---

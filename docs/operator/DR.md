@@ -37,8 +37,8 @@ incident**, not for the engineer at design time.
 > **Honest status (v9.126):** what ships unconditionally is `polaris-backup.sh` —
 > an on-demand / scheduled **encrypted `pg_dump`** (AES-256 when
 > `POLARIS_BACKUP_KEY_FILE` is set). With a daily schedule that is an **actual
-> RPO of ~24 hours** (worst case = the time since the last dump). The ≤1-minute
-> RPO is reached by **continuous WAL archiving (pgBackRest)**, whose
+> RPO of ~24 hours** (worst case = the time since the last dump). The 300 s
+> target RPO is reached by **continuous WAL archiving (pgBackRest)**, whose
 > **configuration now ships**: the postgres image carries pgBackRest
 > (`Dockerfile.postgres`), `polaris_web/pgbackrest.conf` defines the `polaris`
 > stanza, and `docker-init.sh` enables `archive_mode` + the `archive_command`
@@ -114,7 +114,7 @@ it; on a Linux host `polaris-dr-drill.timer` appends to
 `/var/lib/polaris/dr-drills.md`. Read the ledger before quoting either number.
 
 For the failure class where a **standby survives the primary**, streaming
-replication meets the ≤1-min RPO far more tightly (seconds, not the backup
+replication meets the 300 s RPO target far more tightly (seconds, not the backup
 interval): the replication readiness ships and the standby bootstrap + promotion
 are in [`FAILOVER.md`](FAILOVER.md), the HA complement to this backup-based
 recovery. Replication does not replace backups — a logical error replicates to

@@ -228,12 +228,7 @@ and means the server can enforce correctness without trusting the client.
 
 ### CRUD scope
 
-The schema has 27 tables (incl. `GenomicAnchor` from M2-4, the
-`QuantumObserverBinding` scaffold from M2-5, `IssuerDiscretionPolicy`
-from M2-11, `EnrollmentStatusEvent` from M2-9, `RecoveryRequest`
-from M2-7, `TokenSignature` from M2-6, `AnchorBatch` from M2-2,
-`AgencyTrustAttestation` from M2-8, `TokenStateEpoch` +
-`TokenStateEpochLeaf` from M2-1 / R10-1, and `DuressEvent` from M2-10).
+The schema has 29 tables (v9.194; see [DATA-MODEL.md](../docs/reference/DATA-MODEL.md)).
 Building separate CRUD
 UIs for all of them would create sprawl with little marginal value.
 The high-value entities (where users need direct CRUD) are:
@@ -319,7 +314,7 @@ def individuals_new():
   recorded in append-only `AuthAuditLog`
 - Refuses to start in production with default secret key
 
-The `security.py` module is ~851 lines and is the single source of
+The `security.py` module is the single source of
 truth for all access controls. Audit it directly rather than reading
 docs. The rate-limiter backend selection lives in `_RateLimiter`
 factory; see also `../DEVNOTES/rate-limiter.md`.
@@ -336,8 +331,8 @@ python3 test_app.py
 python3 test_structural_invariants.py
 ```
 
-The test suite has **351 integration tests** in `test_app.py` across
-**72 test classes** covering:
+The test suite in `test_app.py` (462 passing and 12 skipped without
+optional backends, measured at v9.194) covers:
 
 - Dashboard and Atlas page rendering, panel completeness, populations
   matching the database; two-band toolbar correctness; histogram
@@ -398,16 +393,16 @@ Supplementary suites:
 Each test snapshots and restores the database to pristine sample
 state, so tests run in isolation.
 
-Expected output: `Ran ~342 tests in ~70s. OK` (plus property + structural).
+Expected output: `462 passed, 12 skipped` (v9.194), plus the property and constraint suites.
 
 ## File Layout
 
 ```
 polaris_web/
-├── app.py                       Flask backend (~4,298 lines)
-├── security.py                  Auth, CSRF, CSP, rate limiter (~851 lines)
-├── webauthn_auth.py             WebAuthn-MFA layer (~459 lines)
-├── test_app.py                  Integration test suite (342 tests, 50 classes)
+├── app.py                       Flask backend: every route
+├── security.py                  Auth, sessions, CSRF, CSP, rate limiter
+├── webauthn_auth.py             WebAuthn-MFA layer
+├── test_app.py                  Integration test suite (live database)
 ├── test_invariants_property.py  Hypothesis property tests (C1, C2, C3)
 ├── test_redaction_property.py   M2-12 redaction-adversary tests
 ├── test_structural_invariants.py  Cognitive-layer invariants (882 tests; structural + Sanctum integrity)

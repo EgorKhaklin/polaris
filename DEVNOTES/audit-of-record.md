@@ -79,7 +79,9 @@ reclassified as derived caches (they reconstruct from the schema and
 source code, so they fail the AoR criterion "fully reconstructs
 operation history without joining elsewhere").
 
-The canonical nine are listed in the order the principle was applied.
+The instances are listed in the order the principle was applied. The
+first nine are the original set; rows 10 to 13 were added after this note
+was first written (thirteen surfaces at v9.194).
 
 | # | Element | Operation it records | Bounded mutation | DELETE rule |
 |---|---|---|---|---|
@@ -93,12 +95,18 @@ The canonical nine are listed in the order the principle was applied.
 | 8 | **`TokenStateEpoch`** (v8.23 / R10-1 / M2-1) | Per-epoch Merkle commitment of the active-token set (ZK-SNARK base) | None, fully append-only after closure | Forbidden by `enforce_epoch_immutability` trigger |
 | 9 | **`DuressEvent`** (v8.24 / R11-5 / M2-10) | Detected compulsion signals (silent OOB alert for verifier under coercion) | `oob_notified_at` only — set once when a responder acknowledges (forward-only) | Forbidden by `reject_audit_modification` trigger |
 
+| 10 | **`AuthAuditLog`** | Operator authentication events (logins, lockouts, session revocations) | None, fully append-only | Forbidden by `reject_audit_modification` trigger (`trg_authaudit_append_only`) |
+| 11 | **`IndividualErasureEvent`** (v9.125) | Right-to-erasure pseudonymization ceremonies | None, fully append-only | Forbidden by `reject_audit_modification` trigger (`trg_erasure_append_only`) |
+| 12 | **`LifecycleArchiveCheckpoint`** | Archive watermarks that bound every purge | None, fully append-only | Forbidden by `reject_checkpoint_modification` trigger (`trg_checkpoint_append_only`) |
+| 13 | **`AuditAccessLog`** (v9.20, migration-added) | Who read which audit surface, and when | None, fully append-only | Forbidden by `reject_audit_modification` trigger (`trg_audit_access_append_only`) |
+
 ### Conformance grading
 
-**Eight of the nine instances are fully trigger-enforced**
+**Twelve of the thirteen instances are fully trigger-enforced**
 (`TokenLifecycleEvent`, `VerificationEvent`, `EnrollmentStatusEvent`,
 `TokenSignature`, `AnchorBatch`, `AgencyTrustAttestation`,
-`TokenStateEpoch`, `DuressEvent`). The ninth (`RecoveryRequest`) has
+`TokenStateEpoch`, `DuressEvent`, `AuthAuditLog`, `IndividualErasureEvent`,
+`LifecycleArchiveCheckpoint`, `AuditAccessLog`). `RecoveryRequest` has
 partial enforcement via partial unique index + procedure discipline.
 This asymmetry is honest, not aspirational:
 

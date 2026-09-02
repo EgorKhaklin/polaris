@@ -5,9 +5,9 @@
 container runtime (`Dockerfile`, `docker-compose.yml`, `docker-init.sh`), and operational
 configuration.
 **Frameworks:** OWASP Top 10 (2021), CWE (Common Weakness Enumeration), NIST SP 800-53.
-**Result:** 14 findings identified, 14 findings patched, 35 new automated tests covering
-the patches. Total test count across the bundle: **156 / 156 passing** (SQL 36, Web 92,
-CLI 28).
+**Result:** 14 findings identified, 14 findings patched, 35 automated tests added
+for the patches at the time. Current suite sizes are in the Test Coverage section
+below, stamped at the version they were measured.
 
 ---
 
@@ -429,24 +429,29 @@ Flask test client is non-trivial and the layered defenses make this a low-priori
 | F-13  | LOW        | A05   | CWE-521          | ✅ Patched | (manual)                    |
 | F-14  | LOW        | A04   | CWE-770          | ✅ Patched | (implicit)                  |
 
-Plus 8 RoleBasedAccessControlTests + 3 PasswordHashingTests for cross-cutting verification.
+Plus the `RoleBasedAccessControlTests` and `PasswordHashingTests` classes for cross-cutting verification.
 
 ---
 
 ## Test Coverage
 
+Measured at v9.194 (the README's "Verified, not asserted" table is the
+canonical statement and is re-stamped on every ship that changes it):
+
 ```
-SQL  : 36/36 pass  (schema, constraints, triggers, procedures, view)
-Web  : 92/92 pass  (57 functional + 35 security tests added)
-CLI  : 28/28 pass  (procedure wrappers, query, list, inspect)
-Total: 156/156 pass
+SQL self-tests : 78 assertions in 08_tests.sql, plus 12_v7_constraints.sql and 13_substrate.sql
+Web            : 462 (test_app.py, 12 skipped without optional backends) + 72 constraint tests + 16 property tests + 19 secret-store tests
+CLI            : 71 (test_cli.py)
+Crypto         : 76 across the signing, custody and ZK witness suites
+Invariants     : 107 checks, each with a detection test (polaris_checks)
 ```
 
 Run with:
 ```bash
 cd polaris_sql && psql -d polaris_test -f 08_tests.sql
-cd polaris_web && python3 test_app.py
-cd polaris_cli && python3 test_cli.py
+cd polaris_web && python3 -m pytest test_app.py test_check_constraints.py test_secretstore.py -q
+cd polaris_cli && python3 -m pytest test_cli.py -q
+python3 -m polaris_checks.run
 ```
 
 ---

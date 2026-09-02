@@ -158,6 +158,7 @@ Status maps to the NIST IR 8547 timeline (deprecate classical public-key after
 | Primitive | Category | Status | Rationale |
 |---|---|---|---|
 | ML-DSA-65 (token signature) | signing | PQ_SECURE | FIPS 204 Cat 3, real signature under the production default, two-witnessed, algorithm pinned per C7. |
+| SLH-DSA-128s / SLH-DSA-256s (algorithm registry rows) | signing | REGISTERED_NOT_WIRED | FIPS 205 hash-based parameter sets are rows in `CryptographicAlgorithm`, so a rotation away from lattices is a row update (C7). No SLH-DSA signer is wired: `pqc_signing.py` signs ML-DSA-65 only, so the seed token filed under SLH-DSA-128s cannot be re-signed (every seed signature row is a placeholder; real signatures appear at issuance). Wiring it is P3 on the roadmap below. |
 | SHA3-256 (token binding digest) | hashing | PQ_SECURE | FIPS 202; ~128-bit quantum preimage resistance. No deadline. |
 | SHA3-256/512 (blockchain anchor Merkle) | hashing | PQ_SECURE | Server-computed Merkle hashing; the BLAKE3-256 label falls back to SHA3-256. Grover quadratic only. No migration. |
 | SHA3/BLAKE labels (genomic anchor) | hashing | PQ_SECURE | Stores an externally-computed digest; plaintext never stored (schema CHECK). All accepted labels are PQ-acceptable hashes. No migration. |

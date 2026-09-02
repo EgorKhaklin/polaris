@@ -5,6 +5,61 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.194 — 2026-09-02 (P1.13 ship 1: every stated count and constitution object is true, and stays true)
+
+The first ship of the presentation pass. Nothing is deleted; every number and
+every object name a reviewer meets first is re-measured and then guarded.
+
+- **Three enforcement checks** in `polaris_checks` (107 checks total, each with a
+  detection test):
+  - `check_table_count_matches_doc` is widened from two documents to nine
+    (README, CLAUDE, ROADMAP, MISSION, ARCHITECTURE-OVERVIEW, DATA-MODEL,
+    SYSTEM-MAP, `polaris_sql/README.md`, the demo site). It accepts exactly two
+    numbers: the tables `01_schema.sql` creates (29) and that plus the tables
+    migrations add to a running deployment, 33 with the `schema_version`
+    registry. It reads through HTML tags and
+    catches the "(N total" phrasing that slipped past the old regex.
+  - `check_stated_counts` measures invariant checks, CI jobs (the keys under
+    `jobs:` in `ci.yml`), routes (`@app.route` decorators) and stored procedures
+    from the artifacts, then fails any stated count in thirteen documents that
+    disagrees. The README must keep stating the check and CI-job counts.
+  - `check_c1c10_objects_resolve` parses the `file::object` anchors in
+    MISSION.md's C1-C10 table and every function-shaped or trigger-shaped name
+    in CLAUDE.md, PRINCIPLES.md, PRIVACY.md and ARCHITECTURE-OVERVIEW.md, and
+    fails when the code defines no such object.
+- **Counts corrected everywhere they were stale.** 77 or 102 checks became 107;
+  7 CI jobs became 14 (SYSTEM-MAP now names all fourteen plus the monthly
+  `dr-drill.yml`); 72 routes became 73; 26, 27 or 28 tables became 29 (33 migrated);
+  11 or 14 stored procedures became 15; "twelve runbooks" became seventeen.
+  DATA-MODEL.md's six groups now list all 29 tables. The README's "Verified,
+  not asserted" table and the site's numbers are re-measured at v9.194 (640
+  product tests, 76 crypto-witness tests). SECURITY.md's 156-test block, INSTALL's
+  "~342 tests", DEPLOYMENT's "36/36" and the SQL README's "171 assertions" are
+  replaced by measured, stamped figures (78 assertions in `08_tests.sql`).
+  KUBERNETES.md no longer hardcodes an image tag; it reads `$V` from
+  `polaris_web/__version__.py`.
+- **Constitution objects repaired.** MISSION.md named four objects that do not
+  exist (`reject_update_delete`, `disclosure_consistency`, `secure_headers`,
+  `enforce_zk_typing`); they are now `reject_audit_modification`,
+  `chk_disclosure_token_consistency`, `apply_security_headers`, and C6 is
+  described by its real mechanism (route coercion, the C2 CHECK constraint, the
+  Atlas redaction check). PRIVACY.md and ARCHITECTURE-OVERVIEW.md no longer
+  claim a C2 trigger; it is a CHECK constraint, and that is the stronger
+  statement. PRINCIPLES.md's audit-of-record table now lists all thirteen
+  surfaces under their real trigger names.
+- **SLH-DSA ruled once, on every surface.** Both SLH-DSA parameter sets are
+  registry rows, so a rotation away from lattices is a row update (C7), but no
+  SLH-DSA signer is wired: `pqc_signing.py` signs ML-DSA-65 only, so the seed
+  token filed under SLH-DSA-128s can never be re-signed (every seed signature
+  row is a placeholder; real signatures appear at issuance). README, the site,
+  PQC-POSTURE (new gap row, `REGISTERED_NOT_WIRED`) and the seed comments now
+  say exactly that.
+- **Claims trimmed to the code.** The site no longer says FIDO2 keys are the
+  only path to admin and auditor roles; admins enroll against a per-account
+  deadline and auditors are exempt, which is what `webauthn_auth.py` does.
+  The operator index gains its two unindexed documents (DR-DRILLS, WEBAUTHN-ROLLOUT)
+  and states the real DR targets (RPO 300 s, RTO 4 h).
+
 ## v9.193 — 2026-09-02 (Roadmap amended: the national-deployment presentation pass, P1.13 to P1.17, with wholesale rework pre-authorized)
 
 An owner decision, recorded where decisions live. Five rows join P1 and a

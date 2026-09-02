@@ -23,18 +23,18 @@ XL (multi-arc). Risk is delivery risk, not security risk.
 
 ---
 
-## Where we are (honest inventory, v9.157; items closed since are marked [x] in the phase tables below)
+## Where we are (honest inventory, v9.194; items closed since are marked [x] in the phase tables below)
 
 **Have, working, CI-proven:** a 29-table constraint-enforced schema with
-append-only audit; 72-route application with WebAuthn operator MFA and the
+append-only audit; 73-route application with WebAuthn operator MFA and the
 Atlas; operator CLI; Plonky2 ZK Merkle-inclusion with an independent Python
 second witness; real ML-DSA-65 signing two-witnessed (liboqs + OpenSSL);
 five-service hardened production stack behind a post-quantum TLS edge
 (X25519MLKEM768, proven in CI); pgBackRest backup/restore and streaming
-replication, both CI-round-tripped; 77 invariant checks each with a detection
+replication, both CI-round-tripped; 107 invariant checks (v9.194) each with a detection
 test; CVE gates on dependencies and images; operator tooling for backup,
-restore, archive, purge (archive-bound), migrate, account recovery; twelve
-operator runbooks; an honest gap ledger in
+restore, archive, purge (archive-bound), migrate, account recovery; seventeen
+operator runbooks and ledgers; an honest gap ledger in
 [docs/PRODUCTION-READINESS.md](docs/PRODUCTION-READINESS.md).
 
 **Do not have:** hardware tokens (the physical artifact is modeled, not built);

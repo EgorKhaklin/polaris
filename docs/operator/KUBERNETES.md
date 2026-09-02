@@ -38,10 +38,11 @@ enabled.
   no registry images yet (P0.6 deferred image signing for that reason), so
   build and push them yourself:
   ```bash
-  docker build -f polaris_web/Dockerfile.prod      -t REGISTRY/polaris-app:9.186       .
-  docker build -f polaris_web/Dockerfile.caddy     -t REGISTRY/polaris-caddy:9.186     polaris_web
-  docker build -f polaris_web/Dockerfile.pgbouncer -t REGISTRY/polaris-pgbouncer:9.186 polaris_web
-  docker build -f polaris_web/Dockerfile.postgres  -t REGISTRY/polaris-postgres:9.186  .
+  V=$(python3 -c 'from polaris_web.__version__ import __version__; print(__version__)')   # tag images with the shipped version
+  docker build -f polaris_web/Dockerfile.prod      -t REGISTRY/polaris-app:$V       .
+  docker build -f polaris_web/Dockerfile.caddy     -t REGISTRY/polaris-caddy:$V     polaris_web
+  docker build -f polaris_web/Dockerfile.pgbouncer -t REGISTRY/polaris-pgbouncer:$V polaris_web
+  docker build -f polaris_web/Dockerfile.postgres  -t REGISTRY/polaris-postgres:$V  .
   ```
 
 ## Install
@@ -59,8 +60,8 @@ kubectl -n polaris create secret generic polaris-secrets --from-file=polaris_web
 helm install polaris deploy/helm/polaris -n polaris \
   --set domain=polaris.example.org --set edge.tls=acme --set edge.service.type=LoadBalancer \
   --set secrets.existingSecret=polaris-secrets \
-  --set images.app=REGISTRY/polaris-app:9.186 --set images.caddy=REGISTRY/polaris-caddy:9.186 \
-  --set images.pgbouncer=REGISTRY/polaris-pgbouncer:9.186 --set images.postgres=REGISTRY/polaris-postgres:9.186 \
+  --set images.app=REGISTRY/polaris-app:$V --set images.caddy=REGISTRY/polaris-caddy:$V \
+  --set images.pgbouncer=REGISTRY/polaris-pgbouncer:$V --set images.postgres=REGISTRY/polaris-postgres:$V \
   --wait --timeout 12m
 ```
 

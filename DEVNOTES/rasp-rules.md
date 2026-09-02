@@ -88,7 +88,7 @@ events in 5 minutes, emit a HYDRA finding. Vocation: anti-coercion —
 coerced bulk enrollment is detectable.
 
 ### R-AN-4: ZK-disclosure-level downgrade attempts
-**Status:** ✅ IMPLEMENTED — C2 trigger refuses at DB level; logged
+**Status:** ✅ IMPLEMENTED — the C2 CHECK constraint (`chk_disclosure_token_consistency`) refuses at DB level; logged
 in `TokenLifecycleEvent` as REJECTED operation
 **Trigger:** any verification request with disclosure-level FULL on
 a token whose policy is ZERO_KNOWLEDGE — C6 server-side enforcement
@@ -117,7 +117,7 @@ TLS, Caddy can enforce:
 
 ### R-ED-1: HTTP security headers
 **Status:** ✅ IMPLEMENTED at app layer (v9.13)
-**Surface:** `polaris_web/security.py:secure_headers`
+**Surface:** `polaris_web/security.py:apply_security_headers`
 - Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
 - Content-Security-Policy: default-src 'self'; script-src 'self';
   style-src 'self' 'sha256-{...}'; img-src 'self' data: blob:;

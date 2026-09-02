@@ -130,9 +130,10 @@ production-grade. The course is the occasion. The mission is bigger.
    is who they say they are, in this context, at this moment." Nothing
    more.
 
-2. **Post-quantum by default.** ML-DSA primary, SLH-DSA fallback. RSA
-   and ECDSA exist in the schema for migration semantics; they should
-   not be issued for new tokens.
+2. **Post-quantum by default.** ML-DSA-65 signs every new token.
+   SLH-DSA is registered in the algorithm registry as the hash-based
+   rotation target; no SLH-DSA signer is wired yet (PQC-POSTURE.md).
+   RSA and ECDSA exist in the registry for migration semantics only.
 
 3. **Append-only at the audit layer.** Every state transition writes a
    `TokenLifecycleEvent`; every verification writes a
@@ -207,14 +208,14 @@ fundamentally broken regardless of what tests still pass.
 
 | # | Constraint | Where enforced |
 |---|------------|----------------|
-| C1 | `VerificationEvent` and `TokenLifecycleEvent` are append-only — UPDATE and DELETE are rejected by trigger | `06_triggers.sql::reject_update_delete()` |
-| C2 | `ZERO_KNOWLEDGE` events have `token_id IS NULL` | `01_schema.sql::disclosure_consistency` CHECK constraint + form-layer coercion |
+| C1 | `VerificationEvent` and `TokenLifecycleEvent` are append-only — UPDATE and DELETE are rejected by trigger | `06_triggers.sql::reject_audit_modification()` |
+| C2 | `ZERO_KNOWLEDGE` events have `token_id IS NULL` | `01_schema.sql::chk_disclosure_token_consistency` CHECK constraint + form-layer coercion |
 | C3 | At most one `ACTIVE` token per `Individual` | `01_schema.sql::uq_one_active_per_person` partial unique index |
 | C4 | Failed login increments are atomic (no TOCTOU) | `security.py::authenticate()` uses `UPDATE … SET col = col + 1 RETURNING …` |
-| C5 | CSP is `script-src 'self'` — no `'unsafe-inline'` for production scripts | `security.py::secure_headers()` |
-| C6 | Disclosure level is enforced server-side; client cannot upgrade | `verifications_new` route + `enforce_zk_typing` trigger |
+| C5 | CSP is `script-src 'self'` — no `'unsafe-inline'` for production scripts | `security.py::apply_security_headers()` |
+| C6 | Disclosure level is enforced server-side; client cannot upgrade | `app.py::verifications_new()` coerces `token_id` to NULL for ZERO_KNOWLEDGE; the C2 CHECK constraint rejects anything else; the Atlas redacts ZK locations server-side (`polaris_checks::check_c6_atlas_redacts_zk_location`) |
 | C7 | Cryptographic algorithm metadata flows through `CryptographicAlgorithm` — never hardcoded in app code | `01_schema.sql::CryptographicAlgorithm` table |
-| C8 | All `/api/atlas/*` endpoints have hard caps preventing unbounded result sets | `app.py::_ATLAS_MAX_*` constants |
+| C8 | All `/api/atlas/*` endpoints have hard caps preventing unbounded result sets | `app.py::_ATLAS_MAX_*` constants, applied as LIMITs in every Atlas query |
 | C9 | Tests for concurrency hazards use real threading, not mocks | `test_app.py::ConcurrencyTests` |
 | C10 | Identity attestation never carries spending authority | architectural — no `MonetaryClaim` table |
 

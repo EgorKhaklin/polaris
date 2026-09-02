@@ -19,8 +19,8 @@ system. It demonstrates a substrate where:
   not by application logic.
 - **Audit-of-record** is enforced by append-only triggers, not by
   developer discipline.
-- **Zero-knowledge verification** is enforced by a server-side trigger,
-  not by client-side cooperation.
+- **Zero-knowledge verification** is enforced by a CHECK constraint on
+  the event row, not by client-side cooperation.
 - **Post-quantum cryptography** is at the substrate, not as a future
   migration path.
 
@@ -50,7 +50,7 @@ Equally important. Polaris does not:
 - **Run with multi-region failover.** Single-region only.
 - **Carry a state-level surveillance API.** The verification graph is
   structurally inaccessible at the ZERO_KNOWLEDGE disclosure level
-  (C2 trigger enforces `token_id IS NULL`).
+  (the C2 CHECK constraint enforces `token_id IS NULL`).
 
 Each of these is a deliberate constitutional decision. The Vocation
 (anti-coercion) sits above C1-C10 and refuses any drift toward these
@@ -106,7 +106,7 @@ of the schema. The schema can be operated via raw SQL (the
 `/sql` route is an authenticated console) and the constraints still
 hold; they are not mediated by the application.
 
-Key tables (28 total, partial list):
+Key tables (29 in `01_schema.sql`, 33 in a migrated deployment; partial list):
 - `IdentityToken` — the central object
 - `Individual` — the person an identity is bound to
 - `Agency` — the issuer of an identity
@@ -121,13 +121,16 @@ Key tables (28 total, partial list):
 - `QuantumObserverBinding` — SCAFFOLD; RESERVED-NOT-PLANNED (v9.23)
 - `AuditAccessLog` — meta-audit (v9.20); append-only
 - `OperatorWebauthnCredential` — operator MFA substrate (v8.97)
+- `OperatorSession` — server-side session registry, revocable per row (v9.189)
+- `AgencyQuota` — per-agency issuance and verification ceilings (v9.190)
 - `schema_version` — migration registry (v8.95)
 - ...
 
 ### Layer 2: Application (`polaris_web/`)
 
-Python 3 / Flask / gunicorn. ~4,298 lines of `app.py`. ~851 lines of
-`security.py`. ~459 lines of `webauthn_auth.py`. Templates use Jinja2.
+Python 3 / Flask / gunicorn: `app.py` (routes), `security.py` (auth,
+sessions, headers, rate limits), `webauthn_auth.py` (operator MFA).
+Templates use Jinja2.
 CSS is hand-rolled (no Tailwind), navy/gold intelligence-report
 aesthetic. JavaScript is external-only (no inline scripts; CSP
 enforces). The atlas globe uses D3 + topojson, no CDN dependency.
@@ -249,7 +252,7 @@ a check that silently passes on a real violation is itself caught.
 
 This flat layer is the machine-checkable enforcement of most of
 C1-C10. The remainder are enforced at the DB level: append-only
-triggers (C1), the ZERO_KNOWLEDGE `token_id IS NULL` trigger (C2), the
+triggers (C1), the ZERO_KNOWLEDGE `token_id IS NULL` CHECK constraint (C2), the
 partial unique index for one-identity-per-person (C3), the atomic
 failed-login counter (C4), and CHECK constraints. The checks verify
 that the codebase keeps the shape those guarantees depend on (for

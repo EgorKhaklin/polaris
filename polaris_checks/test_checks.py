@@ -214,6 +214,8 @@ def test_table_count_check_fails_on_doc_drift(tmp_path):
         "CREATE TABLE A (id SERIAL);\nCREATE TABLE B (id SERIAL);\n")
     arch = tmp_path / "docs" / "ARCHITECTURE-OVERVIEW.md"
     readme = tmp_path / "README.md"
+    (tmp_path / "docs" / "reference").mkdir()
+    (tmp_path / "docs" / "reference" / "DATA-MODEL.md").write_text("The schema is 2 tables.\n")
 
     # 1. ARCHITECTURE-OVERVIEW drift -> FAIL.
     arch.write_text("PostgreSQL 16. 27 tables, stored procedures.\n")
@@ -3602,3 +3604,118 @@ def test_dr_drill_scheduled_check_discriminates(tmp_path):
 
     write({"deploy/linux/install.sh": "polaris-backup.timer\n"})
     assert checks.check_dr_drill_scheduled(tmp_path)[0].level == "FAIL", "must FAIL when the host timer is not installed"
+
+
+def test_table_count_check_guards_every_document_and_the_migrated_total(tmp_path):
+    def write(files):
+        for rel, body in files.items():
+            p = tmp_path / rel
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(body)
+    write({
+        "polaris_sql/01_schema.sql": "CREATE TABLE A (id SERIAL);\nCREATE TABLE B (id SERIAL);\n",
+        "polaris_sql/migrations/2026-01-01-001-x.up.sql": "CREATE TABLE IF NOT EXISTS C (id SERIAL);\n",
+        "README.md": "a working reference implementation: 2 schema tables.\n",
+        "docs/ARCHITECTURE-OVERVIEW.md": "PostgreSQL 16. 2 tables.\nKey tables (3 total, partial list):\n",
+        "docs/reference/DATA-MODEL.md": "The schema is **2 tables** (a migrated deployment holds 3 tables).\n",
+        "polaris_sql/README.md": "implements **2 tables**\n",
+        "site/index.html": "<p><strong>2</strong> schema tables</p>\n",
+    })
+    assert checks.check_table_count_matches_doc(tmp_path)[0].level == "OK", \
+        "schema count and migrated total are both legitimate"
+
+    write({"docs/reference/DATA-MODEL.md": "The schema is **26 tables**.\n"})
+    assert checks.check_table_count_matches_doc(tmp_path)[0].level == "FAIL", \
+        "must FAIL when DATA-MODEL.md drifts (it was unguarded through v9.193)"
+    write({"docs/reference/DATA-MODEL.md": "The schema is **2 tables**.\n"})
+
+    write({"site/index.html": "<p><strong>28</strong> schema tables</p>\n"})
+    assert checks.check_table_count_matches_doc(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the demo site strip drifts (HTML tags must not hide the number)"
+    write({"site/index.html": "<p><strong>2</strong> schema tables</p>\n"})
+
+    write({"docs/ARCHITECTURE-OVERVIEW.md": "PostgreSQL 16. 2 tables.\nKey tables (28 total, partial list):\n"})
+    assert checks.check_table_count_matches_doc(tmp_path)[0].level == "FAIL", \
+        "must FAIL on the '(N total' phrasing that slipped past the old regex"
+
+    write({"docs/ARCHITECTURE-OVERVIEW.md": "PostgreSQL 16. 2 tables.\n"})
+    (tmp_path / "docs/reference/DATA-MODEL.md").unlink()
+    assert checks.check_table_count_matches_doc(tmp_path)[0].level == "FAIL", \
+        "must FAIL when a required document is missing"
+
+
+def test_stated_counts_check_measures_the_artifacts(tmp_path):
+    def write(files):
+        for rel, body in files.items():
+            p = tmp_path / rel
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(body)
+    n_checks = len(checks.CHECKS)
+    ci = "name: CI\non:\n  push:\njobs:\n  test:\n    runs-on: ubuntu\n  build:\n    runs-on: ubuntu\n"
+    app = "@app.route('/a')\ndef a(): pass\n@app.route('/b')\ndef b(): pass\n@app.route('/c')\ndef c(): pass\n"
+    procs = "CREATE OR REPLACE FUNCTION uc1() RETURNS void AS $$ $$;\n"
+    readme = (f"{n_checks} plain `check_*` functions; Flask, 3 routes; 1 stored procedure.\n"
+              "| CI jobs | 2 |\n")
+    write({".github/workflows/ci.yml": ci, "polaris_web/app.py": app,
+           "polaris_sql/05_procedures.sql": procs, "README.md": readme,
+           "site/index.html": f"<b>{n_checks}</b><span>invariant checks</span> <b>2</b><span>CI jobs</span>\n"})
+    assert checks.check_stated_counts(tmp_path)[0].level == "OK", "must PASS when every count is measured"
+
+    write({"site/index.html": "<b>7</b><span>CI jobs</span>\n"})
+    assert checks.check_stated_counts(tmp_path)[0].level == "FAIL", "must FAIL when the site's CI-job count drifts"
+    write({"site/index.html": "<b>2</b><span>CI jobs</span>\n"})
+
+    write({"README.md": readme.replace("3 routes", "72 routes")})
+    assert checks.check_stated_counts(tmp_path)[0].level == "FAIL", "must FAIL when the route count drifts"
+
+    write({"README.md": readme.replace(f"{n_checks} plain", "77 plain")})
+    assert checks.check_stated_counts(tmp_path)[0].level == "FAIL", "must FAIL when the check count drifts"
+
+    write({"README.md": "no numbers here\n"})
+    assert checks.check_stated_counts(tmp_path)[0].level == "FAIL", "must FAIL when the README stops stating the counts"
+
+    # The CI count comes from the jobs: keys, not from job-shaped words elsewhere in the file.
+    write({"README.md": readme, ".github/workflows/ci.yml": ci + "  deploy:\n    needs: [test, build]\n"})
+    assert checks.check_stated_counts(tmp_path)[0].level == "FAIL", "must FAIL when a CI job is added and no doc follows"
+
+
+def test_c1c10_objects_check_resolves_names_against_the_code(tmp_path):
+    def write(files):
+        for rel, body in files.items():
+            p = tmp_path / rel
+            p.parent.mkdir(parents=True, exist_ok=True)
+            p.write_text(body)
+    rows = "\n".join(
+        f"| C{i} | text | `06_triggers.sql::reject_audit_modification()` |" for i in range(1, 11))
+    mission = "| # | Constraint | Where enforced |\n|---|---|---|\n" + rows + "\n"
+    write({
+        "MISSION.md": mission,
+        "polaris_sql/06_triggers.sql": "CREATE OR REPLACE FUNCTION reject_audit_modification() RETURNS trigger AS $$ $$;\n",
+        "polaris_web/security.py": "def apply_security_headers(response):\n    return response\n",
+        "docs/operator/PRIVACY.md": "The `apply_security_headers()` hook and the `uq_one` index.\n",
+        "polaris_sql/01_schema.sql": "CREATE UNIQUE INDEX uq_one ON t (a);\n",
+    })
+    assert checks.check_c1c10_objects_resolve(tmp_path)[0].level == "OK", "must PASS when every name resolves"
+
+    write({"MISSION.md": mission.replace("reject_audit_modification", "reject_update_delete", 1)})
+    assert checks.check_c1c10_objects_resolve(tmp_path)[0].level == "FAIL", \
+        "must FAIL when MISSION.md names an enforcement object that does not exist"
+    write({"MISSION.md": mission})
+
+    write({"docs/operator/PRIVACY.md": "The `enforce_zk_typing` trigger rejects writes.\n"})
+    assert checks.check_c1c10_objects_resolve(tmp_path)[0].level == "FAIL", \
+        "must FAIL when a sibling summary cites a phantom trigger"
+    write({"docs/operator/PRIVACY.md": "plain prose\n"})
+
+    write({"MISSION.md": mission.replace("`06_triggers.sql::reject_audit_modification()`", "a trigger", 5)})
+    assert checks.check_c1c10_objects_resolve(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the table stops naming concrete file::object anchors"
+
+
+def test_helm_chart_version_check_fails_on_stale_app_version(tmp_path):
+    (tmp_path / "polaris_web").mkdir(); (tmp_path / "deploy/helm/polaris").mkdir(parents=True)
+    (tmp_path / "polaris_web/__version__.py").write_text('__version__ = "9.194"\n')
+    (tmp_path / "deploy/helm/polaris/Chart.yaml").write_text('apiVersion: v2\nname: polaris\nappVersion: "9.194"\n')
+    assert checks.check_helm_chart_version_current(tmp_path)[0].level == "OK", "must PASS when the chart tracks the version"
+    (tmp_path / "deploy/helm/polaris/Chart.yaml").write_text('apiVersion: v2\nname: polaris\nappVersion: "9.186"\n')
+    assert checks.check_helm_chart_version_current(tmp_path)[0].level == "FAIL", "must FAIL when the chart lags the version"

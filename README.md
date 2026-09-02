@@ -30,7 +30,7 @@ Americans carry six to eight credentials that do not talk to each other: driver'
 
 Polaris consolidates them into **one physical token per person**, signed under post-quantum cryptography (ML-DSA-65, FIPS 204), verified through **context-scoped events** (banking, voting, and healthcare are different events with different disclosure rules) at three disclosure levels. The default level is **zero-knowledge**: the typical verification stores no token identifier at all, so the verification graph cannot be reconstructed even by someone holding the whole database.
 
-This repository is the complete working system: a 29-table PostgreSQL schema whose constraints are the security boundary, a Flask application covering every use case, a Rust ZK-SNARK prover with an independent second witness, an operator CLI, a hardened production container stack behind a post-quantum TLS edge, and a flat layer of 102 machine-checked invariants (v9.190) that gates every change in CI.
+This repository is the complete working system: a 29-table PostgreSQL schema whose constraints are the security boundary, a Flask application covering every use case, a Rust ZK-SNARK prover with an independent second witness, an operator CLI, a hardened production container stack behind a post-quantum TLS edge, and a flat layer of 107 machine-checked invariants (v9.194) that gates every change in CI.
 
 What holds it together is one design rule: **the guarantees live in the database, not in application code**. A rule enforced by a trigger, a CHECK constraint, or a unique index binds every client, survives every restore from backup, and cannot be bypassed by the next caller. Application-level policy can be skipped; schema-level structure cannot.
 
@@ -53,7 +53,7 @@ Above the ten sits the project's vocation: **no person can be compelled to renou
 | **C9** | Concurrency claims are tested with real threads, not mocks. | Threaded test suites against a live database |
 | **C10** | Identity is not money. The schema carries no monetary claim. | Structural absence, pinned by a check |
 
-Each guarantee is machine-checked by [`polaris_checks`](polaris_checks/): 102 plain `check_*` functions (v9.190), each paired with a detection test proving it fails on a broken fixture. A check that cannot detect its own violation is treated as broken. The reasoning for why these ten, and why they interlock, is in [MISSION.md](MISSION.md) and [meta/constraint-lattice.md](meta/constraint-lattice.md).
+Each guarantee is machine-checked by [`polaris_checks`](polaris_checks/): 107 plain `check_*` functions (v9.194), each paired with a detection test proving it fails on a broken fixture. A check that cannot detect its own violation is treated as broken. The reasoning for why these ten, and why they interlock, is in [MISSION.md](MISSION.md) and [meta/constraint-lattice.md](meta/constraint-lattice.md).
 
 ---
 
@@ -78,20 +78,20 @@ Four layers. The schema is the core; everything else is a client of it.
 
 ```
       ┌───────────────────────────────────────────────────────────┐
-      │  CHECK LAYER          polaris_checks: 77 flat invariant   │
+      │  CHECK LAYER          polaris_checks: 107 flat invariant  │
       │                       checks; gates CI; reads everything, │
       │                       writes nothing                      │
       └────────────────────────────┬──────────────────────────────┘
                                    │
       ┌────────────────────────────▼──────────────────────────────┐
-      │  APPLICATION          Flask, 72 routes: every use case,   │
+      │  APPLICATION          Flask, 73 routes: every use case,   │
       │                       the Atlas, WebAuthn MFA, /metrics   │
       │                       polaris_cli: the same over a shell  │
       └──────────┬──────────────────────────────┬─────────────────┘
                  │                              │ subprocess
       ┌──────────▼─────────────┐   ┌────────────▼─────────────────┐
       │  SCHEMA  PostgreSQL 16 │   │  ZK PROVER  Rust + Plonky2   │
-      │  29 tables, 11 stored  │   │  Merkle-inclusion SNARK,     │
+      │  29 tables, 15 stored  │   │  Merkle-inclusion SNARK,     │
       │  procedures, append-   │   │  re-verified bit-for-bit by  │
       │  only audit triggers   │   │  an independent Python       │
       │  (the security         │   │  second witness              │
@@ -100,7 +100,8 @@ Four layers. The schema is the core; everything else is a client of it.
                  │ signs under
       ┌──────────▼────────────────────────────────────────────────┐
       │  SIGNATURES           ML-DSA-65 default (FIPS 204),       │
-      │                       SLH-DSA hedge (FIPS 205), algorithm │
+      │                       SLH-DSA registered (FIPS 205),     │
+      │                       not yet a signer; algorithm        │
       │                       registry: rotation is a row, not a  │
       │                       redeploy                            │
       └───────────────────────────────────────────────────────────┘
@@ -112,7 +113,7 @@ Four layers. The schema is the core; everything else is a client of it.
 | [`polaris_web/`](polaris_web/) | Flask application: dashboard, the Atlas, per-use-case flows, WebAuthn operator MFA, health and metrics. |
 | [`polaris_zk/`](polaris_zk/) | Plonky2 Merkle-inclusion prover (Rust), plus [`witness2/`](polaris_zk/witness2/), an independent Python reimplementation that must agree with it. |
 | [`polaris_cli/`](polaris_cli/) | Operator CLI: issuance, revocation, recovery, audit queries, without a browser. |
-| [`polaris_checks/`](polaris_checks/) | The invariant layer. 77 checks, each with a tested failure mode. `python3 -m polaris_checks.run` gates CI. |
+| [`polaris_checks/`](polaris_checks/) | The invariant layer. 107 checks (v9.194), each with a tested failure mode. `python3 -m polaris_checks.run` gates CI. |
 | [`scripts/`](scripts/), [`deploy/`](deploy/) | Operator tooling (backup, restore, archive, purge, migrate, recover-admin) and observability config (Prometheus alerts, Grafana dashboards-as-code, opt-in OTel tracing). |
 
 The production topology is five services: a self-built Caddy TLS edge, gunicorn, PgBouncer, PostgreSQL with pgBackRest WAL archiving, and Redis. Every service runs as non-root with all Linux capabilities dropped.
@@ -128,13 +129,13 @@ algorithm        family     PQ    NIST         sec    public key    signature
 ─────────────────────────────────────────────────────────────────────────────
 ML-DSA-65        ML-DSA      ✓    FIPS 204     192      1,952 B      3,309 B   default
 ML-DSA-87        ML-DSA      ✓    FIPS 204     256      2,592 B      4,627 B   high-assurance
-SLH-DSA-128s     SLH-DSA     ✓    FIPS 205     128         32 B      7,856 B   hash-based hedge
-SLH-DSA-256s     SLH-DSA     ✓    FIPS 205     256         64 B     29,792 B   hash-based, max
+SLH-DSA-128s     SLH-DSA     ✓    FIPS 205     128         32 B      7,856 B   registered, no signer
+SLH-DSA-256s     SLH-DSA     ✓    FIPS 205     256         64 B     29,792 B   registered, no signer
 ECDSA-P256       ECDSA            FIPS 186-4   128         64 B         72 B   legacy, sunset 2027
 ```
 
 - **Two independent witnesses for every cryptographic verdict.** Real ML-DSA-65 signatures verified through liboqs are cross-checked by a second implementation (OpenSSL via `cryptography`); the ZK epoch root computed by the Rust prover is recomputed bit-for-bit by a Python second witness. No single crypto library is trusted alone. A verdict that cannot be double-checked abstains rather than pretending.
-- **SLH-DSA is a diversity hedge.** ML-DSA rests on lattice assumptions, SLH-DSA on hash functions alone; if one family falls, the other stands. The cost is signature size, carried openly.
+- **SLH-DSA is a registered hedge, not a shipped signer.** ML-DSA rests on lattice assumptions, SLH-DSA on hash functions alone, so both SLH-DSA parameter sets sit in the algorithm registry and a rotation toward them is a row update. The only signer wired today is ML-DSA-65, so the seed token filed under SLH-DSA-128s can never be re-signed; the seed data's signature rows are placeholders for every algorithm, and real signatures appear at issuance. The gap is on the ledger in [PQC-POSTURE.md](docs/reference/PQC-POSTURE.md).
 - **The TLS edge negotiates post-quantum key exchange.** The public edge speaks X25519MLKEM768 hybrid KEX with capable clients, and CI proves the handshake on every push. What remains classical (internal TLS hops, certificates, WebAuthn credentials on today's authenticators; the relying party already offers ML-DSA-65 first) is mapped honestly in [PQC-POSTURE.md](docs/reference/PQC-POSTURE.md).
 - **The ZK proof is transparent.** Plonky2 is FRI-based: no trusted setup. The proof answers "was this token in the ledger at epoch N" and nothing else. Source: [`polaris_zk/src/lib.rs`](polaris_zk/src/lib.rs).
 
@@ -142,16 +143,16 @@ ECDSA-P256       ECDSA            FIPS 186-4   128         64 B         72 B   l
 
 ## Verified, not asserted
 
-Every claim above is backed by a gate that fails if the claim stops being true. Counts measured at v9.157.
+Every claim above is backed by a gate that fails if the claim stops being true. Counts measured at v9.194; the table counts, check count, route count and CI-job count are re-measured by `polaris_checks` on every run.
 
 | Layer | Scale | What it proves |
 |---|---|---|
-| Product tests (live database) | 571 | Every CHECK constraint, every use case, every route, redaction at every read path, concurrency with real threads |
-| Crypto witnesses | 50 | ML-DSA-65 sign/verify against both witnesses; the Rust and Python epoch roots agree |
-| Invariant checks | 77 | C1-C10 plus production posture, each check paired with a detection test |
-| CI jobs | 7 | See below |
+| Product tests (live database) | 640 | Every CHECK constraint, every use case, every route, redaction at every read path, concurrency with real threads, the secret store; `test_app`, `test_cli`, `test_check_constraints`, the two property suites, `test_secretstore` |
+| Crypto witnesses | 76 | ML-DSA-65 sign/verify against both witnesses, in-file and in-token (PKCS#11) custody; the Rust and Python epoch roots agree; `test_pqc_signing`, `test_custody`, `test_zk_second_witness`, `witness2`. Both test rows count tests passing on the reference machine; tests that need an optional backend (AWS KMS, a browser) are skipped there and run in CI |
+| Invariant checks | 107 | C1-C10 plus production posture, each check paired with a detection test |
+| CI jobs | 14 | See below |
 
-The CI jobs do not just run tests; they exercise the artifacts. On every push, CI **builds and boots the dev and prod images**, **boots the five-service production stack end to end** and asserts health through the TLS edge, **round-trips an encrypted backup and restore** with a fail-closed negative check, **proves the post-quantum TLS handshake** against a real certificate, **signs and verifies with real ML-DSA-65** inside the production image, and **gates on CVE scans** of both the Python dependency surface and all four self-built container images.
+The CI jobs do not just run tests; they exercise the artifacts. On every push, CI **builds and boots the dev and prod images**, **boots the five-service production stack end to end** and asserts health through the TLS edge, **round-trips an encrypted backup and restore** with a fail-closed negative check and an off-site S3 drill, **kills the primary and restores it from the WAL archive** while measuring RPO and RTO, **rolls a deploy under traffic** and counts dropped requests, **installs the Linux server profile** on Debian and Rocky, **boots the Kubernetes reference profile** on kind, **pages a duress alert** through Prometheus and Alertmanager to a webhook, **proves the post-quantum TLS handshake** against a real certificate, **signs and verifies with real ML-DSA-65** both in the production image and inside a PKCS#11 token, and **gates on CVE scans** of both the Python dependency surface and all four self-built container images.
 
 Most of those jobs carry a comment naming the specific past failure they exist to prevent. The pattern behind them: every defect class found by running the system, rather than reading it, gets a permanent gate.
 
@@ -217,7 +218,7 @@ No single row is novel. The contribution is the assembly: all five properties in
 | Reviewing the architecture | [ARCHITECTURE-OVERVIEW](docs/ARCHITECTURE-OVERVIEW.md) · [SYSTEM-MAP](docs/reference/SYSTEM-MAP.md) · [PRINCIPLES](docs/story/PRINCIPLES.md) |
 | Reading the security posture | [SECURITY.md](SECURITY.md) · [PQC-POSTURE](docs/reference/PQC-POSTURE.md) · [RED-TEAM-SCOPE](docs/RED-TEAM-SCOPE.md) · [threat model](DEVNOTES/threat-model.md) |
 | Integrating against it | [API](docs/reference/API.md) · [DATA-MODEL](docs/reference/DATA-MODEL.md) · [GLOSSARY](docs/reference/GLOSSARY.md) |
-| Operating a deployment | [docs/operator/](docs/operator/README.md), twelve runbooks from install to disaster recovery |
+| Operating a deployment | [docs/operator/](docs/operator/README.md), seventeen runbooks and ledgers from install to disaster recovery |
 | Reading it as an academic artifact | [The project report](docs/paper/polaris_project_report.pdf) (PDF, same license) |
 | Working on the code, human or AI agent | [CONTRIBUTING.md](CONTRIBUTING.md) · [CLAUDE.md](CLAUDE.md) · [CHANGELOG.md](CHANGELOG.md) |
 

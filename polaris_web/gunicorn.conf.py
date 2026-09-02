@@ -63,14 +63,14 @@ proc_name = 'polaris-web'
 # (during version-rollout windows) the exact version, both of which an
 # attacker can pair with public CVE feeds. We replace it with a generic
 # "Polaris" token via the access logger and the `forwarded_allow_ips`
-# setting. The header is also explicitly set by security.py:secure_headers,
+# setting. The header is also explicitly set by security.py:apply_security_headers,
 # but gunicorn's default override happens AFTER the Flask response is
 # generated; setting `server_token` here is the canonical way.
 #
 # Note: gunicorn does not currently expose a clean knob to remove the
 # header entirely (the `server_tokens` setting is for tornado not
 # gunicorn). The defense-in-depth combo of (a) scrubbing in security.py
-# secure_headers, (b) the recommended reverse-proxy override (Caddy
+# apply_security_headers, (b) the recommended reverse-proxy override (Caddy
 # `header -Server`), and (c) keeping gunicorn version current is the
 # operational path. The reverse proxy is the load-bearing scrubber.
 forwarded_allow_ips = os.environ.get('POLARIS_FORWARDED_ALLOW_IPS', '127.0.0.1')

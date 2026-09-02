@@ -81,7 +81,7 @@ VALUES
     -- 2: ML-DSA-87, NIST Level 5, used for high-assurance contexts
     ('ML-DSA-87',     'ML-DSA',  TRUE,  'FIPS 204',
      256, 2592, 4627, NULL),
-    -- 3: SLH-DSA-128s, hash-based, used as a diversity hedge
+    -- 3: SLH-DSA-128s, hash-based; registered as a diversity hedge, no signer wired (v9.194)
     ('SLH-DSA-128s',  'SLH-DSA', TRUE,  'FIPS 205',
      128,   32, 7856, NULL),
     -- 4: SLH-DSA-256s, hash-based, very high security
@@ -129,7 +129,7 @@ VALUES
 --   T1: Egor — RESERVE (newly provisioned, awaits biometric enrollment)
 --   T2: Maria — ACTIVE, signed under ML-DSA-65
 --   T3: James — ACTIVE, signed under ML-DSA-87 (high assurance)
---   T4: Priya — ACTIVE, signed under SLH-DSA-128s (algorithm diversity)
+--   T4: Priya — ACTIVE, filed under SLH-DSA-128s (registry diversity; no SLH-DSA signer is wired)
 --   T5: David — REVOKED (administratively, paperwork irregularity); in RevocationList
 -- All five are signed under post-quantum algorithms (none under ECDSA-P256).
 -- ============================================================================
@@ -155,7 +155,7 @@ VALUES
      'FINGERPRINT', '2026-02-03 11:00:00', 1, 'ACTIVE_CHALLENGE',
      3, 1, 2, NULL,
      1, 'ACTIVE',  '2026-02-03 10:45:00', '2026-02-03 11:05:00', '2036-02-03'),
-    -- T4: Priya (ACTIVE, FACE biometric, SLH-DSA hash-based diversity)
+    -- T4: Priya (ACTIVE, FACE biometric, SLH-DSA-128s registry row; no SLH-DSA signer)
     ('TKN-TX-2026-000004', 'SN-TX-004', 'TitanQ-3',
      'FACE',    '2026-02-10 11:30:00', 1, 'PASSIVE',
      4, 1, 3, NULL,

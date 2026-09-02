@@ -276,7 +276,7 @@ the user-management workflow (create → authenticate → rotate → deactivate)
 audit-log filtering, and constraint-violation paths. Tests reset the database
 to pristine sample state before each test.
 
-Expected output: `Ran 53 tests in ~23s. OK`
+Expected output: `71 passed` (v9.194).
 
 ## Examples for Scripting
 

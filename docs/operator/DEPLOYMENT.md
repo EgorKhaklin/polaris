@@ -117,9 +117,9 @@ After successful rotation, log in once with each new password to confirm; the `L
 ```bash
 curl -fsS https://polaris.example.gov/login | grep -q POLARIS && echo OK   # Web reachable
 curl -fsS https://polaris.example.gov/                                    # → 302 /login (auth gate)
-sudo -u postgres psql -d polaris_test -f polaris_sql/08_tests.sql          # SQL: 36/36
-cd polaris_web && python3 test_app.py                                      # Web: 101/101
-cd polaris_cli && python3 test_cli.py                                      # CLI: 28/28
+sudo -u postgres psql -d polaris_test -f polaris_sql/08_tests.sql          # SQL self-tests: 78/78 (v9.194)
+cd polaris_web && python3 -m pytest test_app.py -q                         # Web: 462 passed, 12 skipped (v9.194)
+cd polaris_cli && python3 -m pytest test_cli.py -q                         # CLI: 71 passed (v9.194)
 sudo -u polaris polaris health                                             # CLI smoke
 ```
 

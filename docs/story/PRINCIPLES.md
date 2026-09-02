@@ -25,7 +25,7 @@ The ten constraints are stated in [`MISSION.md`](../../MISSION.md). In summary:
 | **C5** | CSP forbids inline scripts | `script-src 'self'`, no `'unsafe-inline'` |
 | **C6** | Disclosure is enforced server-side | Server-side redaction, not client trust |
 | **C7** | No hardcoded cryptography | Algorithm named in `CryptographicAlgorithm` |
-| **C8** | `/api/atlas/*` result sets are bounded | LIMIT enforced in procedures |
+| **C8** | `/api/atlas/*` result sets are bounded | Hard caps in `app.py`, applied as LIMITs |
 | **C9** | Concurrency is tested with real threading | Threaded test suite |
 | **C10** | Identity is not money | No `MonetaryClaim` table; architectural |
 
@@ -46,19 +46,23 @@ The ten constraints are stated in [`MISSION.md`](../../MISSION.md). In summary:
 
 The audit-of-record principle says: for the consequential surfaces, write evidence at the moment of decision and never rewrite it. This is the substance of constraint C1.
 
-**The nine instances.** Polaris carries nine audit-of-record surfaces, all schema tables.
+**The instances (v9.194).** Polaris carries thirteen audit-of-record surfaces, all schema tables; every trigger below is defined in `06_triggers.sql` or the migration that added its table.
 
 | # | Instance | Append-only by |
 |---|---|---|
-| 1 | `TokenLifecycleEvent` | Trigger `trg_token_lifecycle_event_append_only` |
-| 2 | `VerificationEvent` | Trigger `trg_verification_event_append_only` |
-| 3 | `EnrollmentStatusEvent` (R11-4) | Trigger `trg_enrollment_event_append_only` |
-| 4 | `AnchorBatch` (R10-2) | Trigger `trg_anchor_batch_append_only` |
-| 5 | `AgencyTrustAttestation` (R11-3) | Trigger `trg_enforce_attestation_immutability` |
-| 6 | `TokenStateEpoch` + `TokenStateEpochLeaf` (R10-1) | Trigger `trg_enforce_epoch_immutability` |
-| 7 | `DuressEvent` (R11-5) | Trigger `trg_duress_event_append_only` |
-| 8 | `RecoveryRequest` (R11-2) | Two-phase ceremony; rows transition only via UC-9 |
-| 9 | `TokenSignature` (R11-1) | Trigger `trg_token_signature_immutability` (with active-signature invariant) |
+| 1 | `TokenLifecycleEvent` | Trigger `trg_lifecycle_append_only` |
+| 2 | `VerificationEvent` | Trigger `trg_verification_append_only` |
+| 3 | `EnrollmentStatusEvent` | Trigger `trg_enrollment_event_append_only` |
+| 4 | `AnchorBatch` | Trigger `trg_anchor_batch_append_only` |
+| 5 | `AgencyTrustAttestation` | Trigger `trg_attestation_immutable` |
+| 6 | `TokenStateEpoch` and `TokenStateEpochLeaf` | Triggers `trg_epoch_immutable` and `trg_epoch_leaf_append_only` |
+| 7 | `DuressEvent` | Trigger `trg_duress_event_append_only` |
+| 8 | `RecoveryRequest` | Two-phase ceremony; rows transition only via UC-9 |
+| 9 | `TokenSignature` | Trigger `trg_token_signature_immutable` (with the active-signature invariant) |
+| 10 | `AuthAuditLog` | Trigger `trg_authaudit_append_only` |
+| 11 | `IndividualErasureEvent` | Trigger `trg_erasure_append_only` |
+| 12 | `LifecycleArchiveCheckpoint` | Trigger `trg_checkpoint_append_only` |
+| 13 | `AuditAccessLog` (migration-added) | Trigger `trg_audit_access_append_only` |
 
 **The no-CASCADE rule (v8.50).** Polaris schema files contain zero `ON DELETE CASCADE` or `ON UPDATE CASCADE` clauses. A cascade would silently destroy audit-of-record evidence; the principle forbids any mechanism that erases history without explicit operator action. The rule is enforced by `test_no_fk_cascade_in_polaris_sql`. There is no allowlist; future need for cascade would be a constitutional amendment.
 

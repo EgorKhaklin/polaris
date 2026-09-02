@@ -83,15 +83,17 @@ structurally impossible:
 
 Constraint C2 enforces that ZK events have `token_id IS NULL`. The
 verification graph for ZK events cannot be reconstructed from the
-event log — there's no link back to the holder. This is enforced
-at three layers:
+event log: there is no link back to the holder. This is enforced
+at two layers:
 
-1. **Trigger** (`enforce_zk_typing`) rejects writes that violate
-2. **CHECK constraint** at the column level
-3. **Form coercion** at the application layer
+1. **CHECK constraint** (`chk_disclosure_token_consistency` on
+   `VerificationEvent`) rejects any ZERO_KNOWLEDGE row that carries a
+   `token_id`, whoever writes it and through whichever client.
+2. **Form coercion** at the application layer, so the web form cannot
+   even attempt the write.
 
-Even a malicious DBA cannot insert ZK events with a token_id; the
-trigger raises before commit.
+An application bug or a raw SQL insert cannot file a ZK event with a
+token_id; the constraint rejects the row before commit.
 
 ### Append-only audit
 

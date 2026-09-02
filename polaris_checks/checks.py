@@ -1927,33 +1927,252 @@ def check_backup_encryption(root: pathlib.Path) -> list[Finding]:
 
 
 # ---------------------------------------------------------------------------
-# Doc/schema drift — the headline architecture doc must state the real number
-# of tables. A reviewer reads this number; it must not contradict the schema.
+# Doc/schema drift — every human-facing document that states a schema-table
+# count must state the real one. A reviewer reads this number first; it must
+# not contradict the schema. Two numbers are legitimate: the tables 01_schema.sql
+# creates, and that plus the tables migrations add to a running deployment
+# (OperatorWebauthnCredential, OperatorSession, AuditAccessLog at v9.194). Any
+# other number anywhere in the guarded set fails (33 = 29 + the schema_version
+# registry + the three migration-added tables). v9.141 drifted because only
+# the first match was validated; v9.193 drifted because DATA-MODEL.md,
+# polaris_sql/README.md and the site were never guarded at all.
 # ---------------------------------------------------------------------------
+_TABLE_COUNT_DOCS = (
+    "README.md", "CLAUDE.md", "ROADMAP.md", "MISSION.md",
+    "docs/ARCHITECTURE-OVERVIEW.md", "docs/reference/DATA-MODEL.md",
+    "docs/reference/SYSTEM-MAP.md", "polaris_sql/README.md", "polaris_web/README.md",
+    "polaris_cli/README.md", "site/index.html",
+)
+_TABLE_COUNT_REQUIRED = ("README.md", "docs/ARCHITECTURE-OVERVIEW.md",
+                         "docs/reference/DATA-MODEL.md")
+_TABLE_COUNT_PATTERNS = (
+    r"\b(\d+)(?:-table\b|\s+(?:schema\s+)?tables?\b)",   # "29 tables", "29 schema tables", "29-table"
+    r"\((\d+) total\b",                                   # "(28 total, partial list)"
+)
+
+
+def _schema_table_counts(root: pathlib.Path) -> tuple[int, int]:
+    """(tables created by 01_schema.sql, tables a migrated deployment holds).
+
+    The second number adds every table the loader's other files create (the
+    schema_version registry from 00_migrations_table.sql) and every table a
+    migration adds to a running database."""
+    pat = r"^CREATE TABLE (?:IF NOT EXISTS )?(\w+)"
+    base = set(re.findall(pat, _read(root, "polaris_sql/01_schema.sql"), re.M))
+    deployed = set(base)
+    sql_dir = root / "polaris_sql"
+    if sql_dir.is_dir():
+        for p in sorted(sql_dir.glob("[0-9]*.sql")):
+            if "test" in p.name or "constraints" in p.name or "substrate" in p.name:
+                continue  # self-test files create scratch tables, not schema
+            deployed |= set(re.findall(pat, p.read_text(encoding="utf-8", errors="replace"), re.M))
+        for p in sorted((sql_dir / "migrations").glob("*.up.sql")) if (sql_dir / "migrations").is_dir() else []:
+            deployed |= set(re.findall(pat, p.read_text(encoding="utf-8", errors="replace"), re.M))
+    return len(base), len(deployed)
+
+
+def _prose(text: str) -> str:
+    """HTML tags become spaces so "<strong>29</strong> schema tables" reads as prose."""
+    return re.sub(r"<[^>]+>", " ", text)
+
+
 def check_table_count_matches_doc(root: pathlib.Path) -> list[Finding]:
-    schema = _read(root, "polaris_sql/01_schema.sql")
-    n = len(re.findall(r"^CREATE TABLE ", schema, re.M))
-    # Every doc that states a schema-table count must match the real schema. Both
-    # ARCHITECTURE-OVERVIEW.md ("N tables") and README.md ("N schema tables")
-    # carry one; the README's drifted to 26 while the schema reached 27 (v9.89)
-    # because only the architecture doc was guarded. Guard both — and check
-    # EVERY occurrence, not just the first: v9.141 shipped a README whose first
-    # count was right while three later "26 tables" instances had drifted
-    # (re.search only validated the first match).
-    docs = [
-        ("docs/ARCHITECTURE-OVERVIEW.md", r"(\d+)\s+(?:schema )?tables"),
-        ("README.md", r"(\d+)\s+(?:schema )?tables"),
-    ]
-    for rel, pat in docs:
-        stated_counts = [int(s) for s in re.findall(pat, _read(root, rel))]
-        if not stated_counts:
+    n_schema, n_migrated = _schema_table_counts(root)
+    if n_schema == 0:
+        return _fail("table_count", "polaris_sql/01_schema.sql creates no tables (or is missing)")
+    allowed = {n_schema, n_migrated}
+    for rel in _TABLE_COUNT_DOCS:
+        text = _prose(_read(root, rel))
+        if not text:
+            if rel in _TABLE_COUNT_REQUIRED:
+                return _fail("table_count", f"{rel} is missing")
+            continue
+        stated = [int(m) for pat in _TABLE_COUNT_PATTERNS for m in re.findall(pat, text)]
+        if not stated and rel in _TABLE_COUNT_REQUIRED:
             return _fail("table_count", f"{rel} states no schema-table count")
-        wrong = sorted(set(s for s in stated_counts if s != n))
+        wrong = sorted(set(s for s in stated if s not in allowed))
         if wrong:
             return _fail("table_count",
-                         f"{rel} says {wrong} tables somewhere but the schema "
-                         f"defines {n} (every stated count must match)")
-    return _ok("table_count", f"doc table counts match the schema ({n}, all instances)")
+                         f"{rel} says {wrong} tables somewhere but the schema defines "
+                         f"{n_schema} ({n_migrated} after migrations); every stated count must match")
+    return _ok("table_count",
+               f"every stated table count is {n_schema} (schema) or {n_migrated} (migrated), "
+               f"across {len(_TABLE_COUNT_DOCS)} documents")
+
+
+# ---------------------------------------------------------------------------
+# Stated counts — the headline numbers a reviewer meets first (invariant checks,
+# CI jobs, routes, stored procedures) are measured from the artifacts, never
+# typed from memory. v9.193 still said "77 checks", "72 routes" and "7 CI jobs"
+# on the README, the roadmap, the system map and the demo site while the repo
+# held 104, 73 and 14. A number nobody re-measures is a number that lies.
+# ---------------------------------------------------------------------------
+_STATED_COUNT_DOCS = (
+    "README.md", "CLAUDE.md", "ROADMAP.md", "MISSION.md", "CONTRIBUTING.md",
+    "docs/ARCHITECTURE-OVERVIEW.md", "docs/reference/SYSTEM-MAP.md",
+    "docs/reference/DATA-MODEL.md", "docs/story/PRINCIPLES.md",
+    "docs/PRODUCTION-READINESS.md", "polaris_sql/README.md", "polaris_web/README.md",
+    "polaris_cli/README.md", "polaris_checks/README.md", "site/index.html",
+)
+_STATED_COUNT_KINDS = {
+    # kind: patterns whose single group is the stated number
+    "invariant checks": (
+        r"\b(\d+)\s+(?:plain\s+`?check_\*`?\s+functions|flat\s+invariant\s+checks|"
+        r"invariant\s+checks|machine-checked\s+invariants|checks,\s+each\s+with)",
+        r"\|\s*Invariant checks\s*\|\s*(\d+)\s*\|",
+    ),
+    "CI jobs": (
+        r"\b(\d+)\s+(?:CI\s+)?jobs\b",
+        r"\|\s*CI jobs\s*\|\s*(\d+)\s*\|",
+    ),
+    "routes": (
+        r"\b(\d+)[\s-]+routes?\b",
+    ),
+    "stored procedures": (
+        r"\b(\d+)\s+stored\s+procedures?\b",
+        r"\b(\d+)\s+stored\s*│",   # the README's box diagram wraps the noun to the next line
+    ),
+}
+
+
+def _ci_job_count(ci_yaml: str) -> int:
+    """Count the keys directly under `jobs:` without a YAML dependency."""
+    lines = ci_yaml.splitlines()
+    n = 0
+    inside = False
+    for line in lines:
+        if re.match(r"^jobs:\s*(#.*)?$", line):
+            inside = True
+            continue
+        if inside:
+            if line and not line.startswith(" ") and not line.startswith("#"):
+                break  # next top-level key
+            if re.match(r"^  [A-Za-z0-9_-]+:\s*(#.*)?$", line):
+                n += 1
+    return n
+
+
+def _measured_counts(root: pathlib.Path) -> dict[str, int]:
+    return {
+        "invariant checks": len(CHECKS),
+        "CI jobs": _ci_job_count(_read(root, ".github/workflows/ci.yml")),
+        "routes": len(re.findall(r"^@app\.route\(", _read(root, "polaris_web/app.py"), re.M)),
+        "stored procedures": len(re.findall(r"^CREATE (?:OR REPLACE )?(?:FUNCTION|PROCEDURE)\s+\w+",
+                                            _read(root, "polaris_sql/05_procedures.sql"), re.M | re.I)),
+    }
+
+
+def check_stated_counts(root: pathlib.Path) -> list[Finding]:
+    real = _measured_counts(root)
+    if real["CI jobs"] == 0 or real["routes"] == 0:
+        return _fail("stated_counts", "cannot measure CI jobs or routes (ci.yml / app.py missing)")
+    seen_in_readme: set[str] = set()
+    for rel in _STATED_COUNT_DOCS:
+        text = _prose(_read(root, rel))
+        if not text:
+            continue
+        for kind, patterns in _STATED_COUNT_KINDS.items():
+            stated = [int(m) for pat in patterns for m in re.findall(pat, text, re.I)]
+            if stated and rel == "README.md":
+                seen_in_readme.add(kind)
+            wrong = sorted(set(s for s in stated if s != real[kind]))
+            if wrong:
+                return _fail("stated_counts",
+                             f"{rel} states {wrong} {kind} but the repo measures {real[kind]}")
+    for kind in ("invariant checks", "CI jobs"):
+        if kind not in seen_in_readme:
+            return _fail("stated_counts", f"README.md no longer states the {kind} count")
+    summary = ", ".join(f"{v} {k}" for k, v in real.items())
+    return _ok("stated_counts", f"every stated count matches the artifacts ({summary})")
+
+
+# ---------------------------------------------------------------------------
+# Constitution objects — MISSION.md's C1-C10 "Where enforced" column names the
+# concrete object that enforces each constraint, and the sibling summaries in
+# CLAUDE.md, PRINCIPLES.md, PRIVACY.md and ARCHITECTURE-OVERVIEW.md repeat those
+# names. Every one must exist in the code. At v9.193 four did not
+# (reject_update_delete, disclosure_consistency, secure_headers, enforce_zk_typing):
+# a reviewer who grepped for them found nothing and had to conclude the
+# constitution was decorative.
+# ---------------------------------------------------------------------------
+_OBJECT_DOCS = ("MISSION.md", "CLAUDE.md", "docs/story/PRINCIPLES.md",
+                "docs/operator/PRIVACY.md", "docs/ARCHITECTURE-OVERVIEW.md")
+_OBJECT_SEARCH_DIRS = ("polaris_sql", "polaris_sql/migrations", "polaris_web", "polaris_cli")
+_OBJECT_NAME_PREFIXES = ("enforce_", "reject_", "chk_", "uq_", "trg_", "idx_")
+
+
+def _code_corpus(root: pathlib.Path) -> str:
+    parts: list[str] = []
+    for rel in _OBJECT_SEARCH_DIRS:
+        d = root / rel
+        if not d.is_dir():
+            continue
+        for p in sorted(d.iterdir()):
+            if p.is_file() and p.suffix in (".sql", ".py"):
+                parts.append(p.read_text(encoding="utf-8", errors="replace"))
+    return "\n".join(parts)
+
+
+def _object_defined(corpus: str, name: str) -> bool:
+    if name.endswith("*"):
+        name = re.escape(name[:-1]) + r"\w*"
+    else:
+        name = re.escape(name)
+    return re.search(
+        r"(?im)^\s*(?:def|class)\s+" + name + r"\b"            # python def/class
+        r"|^" + name + r"\s*=[^=]"                                # python module constant
+        r"|\b(?:FUNCTION|PROCEDURE|TABLE|INDEX|CONSTRAINT|TRIGGER)\s+(?:IF NOT EXISTS\s+)?"
+        + name + r"\b",                                           # SQL object
+        corpus) is not None
+
+
+def check_c1c10_objects_resolve(root: pathlib.Path) -> list[Finding]:
+    mission = _read(root, "MISSION.md")
+    if not mission:
+        return _fail("c1c10_objects", "MISSION.md is missing")
+    rows = [ln for ln in mission.splitlines() if re.match(r"^\|\s*C(?:10|[1-9])\s*\|", ln)]
+    if len(rows) < 10:
+        return _fail("c1c10_objects", f"MISSION.md's constraint table has {len(rows)} C-rows, expected 10")
+    corpus = _code_corpus(root)
+    checked = 0
+    for ln in rows:
+        for fname, obj in re.findall(r"`([\w./-]+\.(?:sql|py))::([\w*]+)(?:\(\))?`", ln):
+            checked += 1
+            if not (root / "polaris_sql" / fname).is_file() and \
+               not (root / "polaris_web" / fname).is_file() and \
+               not (root / "polaris_cli" / fname).is_file() and not (root / fname).is_file():
+                return _fail("c1c10_objects", f"MISSION.md names {fname} but no such file exists")
+            if not _object_defined(corpus, obj):
+                return _fail("c1c10_objects",
+                             f"MISSION.md says {fname}::{obj} enforces a constraint but nothing defines it")
+    if checked < 8:
+        return _fail("c1c10_objects",
+                     f"MISSION.md's table names only {checked} file::object anchors; C1-C9 each need one")
+    for rel in _OBJECT_DOCS:
+        text = _read(root, rel)
+        for name in set(re.findall(r"`(\w+)\(\)`", text)) | \
+                set(n for n in re.findall(r"`(\w+)`", text) if n.startswith(_OBJECT_NAME_PREFIXES)):
+            if not _object_defined(corpus, name):
+                return _fail("c1c10_objects", f"{rel} cites `{name}` but nothing in the code defines it")
+    return _ok("c1c10_objects", f"{checked} enforcement objects in MISSION.md resolve; the sibling summaries cite only real names")
+
+
+# ---------------------------------------------------------------------------
+# Chart currency — the Helm chart's appVersion is the version a cluster operator
+# sees in `helm list`; it must equal polaris_web/__version__.py. v9.193 shipped
+# a chart still stamped 9.186 while KUBERNETES.md told the operator to tag images
+# with the shipped version.
+# ---------------------------------------------------------------------------
+def check_helm_chart_version_current(root: pathlib.Path) -> list[Finding]:
+    ver = re.search(r"""^__version__(?:\s*:\s*str)?\s*=\s*["']([^"']+)["']""", _read(root, "polaris_web/__version__.py"), re.M)
+    chart = re.search(r'^appVersion:\s*"?([^"\n]+)"?\s*$', _read(root, "deploy/helm/polaris/Chart.yaml"), re.M)
+    if not ver or not chart:
+        return _fail("helm_chart_version", "cannot read __version__ or the chart's appVersion")
+    if ver.group(1) != chart.group(1).strip():
+        return _fail("helm_chart_version",
+                     f"deploy/helm/polaris/Chart.yaml appVersion is {chart.group(1).strip()} but "
+                     f"polaris_web/__version__.py is {ver.group(1)}; bump the chart with the ship")
+    return _ok("helm_chart_version", f"Chart.yaml appVersion matches __version__ ({ver.group(1)})")
 
 
 # ---------------------------------------------------------------------------
@@ -3889,6 +4108,9 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_abuse_controls,
     check_performance_baseline,
     check_dr_drill_scheduled,
+    check_stated_counts,
+    check_c1c10_objects_resolve,
+    check_helm_chart_version_current,
 ]
 
 
