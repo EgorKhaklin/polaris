@@ -135,6 +135,11 @@ posture audit's migration roadmap.
 - [x] **Reconciled `DR.md` (v9.102):** it no longer claims a wired ≤1-min RPO;
   the real RPO is the encrypted-`pg_dump` interval (~24h), and pgbackrest/WAL/S3
   is documented as the not-yet-configured target.
+- [x] **RPO/RTO proven by measurement (v9.192, P1.10):** with archiving on,
+  `archive_timeout=60s` bounds the recovery point; `polaris-dr-drill.sh` kills
+  a primary mid-write, restores from the archive, brings the app up, and
+  records RPO and RTO against the 300 s / 14400 s targets in
+  `docs/operator/DR-DRILLS.md`, monthly by workflow and on every push in CI.
 - [x] **App<->DB TLS, both hops, with cert pinning (v9.121 + v9.131).** Both
   prod hops are TLS (`ALTER SYSTEM SET ssl=on` on Postgres; `client_tls` +
   `server_tls` on the pooler) AND, as of v9.131, VERIFY the pinned self-signed
@@ -310,7 +315,7 @@ These are yours. Production with real identity data cannot proceed without them:
 | **Signing-key custody (HSM/KMS)** | The real private key material and its custody/rotation authority are operator-held; the agent can only build the loading + rotation mechanism. |
 | **Postgres HA topology** | The replication READINESS ships (v9.126): the primary is `wal_level=replica` with a least-privilege `polaris_replicator` role, [`docs/operator/FAILOVER.md`](operator/FAILOVER.md) documents the `pg_basebackup` standby bootstrap + `pg_promote` failover, and CI proves a working hot standby. The standby HOST (a second machine/AZ), the failover decision, and any managed-tier choice remain operator infrastructure decisions; until a standby is stood up the single node is still a SPOF. |
 | **Encryption-at-rest host + key** | LUKS/TDE/fscrypt needs a provisioned host and a key custodian. |
-| **Offsite backup target + RPO** | The S3/offsite bucket, retention, and the real RPO/RTO targets. |
+| **Offsite backup target** | The S3/offsite bucket and its retention. The RPO/RTO targets themselves are proven monthly by the DR drill (v9.192); what the operator supplies is the bucket the archive lands in and the host the restore runs on. |
 | **Alerting backend + on-call** | The pager/notification backend and the named on-call rotation — including who receives the duress page — are organizational. |
 | **Right-to-erasure policy** | The pseudonymize MECHANISM ships (v9.125: `uc_pseudonymize_individual` + the append-only `IndividualErasureEvent`). WHICH erasures to honor, the retention floor, and crypto-shred-vs-pseudonymize against the append-only non-repudiation audit remain a legal/policy call. |
 | **Independent pen-test + threat-model sign-off** | Requires a qualified external assessor and an accountable human signature. |

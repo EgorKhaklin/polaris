@@ -12,6 +12,10 @@ name: Polaris CI
 on:
   push:
     branches: [main, master, "v*"]
+    # v9.192: the monthly DR drill commits its ledger row (docs only); that
+    # commit must not spend a full CI run.
+    paths-ignore:
+      - docs/operator/DR-DRILLS.md
   pull_request:
     branches: [main, master]
   workflow_dispatch:
@@ -830,6 +834,44 @@ jobs:
 
       - name: Trace drill
         run: bash scripts/polaris-trace-drill.sh
+
+  # --------------------------------------------------------------------------
+  # v9.192 (roadmap P1.10) — the DR drill on every push: a pgBackRest-archiving
+  # primary is backed up, written to for 90s, SIGKILLed and destroyed, and
+  # restored from the repo with the application brought up against it; RPO
+  # and RTO are measured against the targets (300s / 14400s) and the token
+  # and schema_version counts must match. The monthly workflow (dr-drill.yml)
+  # runs the same script with --record and commits the row. Pinned by
+  # check_dr_drill_scheduled.
+  # --------------------------------------------------------------------------
+  dr-drill:
+    name: DR drill (kill the primary, restore from the WAL archive, measure RPO + RTO)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install the app's runtime requirements (the RTO includes the application coming up)
+        run: pip install -r polaris_web/requirements.txt
+
+      - name: DR drill
+        env:
+          POLARIS_DR_MODE: ci
+          POLARIS_DR_OUT: /tmp/dr-drill.json
+        run: bash scripts/polaris-dr-drill.sh
+
+      - name: Upload the drill JSON
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dr-drill-ci
+          path: /tmp/dr-drill.json
+          if-no-files-found: ignore
 
   # --------------------------------------------------------------------------
   # v9.176 (roadmap P1.1) — a fresh Linux server reaches a healthy production

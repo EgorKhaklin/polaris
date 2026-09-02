@@ -3554,3 +3554,51 @@ def test_performance_baseline_check_discriminates(tmp_path):
 
     write({".github/workflows/ci.yml": "run: echo skip\n"})
     assert checks.check_performance_baseline(tmp_path)[0].level == "FAIL", "must FAIL when CI does not re-run the baseline"
+
+
+def test_dr_drill_scheduled_check_discriminates(tmp_path):
+    DRILL = ("RPO_TARGET=300; RTO_TARGET=14400\ndr_marker\ndocker kill -s KILL x\n"
+             "pgbackrest --stanza=polaris restore\npg_is_in_recovery\n--record\nrecord_row FAIL\n"
+             "tokens_after sv_after\n/api/health\n")
+    WF = ('on:\n  schedule:\n    - cron: "17 5 1 * *"\npermissions:\n  contents: write\n'
+          "run: bash scripts/polaris-dr-drill.sh --record\ngit add docs/operator/DR-DRILLS.md\ngit push\n")
+    CI = "on:\n  push:\n    paths-ignore:\n      - docs/operator/DR-DRILLS.md\njobs:\n  x:\n    run: bash scripts/polaris-dr-drill.sh\n"
+    good = {
+        "polaris_web/docker-init.sh": "ALTER SYSTEM SET archive_timeout = '60s';\n",
+        "scripts/polaris-dr-drill.sh": DRILL,
+        "docs/operator/DR-DRILLS.md": "| Date | RPO s | RTO s | Status |\n",
+        ".github/workflows/dr-drill.yml": WF,
+        ".github/workflows/ci.yml": CI,
+        "deploy/linux/polaris-dr-drill.timer": "OnCalendar=*-*-01 05:00:00 UTC\n",
+        "deploy/linux/polaris-dr-drill.service": "ExecStart=x\n",
+        "deploy/linux/install.sh": "polaris-dr-drill.timer\n",
+        "docs/operator/DR.md": "polaris-dr-drill.sh DR-DRILLS.md\n",
+    }
+
+    def write(overrides=None):
+        files = dict(good); files.update(overrides or {})
+        for rel, body in files.items():
+            f = tmp_path / rel
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text(body)
+
+    write()
+    assert checks.check_dr_drill_scheduled(tmp_path)[0].level == "OK", "must PASS on the good fixture"
+
+    write({"polaris_web/docker-init.sh": "ALTER SYSTEM SET archive_mode = on;\n"})
+    assert checks.check_dr_drill_scheduled(tmp_path)[0].level == "FAIL", "must FAIL without archive_timeout (unbounded RPO)"
+
+    write({"scripts/polaris-dr-drill.sh": DRILL.replace("docker kill -s KILL x\n", "")})
+    assert checks.check_dr_drill_scheduled(tmp_path)[0].level == "FAIL", "must FAIL when the drill no longer kills the primary"
+
+    write({".github/workflows/dr-drill.yml": WF.replace('cron: "17 5 1 * *"', 'cron: "17 5 * * 1"')})
+    assert checks.check_dr_drill_scheduled(tmp_path)[0].level == "FAIL", "must FAIL when the schedule is not monthly"
+
+    write({".github/workflows/dr-drill.yml": WF.replace("git push\n", "")})
+    assert checks.check_dr_drill_scheduled(tmp_path)[0].level == "FAIL", "must FAIL when the row is not committed"
+
+    write({".github/workflows/ci.yml": "on:\n  push:\njobs:\n  x:\n    run: bash scripts/polaris-dr-drill.sh\n"})
+    assert checks.check_dr_drill_scheduled(tmp_path)[0].level == "FAIL", "must FAIL without the ledger path filter"
+
+    write({"deploy/linux/install.sh": "polaris-backup.timer\n"})
+    assert checks.check_dr_drill_scheduled(tmp_path)[0].level == "FAIL", "must FAIL when the host timer is not installed"

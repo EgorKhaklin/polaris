@@ -3730,6 +3730,60 @@ def check_performance_baseline(root: pathlib.Path) -> list[Finding]:
                "JSON as an artifact; the F-03 rate-limit defaults stay 10/60/60 behind the benchmark override")
 
 
+# ---------------------------------------------------------------------------
+# Roadmap P1.10 (v9.192) — DR to targets, on a schedule. Pins: the RPO bound
+# (archive_timeout set when archiving is enabled), the drill that kills a
+# primary and measures RPO + RTO against the 300 s / 14400 s targets with the
+# integrity checks and the --record ledger row, the ledger with its header,
+# the monthly workflow that commits the row (write permission, a cron, the
+# push), the CI job that runs the drill on every push, the docs-only path
+# filter, the Linux timer units installed by install.sh, and DR.md pointing
+# at the ledger as the source of the numbers.
+# ---------------------------------------------------------------------------
+def check_dr_drill_scheduled(root: pathlib.Path) -> list[Finding]:
+    init = _read(root, "polaris_web/docker-init.sh")
+    if not re.search(r"archive_timeout\s*=\s*'?\d+s?'?", init):
+        return _fail("dr_drill", "docker-init.sh must set archive_timeout when archiving is enabled (it is what "
+                     "bounds the RPO; a quiet primary otherwise archives only when a segment fills)")
+    drill = _read(root, "scripts/polaris-dr-drill.sh")
+    for needle in ("docker kill -s KILL", "pgbackrest --stanza=polaris restore", "pg_is_in_recovery",
+                   "RPO_TARGET=300", "RTO_TARGET=14400", "dr_marker", "--record", "record_row FAIL",
+                   "tokens_after", "sv_after", "/api/health"):
+        if needle not in drill:
+            return _fail("dr_drill", f"polaris-dr-drill.sh lacks {needle!r}")
+    ledger = _read(root, "docs/operator/DR-DRILLS.md")
+    if "| RPO s |" not in ledger or "| Status |" not in ledger:
+        return _fail("dr_drill", "docs/operator/DR-DRILLS.md must carry the ledger table header the drill appends to")
+    wf = _read(root, ".github/workflows/dr-drill.yml")
+    if not wf:
+        return _fail("dr_drill", ".github/workflows/dr-drill.yml is missing (the monthly drill)")
+    if not re.search(r"cron:\s*[\"']\S+ \S+ 1 \* \*[\"']", wf):
+        return _fail("dr_drill", "dr-drill.yml must run on the 1st of every month (a monthly cron)")
+    if "contents: write" not in wf or "git push" not in wf or "DR-DRILLS.md" not in wf:
+        return _fail("dr_drill", "dr-drill.yml must be able to commit and push the ledger row")
+    if "polaris-dr-drill.sh --record" not in wf:
+        return _fail("dr_drill", "dr-drill.yml must run the drill with --record")
+    ci = _read(root, ".github/workflows/ci.yml")
+    if "scripts/polaris-dr-drill.sh" not in ci:
+        return _fail("dr_drill", "ci.yml must run the DR drill on every push")
+    if "docs/operator/DR-DRILLS.md" not in ci.split("jobs:", 1)[0]:
+        return _fail("dr_drill", "ci.yml must ignore the ledger path on push (the monthly row must not spend a run)")
+    for rel in ("deploy/linux/polaris-dr-drill.timer", "deploy/linux/polaris-dr-drill.service"):
+        if not _read(root, rel):
+            return _fail("dr_drill", f"{rel} is missing (the host-side monthly drill)")
+    if "OnCalendar=*-*-01" not in _read(root, "deploy/linux/polaris-dr-drill.timer"):
+        return _fail("dr_drill", "polaris-dr-drill.timer must fire monthly")
+    if "polaris-dr-drill.timer" not in _read(root, "deploy/linux/install.sh"):
+        return _fail("dr_drill", "install.sh must install and enable polaris-dr-drill.timer")
+    dr = _read(root, "docs/operator/DR.md")
+    if "DR-DRILLS.md" not in dr or "polaris-dr-drill.sh" not in dr:
+        return _fail("dr_drill", "DR.md must point at the drill and the ledger as the source of the RPO/RTO numbers")
+    return _ok("dr_drill",
+               "P1.10: archive_timeout bounds the RPO; the DR drill kills a primary, restores from the archive, "
+               "brings the app up, and measures RPO/RTO against 300 s / 14400 s; monthly by workflow with the row "
+               "committed to the ledger, on every push in CI, and monthly on a Linux host by timer")
+
+
 CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_csp_forbids_unsafe_inline,
     check_one_active_token_index,
@@ -3834,6 +3888,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_schema_reload_idempotent,
     check_abuse_controls,
     check_performance_baseline,
+    check_dr_drill_scheduled,
 ]
 
 

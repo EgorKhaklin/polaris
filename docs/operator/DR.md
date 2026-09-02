@@ -87,21 +87,31 @@ incident**, not for the engineer at design time.
 
 | Target | Value | Status / Mechanism |
 |---|---|---|
-| **RPO** (Recovery Point Objective) | **≤ 1 minute** (target) · **~24h** (today) | TARGET via pgbackrest WAL archiving (continuous WAL → S3). TODAY: the scheduled encrypted `pg_dump` from `polaris-backup.sh`; RPO = the dump interval. |
-| **RTO** (Recovery Time Objective) | **≤ 30 minutes** | polaris-restore.sh drill on a single-host stack with sample-size data. Larger volumes scale roughly linearly; estimate +5 min per 10 GB compressed dump. |
+| **RPO** (Recovery Point Objective) | **≤ 5 minutes** (roadmap P1.10 target, proven monthly) · **~24h** with dumps only | With `POLARIS_PGBACKREST_ENABLED=1`: continuous WAL archiving (pgBackRest → the repo, offsite when S3 is set) with `archive_timeout=60s` (v9.192), so a partially filled segment is pushed within a minute; the measured RPO is typically under 90 s. Without archiving: the scheduled encrypted `pg_dump` from `polaris-backup.sh`; RPO = the dump interval. |
+| **RTO** (Recovery Time Objective) | **≤ 4 hours** (roadmap P1.10 envelope, proven monthly) · **≤ 30 minutes** on a single host with sample-size data | `pgbackrest restore` + archive replay + the application brought up, timed end to end by [`scripts/polaris-dr-drill.sh`](../../scripts/polaris-dr-drill.sh); measured values in [`DR-DRILLS.md`](DR-DRILLS.md). Larger volumes scale roughly with the repo size. |
 | **MTTR** (incident detection → service restored) | **≤ 60 minutes** | RTO + 30 min for detection. Detection itself depends on alerting that is not yet wired (PRODUCTION-READINESS.md). |
 
 These are the **published** targets. Internal team SLOs may be
 tighter; operator's compliance regime (SOC 2, FedRAMP, PCI) may
 demand specific values.
 
-**The ≤1-min RPO is achievable only once WAL archiving is wired and healthy.**
-Once pgbackrest is configured, verify daily:
+**The ≤5-min RPO holds only while WAL archiving is wired and healthy.** Once
+pgbackrest is configured, verify daily:
 ```bash
 pgbackrest --stanza=polaris check
 ```
 Until then, the RPO is the backup interval (default daily, ~24h). If a
 configured WAL archive later fails its check, treat as SEV-2.
+
+**Proven, not asserted (v9.192, roadmap P1.10).** `scripts/polaris-dr-drill.sh`
+is the measurement: a scratch archiving primary is backed up, written to once a
+second for 90 s, killed with SIGKILL and its volume destroyed, restored from
+the repo with the archive replayed, and the application started against it.
+RPO is the age of the newest recovered marker at the kill; RTO is the time to
+a healthy service. The drill runs in CI on every push and monthly with
+`--record`, which appends the row to [`DR-DRILLS.md`](DR-DRILLS.md) and commits
+it; on a Linux host `polaris-dr-drill.timer` appends to
+`/var/lib/polaris/dr-drills.md`. Read the ledger before quoting either number.
 
 For the failure class where a **standby survives the primary**, streaming
 replication meets the ≤1-min RPO far more tightly (seconds, not the backup
@@ -452,6 +462,7 @@ on-call team must rehearse each procedure on a cadence:
 | Drill | Frequency | Procedure | Pass criteria |
 |---|---|---|---|
 | **Backup verify** | Monthly | `./scripts/polaris-backup.sh --verify-latest` | All 6 components ✓ MANIFEST verified |
+| **RPO/RTO drill (automated)** | Monthly (the 1st; `dr-drill.yml` and `polaris-dr-drill.timer`) | `./scripts/polaris-dr-drill.sh --record`: scratch archiving primary, backup, 90 s of writes, SIGKILL + volume destroyed, restore + replay, app up | RPO ≤ 300 s, RTO ≤ 14400 s, counts equal; the row lands in [`DR-DRILLS.md`](DR-DRILLS.md) pass or fail |
 | **Restore-only drill** | Quarterly | Restore latest backup into a fresh `polaris_drill` DB; compare row counts | ±1% of production counts; admin can log in |
 | **PITR drill** | Quarterly | Restore to a point-in-time 1h before now via pgbackrest | Recovered DB is consistent at target time |
 | **Full-stack failover** | Half-yearly | Spin up a new host from clean source; restore from offsite backup; verify TLS issuance + admin login + token issue | < 60 min total; matches RTO target |

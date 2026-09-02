@@ -62,6 +62,7 @@ Then log in and rotate the seeded accounts immediately
 | `polaris.service` | The production compose stack. `ExecStart` is `docker compose up -d`; enabled at boot; `Requires=docker.service`. |
 | `polaris-backup.timer` and `.service` | Daily 03:00 UTC `scripts/polaris-backup.sh --dest /var/backups/polaris` (a `pg_dump` tarball with a SHA-256 manifest). |
 | `polaris-backup-verify.timer` and `.service` | Sunday 04:00 UTC: the newest tarball extracted and hash-verified. |
+| `polaris-dr-drill.timer` and `.service` | The 1st at 05:00 UTC (v9.192): the DR drill on scratch containers, RPO and RTO measured against the targets and appended to `/var/lib/polaris/dr-drills.md` ([`DR-DRILLS.md`](DR-DRILLS.md) explains the row). Never touches the production stack. |
 
 Files: `/opt/polaris` (the checkout, root-owned), `/etc/polaris/polaris.env`
 (0600; the only configuration), `/var/backups/polaris` (local backups; ship
@@ -113,7 +114,7 @@ permissions, auditing, and `/metrics` exposure.
 ## Uninstall
 
 ```bash
-sudo systemctl disable --now polaris polaris-backup.timer polaris-backup-verify.timer
+sudo systemctl disable --now polaris polaris-backup.timer polaris-backup-verify.timer polaris-dr-drill.timer
 cd /opt/polaris/polaris_web && sudo docker compose -f docker-compose.prod.yml down -v   # -v deletes the database
 sudo rm -f /etc/systemd/system/polaris*.service /etc/systemd/system/polaris*.timer && sudo systemctl daemon-reload
 sudo rm -rf /opt/polaris /etc/polaris                     # keep /var/backups/polaris if you want the backups

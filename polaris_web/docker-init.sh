@@ -194,7 +194,13 @@ if [ "${POLARIS_PGBACKREST_ENABLED:-0}" = "1" ]; then
         -c "ALTER SYSTEM SET archive_mode = on;" \
         -c "ALTER SYSTEM SET archive_command = 'pgbackrest --stanza=polaris archive-push %p';" \
         -c "ALTER SYSTEM SET wal_level = replica;" \
-        -c "ALTER SYSTEM SET max_wal_senders = 10;"
+        -c "ALTER SYSTEM SET max_wal_senders = 10;" \
+        -c "ALTER SYSTEM SET archive_timeout = '60s';"
+    # v9.192 (roadmap P1.10): archive_timeout is what BOUNDS the RPO. Without it a
+    # quiet primary archives a segment only when 16 MB of WAL fills, which on a
+    # small authority can be hours; with it, any partially filled segment is
+    # switched and pushed within 60 s, so the recovery point is never more than
+    # about a minute behind. scripts/polaris-dr-drill.sh measures it monthly.
     echo "WAL archiving enabled. Run 'pgbackrest --stanza=polaris stanza-create' + schedule backups (DR.md)."
     # v9.130 — warn loudly if the repo is LOCAL (no repo1-type=s3). A local repo
     # on the DB host does not survive host loss, so it is not the offsite

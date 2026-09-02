@@ -1,0 +1,76 @@
+# ============================================================================
+# DR drill, monthly, results committed (roadmap P1.10 / v9.192).
+#
+# On the first of every month (and on demand), run scripts/polaris-dr-drill.sh
+# with --record: a pgBackRest-archiving primary is backed up, written to for
+# 90 s, killed and destroyed, and restored from the repo with the application
+# brought up against it; the measured RPO and RTO are appended as a row to
+# docs/operator/DR-DRILLS.md and COMMITTED to main by this workflow, pass or
+# fail. The row is the proof the roadmap asks for; a failed row is the most
+# important one. Every push also runs the same drill in ci.yml (job dr-drill)
+# without recording. Pinned by check_dr_drill_scheduled.
+#
+# The ledger commit is a docs-only change; ci.yml ignores that path on push so
+# the monthly row does not spend a full CI run.
+# ============================================================================
+
+name: DR drill (monthly, results committed)
+
+on:
+  schedule:
+    - cron: "17 5 1 * *"      # 05:17 UTC on the 1st
+  workflow_dispatch:
+
+permissions:
+  contents: write             # commit the ledger row
+
+concurrency:
+  group: dr-drill
+  cancel-in-progress: false
+
+jobs:
+  drill:
+    name: Kill the primary, restore from the archive, measure RPO + RTO, commit the row
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install the app's runtime requirements (the RTO includes the application coming up)
+        run: pip install -r polaris_web/requirements.txt
+
+      - name: DR drill, recorded
+        id: drill
+        continue-on-error: true
+        env:
+          POLARIS_DR_MODE: ci-monthly
+          POLARIS_DR_OUT: /tmp/dr-drill.json
+        run: bash scripts/polaris-dr-drill.sh --record
+
+      - name: Commit the ledger row
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/operator/DR-DRILLS.md
+          if git diff --cached --quiet; then echo "no ledger change to commit"; exit 0; fi
+          summary=$(python3 -c "import json; d=json.load(open('/tmp/dr-drill.json')); m=d['measured']; print(f\"{d['status']}: RPO {m['rpo_s']}s, RTO {m['rto_service_s']}s to service ({m['rto_db_s']}s to database), backup {m['backup_s']}s\")" 2>/dev/null || echo "drill did not produce a result file")
+          git commit -m "dr-drill: monthly result, $summary" -m "Appended by .github/workflows/dr-drill.yml (roadmap P1.10)."
+          git push
+
+      - name: Upload the drill JSON
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dr-drill
+          path: /tmp/dr-drill.json
+          if-no-files-found: ignore
+
+      - name: Fail the run if the drill failed (after the row was committed)
+        run: |
+          [ "${{ steps.drill.outcome }}" = "success" ] || { echo "::error::the DR drill failed its targets; see the committed ledger row"; exit 1; }

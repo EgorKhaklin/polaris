@@ -5,6 +5,59 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.192 — 2026-09-02 (Roadmap P1.10: DR to targets, on a schedule; RPO and RTO measured by a drill that kills the primary, monthly with the row committed)
+
+DR.md carried targets; nothing measured them, and one setting that decides
+the recovery point was never set. P1.10 makes both numbers a measurement.
+
+  - **The RPO is bounded now.** `docker-init.sh` sets `archive_timeout=60s`
+    alongside `archive_mode` when `POLARIS_PGBACKREST_ENABLED=1`. Without it
+    a quiet primary archives a WAL segment only when 16 MB fills, which on a
+    small authority can be hours behind: the "≤1 minute" line in DR.md was
+    not what the configuration delivered. With it, a partially filled
+    segment is switched and pushed within a minute.
+  - **`scripts/polaris-dr-drill.sh` measures, on a scratch stack.** A
+    pgBackRest-archiving primary (the shipped image with the schema and
+    migrations baked in, `archive_timeout=60s`) takes a full backup, then
+    commits one timestamped marker a second for 90 seconds. Disaster: the
+    primary is killed with SIGKILL and its data volume destroyed; nothing
+    survives but the repo. Recovery: a fresh container restores from the
+    repo, replays every archived segment, promotes, and the application is
+    started against it and polled until `/api/health` reports the database
+    healthy. RPO is the age of the newest recovered marker at the kill; RTO
+    is the time from the kill to a healthy service (and, separately, to the
+    database accepting queries); the token count and the schema_version rows
+    must equal the pre-disaster values. Pass is RPO ≤ 300 s and RTO ≤ 14400
+    s, the roadmap targets; the result is a JSON file and, with `--record`,
+    a row appended to `docs/operator/DR-DRILLS.md`, pass or fail alike.
+  - **Measured here (v9.192, Apple M3, the local repo):** RPO 41.6 s (54 of
+    90 markers recovered: the last segment switched at 60 s, the kill came
+    at 90), RTO 2.8 s to the database and 4.7 s to a healthy application,
+    full backup 1.5 s. Both targets hold with two orders of magnitude to
+    spare on sample data; the ledger's first row is that run.
+  - **On a schedule, with committed results.** `.github/workflows/dr-drill.yml`
+    runs the drill on the first of every month (and on demand) with
+    `--record` and commits the row to `main` as github-actions[bot]; the CI
+    workflow ignores that path on push so the monthly row does not spend a
+    run. The new `dr-drill` CI job runs the same drill on every push without
+    recording. On a Linux host, `polaris-dr-drill.timer` (installed and
+    enabled by `install.sh`) runs it monthly into
+    `/var/lib/polaris/dr-drills.md`; it uses scratch containers and never
+    touches the production stack.
+  - DR.md's targets table states the proven numbers with the ledger as their
+    source (RPO ≤ 5 min with archiving, ~24 h with dumps only; RTO ≤ 4 h
+    envelope, seconds on sample data) and the drill cadence gains the
+    automated row; PRODUCTION-READINESS.md moves "the real RPO/RTO targets"
+    out of the operator-gated column; LINUX-SERVER.md lists the unit.
+  - `check_dr_drill_scheduled` pins the archive_timeout, the drill's kill,
+    restore, targets, integrity checks, and ledger row, the ledger header,
+    the monthly cron with write permission and the push, the CI job, the
+    docs-only path filter, the timer units and their installation, and
+    DR.md's pointer to the ledger. 104 checks, 101 check-layer tests. Next
+    opener: P1.11, the retention and lifecycle engine.
+
+---
+
 ## v9.191 — 2026-09-02 (Roadmap P1.9: the performance baseline, published; issuance/s, verification/s, and atlas p95 measured end to end and re-run by CI)
 
 The numbers an authority sizing a deployment starts from, measured rather

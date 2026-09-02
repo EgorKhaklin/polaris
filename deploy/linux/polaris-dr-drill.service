@@ -1,0 +1,18 @@
+# polaris-dr-drill.service — kill a scratch pgBackRest-archiving primary, restore
+# it from the archive, bring the app up against it, and record the measured RPO
+# and RTO in /var/lib/polaris/dr-drills.md. Driven by polaris-dr-drill.timer
+# (monthly). Runs its own scratch containers on this host's Docker; it never
+# touches the production stack or its volumes.
+[Unit]
+Description=Polaris DR drill (measured RPO + RTO against the roadmap targets)
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=__INSTALL_DIR__
+EnvironmentFile=__ENV_FILE__
+Environment=POLARIS_DR_MODE=host
+Environment=POLARIS_DR_OUT=/var/lib/polaris/dr-drill.json
+ExecStartPre=/bin/mkdir -p /var/lib/polaris
+ExecStart=__INSTALL_DIR__/scripts/polaris-dr-drill.sh --record=/var/lib/polaris/dr-drills.md
