@@ -566,6 +566,27 @@ def _session_before_request():
     return security.validate_session(get_db)
 
 
+# v9.191 (roadmap P1.9) — bound the flash list. flash() appends to the signed
+# session cookie and a browser consumes the list on the next rendered page,
+# so it never holds more than a few. A client that POSTs a form route without
+# rendering the redirect target (a script, a load generator, a misbehaving
+# integration) accumulates one message per write until the Cookie header
+# passes gunicorn's field-size limit and EVERY further request is refused
+# with 431, a self-inflicted lockout the client cannot see coming. Found by
+# the performance baseline at 4004 verifications: the last 796 were 431s.
+# Keeping the most recent FLASH_LIMIT messages costs a browser nothing and
+# keeps the cookie bounded for everyone else.
+FLASH_LIMIT = 20
+
+
+@app.after_request
+def _bound_flashes(response):
+    flashes = session.get('_flashes')
+    if flashes and len(flashes) > FLASH_LIMIT:
+        session['_flashes'] = flashes[-FLASH_LIMIT:]
+    return response
+
+
 @app.after_request
 def _security_after_request(response):
     """Apply security headers (CSP, HSTS, etc.) to every response."""

@@ -360,6 +360,14 @@ Expect ~90 seconds for the INSERT (pure CPU; no I/O bottleneck).
 
 ---
 
+## The end-to-end baseline
+
+The atlas numbers above are SQL-function timings at ten million events. The
+application-path numbers (issuance/s, verification/s, and atlas p95 through
+gunicorn, on stated hardware, with stamps) are the published baseline in
+[`PERFORMANCE-BASELINE.md`](PERFORMANCE-BASELINE.md), re-run by CI on every
+push (v9.191, roadmap P1.9).
+
 ## What's not yet covered
 
 - - **Cursor-based deep pagination** on the list pages — current

@@ -3682,6 +3682,54 @@ def check_abuse_controls(root: pathlib.Path) -> list[Finding]:
                "taken with a real Redis in CI, load generator drives operator flows, CLI + docs in place")
 
 
+# ---------------------------------------------------------------------------
+# Roadmap P1.9 (v9.191) — the published performance baseline. Pins: the doc
+# with its measured block and stamps, the script that measures all three
+# flows end to end through gunicorn with floors, the CI smoke re-run with the
+# artifact, the load generator's per-request templating the issuance stage
+# depends on, and the F-03 rate-limit DEFAULTS staying 10 / 60 / 60 now that
+# the environment may override them for the benchmark's scratch server.
+# ---------------------------------------------------------------------------
+def check_performance_baseline(root: pathlib.Path) -> list[Finding]:
+    doc = _read(root, "docs/reference/PERFORMANCE-BASELINE.md")
+    if not doc:
+        return _fail("perf_baseline", "docs/reference/PERFORMANCE-BASELINE.md is missing")
+    if "<!-- baseline:begin -->" not in doc or "<!-- baseline:end -->" not in doc:
+        return _fail("perf_baseline", "the baseline doc must keep its measured-block markers (the script rewrites it)")
+    block = doc.split("<!-- baseline:begin -->", 1)[1].split("<!-- baseline:end -->", 1)[0]
+    if not re.search(r"\*\*Measured v9\.\d+ @ [0-9a-f]{7,}(?:\+dirty)?, \d{4}-\d{2}-\d{2}T\d{2}:\d{2}Z", block):
+        return _fail("perf_baseline", "the measured block carries no stamp (version, commit, date): numbers carry stamps")
+    for needle in ("Issuance", "Verification", "Atlas zoomed bbox, warm", "Atlas zoomed bbox, cold", "Atlas whole-world"):
+        if needle not in block:
+            return _fail("perf_baseline", f"the measured block lacks the {needle!r} row")
+    if "cores" not in block or "gunicorn x" not in block or "signing:" not in block:
+        return _fail("perf_baseline", "the stamp must name the hardware, the worker count, and the signing mode")
+    script = _read(root, "scripts/polaris-perf-baseline.sh")
+    for needle in ("--smoke", "--update-doc", "/uc1/issue", "/verifications/new", "/api/atlas/clusters", "/api/atlas/stats",
+                   "gunicorn", "POLARIS_RATE_LIMIT_WRITE_MAX=", "FLOOR VIOLATIONS", "check_stage(\"issue\", 2)",
+                   "check_stage(\"verify\", 5)", "> 2000"):
+        if needle not in script:
+            return _fail("perf_baseline", f"polaris-perf-baseline.sh lacks {needle!r}")
+    gen = _read(root, "scripts/polaris_load_gen.py")
+    if "{seq}" not in gen or "achieved_rps" not in gen:
+        return _fail("perf_baseline", "polaris_load_gen.py must substitute {seq} per request and report achieved_rps")
+    ci = _read(root, ".github/workflows/ci.yml")
+    if "polaris-perf-baseline.sh --smoke" not in ci or "perf-baseline-smoke" not in ci:
+        return _fail("perf_baseline", "ci.yml must re-run the baseline in smoke mode and upload its JSON")
+    sec = _read(root, "polaris_web/security.py")
+    for name, default in (("POLARIS_RATE_LIMIT_LOGIN_MAX", "10"), ("POLARIS_RATE_LIMIT_WRITE_MAX", "60"),
+                          ("POLARIS_RATE_LIMIT_WRITE_WINDOW", "60")):
+        if not re.search(r"_env_int\('%s',\s*%s\)" % (name, default), sec):
+            return _fail("perf_baseline", f"security.py must read {name} with the F-03 default of {default} "
+                         "(the override is for the benchmark, the default is the posture)")
+    if "PERFORMANCE-BASELINE.md" not in _read(root, "docs/reference/README.md"):
+        return _fail("perf_baseline", "docs/reference/README.md does not index the baseline doc")
+    return _ok("perf_baseline",
+               "P1.9: the end-to-end baseline (issuance, verification, atlas warm/cold) is measured by one script "
+               "through gunicorn with SLO-boundary floors, stamped into the doc, re-run by CI in smoke mode with the "
+               "JSON as an artifact; the F-03 rate-limit defaults stay 10/60/60 behind the benchmark override")
+
+
 CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_csp_forbids_unsafe_inline,
     check_one_active_token_index,
@@ -3785,6 +3833,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_session_origin_hardening,
     check_schema_reload_idempotent,
     check_abuse_controls,
+    check_performance_baseline,
 ]
 
 

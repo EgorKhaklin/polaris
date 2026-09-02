@@ -166,7 +166,7 @@ echo "== 4. $REQUESTS verification POSTs at 10 rps as operator (cap $CAP) =="
     --rps 10 --duration 5 --json-summary "$WORK/ledger.json"
 recorded=$("$PY" -c "import json;d=json.load(open('$WORK/ledger.json'));print(d.get('302',0))")
 refused=$("$PY" -c "import json;d=json.load(open('$WORK/ledger.json'));print(d.get('429',0))")
-total=$("$PY" -c "import json;d=json.load(open('$WORK/ledger.json'));print(sum(d.values()))")
+total=$("$PY" -c "import json;d=json.load(open('$WORK/ledger.json'));print(d['total'])")
 echo "   ledger: recorded(302)=$recorded refused(429)=$refused total=$total"
 
 # ----------------------------------------------------------------------------

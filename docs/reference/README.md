@@ -17,6 +17,7 @@ narrative + principles see [`../story/`](../story/).
 | [`API.md`](API.md) | HTTP endpoint reference (20 routes; G29 health contract) |
 | [`DATA-MODEL.md`](DATA-MODEL.md) | Schema table-by-table prose; per-table semantics + invariants |
 | [`SCALING.md`](SCALING.md) | v6 scaling architecture: B-tree indexes, viewport-aware globe, /api/atlas hard caps |
+| [`PERFORMANCE-BASELINE.md`](PERFORMANCE-BASELINE.md) | v9.191 (P1.9): the published end-to-end baseline, issuance/s, verification/s, atlas p95 through gunicorn on stated hardware, re-run by CI in smoke mode |
 | [`GLOSSARY.md`](GLOSSARY.md) | Defined terms (~470 lines; covers v1 → v9.x vocabulary) |
 | [`PQC-POSTURE.md`](PQC-POSTURE.md) | Post-quantum audit: which primitives are PQ-secure (token signature, hashing, ZK proof) vs still classical (TLS key exchange, WebAuthn), mapped to the NIST 2030/2035 timeline |
 

@@ -160,3 +160,6 @@ polaris_swarm/civitas/treasury-roll.json
 
 # Playwright MCP tool artifacts (browser console logs) - operator-local
 .playwright-mcp/
+
+# v9.191: the performance baseline's default JSON output (the doc is the record)
+perf-baseline.json

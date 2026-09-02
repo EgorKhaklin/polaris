@@ -20,6 +20,12 @@ Design:
   page first and adds its ``csrf_token`` to every POST. Redirects are NOT
   followed, so a form's own answer (302 recorded, 429 refused, 4xx invalid)
   is what lands in the ledger, not the page it would have bounced to.
+- v9.191: ``{seq}`` in the target URL or any ``--form`` value is replaced by
+  the request's sequence number (1, 2, 3, ...), so a run can mint unique
+  token serials or hit a different atlas bbox per request; ``{run}`` is
+  replaced once by a per-run id. ``--json-summary`` records the latency
+  percentiles and achieved rate alongside the status ledger, which is what
+  scripts/polaris-perf-baseline.sh assembles the published numbers from.
 
 Run:
     python3 polaris_load_gen.py --target http://localhost:5000/api/health \\
@@ -109,6 +115,10 @@ def csrf_token(opener, target, path, timeout=10.0):
     return m.group(1)
 
 
+def _with_seq(value, seq):
+    return value.replace('{seq}', str(seq)) if isinstance(value, str) and '{seq}' in value else value
+
+
 async def _bounded_request(sem, loop, target, method, data, opener):
     async with sem:
         return await loop.run_in_executor(
@@ -131,11 +141,21 @@ async def run_load(target, rps, duration, max_concurrency=200,
     last_report_at = next_emit
     progress_interval = 10.0   # seconds between progress lines
 
+    templated = '{seq}' in target or any(
+        isinstance(v, str) and '{seq}' in v for v in (data or {}).values())
+    seq = 0
     while time.perf_counter() < end_at:
         now = time.perf_counter()
         if now >= next_emit:
+            seq += 1
+            if templated:
+                req_target = _with_seq(target, seq)
+                req_data = ({k: _with_seq(v, seq) for k, v in data.items()}
+                            if data is not None else None)
+            else:
+                req_target, req_data = target, data
             tasks.append(asyncio.create_task(
-                _bounded_request(sem, loop, target, method, data, opener)
+                _bounded_request(sem, loop, req_target, method, req_data, opener)
             ))
             next_emit += interval
         else:
@@ -207,6 +227,17 @@ def _5xx_count(statuses):
                if isinstance(k, int) and k >= 500)
 
 
+def _percentiles(latencies):
+    if not latencies:
+        return None
+    p50 = statistics.median(latencies)
+    p95 = (statistics.quantiles(latencies, n=20)[18]
+           if len(latencies) >= 20 else max(latencies))
+    p99 = (statistics.quantiles(latencies, n=100)[98]
+           if len(latencies) >= 100 else max(latencies))
+    return {'p50_ms': round(p50, 1), 'p95_ms': round(p95, 1), 'p99_ms': round(p99, 1)}
+
+
 def summarize(latencies, statuses, target, rps, duration, wall):
     errors = _error_count(statuses)
     total = sum(statuses.values())
@@ -265,6 +296,8 @@ def main():
     args = ap.parse_args()
 
     opener = build_opener()
+    run_id = f"{int(time.time()) % 100000:05d}"
+    args.target = args.target.replace('{run}', run_id)
     data = None
     if args.method == 'POST':
         data = {}
@@ -272,7 +305,7 @@ def main():
             key, sep, value = item.partition('=')
             if not sep:
                 ap.error(f"--form expects KEY=VALUE, got {item!r}")
-            data[key] = value
+            data[key] = value.replace('{run}', run_id)
     if args.login:
         login(opener, args.target, args.login)
     if args.csrf_from:
@@ -293,8 +326,20 @@ def main():
     wall = time.perf_counter() - t0
     summarize(latencies, statuses, args.target, args.rps, args.duration, wall)
     if args.json_summary:
+        total = sum(statuses.values())
+        successes = sum(c for st, c in statuses.items() if isinstance(st, int) and 200 <= st < 400)
+        summary = {str(k): v for k, v in statuses.items()}
+        summary.update({
+            'total': total,
+            'successes': successes,
+            'offered_rps': args.rps,
+            'achieved_rps': round(total / wall, 2) if wall else 0.0,
+            'success_rps': round(successes / wall, 2) if wall else 0.0,
+            'wall_s': round(wall, 2),
+            'latency_ms': _percentiles(latencies),
+        })
         with open(args.json_summary, 'w') as fh:
-            json.dump({str(k): v for k, v in statuses.items()}, fh)
+            json.dump(summary, fh)
 
     # Exit non-zero if more than 1% failed at the transport level OR more
     # than 1% were 5xx. The header's own purpose statement is "confirming a

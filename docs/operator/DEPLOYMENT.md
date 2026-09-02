@@ -70,6 +70,7 @@ The seeded accounts still apply and must be rotated on first login (below).
 | `POLARIS_NETWORK_POLICY_<ROLE>` | v9.189. Comma-separated CIDRs/addresses the role (ADMIN/OPERATOR/AUDITOR) may log in from and keep a session on; evaluated on the proxy-aware client address. A malformed value refuses the boot | unset (any) |
 | `POLARIS_SESSION_MAX_<ROLE>`   | v9.189. Concurrent live sessions per account; 0 = unlimited. The least-recently-seen seat is evicted (audited `SESSION_EVICTED`) | ADMIN 3, others 0 |
 | `POLARIS_SESSION_IDLE_MINUTES_<ROLE>` | v9.189. Idle timeout for the role's sessions; 0 = none. The 8h absolute lifetime always applies | ADMIN 30, others 0 |
+| `POLARIS_RATE_LIMIT_WRITE_MAX` / `POLARIS_RATE_LIMIT_WRITE_WINDOW` / `POLARIS_RATE_LIMIT_LOGIN_MAX` | v9.191. Override the F-03 per-IP limits (60 writes per 60 s; 10 logins per 60 s). Exists for the performance baseline's scratch server; raising them in production lowers brute-force and flood resistance and should be justified in `polaris.env` | 60 / 60 / 10 |
 | `POLARIS_WEBAUTHN_ATTESTATION` | v9.189. Attestation conveyance asked of the browser at enrollment: `none` / `indirect` / `direct` / `enterprise` | `none` |
 | `POLARIS_WEBAUTHN_USER_VERIFICATION` | v9.189. `preferred` / `required` / `discouraged`; `required` demands PIN or biometric on enrollment AND every assertion | `preferred` |
 | `POLARIS_WEBAUTHN_REQUIRE_ATTESTATION` | v9.189. When `1`, an enrollment whose attestation format is `none` is refused (audited `WEBAUTHN_REGISTRATION_REFUSED`) | unset |

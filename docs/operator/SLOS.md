@@ -189,8 +189,9 @@ actioned automatically. Stating otherwise would overclaim what ships.
 ## 7. Cross-references
 
 - [`../../deploy/observability/README.md`](../../deploy/observability/README.md): the shipped Prometheus scrape config + alert rules these SLOs are observed through (operator wires the backend).
-- [`../../deploy/observability/polaris-alerts.yml`](../../deploy/observability/polaris-alerts.yml): the six alert rules; the SLO thresholds match the alert thresholds (long window vs. alert window).
+- [`../../deploy/observability/polaris-alerts.yml`](../../deploy/observability/polaris-alerts.yml): the alert rules (ten as of v9.190: six service alerts plus the four per-agency velocity and quota alerts); the SLO thresholds match the service alert thresholds (long window vs. alert window).
 - [`RUNBOOKS.md`](RUNBOOKS.md): what to do when an alert fires (one section per alert).
 - [`DR.md`](DR.md): the SEV ladder the alert severities map to.
 - [`OPERATIONS.md`](OPERATIONS.md): the day-2 metrics reference.
 - [`../PRODUCTION-READINESS.md`](../PRODUCTION-READINESS.md): the honest gap ledger; this doc closes the "SLOs" item.
+- [`../reference/PERFORMANCE-BASELINE.md`](../reference/PERFORMANCE-BASELINE.md): the measured issuance/s, verification/s, and atlas p95 the latency SLO is judged against (v9.191).

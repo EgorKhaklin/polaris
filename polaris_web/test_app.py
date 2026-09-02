@@ -8634,3 +8634,25 @@ class AgencyQuotaTests(PolarisTestCase):
             msg = flask_app.db_error_to_message(e)
         self.assertTrue(msg.startswith('quota exceeded: agency 5'), msg)
         self.assertNotIn('CONTEXT', msg)
+
+
+class FlashBoundTests(PolarisTestCase):
+    """v9.191: a client that POSTs form routes without rendering the redirect
+    target must not grow the session cookie without bound (the performance
+    baseline hit HTTP 431 after ~4000 unconsumed flashes)."""
+
+    def test_unconsumed_flashes_are_bounded(self):
+        form = {'token_id': '', 'requesting_agency_id': '4', 'context_id': '1',
+                'outcome': 'UNAUTHORIZED', 'disclosure_level': 'ZERO_KNOWLEDGE'}
+        token = self._csrf_token_from('/verifications/new')
+        for _ in range(45):        # under the 60-writes-a-minute limit, over FLASH_LIMIT
+            form['csrf_token'] = token
+            r = self.client.post('/verifications/new', data=form)   # never follows the redirect
+            self.assertEqual(r.status_code, 302)
+        with self.client.session_transaction() as sess:
+            self.assertLessEqual(len(sess.get('_flashes', [])), flask_app.FLASH_LIMIT)
+        # The most recent messages survive, so a browser rendering next still sees them.
+        r = self.client.get('/verifications')
+        self.assertEqual(r.status_code, 200)
+        self.assertHTML(r, 'Recorded verification event')
+

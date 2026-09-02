@@ -70,13 +70,29 @@ LOGIN_FAILURE_THRESHOLD   = 5         # account locks after this many failures
 LOGIN_FAILURE_WINDOW_MIN  = 10        # within this many minutes
 ACCOUNT_LOCK_MIN          = 15        # locked out for this many minutes
 
+# Per-IP rate limits. The DEFAULTS are the security posture (F-03: 10 login
+# attempts and 60 writes per IP per minute) and check_performance_baseline
+# pins them; the environment overrides exist for one reason, v9.191 (roadmap
+# P1.9): a benchmark of issuance/s or verification/s from ONE client address
+# is impossible under 60 writes a minute, so scripts/polaris-perf-baseline.sh
+# raises the write cap on the scratch server it starts. A production stack
+# that raises them has lowered its own brute-force and flood resistance and
+# should say why in polaris.env.
+def _env_int(name, default):
+    raw = os.environ.get(name, '').strip()
+    try:
+        return int(raw) if raw else default
+    except ValueError:
+        return default
+
+
 # Per-IP rate limit on login attempts (token bucket)
-RATE_LIMIT_LOGIN_MAX      = 10        # max login attempts...
-RATE_LIMIT_LOGIN_WINDOW   = 60        # ...per N seconds per IP
+RATE_LIMIT_LOGIN_MAX      = _env_int('POLARIS_RATE_LIMIT_LOGIN_MAX', 10)   # max login attempts...
+RATE_LIMIT_LOGIN_WINDOW   = 60                                             # ...per N seconds per IP
 
 # Per-IP rate limit on all state-changing requests
-RATE_LIMIT_WRITE_MAX      = 60
-RATE_LIMIT_WRITE_WINDOW   = 60
+RATE_LIMIT_WRITE_MAX      = _env_int('POLARIS_RATE_LIMIT_WRITE_MAX', 60)
+RATE_LIMIT_WRITE_WINDOW   = _env_int('POLARIS_RATE_LIMIT_WRITE_WINDOW', 60)
 
 # Body size limit (1 MiB; the SQL console caps queries at 5 KB separately)
 MAX_REQUEST_BODY_BYTES    = 1 * 1024 * 1024

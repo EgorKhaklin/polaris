@@ -132,6 +132,11 @@ helps if the attacker concentrates on one account) or on state-changing endpoint
 - The current implementation is per-process; a multi-worker deployment behind a real load
   balancer should swap the in-memory backend for a Redis-backed one (noted in
   `DEPLOYMENT.md`).
+- v9.191: the limits read `POLARIS_RATE_LIMIT_LOGIN_MAX`, `POLARIS_RATE_LIMIT_WRITE_MAX`,
+  and `POLARIS_RATE_LIMIT_WRITE_WINDOW` with the defaults above pinned by
+  `check_performance_baseline`; the override exists so the performance baseline can
+  drive one scratch server from one address, and a production stack that raises it has
+  lowered this control on purpose.
 
 **Tests:** `F03_RateLimitingTests::test_excessive_login_attempts_rate_limited`.
 

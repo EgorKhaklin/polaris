@@ -170,6 +170,26 @@ jobs:
           POLARIS_REDIS_URL: redis://localhost:6379/0
         run: bash scripts/polaris-abuse-drill.sh
 
+      # v9.191 (roadmap P1.9) — the performance baseline's procedure, re-run
+      # in smoke mode (5s per stage, low rates) on every push: gunicorn is
+      # started, the three flows are driven by the load generator, the JSON
+      # is assembled, and the loose SLO-boundary floors are gated. A shared
+      # runner is not reference hardware, so the numbers are an artifact, not
+      # the published table (docs/reference/PERFORMANCE-BASELINE.md). Pinned
+      # by check_performance_baseline.
+      - name: Performance baseline re-run (smoke)
+        env:
+          POLARIS_PERF_OUT: /tmp/perf-baseline.json
+        run: bash scripts/polaris-perf-baseline.sh --smoke
+
+      - name: Upload the smoke baseline JSON
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-baseline-smoke
+          path: /tmp/perf-baseline.json
+          if-no-files-found: ignore
+
       - name: ai-link-check
         run: bash scripts/ai-link-check.sh --ci
 

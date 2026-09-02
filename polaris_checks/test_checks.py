@@ -3510,3 +3510,47 @@ def test_abuse_controls_check_discriminates(tmp_path):
     # The retry contract was dropped.
     write({"polaris_web/security.py": "retry=None\n"})
     assert checks.check_abuse_controls(tmp_path)[0].level == "FAIL", "must FAIL without the one-attempt retry contract"
+
+
+def test_performance_baseline_check_discriminates(tmp_path):
+    BLOCK = ("**Measured v9.191 @ abc1234, 2026-09-01T20:00Z (full run, 60s per stage).** Apple M3, 8 cores, 16 GB, "
+             "macOS 26.3; PostgreSQL 16.14; Python 3.12.13; gunicorn x4 sync workers; signing: ML-DSA-65 (liboqs).\n\n"
+             "| Stage |\n| Issuance (`POST /uc1/issue`) |\n| Verification |\n| Atlas zoomed bbox, warm |\n"
+             "| Atlas zoomed bbox, cold |\n| Atlas whole-world stats, warm |\n")
+    DOC = "# baseline\n<!-- baseline:begin -->\n" + BLOCK + "<!-- baseline:end -->\n"
+    SCRIPT = ("--smoke --update-doc\n/uc1/issue /verifications/new /api/atlas/clusters /api/atlas/stats\n"
+              "gunicorn POLARIS_RATE_LIMIT_WRITE_MAX=10000000\nFLOOR VIOLATIONS\n"
+              'check_stage("issue", 2)\ncheck_stage("verify", 5)\nif lat.get("p95_ms", 1e9) > 2000:\n')
+    SEC = ("RATE_LIMIT_LOGIN_MAX      = _env_int('POLARIS_RATE_LIMIT_LOGIN_MAX', 10)\n"
+           "RATE_LIMIT_WRITE_MAX      = _env_int('POLARIS_RATE_LIMIT_WRITE_MAX', 60)\n"
+           "RATE_LIMIT_WRITE_WINDOW   = _env_int('POLARIS_RATE_LIMIT_WRITE_WINDOW', 60)\n")
+    good = {
+        "docs/reference/PERFORMANCE-BASELINE.md": DOC,
+        "scripts/polaris-perf-baseline.sh": SCRIPT,
+        "scripts/polaris_load_gen.py": "value.replace('{seq}', str(seq))\n'achieved_rps': 1\n",
+        ".github/workflows/ci.yml": "run: bash scripts/polaris-perf-baseline.sh --smoke\nname: perf-baseline-smoke\n",
+        "polaris_web/security.py": SEC,
+        "docs/reference/README.md": "| PERFORMANCE-BASELINE.md |\n",
+    }
+
+    def write(overrides=None):
+        files = dict(good); files.update(overrides or {})
+        for rel, body in files.items():
+            f = tmp_path / rel
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text(body)
+
+    write()
+    assert checks.check_performance_baseline(tmp_path)[0].level == "OK", "must PASS on the good fixture"
+
+    write({"docs/reference/PERFORMANCE-BASELINE.md": DOC.replace("**Measured v9.191 @ abc1234, 2026-09-01T20:00Z", "**Measured")})
+    assert checks.check_performance_baseline(tmp_path)[0].level == "FAIL", "must FAIL without the version/commit/date stamp"
+
+    write({"polaris_web/security.py": SEC.replace("'POLARIS_RATE_LIMIT_WRITE_MAX', 60", "'POLARIS_RATE_LIMIT_WRITE_MAX', 6000")})
+    assert checks.check_performance_baseline(tmp_path)[0].level == "FAIL", "must FAIL when the F-03 default moves"
+
+    write({"scripts/polaris-perf-baseline.sh": SCRIPT.replace('check_stage("verify", 5)\n', "")})
+    assert checks.check_performance_baseline(tmp_path)[0].level == "FAIL", "must FAIL without the verification floor"
+
+    write({".github/workflows/ci.yml": "run: echo skip\n"})
+    assert checks.check_performance_baseline(tmp_path)[0].level == "FAIL", "must FAIL when CI does not re-run the baseline"

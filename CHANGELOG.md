@@ -5,6 +5,66 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.191 — 2026-09-02 (Roadmap P1.9: the performance baseline, published; issuance/s, verification/s, and atlas p95 measured end to end and re-run by CI)
+
+The numbers an authority sizing a deployment starts from, measured rather
+than estimated, stamped rather than asserted, and re-run on every push.
+
+  - **`docs/reference/PERFORMANCE-BASELINE.md`.** One script,
+    `scripts/polaris-perf-baseline.sh`, resets the sample data, starts the
+    production WSGI server (gunicorn, 4 sync workers) against PostgreSQL,
+    and drives three flows through the app's own routes with the load
+    generator as a logged-in operator, 60 seconds per stage: issuance
+    (`POST /uc1/issue`, the full `uc1_issue_and_activate` procedure with a
+    real ML-DSA-65 signature per token), verification
+    (`POST /verifications/new`), and the atlas (`/api/atlas/clusters` on a
+    zoomed bbox, warm and cold, and `/api/atlas/stats` whole-world). It
+    rewrites the doc's measured block with the table and a stamp: version,
+    commit (marked `+dirty` when the tree is uncommitted), date, CPU, cores,
+    memory, OS, Postgres, Python, workers, signing mode, topology.
+  - **Measured on this ship's reference hardware** (Apple M3, 8 cores, 16 GB,
+    macOS 26.3, PostgreSQL 16.14, app and database on the same host, no TLS
+    edge, no pgbouncer): issuance sustained 40 requests a second with every
+    one of 2400 succeeding at p95 28 ms; verification 80 a second, 4800 of
+    4800, p95 18.5 ms; the atlas at 100 requests a second with p95 14.5 ms
+    warm and 17.8 ms cold on a street bbox and 13.8 ms for the whole-world
+    stats. The offered rates are below saturation by design: the baseline is
+    what one host sustains cleanly, not where it breaks.
+  - **CI re-runs it.** The test job runs `--smoke` (5 s per stage, low rates)
+    on every push and uploads `perf-baseline.json` as an artifact; a shared
+    runner is a procedure check, never a baseline, and the script gates only
+    on SLO-boundary floors (issuance at least 2/s and verification at least
+    5/s at 95% success, atlas warm p95 at or under the 2 s latency SLO).
+  - **The load generator** gains `{seq}` (a per-request sequence number, so
+    every issuance carries a unique serial and every cold atlas request a
+    different bbox) and `{run}`, and its JSON summary now carries the
+    latency percentiles and achieved rate the table is built from.
+  - **The F-03 rate limits read the environment** (`POLARIS_RATE_LIMIT_WRITE_MAX`,
+    `_WRITE_WINDOW`, `_LOGIN_MAX`) with the defaults of 60, 60, and 10
+    unchanged and pinned: a benchmark from one client address is impossible
+    under 60 writes a minute, so the script raises the cap on the scratch
+    server it starts and nowhere else. DEPLOYMENT.md and SECURITY.md say what
+    raising them in production costs.
+  - **Found by the first full run:** after 4004 verifications the last 796
+    answered HTTP 431. Every form POST adds a flash message to the signed
+    session cookie and a browser consumes them on the next rendered page, but
+    a client that never renders the redirect target (a script, an
+    integration, this benchmark) grows the cookie one message per write
+    until the Cookie header passes gunicorn's field-size limit and every
+    further request is refused, a lockout the client cannot see coming. The
+    app now keeps the most recent 20 flashes (`FLASH_LIMIT`), which costs a
+    browser nothing; `FlashBoundTests` pins it. The second run then recorded
+    4800 of 4800. Also found: the abuse drill's ledger parser summed every
+    value of the load generator's summary, which the richer JSON broke; it
+    reads the total now.
+  - `check_performance_baseline` pins the doc's stamped measured block, the
+    script's stages and floors, the CI smoke re-run and artifact, the load
+    generator's templating, the rate-limit defaults, and the reference index.
+    103 checks, 100 check-layer tests. Next opener: P1.10, DR to targets on
+    a schedule.
+
+---
+
 ## v9.190 — 2026-09-01 (Roadmap P1.8: abuse controls; per-agency quotas bound at the database, velocity alerts against each agency's own baseline, drilled under real load, and the redis-py 8.x major with a real Redis in CI)
 
 R11-6 bounded one thing an agency can do to its own tokens: revoke them too
