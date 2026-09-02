@@ -231,7 +231,7 @@ fundamentally broken regardless of what tests still pass.
 | C5 | CSP is `script-src 'self'`, with no `'unsafe-inline'` for production scripts | `security.py::apply_security_headers()` |
 | C6 | Disclosure level is enforced server-side; client cannot upgrade | `app.py::verifications_new()` coerces `token_id` to NULL for ZERO_KNOWLEDGE; the C2 CHECK constraint rejects anything else; the Atlas redacts ZK locations server-side (`polaris_checks::check_c6_atlas_redacts_zk_location`) |
 | C7 | Cryptographic algorithm metadata flows through `CryptographicAlgorithm`, never hardcoded in app code | `01_schema.sql::CryptographicAlgorithm` table |
-| C8 | All `/api/atlas/*` endpoints have hard caps preventing unbounded result sets | `app.py::_ATLAS_MAX_*` constants, applied as LIMITs in every Atlas query |
+| C8 | All `/api/atlas/*` endpoints have hard caps preventing unbounded result sets | `app.py::_ATLAS_MAX_*` constants LIMIT the list endpoints (clusters, points, events); the timeline is capped at 240 buckets and search at 20 rows; the remaining Atlas endpoints return aggregates |
 | C9 | Tests for concurrency hazards use real threading, not mocks | `test_app.py::ConcurrencyTests` |
 | C10 | Identity attestation never carries spending authority | Structural absence: no `MonetaryClaim` table exists, pinned by `polaris_checks` |
 

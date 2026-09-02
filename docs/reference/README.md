@@ -14,7 +14,7 @@ narrative + principles see [`../story/`](../story/).
 | Doc | What it covers |
 |---|---|
 | [`SYSTEM-MAP.md`](SYSTEM-MAP.md) | **The master architectural map** — every directory, every Python package, every script family, the cross-references between them |
-| [`API.md`](API.md) | HTTP endpoint reference (20 routes; G29 health contract) |
+| [`API.md`](API.md) | HTTP endpoint reference for the `/api/*` routes and the health contract |
 | [`DATA-MODEL.md`](DATA-MODEL.md) | Schema table-by-table prose; per-table semantics + invariants |
 | [`SCALING.md`](SCALING.md) | v6 scaling architecture: B-tree indexes, viewport-aware globe, /api/atlas hard caps |
 | [`PERFORMANCE-BASELINE.md`](PERFORMANCE-BASELINE.md) | v9.191 (P1.9): the published end-to-end baseline, issuance/s, verification/s, atlas p95 through gunicorn on stated hardware, re-run by CI in smoke mode |

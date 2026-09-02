@@ -2,12 +2,13 @@
 
 A web interface to the Polaris identity-token database. Implements query, add,
 update, and delete operations across the schema's principal entities, plus the
-thirteen stored procedures (UC-1 issuance, UC-4 reserve activation, UC-5
+fifteen stored procedures (UC-1 issuance, UC-4 reserve activation, UC-5
 device binding, UC-6 algorithm migration, UC-7 warrant audit, UC-8 revocation,
 UC-9 initiate + complete recovery, `close_anchor_batch` for R10-2 DID
 anchoring, `uc10_attest_trust` + `uc10_revoke_attestation` for R11-3
-federation, `uc11_close_epoch` for R10-1 ZK-SNARK, and `uc12_record_duress`
-for R11-5 compulsion resistance), a read-only SQL console, and **Atlas** —
+federation, `uc11_close_epoch` for R10-1 ZK-SNARK, `uc12_record_duress`
+for R11-5 compulsion resistance, `uc_archive_purge` for the archive-bound
+purge, and `uc_pseudonymize_individual` for right-to-erasure), a read-only SQL console, and **Atlas** —
 a single-page God's-eye view of the running system.
 
 ## Stack
@@ -328,7 +329,6 @@ factory; see also `../DEVNOTES/rate-limiter.md`.
 
 # or directly:
 python3 test_app.py
-python3 test_structural_invariants.py
 ```
 
 The test suite in `test_app.py` (462 passing and 12 skipped without
@@ -362,11 +362,11 @@ optional backends, measured at v9.194) covers:
 - Tiered enrollment (R11-4 / M2-9) — `TieredEnrollmentTests`
 - Catastrophic-loss recovery (R11-2 / M2-7) — `CatastrophicLossRecoveryTests`
 - Multi-signature transitional state (R11-1 / M2-6) — `MultiSignatureTests`
-- DID anchoring (R10-2 / M2-2) — `AnchorBatchTests`, 15 tests
-- Issuer federation (R11-3 / M2-8) — `IssuerFederationTests`, 15 tests
-- ZK-SNARK over Plonky2 (R10-1 / M2-1) — `ZKSnarkTests`, 15+ tests
+- DID anchoring (R10-2 / M2-2) — `AnchorBatchTests`
+- Issuer federation (R11-3 / M2-8) — `IssuerFederationTests`
+- ZK-SNARK over Plonky2 (R10-1 / M2-1) — `ZKSnarkTests`
   exercising the Rust prover/verifier via subprocess
-- Duress codes (R11-5 / M2-10) — `DuressCodeTests`, 13 tests
+- Duress codes (R11-5 / M2-10) — `DuressCodeTests`
   covering constant-time hash comparison, identical-behavior across
   branches, and the R6 anti-revealing posture
 - Concurrency hazards (`ConcurrencyTests`) using real threading, not
@@ -383,12 +383,7 @@ Supplementary suites:
 - **`test_redaction_property.py`** — M2-12 redaction-adversary tests
   with three adversary classes (UniformGuess, TemporalCorrelation,
   SpatialUniqueness)
-- **`test_structural_invariants.py`** — 882 cognitive-layer invariants
-  covering the constraint lattice, 22-pattern catalog, Fibonacci
-  weights, CM meta-constraint, adversary models, the seven
-  structural frameworks, and Sanctum integrity (added v8.20: status
-  field presence, lifecycle invariants for CLOSED and REJECTED,
-  index drift)
+
 
 Each test snapshots and restores the database to pristine sample
 state, so tests run in isolation.
@@ -405,7 +400,6 @@ polaris_web/
 ├── test_app.py                  Integration test suite (live database)
 ├── test_invariants_property.py  Hypothesis property tests (C1, C2, C3)
 ├── test_redaction_property.py   M2-12 redaction-adversary tests
-├── test_structural_invariants.py  Cognitive-layer invariants (882 tests; structural + Sanctum integrity)
 ├── README.md                    This file
 ├── docker-compose.yml           Full stack bring-up
 ├── docker-init.sh               Postgres init script

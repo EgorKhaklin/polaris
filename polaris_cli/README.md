@@ -271,7 +271,7 @@ polaris-id query "SELECT ip_address, COUNT(*) FROM AuthAuditLog
 python3 test_cli.py
 ```
 
-The CLI test suite has 53 integration tests covering every command, including
+The CLI test suite has 71 integration tests (v9.194) covering every command, including
 the user-management workflow (create → authenticate → rotate → deactivate),
 audit-log filtering, and constraint-violation paths. Tests reset the database
 to pristine sample state before each test.

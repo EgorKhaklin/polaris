@@ -25,7 +25,7 @@ The ten constraints are stated in [`MISSION.md`](../../MISSION.md). In summary:
 | **C5** | CSP forbids inline scripts | `script-src 'self'`, no `'unsafe-inline'` |
 | **C6** | Disclosure is enforced server-side | Server-side redaction, not client trust |
 | **C7** | No hardcoded cryptography | Algorithm named in `CryptographicAlgorithm` |
-| **C8** | `/api/atlas/*` result sets are bounded | Hard caps in `app.py`, applied as LIMITs |
+| **C8** | `/api/atlas/*` result sets are bounded | `_ATLAS_MAX_*` LIMITs on the list endpoints; a 240-bucket cap on the timeline; 20 rows on search; aggregates elsewhere |
 | **C9** | Concurrency is tested with real threading | Threaded test suite |
 | **C10** | Identity is not money | No `MonetaryClaim` table; architectural |
 
@@ -46,7 +46,7 @@ The ten constraints are stated in [`MISSION.md`](../../MISSION.md). In summary:
 
 The audit-of-record principle says: for the consequential surfaces, write evidence at the moment of decision and never rewrite it. This is the substance of constraint C1.
 
-**The instances (v9.194).** Polaris carries thirteen audit-of-record surfaces, all schema tables; every trigger below is defined in `06_triggers.sql` or the migration that added its table.
+**The instances (v9.194).** Polaris carries thirteen audit-of-record surfaces, each a table in the schema or its migrations; every trigger below is defined in `06_triggers.sql` or the migration that added its table. The `schema_version` migration registry is also append-only by trigger but records deployments, not identity operations, so it is not counted here.
 
 | # | Instance | Append-only by |
 |---|---|---|

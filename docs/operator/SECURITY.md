@@ -81,7 +81,7 @@ the verification log all responded to requests without any session check.
 - Session fixation defense: `session.clear()` on login (CWE-384).
 - Logout requires POST + CSRF, defeating drive-by logout via image tags.
 
-**Tests:** `F01_AuthenticationTests` — 11 tests covering anonymous redirect on every
+**Tests:** `F01_AuthenticationTests` — 13 tests covering anonymous redirect on every
 protected route, login success/failure, generic error on unknown user, audit trail on
 login events, account lockout, logout, GET-logout rejection, open-redirect resistance,
 session fixation resistance.
@@ -442,7 +442,7 @@ canonical statement and is re-stamped on every ship that changes it):
 SQL self-tests : 78 assertions in 08_tests.sql, plus 12_v7_constraints.sql and 13_substrate.sql
 Web            : 462 (test_app.py, 12 skipped without optional backends) + 72 constraint tests + 16 property tests + 19 secret-store tests
 CLI            : 71 (test_cli.py)
-Crypto         : 76 across the signing, custody and ZK witness suites
+Crypto         : 76 passing of 80 collected across the signing, custody and ZK witness suites (4 need AWS KMS)
 Invariants     : 107 checks, each with a detection test (polaris_checks)
 ```
 

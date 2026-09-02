@@ -24,8 +24,8 @@ outweighs the marginal value when:
   cover C1, C2, C3 with randomized inputs
 - Schema-level CHECK constraints and partial unique indexes enforce
   the constraints at the database level
-- Structural invariants (`test_structural_invariants.py`) pin the
-  enforcement primitives in place
+- The invariant layer (`polaris_checks/checks.py`, one `check_*` per
+  invariant with a detection test) pins the enforcement primitives in place
 
 This single spec is shipped as a demonstrator artifact. If formal
 verification should later become a maintained surface, that's a

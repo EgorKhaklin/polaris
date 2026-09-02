@@ -29,8 +29,9 @@ add to a running database (`OperatorWebauthnCredential`, `OperatorSession`,
   IssuerDiscretionPolicy, AgencyQuota, AgencyTrustAttestation,
   RecoveryRequest, LifecycleArchiveCheckpoint): which agency may sign
   under which algorithm, per-agency issuance and verification
-  ceilings, cross-agency trust, account recovery, and the archive
-  watermark that bounds purges.
+  ceilings, cross-agency trust, the two-phase holder recovery ceremony
+  after catastrophic loss (UC-9), and the audit-of-record row each
+  archive purge appends.
 
 Schema is in `polaris_sql/01_schema.sql`. Indexes in
 `polaris_sql/02_indexes.sql`. Triggers (state machine, append-only,

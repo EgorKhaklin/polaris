@@ -25,7 +25,7 @@ For developers contributing to Polaris, see
 | [`FAILOVER.md`](FAILOVER.md) | Streaming replication + hot standby + promotion runbook; the HA complement to DR.md (standby host operator-supplied) |
 | [`ENCRYPTION-AT-REST.md`](ENCRYPTION-AT-REST.md) | At-rest posture: what is plaintext on disk, what is already encrypted, and the operator-gated host volume encryption path |
 | [`SLOS.md`](SLOS.md) | Reference SLO targets (availability / request-latency / DB-latency) + error budget, grounded in exposed metrics; backend operator-gated |
-| [`WEBAUTHN-ROLLOUT.md`](WEBAUTHN-ROLLOUT.md) | Rolling WebAuthn MFA out to operators in phases, with the attestation and network policies |
+| [`WEBAUTHN-ROLLOUT.md`](WEBAUTHN-ROLLOUT.md) | Rolling WebAuthn MFA out to operators in phases, with the attestation policy |
 | [`RUNBOOKS.md`](RUNBOOKS.md) | One alert-response runbook per shipped Prometheus alert (Trigger / Diagnosis / Remediation) |
 
 ---

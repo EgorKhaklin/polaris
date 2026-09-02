@@ -25,7 +25,7 @@ schema-hardening tests, the **M2-3 substrate-dependency view**, and an
 testing.
 
 A self-test suite distributed across three files (`08_tests.sql`,
-78 assertions in sections A to R; `12_v7_constraints.sql`;
+78 assertions; `12_v7_constraints.sql`;
 `13_substrate.sql`; counts at v9.194) exercises every constraint and
 integration point.
 
@@ -70,7 +70,7 @@ That single command:
    and epoch immutability (R10-1) (`06_triggers.sql`)
 7. Runs the relational-algebra queries from §8 of the report and
    defines `civic_enrollment_summary` (`07_queries.sql`)
-8. Runs the 170-assertion core test suite (`08_tests.sql`, sections A–R)
+8. Runs the core self-test suite (`08_tests.sql`, 78 assertions; v9.194)
 9. Creates the `polaris_app` role, grants application-layer
    privileges, and sets the revocation-bound GUC defaults
    (`09_grants.sql`)
@@ -97,10 +97,10 @@ labels valid` (plus all assertion-suite messages).
 | `02_indexes.sql` | Partial unique indexes + spatial + genomic + revocation-rate + enrollment-event + recovery-queue + active-signature indexes + secondary indexes |
 | `03_view.sql` | `ActiveTokens` + `IndividualCurrentEnrollment` views |
 | `04_data.sql` | Coherent sample data with 8 individuals across all five enrollment states + TokenSignature backfill |
-| `05_procedures.sql` | 15 stored procedures: UC-1 / UC-4 / UC-5 / UC-6 / UC-7 / UC-8 / UC-9 (initiate + complete) / `close_anchor_batch` (R10-2) / `uc10_attest_trust` + `uc10_revoke_attestation` (R11-3) / `uc11_close_epoch` (R10-1) / `uc12_record_duress` (R11-5) / `uc_archive_purge` (audit-log archive+purge framework, v8.87) |
+| `05_procedures.sql` | 15 stored procedures: UC-1 / UC-4 / UC-5 / UC-6 / UC-7 / UC-8 / UC-9 (initiate + complete) / `close_anchor_batch` (R10-2) / `uc10_attest_trust` + `uc10_revoke_attestation` (R11-3) / `uc11_close_epoch` (R10-1) / `uc12_record_duress` (R11-5) / `uc_archive_purge` (audit-log archive+purge framework, v8.87) / `uc_pseudonymize_individual` (right-to-erasure pseudonymization, v9.125) |
 | `06_triggers.sql` | State-machine + auto-audit + append-only triggers (every audit-of-record table) + revocation-velocity bound (R11-6) + enrollment-seed (R11-4) + active-signature + signature-immutability (R11-1) |
 | `07_queries.sql` | Relational-algebra queries from §8 + UC-6 bonus + `civic_enrollment_summary` (R11-4) |
-| `08_tests.sql` | Core self-test suite, 78 assertions (sections A to R; v9.194) |
+| `08_tests.sql` | Core self-test suite, 78 assertions (v9.194) |
 | `09_grants.sql` | `polaris_app` role + application-layer privileges + revocation-bound GUC defaults |
 | `10_auth.sql` | `AppUser` (web auth) + `AuthAuditLog` + 3 seed accounts |
 | `11_atlas.sql` | v6 atlas SQL functions + v8.3 filter-aware variants |

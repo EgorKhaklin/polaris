@@ -2010,7 +2010,7 @@ def check_table_count_matches_doc(root: pathlib.Path) -> list[Finding]:
 _STATED_COUNT_DOCS = (
     "README.md", "CLAUDE.md", "ROADMAP.md", "MISSION.md", "CONTRIBUTING.md",
     "docs/ARCHITECTURE-OVERVIEW.md", "docs/reference/SYSTEM-MAP.md",
-    "docs/reference/DATA-MODEL.md", "docs/story/PRINCIPLES.md",
+    "docs/reference/DATA-MODEL.md", "docs/reference/README.md", "docs/story/PRINCIPLES.md",
     "docs/PRODUCTION-READINESS.md", "polaris_sql/README.md", "polaris_web/README.md",
     "polaris_cli/README.md", "polaris_checks/README.md", "site/index.html",
 )

@@ -5,6 +5,52 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.197 — 2026-09-02 (P1.13 ship 4: the architecture document ends at the architecture)
+
+- **docs/ARCHITECTURE-OVERVIEW.md rewritten around what exists.** It opens with
+  its reader and its job. §IX names the four deployment paths that actually
+  exist, each as a Markdown link the link checker covers (the macOS launcher,
+  single-host compose with the blue-green profile, the scripted Linux install,
+  the Helm reference profile) with the chart's stated limits quoted from
+  KUBERNETES.md rather than invented; the old "Helm chart deferred" and
+  "bare-metal documented but not automated" lines were false. §XI (steady
+  state) and §XII (where the project stands) are deleted; they described a
+  May 2026 posture the roadmap has replaced. Every R*, M2* and vX.Y tag in
+  the layer, flow and crypto sections is gone; the line counts are gone; the
+  D3/topojson claim becomes the vendored MapLibre over CARTO tiles that the
+  CSP actually allows; the disclosure levels are the three the schema CHECKs
+  (ZERO_KNOWLEDGE, SELECTIVE, FULL), not four; the operator-script list names
+  the scripts that exist today; §VI gains SLH-DSA (registered, not wired) and
+  the PQ edge; the constraint-lattice sentence and its dangling `meta/lineage`
+  citation are gone.
+- **docs/QUICKSTART.md deleted and absorbed.** Nothing linked it except the
+  architecture document's own header. Its two durable parts moved into that
+  document: the constraint-refusal SQL walkthrough is now §XI, with the third
+  block rewritten as an INSERT that was run against a scratch database and
+  raises `uq_one_active_per_person` as advertised (the old UPDATE matched no
+  row, because the seed has no RESERVE token for an active holder), and the
+  route table is now §XII, regenerated against `@app.route` so every path
+  exists. The README quickstart and INSTALL.md remain the "get it running"
+  surfaces.
+- **Facts-lens follow-through from the v9.194 review.** Eleven more stale
+  sites corrected: the web README's phantom `test_structural_invariants.py`
+  (three references, an 882-test count) and its per-class test counts; the
+  web and SQL READMEs' stored-procedure lists (now fifteen names for fifteen
+  procedures); the CLI README's 53 tests (71); the reference index's "20
+  routes"; SECURITY.md's F01 count (13); the SQL README's "sections A to R"
+  (the file has ten sections); `meta/tla/README.md`'s phantom test file. Two
+  claims narrowed to the code: C8 in MISSION and PRINCIPLES now says which
+  Atlas endpoints carry `_ATLAS_MAX_*` LIMITs (clusters, points, events), the
+  240-bucket timeline cap and the 20-row search cap, and that the rest return
+  aggregates; the operator index no longer credits WEBAUTHN-ROLLOUT.md with a
+  network-policy section it does not have. The README and SECURITY.md state
+  the crypto-witness row as 76 passing of 80 collected with the skip reasons;
+  PQC-POSTURE says the SLH-DSA signer is not yet scheduled (it was wrongly
+  tied to a certificate item); PRINCIPLES says why `schema_version` is not
+  counted as an audit-of-record surface; DATA-MODEL describes RecoveryRequest
+  and LifecycleArchiveCheckpoint by what the schema says they are.
+  `docs/reference/README.md` joins the stated-count guard.
+
 ## v9.196 — 2026-09-02 (P1.13 ship 3: the ledger opens with what is open, and the roadmap's shipped rows shrink to their pins)
 
 - **docs/PRODUCTION-READINESS.md inverted.** It now opens with its reader and
@@ -81,9 +127,9 @@ every object name a reviewer meets first is re-measured and then guarded.
 
 - **Three enforcement checks** in `polaris_checks` (107 checks total, each with a
   detection test):
-  - `check_table_count_matches_doc` is widened from two documents to nine
+  - `check_table_count_matches_doc` is widened from two documents to eleven
     (README, CLAUDE, ROADMAP, MISSION, ARCHITECTURE-OVERVIEW, DATA-MODEL,
-    SYSTEM-MAP, `polaris_sql/README.md`, the demo site). It accepts exactly two
+    SYSTEM-MAP, the three package READMEs, the demo site). It accepts exactly two
     numbers: the tables `01_schema.sql` creates (29) and that plus the tables
     migrations add to a running deployment, 33 with the `schema_version`
     registry. It reads through HTML tags and
