@@ -43,7 +43,8 @@ Two documents that together cover the what and the how. Added v8.59 as the publi
 ## What lives elsewhere (not here)
 
 - **Agent runbook** → `CLAUDE.md` at root.
-- **Mission constitution + done-list** → `MISSION.md` at root.
+- **Mission constitution** → `MISSION.md` at root.
+- **Project record (done-lists, retired arcs)** → `DEVNOTES/record.md`.
 - **Active backlog** → `ROADMAP.md` at root.
 - **Release log** → `CHANGELOG.md` at root.
 - **Agent semantic memory** (concurrency, atlas-scaling, known-gotchas, rate-limiter, threat-model, substrate) → `DEVNOTES/`.

@@ -1,13 +1,26 @@
-# MISSION.md — what Polaris is, and what it isn't
+# MISSION.md: what Polaris is, and what it is not
 
 This is the constitution. Every architectural decision, every feature
-addition, every refactor must be checkable against this document.
-When something here conflicts with a request, the request is wrong —
-or the mission needs explicit, deliberate amendment.
+addition and every refactor is checkable against this document. When
+something here conflicts with a request, the request is wrong, or the
+mission needs an explicit, deliberate amendment recorded under the
+rule at the end of this file.
 
 ---
 
 ## Freeze line — definition of done (v9.27, amended once v9.29)
+
+**Status note (2026-09-02, additive).** Nothing below this note is
+altered. Two of this section's conditions have since fired, and both are
+recorded elsewhere in this repository. The abandonment clause fired: the
+v9.40 terminus passed with no external cold read, so
+[docs/THESIS.md](docs/THESIS.md) documents the strong claim as retired and
+inconclusive. The external trigger this section requires for a new arc
+occurred on 2026-08-31, when the project owner directed a complete plan to
+national deployment; [ROADMAP.md](ROADMAP.md) carries that decision record
+and CHANGELOG v9.158 the ship. The active arc is national deployment. The
+constitution is carried through it as a hard gate and nothing in it is
+softened.
 
 **AMENDMENT LOG:**
 
@@ -75,6 +88,8 @@ that edit as a fork.
 
 ---
 
+---
+
 ## Vocation
 
 **Polaris is the anti-coercion identity substrate. The deepest
@@ -82,45 +97,43 @@ constraint, deeper than C1-C10, is that no person be compellable into
 renouncing, transferring, or surrendering their identity against their
 will.**
 
-This vocation was named in v9.11. It ratifies what the codebase
-already implements; it does not impose
-a new requirement. Reading the seven load-bearing primitives forward,
-the vocation has been operative since v8.24:
+This vocation was named in v9.11. It ratifies what the codebase already
+implements; it does not impose a new requirement. Seven load-bearing
+primitives carry it:
 
-- TokenSignature backfill (v8.18 / R11-1) — every token sealed
-- Multi-signature migration (R11-1) — no single-point compromise window
-- WebAuthn-MFA (v8.97) — second factor not phishable remotely
-- Federation trust graph (R11-3) — identity portable across attesting
-  agencies; no monopoly
-- Redaction-proof discipline (M2-12) — adversary-modeled
-  non-derivability of redacted fields
-- Audit-of-record (v8.20) — every state change recorded; no silent
-  revision
-- **Duress-code primitive (R11-5)** — the secret name that signals
-  coercion without revealing the signal
+- Every token is sealed by at least one signature row in
+  `TokenSignature`; an unsigned token cannot exist.
+- An algorithm rotation adds a signature before it retires one, so there
+  is no single-point compromise window.
+- WebAuthn operator MFA: the second factor cannot be phished remotely.
+- The federation trust graph: identity is portable across attesting
+  agencies, and no agency holds a monopoly.
+- Redaction-proof discipline: redacted fields are shown to be
+  non-derivable under a stated adversary model.
+- Audit of record: every state change is recorded and none is silently
+  revised.
+- **Duress codes:** the secret name that signals coercion without
+  revealing the signal.
 
-C1-C10 below become *derivatives* of this vocation. Every future
-feature is judged: does it advance anti-coercion, even by a margin?
-If yes, it earns its place. If no, it is elaboration of structure
-without service of purpose.
-
-Any proposed change is held against this vocation: a feature that is
-not traceable to anti-coercion is elaboration of structure without
-service of purpose, and is refused on that ground.
+C1-C10 below are derivatives of this vocation. Every proposed change is
+held against it. A feature that does not advance anti-coercion, even by
+a margin, is elaboration of structure without service of purpose, and is
+refused on that ground.
 
 ---
 
 ## Why Polaris exists
 
 Polaris is a reference implementation of a national identity token
-system — what a sovereign-grade identity layer would look like if you
-designed it from first principles in 2026, knowing what we now know
-about post-quantum cryptography, zero-knowledge proofs, append-only
-audit, and the failure modes of every CBDC pilot.
+system: what a sovereign-grade identity layer looks like when it is
+designed from first principles in 2026, knowing what is now known about
+post-quantum cryptography, zero-knowledge proofs, append-only audit, and
+the failure modes of every CBDC pilot.
 
-It is built as VANTA's portfolio piece for SCS-230 (Database
-Management Systems) at Seton Hill, but the engineering bar is
-production-grade. The course is the occasion. The mission is bigger.
+It is a working system, not a proposal. The schema, the application, the
+prover, the operator tooling and the deployment profiles in this
+repository run today, and the engineering bar is production-grade.
+Provenance and attribution are in [NOTICE](NOTICE).
 
 ---
 
@@ -130,37 +143,40 @@ production-grade. The course is the occasion. The mission is bigger.
    is who they say they are, in this context, at this moment." Nothing
    more.
 
-2. **Post-quantum by default.** ML-DSA-65 signs every new token.
-   SLH-DSA is registered in the algorithm registry as the hash-based
-   rotation target; no SLH-DSA signer is wired yet (PQC-POSTURE.md).
-   RSA and ECDSA exist in the registry for migration semantics only.
+2. **Post-quantum by default.** Every new token is signed under
+   ML-DSA-65 (FIPS 204). SLH-DSA (FIPS 205) is registered as the
+   hash-based alternative so a rotation away from lattices is a row
+   update, not a redeploy; no SLH-DSA signer is wired yet, and
+   [PQC-POSTURE.md](docs/reference/PQC-POSTURE.md) carries that gap.
+   RSA and ECDSA exist in the registry for migration semantics only and
+   are not issued for new tokens.
 
 3. **Append-only at the audit layer.** Every state transition writes a
    `TokenLifecycleEvent`; every verification writes a
-   `VerificationEvent`. Both tables have triggers that REJECT
-   `UPDATE` and `DELETE`. This is non-negotiable. The audit invariant
-   (NFR-4) is the load-bearing security claim.
+   `VerificationEvent`. Both tables carry triggers that reject `UPDATE`
+   and `DELETE`. This is non-negotiable: the audit invariant is the
+   load-bearing security claim.
 
 4. **Context-scoped.** A token used for HEALTHCARE verification cannot
    be replayed against BANKING verification. Each
    `VerificationContext` defines its own permitted disclosure
    semantics.
 
-5. **Three disclosure levels with strict typing:**
-   - `ZERO_KNOWLEDGE` — proves "valid token exists" without revealing
-     identity. `token_id` MUST be NULL on these events. Enforced by
-     trigger.
-   - `SELECTIVE` — reveals named attributes only.
-   - `FULL` — reveals identity. Logged for audit; rate-limited.
+5. **Three disclosure levels with strict typing.**
+   - `ZERO_KNOWLEDGE` proves "a valid token exists" without revealing
+     identity. `token_id` is NULL on these events, enforced by a CHECK
+     constraint on the row.
+   - `SELECTIVE` reveals named attributes only.
+   - `FULL` reveals identity. It is logged for audit and rate-limited.
 
 6. **Succession by reference, never overwrite.** When a token is
    replaced, the new token's `predecessor_token_id` points at the old.
    The old token stays in the database with its terminal status. Lost
-   tokens are LOST forever; their data is not erased.
+   tokens stay lost; their data is not erased.
 
 7. **One ACTIVE token per individual.** Enforced by the partial unique
-   index `uq_one_active_per_person`. This is a database-level
-   guarantee, not an application convention.
+   index `uq_one_active_per_person`, a database-level guarantee, not an
+   application convention.
 
 ---
 
@@ -169,7 +185,7 @@ production-grade. The course is the occasion. The mission is bigger.
 1. **Polaris is NOT money.** A `MonetaryClaim` table does not belong in
    this schema. Identity attestation and value transfer are separate
    concerns; conflating them turns an administrative paperwork error
-   into an existential bank-balance error. If banking-on-Polaris is
+   into an existential bank-balance error. If banking on Polaris is
    ever built, it lives in a separate repository that consumes
    verification proofs over an HTTP boundary. The boundary itself is
    load-bearing.
@@ -177,7 +193,7 @@ production-grade. The course is the occasion. The mission is bigger.
 2. **Polaris is NOT an authority.** It does not decide who can vote,
    borrow, or cross a border. Those decisions are made by external
    systems that consume Polaris verification proofs. Polaris answers
-   "is this token valid for this context?" — not "should this person
+   "is this token valid for this context?", never "should this person
    be allowed to do X?"
 
 3. **Polaris is NOT a surveillance backbone.** `ZERO_KNOWLEDGE`
@@ -185,19 +201,19 @@ production-grade. The course is the occasion. The mission is bigger.
    verification graph cannot be reconstructed from `ZERO_KNOWLEDGE`
    events alone. This is intentional and architecturally enforced.
 
-4. **Polaris is NOT a CBDC pilot.** It does not solve "programmable
-   money." It solves identity, deliberately, in isolation, so that
-   programmability gravity does not accrete politically-contested
+4. **Polaris is NOT a CBDC pilot.** It does not solve programmable
+   money. It solves identity, deliberately, in isolation, so that
+   programmability gravity does not accrete politically contested
    constraints into the identity layer.
 
 5. **Polaris is NOT a key escrow system.** Private signing keys are
-   not held by the issuer post-issuance. Revocation works via the
+   not held by the issuer after issuance. Revocation works through the
    `RevocationList`, not by reissuing the token under a new key.
 
-6. **Polaris is NOT a workaround.** Every architectural decision
-   should be defensible from first principles. If a feature exists
-   only because "the v1 author did it that way," it is wrong and
-   should be rewritten or removed.
+6. **Polaris is NOT a workaround.** Every architectural decision is
+   defensible from first principles. A feature that exists only
+   because an earlier version did it that way is wrong and is
+   rewritten or removed.
 
 ---
 
@@ -208,383 +224,95 @@ fundamentally broken regardless of what tests still pass.
 
 | # | Constraint | Where enforced |
 |---|------------|----------------|
-| C1 | `VerificationEvent` and `TokenLifecycleEvent` are append-only — UPDATE and DELETE are rejected by trigger | `06_triggers.sql::reject_audit_modification()` |
+| C1 | `VerificationEvent` and `TokenLifecycleEvent` are append-only; UPDATE and DELETE are rejected by trigger | `06_triggers.sql::reject_audit_modification()` |
 | C2 | `ZERO_KNOWLEDGE` events have `token_id IS NULL` | `01_schema.sql::chk_disclosure_token_consistency` CHECK constraint + form-layer coercion |
 | C3 | At most one `ACTIVE` token per `Individual` | `01_schema.sql::uq_one_active_per_person` partial unique index |
 | C4 | Failed login increments are atomic (no TOCTOU) | `security.py::authenticate()` uses `UPDATE … SET col = col + 1 RETURNING …` |
-| C5 | CSP is `script-src 'self'` — no `'unsafe-inline'` for production scripts | `security.py::apply_security_headers()` |
+| C5 | CSP is `script-src 'self'`, with no `'unsafe-inline'` for production scripts | `security.py::apply_security_headers()` |
 | C6 | Disclosure level is enforced server-side; client cannot upgrade | `app.py::verifications_new()` coerces `token_id` to NULL for ZERO_KNOWLEDGE; the C2 CHECK constraint rejects anything else; the Atlas redacts ZK locations server-side (`polaris_checks::check_c6_atlas_redacts_zk_location`) |
-| C7 | Cryptographic algorithm metadata flows through `CryptographicAlgorithm` — never hardcoded in app code | `01_schema.sql::CryptographicAlgorithm` table |
+| C7 | Cryptographic algorithm metadata flows through `CryptographicAlgorithm`, never hardcoded in app code | `01_schema.sql::CryptographicAlgorithm` table |
 | C8 | All `/api/atlas/*` endpoints have hard caps preventing unbounded result sets | `app.py::_ATLAS_MAX_*` constants, applied as LIMITs in every Atlas query |
 | C9 | Tests for concurrency hazards use real threading, not mocks | `test_app.py::ConcurrencyTests` |
-| C10 | Identity attestation never carries spending authority | architectural — no `MonetaryClaim` table |
+| C10 | Identity attestation never carries spending authority | Structural absence: no `MonetaryClaim` table exists, pinned by `polaris_checks` |
 
 ---
 
 
 
-### Constraint lattice (v8.8)
 
-The 10 hard constraints map onto a fixed 10-node lattice — three
-pillars (expand / contract / balance) by four tiers — encoding the
-structural claim that the constraint set is COMPLETE and
-INTERDEPENDENT. Removing any constraint cascades through the others.
-See `meta/constraint-lattice.md` for the per-constraint mapping and
-the dependency walk.
+### How the constraints are checked
 
-| Lattice position | Constraint | Pillar |
-|---|---|---|
-| APEX | C10 identity ≠ money | center top |
-| EXPAND·1 | C7 algorithm metadata | right (expansive) |
-| CONTRACT·1 | C2 ZK→token NULL | left (contractive) |
-| EXPAND·2 | C5 CSP 'self' | right |
-| CONTRACT·2 | C4 atomic increment | left |
-| BALANCE·2 | C3 one ACTIVE per individual | center |
-| EXPAND·3 | C8 atlas hard caps | right (lower) |
-| CONTRACT·3 | C6 server-side disclosure | left (lower) |
-| BALANCE·3 | C1 append-only audit | center |
-| MANIFEST | C9 real-threading tests | bottom |
+C1-C10 are enforced at the schema level (triggers, partial unique
+indexes, CHECK constraints) and exercised by the DB-backed product
+suites (`test_check_constraints` and the Hypothesis property tests).
+Above the schema, the flat invariant layer
+[`polaris_checks/`](polaris_checks/) maps plain
+`check_*(repo_root) -> list[Finding]` functions to the constraints and
+to the production posture, and gates CI: `python3 -m polaris_checks.run`
+exits non-zero on any FAIL. Each check's detection correctness is itself
+tested against a broken fixture in `polaris_checks/test_checks.py`, so
+the layer is provably able to catch what it claims to catch.
+`check_c1c10_objects_resolve` fails the build if the table above names
+an enforcement object the code does not define.
 
-Adding C11 requires extending the topology (or replacing one of
-C1-C10). The lattice is complete; there is no reserved meta-slot.
+There is no separate meta-constraint. The constitution is C1-C10 and
+the vocation, nothing else. The self-monitoring apparatus that earlier
+versions ran in that role was removed at v9.55; the record is in
+CHANGELOG.md.
 
-The per-constraint mapping and the dependency walk live in
-`meta/constraint-lattice.md`. The etymology of the structural insight
-(which older frameworks it's drawn from) is in `meta/lineage.md`.
+---
 
-### How the constraints are checked (v9.55)
+## Why each constraint exists
 
-C1-C10 are enforced at the schema level — triggers, partial unique
-indexes, CHECK constraints — and exercised by the DB-backed product
-suites (`test_check_constraints`, the Hypothesis property tests). On
-top of the schema, the flat invariant layer **`polaris_checks/`** maps
-one plain `check_*(repo_root) -> list[Finding]` function to each
-constitutional constraint and gates CI (`python3 -m polaris_checks.run`
-exits non-zero on any FAIL). Each check's detection correctness is
-itself tested against a broken fixture (`polaris_checks/test_checks.py`)
-— the layer is provably able to catch the thing it claims to catch.
+**Append-only audit (C1).** A national identity system cannot
+retroactively rewrite history. The audit trail is the load-bearing
+claim that tokens were issued under the procedures the public was told
+they would be issued under. UPDATE and DELETE are rejected by trigger
+because making them application errors is not enough: a sufficiently
+motivated insider with database access could bypass an application
+check.
 
-There is no separate "meta-constraint." Earlier versions (v8.9-v9.54)
-ran a self-monitoring cognitive apparatus — a swarm of lint "ants,"
-nine "HYDRA" watchers, a "Mycelium" pheromone substrate, a "Denarius"
-economy — and named its self-check a meta-constraint (CM). v9.55 cut
-that apparatus wholesale and replaced it with `polaris_checks`. The
-job CM did (does the check layer actually fire?) is now done by the
-tested fixtures, in ~350 legible lines instead of ~18k lines of
-mythology. The constitution is C1-C10 and the Vocation; nothing else.
-
-## The architectural soul (the "why" beneath the "what")
-
-Why these constraints exist, in three sentences each.
-
-### Append-only audit (C1)
-
-A national identity system cannot retroactively rewrite history. The
-audit trail is the load-bearing claim that tokens were issued under
-the procedures the public was told they would be issued under. UPDATE
-and DELETE are rejected by trigger because making them application
-errors is not enough — a sufficiently-motivated insider with database
-access could bypass an application-layer check.
-
-### ZK token-id NULL invariant (C2)
-
-The point of `ZERO_KNOWLEDGE` is plausible deniability. If
-verification events recorded the token-id even for ZK verifications,
-the verification graph could be reconstructed by anyone with read
-access — defeating the privacy claim. The NULL invariant is enforced
-at the trigger layer because a verification event with both
-disclosure='ZERO_KNOWLEDGE' and a non-null token_id is not just an
-application bug; it's a privacy violation that should never be
+**The ZK token-id NULL invariant (C2).** The point of `ZERO_KNOWLEDGE`
+is plausible deniability. If verification events recorded the token id
+even for ZK verifications, the verification graph could be
+reconstructed by anyone with read access, defeating the privacy claim.
+The invariant is a CHECK constraint on the row because an event with
+both `disclosure_level = 'ZERO_KNOWLEDGE'` and a non-null `token_id` is
+not an application bug; it is a privacy violation that must never be
 storable.
 
-### One ACTIVE per individual (C3)
+**One ACTIVE per individual (C3).** Two simultaneously active tokens
+for the same person open a class of attacks where one token authorizes
+a transaction and the other repudiates it. The partial unique index
+resolves this in the deepest layer of the system. Two operators
+activating two reserve tokens for the same holder at the same moment
+find that exactly one of them gets a `UniqueViolation`.
 
-Two simultaneously-active tokens for the same person opens a class of
-attacks where one token is used to authorize a transaction, the other
-to repudiate it ("that wasn't me, that was the other token"). The
-partial unique index resolves this in the deepest layer of the system,
-not as an application convention. Two operators activating two reserve
-tokens for the same holder simultaneously will find that exactly one
-of them gets a `UniqueViolation`.
+**Identity is not money (C10).** The single most consequential
+architectural decision. CBDCs that conflate identity and money inherit
+programmability gravity: constraints accrete onto the identity token
+politically, until one day the system can be told "this person cannot
+buy gasoline." Polaris separates the layers. If a value system is ever
+built on top, it lives in a separate database with foreign keys that
+prove the separation rather than claim it.
 
-### Identity ≠ money (C10)
-
-The single most consequential architectural decision. CBDCs that
-conflate identity and money inherit programmability gravity:
-constraints accrete onto the identity token politically, until one
-day the system can be told "this person cannot buy gasoline." Polaris
-deliberately separates the layers. If a value system is built on top,
-it lives in a separate database with FK references that PROVE the
-separation, not just claim it.
+**C4 through C9** are the engineering discipline that keeps the four
+above true under load and under attack: an atomic failed-login counter
+so lockout cannot be raced, a content security policy with no inline
+scripts, disclosure decided on the server, bounded Atlas result sets,
+concurrency proven with real threads, and cryptography named in the
+registry rather than in code.
 
 ---
 
-## What "done" looks like for Polaris
+## Amending this document
 
-The done-list has two epochs. The v1 done-list (the SCS-230 deliverable
-arc) closed on 2026-05-09 with 12 of 15 items shipped and 3 retired
-(items 13–15, v8.27). The v2 done-list extended Polaris from "the
-schema implements the design" to "the system stands behind the
-design's claims" — the combination of substrate-level demonstrations
-(PDF Appendices E and F as code) and the open problems the report
-itself names as deferred (PDF §9). **v2 closed 2026-05-12 at 12/12 ✅
-with the v8.28 UI graduation phase** (Option 3 close-out: dashboard
-substrate tiles, `/anchors` / `/epochs` / `/federation` viewers, token
-detail v2 state section). Both epochs are listed below: v1 as the
-historical record, v2 as the closed mission.
-### v1 done-list (closed 2026-05-09)
-
-1. ✅ Schema models the full lifecycle of an identity token (achieved v1)
-2. ✅ Stored procedures cover UC-1 through UC-7 (achieved v1)
-3. ✅ Application layer enforces context-scoped verification (achieved v3)
-4. ✅ Cybersecurity controls: CSP, CSRF, rate-limit, role-based auth (achieved v4)
-5. ✅ Concurrency hazards identified and sealed with tests (achieved v6)
-6. ✅ Scales to 2M+ events with bounded API responses (achieved v6)
-7. ✅ Test coverage: 1077 Python (12 test classes incl. property + redaction-property) + 171 SQL self-tests (achieved v6/v7; growing each release)
-8. ✅ Threat model: STRIDE-categorized, every threat mapped to a control (DEVNOTES/threat-model.md)
-9. ✅ Antimeridian-spanning bbox queries (wrap-aware predicate; 11_atlas.sql)
-10. ✅ Cursor pagination on list pages (achieved v7.4 — keyset cursors on /tokens and /verifications)
-11. ✅ Property-based tests for invariants (19 Hypothesis tests on C1, C2, C3 in test_invariants_property.py)
-12. ✅ Multi-process rate limiter (Redis-backed) (achieved v7.5 — `InMemoryRateLimiter` + `RedisRateLimiter` with auto-selection)
-13. ✗ External IdP integration (OIDC) — RETIRED 2026-05-09 (out of v1 scope; not on v2; do not auto-propose)
-14. ✗ Banking-on-Polaris reference architecture (separate repo) — RETIRED 2026-05-09 (correct answer is a separate repo consuming Polaris over HTTP; tracked in `memory/deferred_items.md`; not on v2)
-15. ✗ Linux + Windows variant of the launcher — RETIRED 2026-05-09 (macOS launcher is the SCS-230 deliverable surface; cross-platform is an operational concern, not a mission item)
-
-**Note on retirement.** Items 13–15 were marked `⏸ DEFERRED` from
-2026-05-09 to v8.26, then re-classified as `✗ RETIRED` once it
-became clear (after the v2 close-out) that they were not paused
-pending a future epoch — they were outside the mission scope.
-Memory file `memory/deferred_items.md` records that they should stay
-skipped. Audit-of-record: the `DEFERRED 2026-05-09` history is
-preserved in this annotation; nothing was deleted.
-
-### v2 done-list (closed 2026-05-12 at 12/12 ✅, opened 2026-05-09)
-
-The v2 arc is **D + A** (substrate-level demonstrations + the report's
-open problems).
-
-**Substrate-level demonstrations (D — make Appendices E and F concrete):**
-
-M2-1. ✅ **Real ZK-SNARK for ZERO_KNOWLEDGE verifications** (achieved
-       v8.23 / R10-1 — `TokenStateEpoch` table is the 7th audit-of-record;
-       Plonky2 SNARK (FRI-based, post-quantum-comfortable) proves Merkle
-       inclusion bound to `(epoch_id, context_id, nonce)` public inputs;
-       Rust crate `polaris_zk/` provides the prover/verifier CLI;
-       `polaris_web/zk.py` is the subprocess wrapper; `uc11_close_epoch`
-       procedure with per-procedure advisory lock (6th catalog entry);
-       three `/api/zk/*` routes (epoch close, get, verify); 5 SQL self-
-       tests in section P, 15+ Python `ZKSnarkTests`, 3 Rust unit tests
-       (honest prover, replay, cross-epoch), 2 concurrency tests. C3+A4+B3
-       picked by VANTA at the M2-1 exploration Sanctum: transparent setup,
-       Plonky2, hybrid-Merkle reusing R10-2. **Substrate-D arc closed
-       5/5** — every primitive named in PDF Appendices E and F is now
-       in-tree or scaffolded.).
-
-M2-2. ✅ **Functional DID anchoring** (achieved v8.21 / R10-2 —
-       `AnchorBatch` table is the off-chain audit-of-record;
-       `close_anchor_batch(algorithm_id, root, proofs)` procedure
-       groups pending `BlockchainAnchor` rows by signature algorithm
-       under a per-algorithm advisory-lock (4th entry in the catalog);
-       `polaris_web/anchoring.py` Merkle helper (SHA3-256 default, sort
-       by anchor_id for publish-then-fork resistance); three Flask
-       routes (`/api/anchor/batch`, `/api/anchor/<token_id>`,
-       `/api/anchor/verify/<token_id>`) — the last one server-side
-       reconstructs the Merkle root from leaf + proof and rejects
-       tampered logs; 5 SQL self-tests in section O, 15 Python tests in
-       `AnchorBatchTests`, 2 concurrency tests for the lock contract.
-       Substrate-D arc closed 5/5 — M2-1 ZK-SNARK delivered v8.23).
-
-M2-3. ✅ **Substrate-dependency manifest** (achieved v8 —
-       `DEVNOTES/substrate.md` is the prose form; `SystemDependency` view
-       in `polaris_sql/13_substrate.sql` is the queryable mirror; 27 rows
-       across 7 layers (crypto, network, storage, runtime, standards,
-       hardware, human); `SubstrateManifestTests` confirms the prose and
-       SQL forms agree).
-
-M2-4. ✅ **GenomicAnchor schema (Appendix F.1)** (achieved v8 — table with
-       three CHECK constraints: hex-only, algorithm-specific length, and
-       genomic-alphabet refusal; 11 tests in `GenomicAnchorTests`).
-
-M2-5. ✅ **QuantumObserverBinding scaffold (Appendix F.2).** Schema
-       scaffold with explicit DEFERRED markers on functional fields, and
-       a rationale doc explaining what the binding becomes when
-       quantum-observer hardware is real. Acceptance: table exists,
-       comments explain the deferred state, schema does not block the
-       eventual functional implementation.
-
-**The PDF's open problems (A — close the loops §9 explicitly opens):**
-
-M2-6. ✅ **Multi-signature transitional state** (achieved v8.18 /
-       R11-1 — `TokenSignature` M:N table with UNIQUE composite key
-       and deprecation_after_signed CHECK; partial index on active
-       set; two triggers — `enforce_token_has_active_signature`
-       (≥ 1 active per token) and `enforce_token_signature_immutability`
-       (write-once except for one-way deprecation_date);
-       `uc6_migrate_algorithm` procedure with `pg_advisory_xact_lock`
-       on token_id for C9 correctness; UC-1 and UC-9 extended to
-       insert TokenSignature alongside the new IdentityToken; backfill
-       block for v1 sample tokens; verification path + dashboard
-       Post-Quantum panel read from TokenSignature; 16 tests in
-       `MultiSignatureTests` + 3 in `ConcurrencyTests` (per-token race,
-       verify+migrate snapshot consistency, cross-token parallelism)
-       + 5 SQL self-tests in section N; `DEVNOTES/ships/multi-sig-migration.md`
-       documents the adversary walk, the verification consistency
-       model, the no-auto-derivation argument, and the
-       issuer-trust-concentration triad positioning. Closes the
-       cryptographic-diversity leg of PDF §9 alongside R11-6 ✅;
-       M2-8 federation remains the unbuilt third leg.)
-
-M2-7. ✅ **Catastrophic-loss recovery — UC-9** (achieved v8.17 /
-       R11-2 — `RecoveryRequest` table with four CHECK constraints
-       encoding the mechanism: 48h cool-down minimum, three-channel
-       OOB verification required for APPROVED, decided_at after
-       cool-down, approver ≠ requester; partial unique index
-       `uq_one_pending_recovery_per_individual` for one PENDING per
-       individual; two-phase procedures `uc9_initiate_recovery`
-       (operator) + `uc9_complete_recovery` (admin only, RAISE
-       EXCEPTION enforced); `pg_advisory_xact_lock` on
-       claimed_individual_id for C9 correctness; APPROVED branch
-       transitions non-terminal tokens to LOST + publishes each to
-       RevocationList + issues new ACTIVE token with
-       predecessor_token_id=NULL + tags all lifecycle rows with
-       `[RECOVERY:<id>]`; three Flask routes + templates;
-       15 CatastrophicLossRecoveryTests + 2 ConcurrencyTests; 5 SQL
-       self-tests in section M; `DEVNOTES/ships/recovery-ceremony.md`
-       documents the adversary walk, mechanism design, and the
-       administrative-vs-operational grace-period framing. The third
-       leg of the "schema doesn't weaponize itself against the
-       holder" triad (entry R11-4, exit R11-6, recovery this).)
-
-M2-8. ✅ **Issuer federation model** (achieved v8.22 / R11-3 —
-       `AgencyTrustAttestation` table is the 6th audit-of-record;
-       `enforce_attestation_immutability` trigger enforces one-way
-       revocation; `uc10_attest_trust` + `uc10_revoke_attestation`
-       procedures with per-attesting-agency advisory lock (5th catalog
-       entry); explicit-only federation (NO transitive trust);
-       verification flow gates SUCCESS outcomes by `_federation_trust_holds`
-       check; `/api/federation/attest` + `/api/federation/revoke`
-       routes (admin); 6-row seed graph explains existing demo
-       verifications; 15 `IssuerFederationTests` + 2 concurrency tests
-       + 5 SQL self-tests in section P. Closes the issuer-trust-
-       concentration triad to 3/3 (after R11-1 cryptographic diversity
-       and R11-6 constitutional limits).
-
-M2-9. ✅ **Tiered enrollment / population coverage** (achieved v8.16 /
-       R11-4 — `EnrollmentStatusEvent` table with 5-status CHECK enum;
-       `IndividualCurrentEnrollment` view returns latest event per
-       individual with COALESCE fallback to `NOT_ENROLLED`;
-       `seed_default_enrollment_status` trigger materializes the
-       default state on every new Individual; append-only invariant
-       extended to the new table; `civic_enrollment_summary` function
-       returns per-jurisdiction × status counts only — per-individual
-       NOT_ENROLLED enumeration deliberately not first-class;
-       10 tests in `TieredEnrollmentTests` + 5 SQL self-tests in
-       section L; `DEVNOTES/ships/tiered-enrollment.md` documents the
-       asymmetric design (EXEMPT frictionless, mass-NOT_ENROLLED
-       enumeration deliberate) and the PDF §9 anchoring.)
-
-M2-10. ✅ **Compulsion resistance — duress codes (§9.5)** (achieved
-       v8.24 / R11-5 — `IdentityToken.duress_code_hash` Werkzeug scrypt
-       commitment; `DuressEvent` table is the 8th audit-of-record
-       (append-only via `reject_audit_modification`);
-       `uc12_record_duress` procedure with no advisory lock (pure
-       append, no contention); `_check_and_record_duress` helper uses
-       `werkzeug.security.check_password_hash` for constant-time
-       comparison; the verification flow proceeds identically to the
-       coercer (R2 audit refinement) while silently writing the
-       DuressEvent; `/api/duress/events` (admin/auditor) is the OOB
-       dashboard; `/verifications` operator list does NOT join to
-       DuressEvent (R6 anti-revealing posture); 5 SQL self-tests in
-       section R + 13 `DuressCodeTests`. **The v2 mission-closer —
-       v2 done-list = 12/12 ✅.**).
-
-M2-11. ✅ **Issuer-discretion bounds** (achieved v8.15 / R11-6 —
-       `IssuerDiscretionPolicy` table for per-agency overrides;
-       `uc8_revoke_token` stored procedure enforces a rolling N%/W-day
-       cap with optional higher-authority co-signer; system defaults
-       N=5.00% / W=30 days set via `ALTER DATABASE` GUCs;
-       `enforce_revocation_velocity_bound` belt-and-suspenders trigger
-       rejects raw UPDATEs; `pg_advisory_xact_lock` per agency_id
-       serializes concurrent boundary races for C9 correctness;
-       11 tests in `IssuerDiscretionBoundsTests` + 2 in
-       `ConcurrencyTests` + 7 SQL self-tests in section K;
-       `DEVNOTES/ships/issuer-discretion.md` documents the policy choices,
-       adversary walk, and PDF §9 anchoring).
-
-M2-12. ✅ **Verification-graph redaction proof** (achieved v8 —
-       `meta/redaction-proof.md` documents the adversary model and the
-       five enumerated side-channels; `test_redaction_property.py`
-       instantiates a `UniformGuessAdversary` against ZK-only sequences
-       and confirms the privacy bound, plus a `TemporalCorrelationAdversary`
-       and `SpatialUniquenessAdversary` that prove CE-1 and CE-2 succeed
-       — the documented operational limitations the schema cannot
-       mitigate; 6 tests in `RedactionPropertyTests`).
-
-Items M2-1..M2-5 are the substrate arc (D); M2-6..M2-12 are the open-
-problems arc (A). Roadmap sequencing in `ROADMAP.md` (R10-* for D items,
-R11-* for A items). Risk classes range from LOW (M2-3, M2-5, M2-12) to
-HIGH (M2-1: cryptographic rabbit hole; M2-8: cross-jurisdiction trust
-model). The agent should treat MEDIUM/HIGH items as propose-and-wait
-unless the user has explicitly authorized autonomous execution for the
-specific item.
-
-### Arcs D / E / F / G — the cognitive apparatus (RETIRED v9.55)
-
-Between 2026-05-12 and 2026-05-14, Polaris grew a large self-monitoring
-apparatus: **Arc D** (the "HYDRA" host + a cohort of read-only
-watchers), **Arc E** (the "Mycelium" pheromone swarm plus a Roman
-"legion" / "Civitas" organizational metaphor), **Arc F** (the
-"Denarius" swarm-internal economy), and **Arc G** (a "Roman Empire"
-expansion). It was roughly 18k lines of code plus a comparable mass of
-narrative, and it observed C1-C10 without ever being imported by the
-product.
-
-**v9.55 cut all four arcs wholesale** (CHANGELOG v9.50–v9.55). The job
-they nominally did — confirming the constitutional invariants hold — is
-now done by the flat, tested `polaris_checks/` layer in ~350 legible
-lines. The apparatus packages (`polaris_swarm/`, `polaris_hydra/`,
-`polaris_foresight/`), their scripts, their mythology docs, and the
-`Pheromone` schema were all deleted. This was authorized as a
-de-larping pass: the apparatus had become a self-referential web that
-made Polaris read as theater rather than as the serious reference
-implementation it is. Legibility is itself an anti-coercion property —
-a system whose guarantees you can read in an afternoon is one you can
-trust without taking it on faith — so the cut strengthens the Vocation
-rather than weakening it.
-
-### Arc B — Production deployment (active multi-phase, opened 2026-05-14)
-
-Production-readiness arc. Polaris was, before v8.77,
-**architecturally rich but productionally thin**: cryptography,
-schema, and audit-of-record were production-grade, but the
-deployment story was the dev launcher.
-A reference implementation that no operator can deploy is not
-actually a reference. Arc B closes that gap.
-
-**Phase 1 (✅ shipped 2026-05-14 as v8.77):** TLS via Caddy
-(Let's Encrypt auto), file-mounted secrets (Docker secrets at
-`/run/secrets/`), structured `/api/health` JSON with per-component
-checks, multi-stage non-root Dockerfile.prod, idempotent
-`polaris-deploy.sh` with rollback-on-fail, manifest-verified
-`polaris-backup.sh`, secret-rotation tooling, and the operator
-runbook + secrets primer. **G27** (TLS required), **G28** (no
-sensitive env-var literals in prod compose), **G29** (structured
-health JSON) added.
-
-**Phase 2 (⬜ deferred):** WebAuthn + hardware-token operator auth;
-audit-log archive policy (S3 / Glacier rotation); multi-instance
-scaling (pgbouncer + gunicorn tuning + Redis cluster);
-`polaris-restore.sh` recovery-from-backup with validation.
-
-**Phase 3 (⬜ deferred):** Multi-region deployment patterns;
-disaster-recovery runbook (RPO/RTO targets); SOC 2 readiness
-checklist.
-
-**Done-list:** R16-1..R16-10 (Phase 1) all ✅. R16-* sequence in
-`ROADMAP.md`.
-
-For the strategic record, per-item rationale, and what Phase 2 / 3
-open conditions look like, see **`meta/arc-b-production.md`**.
-For the operator-facing runbook, see `docs/operator/OPERATIONS.md`
-and `docs/operator/SECRETS.md`.
-
+- The freeze-line section is never edited. Dated notes may be appended
+  beneath its heading; they alter nothing below them.
+- A row of the constraints table changes only together with the object
+  that enforces it and the check that pins it.
+- Every amendment is recorded in [CHANGELOG.md](CHANGELOG.md) in the
+  ship that makes it.
+- The project record (the v1 and v2 done-lists, the retired arcs, the
+  production-deployment phase log) lives in
+  [DEVNOTES/record.md](DEVNOTES/record.md), not here.

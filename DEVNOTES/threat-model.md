@@ -20,7 +20,7 @@ For each, threats are listed with a short identifier (T-XX), the
 attack scenario, the affected component, and the control(s) that
 address it.
 
-This document advances `MISSION.md` done-list item 8 from 🟡 to ✅.
+This document closed v1 done-list item 8 (the record is in [`record.md`](record.md)).
 
 ---
 

@@ -1,8 +1,7 @@
 # docs/paper/ — academic write-up
 
-The formal academic write-up of Polaris, in LaTeX + rendered PDF.
-Submitted as the SCS-230 capstone project; intended-readership is
-academic + technical reviewers.
+The formal academic write-up of Polaris, in LaTeX + rendered PDF, for
+academic and technical reviewers. Provenance is in [NOTICE](../../NOTICE).
 
 ---
 

@@ -5,6 +5,41 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.195 — 2026-09-02 (P1.13 ship 2: the constitution carries only the constitution)
+
+MISSION.md is rewritten from 589 lines to 318 so that it holds purpose,
+vocation, C1-C10 with enforcement objects that resolve, the freeze line,
+the permanent non-goals and an amendment rule, and nothing else.
+
+- **The freeze-line section is untouched** below its heading. One dated,
+  additive status note is appended directly under the heading: the
+  abandonment clause fired at the v9.40 terminus (docs/THESIS.md records the
+  strong claim as retired), and the external trigger the section requires
+  occurred on 2026-08-31 (ROADMAP.md's decision record, CHANGELOG v9.158). The
+  active arc is national deployment; the constitution is a hard gate through it.
+- **Moved, not deleted.** The v1 and v2 done-lists, the retired Arc D/E/F/G
+  narrative and the Arc B phase log (lines 321-589) now live verbatim in
+  `DEVNOTES/record.md`, with its reader named in the first sentence; the only
+  edits are two citations of files that no longer exist
+  (`memory/deferred_items.md`, `meta/arc-b-production.md`) and a closing
+  note that Arc B's deferred phases have since shipped. `docs/README.md`,
+  `docs/SEED_DATA.md` and the DEVNOTES index point at the new home.
+- **Cut from the constitution:** the v8.8 constraint-lattice section (it
+  cited `meta/lineage.md`, which does not exist, and described a topology no
+  check enforces), the v9.55 apparatus retrospective (CHANGELOG has it), the
+  course framing (provenance lives in NOTICE, and the same paragraph is
+  removed from ARCHITECTURE-OVERVIEW.md, docs/paper/README.md and GLOSSARY.md),
+  and every M2-* / R11-* ticket label in the vocation's primitive list, which
+  now names the primitives in plain words.
+- **Corrected in place:** the constitution no longer calls SLH-DSA a
+  fallback signer, no longer says C2 is enforced by trigger (it is a CHECK
+  constraint), and no longer cites the paper's NFR-4 label. Prose outside the
+  frozen section carries no em-dashes.
+- **Added:** a short "Why each constraint exists" section (C1, C2, C3, C10
+  kept from the old text; C4-C9 summarized in one sentence) and the amendment
+  rule at the end. Both `landing.html` deep links (`#vocation`,
+  `#the-hard-constraints-do-not-violate`) resolve unchanged.
+
 ## v9.194 — 2026-09-02 (P1.13 ship 1: every stated count and constitution object is true, and stays true)
 
 The first ship of the presentation pass. Nothing is deleted; every number and

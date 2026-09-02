@@ -126,7 +126,7 @@ the record of the removal must include:
 - A note explaining why the substrate is no longer needed
 - A migration that DROP TABLEs `QuantumObserverBinding`
 - Update to this document marking it CLOSED-REMOVED
-- Update to `MISSION.md` v2 done-list (currently lists M2-5 as
-  "scaffold shipped"; would move to "removed")
+- Update to the v2 done-list in [`record.md`](record.md) (currently lists
+  M2-5 as "scaffold shipped"; would move to "removed")
 
 The default action is to leave the substrate in place.

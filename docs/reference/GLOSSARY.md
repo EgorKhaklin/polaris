@@ -99,7 +99,7 @@ core state-bearing object.
 **Token value** — the canonical token serial. `IdentityToken.token_value`,
 UNIQUE.
 
-**UC-N** — Use Case N. Defined in the original SCS-230 report.
+**UC-N** — Use Case N. Defined in the project report ([docs/paper/](../paper/README.md)).
 UC-1 (Issue), UC-3 (Bind device), UC-4 (Revoke), UC-5 (Report lost),
 UC-6 (Lookup), UC-7 (Succession), UC-8 (Multi-sig migration),
 UC-9 (Recovery), UC-10 (Federation), UC-11 (ZK epoch),

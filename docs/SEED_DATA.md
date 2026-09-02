@@ -159,7 +159,7 @@ operator-visible `/verifications` doesn't surface duress; the
 ## v2 mission status
 
 **12/12 ✅** — every PDF §9 open problem structurally addressed. See
-`MISSION.md` for the full done-list. Both PDF §9 triads complete:
+[`DEVNOTES/record.md`](../DEVNOTES/record.md) for the full done-list. Both PDF §9 triads complete:
 
 - Holder-protection: R11-4 entry + R11-6 exit + R11-2 recovery
 - Issuer-trust concentration: R11-1 crypto diversity + R11-6

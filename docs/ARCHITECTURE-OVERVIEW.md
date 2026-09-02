@@ -28,12 +28,6 @@ The phrase "by construction" appears throughout. It is shorthand for:
 the system cannot be operated in a way that violates the constraint,
 because the constraint is enforced before any application code runs.
 
-Polaris is built for SCS-230 (Database Management Systems) at Seton
-Hill University, by Egor Khaklin (VANTA). The version trajectory is
-v1 (course assignment: schema + Flask) through the current reference
-implementation: the product plus a flat invariant-check layer
-(`polaris_checks/`).
-
 ---
 
 ## §II. What Polaris is NOT

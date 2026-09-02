@@ -275,12 +275,14 @@ test scripts have to remember.
 
 ## Docs / release
 
-### Stale numbers in MISSION.md
+### Stale numbers in documents
 
-Symptom: MISSION.md done-list item 7 says "134 Python tests"; reality
-is 200+. The number was correct in v6/v7 and then drifted across many
-releases without anyone updating the doc. There is no auto-updater;
-verify counts against the actual suites before editing the line.
+Symptom: a done-list item once said "134 Python tests" while reality was
+200+; the number was correct in v6/v7 and then drifted across many
+releases. Since v9.194 `check_stated_counts` and
+`check_table_count_matches_doc` re-measure the headline counts on every
+run; test-suite totals are still measured by hand and stamped with the
+version (README's "Verified, not asserted" table is canonical).
 
 ### "is this ready to ship?" checklists, scattered
 
