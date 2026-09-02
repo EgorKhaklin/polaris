@@ -5,6 +5,40 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.196 — 2026-09-02 (P1.13 ship 3: the ledger opens with what is open, and the roadmap's shipped rows shrink to their pins)
+
+- **docs/PRODUCTION-READINESS.md inverted.** It now opens with its reader and
+  its job, then the status line, then the eight decisions only a deploying
+  organization can make, each paired with what ships today for it (the custody
+  drivers, the replication runbook, the at-rest posture, the S3 archive and the
+  monthly drill, the pager wiring, the pseudonymization mechanism, the red-team
+  pack). The operator-gated caveats that were buried inside closed bullets
+  (HSM/KMS custody, the non-root Caddy edge, one postgres replica, the offsite
+  bucket and schedule, the Alertmanager backend and pager URL) live in that
+  table or in the two openly carried limits. A new section says plainly that
+  the ledger never tracked deployment scale and points at the roadmap phases
+  that do. The 250 lines of per-wave narrative are compressed to a claim /
+  shipped / pinned-by table (37 rows, every check name verified to exist). The
+  unreproducible 49/45/10 assessment counts and the uncitable v9.101
+  assessment reference are gone. The closing rule no longer implies that
+  checked boxes make the system production-ready; the status line changes only
+  when the eight decisions are recorded for a named deployment and the P1 exit
+  gate is met.
+- **ROADMAP.md inventory regenerated at v9.196.** "Have" covers what shipped
+  through P1.10 (custody drivers, four deployment paths, the sealed secrets
+  store, tracing, SBOM and provenance, the coverage floor, the monthly DR
+  drill); "Do not have" drops HSM/KMS custody and SBOM/provenance (closed) and
+  gains the honest residuals (no hardware HSM in CI, no published registry
+  images, one postgres replica); the P0 carrying-debts paragraph is empty and
+  says so. The P0 exit gate reads as met (v9.175, P0.11 `[EXT]`).
+- **Every `[x]` row collapsed** to its pinning check, keeping in-row only the
+  clauses that are deferrals or open follow-ups: P0.6's image-signing
+  deferral, P0.7's sibling-path witness follow-up, P1.2's scope note and
+  limits, P1.4's window operations, P1.5's one-replica and no-registry limits.
+  P0.4 names its four checks; P0.3 names its policy file and CHANGELOG range.
+  The descriptions of finished work those cells carried remain in the
+  CHANGELOG entries the item column's version stamp points at.
+
 ## v9.195 — 2026-09-02 (P1.13 ship 2: the constitution carries only the constitution)
 
 MISSION.md is rewritten from 589 lines to 318 so that it holds purpose,
