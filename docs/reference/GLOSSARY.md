@@ -293,32 +293,17 @@ Referrer-Policy, Permissions-Policy, Cross-Origin) at the edge.
 **Docker secrets** — Docker's file-mounted secret mechanism. In the
 production stack, secrets are mounted at `/run/secrets/<name>` from
 the host filesystem (`polaris_web/secrets/<name>` mode 0600). The
-app reads them via the `*_FILE` env-var convention (G28).
+app reads them via the `*_FILE` env-var convention.
 `POLARIS_SECRET_KEY_FILE` and `POLARIS_DB_PASSWORD_FILE` are the
 two file-mounted secrets in the prod stack.
 
 **File-mounted secret** — a credential stored on the host
 filesystem (mode 0600) and bind-mounted into a container at
 `/run/secrets/<name>`. The app reads the secret from the file
-instead of from an environment variable. Enforced by G28. The
+instead of from an environment variable, enforced by a check. The
 secret never appears in `docker inspect`, `ps -e`, or container
 logs.
 
-**G27 (TLS required)** — Production deployment requires TLS. The
-Caddyfile or equivalent reverse-proxy with TLS must be present in
-any production-targeted deploy. The Caddyfile lives in
-`polaris_web/`. Added v8.77.
-
-**G28 (no env-secrets in prod)** — Sensitive secrets do not appear
-as environment-variable literals in `docker-compose.prod.yml`.
-Production uses file-mounted Docker secrets via the `*_FILE`
-env-var convention. Added v8.77.
-
-**G29 (structured /api/health)** — The `/api/health` endpoint
-returns structured JSON with `status` ∈ {`healthy`, `degraded`,
-`unhealthy`}, `version`, `uptime_seconds`, `checks` (database /
-redis / zk_binary / disk), and `timestamp`. HTTP 200 on
-healthy/degraded; 503 on unhealthy. Added v8.77.
 
 **Let's Encrypt** — the certificate authority Caddy uses to
 auto-provision TLS certificates via the ACME HTTP-01 challenge.
@@ -348,43 +333,7 @@ the password+session model for high-privilege roles.
 
 ---
 
-## Governance & meta
-
-**DEFERRED** — a threat in `DEVNOTES/threat-model.md` whose
-mitigation is acknowledged but not yet implemented. Distinct from
-ACCEPTED (a threat the system explicitly tolerates).
-
-**Done-list** — the checklist in MISSION.md that defines what
-"done" means for Polaris. v1 closed 2026-05-09; v2 closed
-2026-05-12 at 12/12 ✅.
-
-**G-guards** — structural enforcement guards in the test suite that
-prevent drift. G27-G29 cover production deployment (TLS in prod,
-no env-secrets in prod, structured /api/health). Each guard names
-one invariant that a test mechanically enforces.
-
-**Larping** — a recurring failure mode VANTA flagged early on:
-substituting feelings of significance for actual output. Tracked
-in `DEVNOTES/style.md`. Standing instruction: name this pattern
-when it appears.
-
-**Mission** — the constitution defined in `MISSION.md`. What
-Polaris is, what it isn't, and the 10 hard constraints.
-
-**Override pattern** — a pattern (#14: Workaround Risk; recorded
-in `DEVNOTES/style.md`) describing how a quick fix can mask the
-need for a real fix.
-
-**Pattern** — a recurring shape recorded in `DEVNOTES/style.md`.
-Examples: #14 Workaround Risk, #19 Clarity, #21 Closure, #23
-Empirical Iteration.
-
-**Roadmap** — the prioritized list of next-version items in
-`ROADMAP.md`. Items reference mission, effort, and acceptance.
-
-**Semantic memory** — the DEVNOTES files (`concurrency.md`,
-`atlas-scaling.md`, `known-gotchas.md`, `style.md`,
-`threat-model.md`). Captures stable facts about the system.
+## Threat modelling
 
 **STRIDE** — Microsoft's threat-modeling framework: Spoofing,
 Tampering, Repudiation, Information Disclosure, Denial of service,

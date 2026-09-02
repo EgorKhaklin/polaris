@@ -2176,6 +2176,48 @@ def check_helm_chart_version_current(root: pathlib.Path) -> list[Finding]:
 
 
 # ---------------------------------------------------------------------------
+# API documentation coverage — every /api/* route in app.py has a heading in
+# docs/reference/API.md, and every /api/* heading there names a real route.
+# v9.193 shipped six undocumented routes and two documented routes that did
+# not exist; an integrator reading the reference could not tell which.
+# ---------------------------------------------------------------------------
+def _norm_api_path(path: str) -> str:
+    return re.sub(r"<[^>]*>", "<>", path.strip().rstrip("/"))
+
+
+def _api_routes_in_app(app_src: str) -> set[str]:
+    return {_norm_api_path(m) for m in re.findall(r"@app\.route\('(/api/[^']*)'", app_src)}
+
+
+def _api_routes_in_doc(doc: str) -> set[str]:
+    found: set[str] = set()
+    for heading in re.findall(r"^#{2,4} (.+)$", doc, re.M):
+        for path in re.findall(r"`(?:GET|POST|PUT|PATCH|DELETE) (/api/[^`]+)`", heading):
+            found.add(_norm_api_path(path))
+    return found
+
+
+def check_api_routes_documented(root: pathlib.Path) -> list[Finding]:
+    app_src = _read(root, "polaris_web/app.py")
+    doc = _read(root, "docs/reference/API.md")
+    if not app_src or not doc:
+        return _fail("api_routes_documented", "polaris_web/app.py or docs/reference/API.md is missing")
+    real = _api_routes_in_app(app_src)
+    documented = _api_routes_in_doc(doc)
+    if not real:
+        return _fail("api_routes_documented", "no /api/* routes found in app.py")
+    missing = sorted(real - documented)
+    phantom = sorted(documented - real)
+    if missing:
+        return _fail("api_routes_documented",
+                     f"{len(missing)} /api route(s) have no heading in docs/reference/API.md: {', '.join(missing)}")
+    if phantom:
+        return _fail("api_routes_documented",
+                     f"docs/reference/API.md documents route(s) that do not exist: {', '.join(phantom)}")
+    return _ok("api_routes_documented", f"all {len(real)} /api routes are documented and no phantom route is")
+
+
+# ---------------------------------------------------------------------------
 # Launcher currency — the macOS launcher (the SCS-230 deliverable surface) must
 # track the real stack, not drift. Pin the three properties that went stale: it
 # installs native deps from requirements.txt (not a hardcoded list that misses
@@ -4111,6 +4153,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_stated_counts,
     check_c1c10_objects_resolve,
     check_helm_chart_version_current,
+    check_api_routes_documented,
 ]
 
 

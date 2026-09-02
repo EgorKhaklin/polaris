@@ -3719,3 +3719,19 @@ def test_helm_chart_version_check_fails_on_stale_app_version(tmp_path):
     assert checks.check_helm_chart_version_current(tmp_path)[0].level == "OK", "must PASS when the chart tracks the version"
     (tmp_path / "deploy/helm/polaris/Chart.yaml").write_text('apiVersion: v2\nname: polaris\nappVersion: "9.186"\n')
     assert checks.check_helm_chart_version_current(tmp_path)[0].level == "FAIL", "must FAIL when the chart lags the version"
+
+
+def test_api_routes_documented_check_fails_in_both_directions(tmp_path):
+    (tmp_path / "polaris_web").mkdir(); (tmp_path / "docs/reference").mkdir(parents=True)
+    app = "@app.route('/api/health')\ndef h(): pass\n@app.route('/api/anchor/<int:token_id>')\ndef a(t): pass\n"
+    doc = "## Health\n\n### `GET /api/health`\n\n### `GET /api/anchor/<token_id>`\n"
+    (tmp_path / "polaris_web/app.py").write_text(app)
+    (tmp_path / "docs/reference/API.md").write_text(doc)
+    assert checks.check_api_routes_documented(tmp_path)[0].level == "OK", "converters and parameter names must not matter"
+
+    (tmp_path / "polaris_web/app.py").write_text(app + "@app.route('/api/metrics')\ndef m(): pass\n")
+    assert checks.check_api_routes_documented(tmp_path)[0].level == "FAIL", "must FAIL when a route is undocumented"
+
+    (tmp_path / "polaris_web/app.py").write_text(app)
+    (tmp_path / "docs/reference/API.md").write_text(doc + "\n### `POST /api/tokens/new`\n")
+    assert checks.check_api_routes_documented(tmp_path)[0].level == "FAIL", "must FAIL when the doc names a route that does not exist"

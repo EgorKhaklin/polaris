@@ -1,12 +1,20 @@
-# API.md — endpoint reference
+# API.md: endpoint reference
 
-Polaris exposes two API surfaces: the HTML routes (server-rendered
-operator UI) and the JSON API (`/api/...`). This document covers the
-JSON API; HTML routes are documented in their templates and in
-`README.md`.
+**Reader:** an integrator or operator calling Polaris over HTTP, and the
+assessor checking what each endpoint exposes. **Job:** the contract of
+every `/api/*` route, the health and metrics surfaces, the rate limits,
+and the error shape. `check_api_routes_documented` fails the build when
+a route exists that this file does not describe, or this file describes a
+route that does not exist.
 
-All `/api/*` endpoints except `/api/health` require authentication
-via the session cookie established by `POST /login`.
+Polaris exposes two surfaces: the HTML routes (the server-rendered
+operator UI, listed in [ARCHITECTURE-OVERVIEW.md §XII](../ARCHITECTURE-OVERVIEW.md))
+and the JSON API under `/api/`. Every `/api/*` endpoint requires the
+session cookie established by `POST /login` except the health probes
+(`/api/health`, `/api/health/live`, `/api/health/ready`) and the two
+metrics surfaces (`/api/metrics`, `/metrics`), which are meant for
+probes and scrapers on an operator-internal network and must be
+restricted at the edge in production.
 
 ---
 
@@ -47,19 +55,20 @@ Invalidates the session.
 **No authentication required.** Consumed by Caddy's upstream
 health check, load-balancer probes, and external uptime monitors.
 
-Structured JSON contract (G29 / v8.77 / Arc B Phase 1):
+Structured JSON contract:
 
 ```json
 {
   "status": "healthy",
-  "version": "8.77",
+  "version": "<the shipped version>",
   "uptime_seconds": 3600,
   "checks": {
-    "database": {"status": "healthy", "latency_ms": 4, "table_count": 25},
+    "database": {"status": "healthy", "latency_ms": 4, "table_count": 29},
     "redis":    {"status": "healthy", "backend": "redis", "latency_ms": 1},
     "zk_binary": {"status": "healthy", "path": "/opt/polaris/zk", "version": "0.2.0"},
     "disk":     {"status": "healthy", "free_gb": 42.7, "used_pct": 23.1},
-    "atlas_cache": {"status": "healthy", "entries": 8, "hits": 142, "misses": 23}
+    "atlas_cache": {"status": "healthy", "entries": 8, "hits": 142, "misses": 23},
+    "custody": {"status": "healthy", "driver": "file", "key_id": "..."}
   },
   "timestamp": "2026-05-14T12:34:56.789Z"
 }
@@ -70,7 +79,7 @@ Structured JSON contract (G29 / v8.77 / Arc B Phase 1):
 | Field | Type | Meaning |
 |---|---|---|
 | `status` | string | Overall = worst per-component status. One of `healthy` / `degraded` / `unhealthy` |
-| `version` | string | `POLARIS_VERSION` constant in `app.py` |
+| `version` | string | The shipped version, from `polaris_web/__version__.py` |
 | `uptime_seconds` | int | Seconds since the Python module was imported |
 | `checks` | object | Per-component status reports (see below) |
 | `timestamp` | string | ISO 8601 UTC with millisecond precision and `Z` suffix |
@@ -84,6 +93,7 @@ Structured JSON contract (G29 / v8.77 / Arc B Phase 1):
 | `zk_binary` | binary exists, executable, `--version` returns within 2s | binary missing, not executable, or `--version` timed out | (not used today; ZK absence is degraded) |
 | `disk` | <85% used AND >5GB free | <85% used but <5GB free, OR >85% used | <500MB free |
 | `atlas_cache` | always healthy (informational only) | n/a | n/a |
+| `custody` | real PQC off (custody not required), or real PQC on and the custody driver loaded (driver and key id reported) | real PQC on with no persistent key (ephemeral signing) | the custody backend failed to load; issuance would fail |
 
 `atlas_cache` does NOT contribute to the overall status — it's
 preserved for backwards compatibility with operational
@@ -98,9 +108,48 @@ dashboards that were built against the v7.5 contract.
 **Tested by:** the health-endpoint tests in
 `polaris_web/test_app.py`.
 
-**Operator guidance:** see
-[`docs/operator/OPERATIONS.md` § Monitoring](../operator/OPERATIONS.md#monitoring--alerting)
-for the recommended alert thresholds.
+**Operator guidance:** the shipped alert rules are in
+[`deploy/observability/polaris-alerts.yml`](../../deploy/observability/polaris-alerts.yml),
+with one runbook per alert in [RUNBOOKS.md](../operator/RUNBOOKS.md).
+
+### `GET /api/health/live`
+
+**No authentication required.** The liveness probe: is this process
+alive and answering? It touches no external dependency, so a database
+blip cannot trigger a restart storm. Always `200` with
+`{"status": "alive", "version": ..., "uptime_seconds": ...}` unless the
+worker is wedged, in which case it does not answer at all, which is
+what an orchestrator should act on. The container `HEALTHCHECK` and the
+Kubernetes liveness probe use this route.
+
+### `GET /api/health/ready`
+
+**No authentication required.** The readiness probe: can this instance
+serve traffic now? Runs the same dependency checks as `/api/health` and
+returns the same payload; `503` when a critical dependency is down, so an
+orchestrator stops routing to this instance without restarting it. The
+Kubernetes readiness probe uses this route.
+
+---
+
+## Observability
+
+### `GET /metrics`
+
+**No authentication required; restrict at the edge.** The Prometheus
+text-format exposition: request counts by route, method and status,
+latency histograms, per-agency issuance and verification counters, quota
+refusals, the `polaris_duress_events_total` counter that pages, and
+`polaris_app_info` with the version. Aggregated across every gunicorn
+worker. This is the surface the shipped alert rules scrape.
+
+### `GET /api/metrics`
+
+**No authentication required; restrict at the edge.** The same
+in-process counters as JSON for `curl | jq`: `request_rate_per_minute`,
+`error_rate_per_minute`, `auth_failures_per_minute`,
+`duress_events_total`, `uptime_seconds`. Prometheus scrapes `/metrics`;
+this route exists for an operator at a shell.
 
 ---
 
@@ -113,8 +162,10 @@ awareness page. All endpoints take a `bbox` query parameter:
 Antimeridian-spanning bboxes (where `min_lon > max_lon`) are
 supported; they cover `[min_lon, 180] ∪ [-180, max_lon]`.
 
-All endpoints have hard caps (constraint C8). Responses past the cap
-are silently truncated; the caller cannot bypass.
+Result sets are bounded (constraint C8): the list endpoints (clusters,
+points, events) carry `_ATLAS_MAX_*` LIMITs, the timeline is capped at
+240 buckets, subject search at 20 rows; the remaining endpoints return
+aggregates. Responses past a cap are truncated; the caller cannot raise it.
 
 ### `GET /api/atlas/clusters`
 
@@ -210,6 +261,36 @@ counters and current cache size.
 
 ---
 
+### `GET /api/atlas/subjects/search`
+
+**Roles:** admin, auditor. Typeahead for the subject-focus picker.
+`q` (string, at least two characters) matches legal names with `ILIKE`;
+returns `{"results": [...]}` with at most 20 rows.
+
+### `GET /api/atlas/subject`
+
+**Roles:** admin, auditor; audit-logged. `individual_id` (int) selects
+one subject; the response carries that subject's located verification
+events for the focused map view. ZERO_KNOWLEDGE verifications are never
+plotted: they are returned only as a withheld count, so even the
+investigator cannot place them (constraint C6).
+
+---
+
+## Token export
+
+### `GET /api/tokens/<id>/export`
+
+**Login required; audit-logged.** Downloads everything the operator may
+already see on the token-detail page as one JSON file: the token, its
+holder, its lifecycle events, its verification events and its signature
+rows. It is an export of an existing view, not new access: the duress
+hash is reduced to a boolean and signature and key bytes are dropped.
+ZERO_KNOWLEDGE verifications carry no `token_id`, so a token's export
+never contains one.
+
+---
+
 ## Verification API (use cases UC-1 through UC-8)
 
 Each use case is reachable through the operator UI (HTML form) AND
@@ -236,23 +317,28 @@ server-side regardless.
 
 ### Stored procedures (see `polaris_sql/05_procedures.sql`)
 
-| Use case | Procedure | Purpose |
-|---|---|---|
-| UC-1 | `issue_token(...)` | Issue a new token |
-| UC-2 | `verify_token(...)` | Record verification event |
-| UC-3 | `bind_device(...)` | Bind hardware device to token |
-| UC-4 | `revoke_token(...)` | Revoke (terminal) |
-| UC-5 | `report_lost(...)` | Report lost (terminal) |
-| UC-6 | `lookup_active_for(individual_id)` | Lookup the holder's active token |
-| UC-7 | `succession(...)` | Issue successor; predecessor stays in DB |
-| UC-8 | `uc8_revoke_token(...)` | **Bounded revocation** — see below |
+| Procedure | Purpose |
+|---|---|
+| `uc1_issue_and_activate` | Issue a token and activate it, writing its signature row |
+| `uc4_activate_reserve` | Activate a RESERVE token; the partial unique index holds mid-transaction |
+| `uc5_bind_device` | Bind a hardware device to a token |
+| `uc6_migrate_algorithm` | Add a signature under a new algorithm before retiring the old one |
+| `uc7_warrant_audit` | Warrant-scoped audit read; FULL rows return complete records |
+| `uc8_revoke_token` | Bounded revocation (see below) |
+| `uc9_initiate_recovery`, `uc9_complete_recovery` | The two-phase recovery ceremony after catastrophic loss |
+| `close_anchor_batch` | Close a Merkle anchor batch |
+| `uc10_attest_trust`, `uc10_revoke_attestation` | The federation trust graph |
+| `uc11_close_epoch` | Close a token-state epoch for the ZK prover |
+| `uc12_record_duress` | Record a duress signal silently |
+| `uc_archive_purge` | The only DELETE path on audit tables, bounded by an archive checkpoint |
+| `uc_pseudonymize_individual` | Right-to-erasure pseudonymization, logged in `IndividualErasureEvent` |
 
 All procedures use `SECURITY INVOKER`. The audit trigger on
 `IdentityToken` reads `polaris.actor_agency_id`,
 `polaris.reason_code`, `polaris.event_lat`, `polaris.event_lon` GUCs;
 procedures set them via `SET LOCAL`.
 
-### `POST /uc8/revoke` (UC-8, R11-6 / M2-11)
+### `POST /uc8/revoke` (UC-8)
 
 The single sanctioned revocation path. Wraps `uc8_revoke_token`:
 serializes per-issuing-agency via `pg_advisory_xact_lock`, enforces
@@ -281,7 +367,7 @@ See `DEVNOTES/ships/issuer-discretion.md` for the policy choices (N=5.00%,
 W=30 days defaults; per-agency overrides via
 `IssuerDiscretionPolicy`).
 
-### `GET /individuals/enrollment` (R11-4 / M2-9)
+### `GET /individuals/enrollment`
 
 Civic enrollment summary. Returns per-jurisdiction × status counts of
 individuals in each enrollment state. Implements the PDF §9
@@ -302,7 +388,7 @@ exposed as a route — an admin who needs it writes the join against
 See `DEVNOTES/ships/tiered-enrollment.md` for the asymmetric-design
 rationale.
 
-### UC-9 routes (R11-2 / M2-7)
+### UC-9 routes
 
 Two-phase out-of-band recovery ceremony for catastrophic loss
 (PDF §9.1). Implements the third leg of the "schema doesn't
@@ -355,7 +441,7 @@ Errors:
 See `DEVNOTES/ships/recovery-ceremony.md` for the full adversary walk and
 mechanism design.
 
-### `POST /uc6/migrate` (R11-1 / M2-6)
+### `POST /uc6/migrate`
 
 Algorithm migration via the multi-signature scheme. Adds a new
 `TokenSignature` row under a new algorithm; optionally deprecates
@@ -388,14 +474,15 @@ consistency model and the no-auto-derivation argument.
 
 ---
 
-## Token CRUD (admin)
+## Token routes (HTML)
 
-### `GET /tokens`, `GET /tokens/<id>`, `POST /tokens/new`, `POST /tokens/<id>/edit`, `POST /tokens/<id>/delete`
+### `GET /tokens`, `GET /tokens/<id>`, `POST /tokens/<id>/transition`, `POST /tokens/<id>/delete`
 
-Standard CRUD. Edit only allowed for the columns that are not
-covered by a state-machine transition; status changes go through the
-state-machine trigger (`enforce_token_state_machine`) which rejects
-illegal transitions.
+The token list and detail pages, the state transition form, and delete.
+There is no free-form edit: every status change goes through the
+state-machine trigger (`enforce_token_state_machine`), which rejects
+illegal transitions, and issuance goes through UC-1. Individuals and
+agencies have the usual `/new`, `/<id>/edit` and `/<id>/delete` forms.
 
 DELETE is allowed only for RESERVE and DORMANT tokens that have no
 TokenLifecycleEvent rows referencing them (no audit trail to
@@ -404,7 +491,7 @@ REVOKED instead.
 
 ---
 
-## Anchor batch API (R10-2 / M2-2 — v8.21)
+## Anchor batch API
 
 Three endpoints back the DID-anchoring Merkle batch layer. The Polaris
 schema is the off-chain audit-of-record; an external PQ-capable
@@ -504,7 +591,7 @@ Returns `404` if the token has no `BlockchainAnchor` row.
 
 ---
 
-## Federation API (R11-3 / M2-8 — v8.22)
+## Federation API
 
 Two endpoints manage the federation trust graph (`AgencyTrustAttestation`).
 Both are admin-only and CSRF-protected. The federation flow is described in
@@ -596,7 +683,7 @@ helper inspects exactly one row in `AgencyTrustAttestation`.
 
 ---
 
-## Duress code API (R11-5 / M2-10 — v8.24)
+## Duress code API
 
 Compulsion-resistance per PDF §9.5. The `DuressEvent` table is the
 8th audit-of-record. See `DEVNOTES/ships/duress-codes.md` for the full
@@ -679,7 +766,7 @@ distinguish a duress signal from a normal verification.
 
 ---
 
-## ZK-SNARK API (R10-1 / M2-1 — v8.23)
+## ZK-SNARK API
 
 Plonky2-backed Merkle-inclusion proofs over `TokenStateEpoch`
 snapshots. The Rust prover lives in `polaris_zk/`; this layer is the
@@ -771,8 +858,8 @@ All `/api/*` JSON endpoints return errors as:
 ```
 
 Error messages are sanitized through `db_error_to_message()` in
-`security.py`; raw psycopg2 errors are NOT surfaced (constraint
-mitigates I-I3 in `DEVNOTES/threat-model.md`).
+`security.py`; raw psycopg2 errors are never surfaced (threat I-I3 in
+[the threat model](../../DEVNOTES/threat-model.md)).
 
 Status codes:
 - `200` — success
@@ -786,34 +873,36 @@ Status codes:
 
 ## Rate limits
 
-| route pattern | limit |
-|---|---|
-| `POST /login` | 5 / 60s per IP |
-| `POST /verifications/new` | 60 / 60s per session |
-| `POST /tokens/*` | 60 / 60s per session |
-| `GET /api/atlas/*` | 600 / 60s per session |
-| `GET /api/health` | unlimited |
+| Route pattern | Limit (defaults) | Override |
+|---|---|---|
+| `POST /login` | 10 per 60 s per client IP | `POLARIS_RATE_LIMIT_LOGIN_MAX` |
+| Every `POST`, `PUT`, `PATCH`, `DELETE` (one shared bucket per client IP), except `/api/heartbeat` and `/api/quit` | 60 per 60 s | `POLARIS_RATE_LIMIT_WRITE_MAX`, `POLARIS_RATE_LIMIT_WRITE_WINDOW` |
+| `GET` routes, including `/api/health` and `/api/atlas/*` | not rate-limited by the application; the Caddy edge carries its own `rate_limit` directive | the Caddyfile |
 
-Limits are in-process (per gunicorn worker). A multi-worker
-deployment that needs precise limits should switch to the Redis
-backend (R8-2 — backlog).
+A refused request is answered `429` and audited as `RATE_LIMITED`. The
+backend is selected by `POLARIS_RATE_LIMIT_BACKEND` (`auto`, `memory`,
+`redis`); the production compose sets the Redis URL, so limits are
+shared across every gunicorn worker. The client IP is the peer address
+unless `POLARIS_TRUST_PROXY` is set, in which case the edge's
+`X-Forwarded-For` is honoured.
 
 ---
 
 ## Versioning
 
-There is currently no `/api/v1/` prefix. Adding versioning is on the
-backlog (`docs/BACKLOG.md` API section). When introduced, the current
-unprefixed routes will alias to `/api/v1/...` for compatibility.
+There is no `/api/v1/` prefix. The routes are unversioned and serve the
+operator UI; a stable relying-party contract with versioning is roadmap
+phase P3. When it lands, the current unprefixed routes alias to
+`/api/v1/...` for compatibility.
 
 ---
 
 ## Updating this document
 
-When a new `/api/*` route is added or an existing one's signature
-changes, update this file in the same change. The pre-commit hook
-(`docs/BACKLOG.md` tooling section) checks that `/api/*` routes in `app.py`
-are documented here.
+When a `/api/*` route is added, removed, or changes shape, update this
+file in the same change. `check_api_routes_documented` in
+`polaris_checks` compares the `@app.route('/api/...')` decorators in
+`app.py` with the route headings here and fails CI in both directions.
 
 ---
 

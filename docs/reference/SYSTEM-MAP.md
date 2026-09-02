@@ -1,54 +1,60 @@
-# SYSTEM-MAP — the architectural centerpiece
+# SYSTEM-MAP: the shape of the repository
 
-**Polaris's complete structure, named.** Every directory's role, every
-package's purpose, every cross-reference made explicit. This is the
-single best entry point for understanding the project's shape.
-
-For naming + structural conventions see [`../CONVENTIONS.md`](../CONVENTIONS.md).
-For the philosophical principles beneath the structure, see
-[`../story/PRINCIPLES.md`](../story/PRINCIPLES.md).
+**Reader:** anyone opening the repository for the first time. **Job:** every
+directory's role, every package's purpose, every CI job, and who reads what.
+Naming and structural conventions are in [../CONVENTIONS.md](../CONVENTIONS.md).
 
 ---
 
 ## At a glance
 
 ```
-polaris/                          ← repo root
+polaris/
 │
-├── README.md                     ← portfolio front-page
-├── MISSION.md                    ← constitution (C1-C10 + Vocation)
-├── ROADMAP.md                    ← prioritized backlog (R-* items)
-├── CHANGELOG.md                  ← audit-of-record (every ship)
-├── CLAUDE.md                     ← agent runbook
-├── CONTRIBUTING.md / SECURITY.md ← contributor guide + vulnerability disclosure
-├── LICENSE / NOTICE              ← legal
+├── README.md                     ← the front page
+├── MISSION.md                    ← the constitution (C1-C10 and the vocation)
+├── ROADMAP.md                    ← the build plan, P0 to P7
+├── CHANGELOG.md                  ← every ship, never edited retroactively
+├── CLAUDE.md                     ← the developer and agent runbook
+├── CONTRIBUTING.md / SECURITY.md ← contributor guide; vulnerability disclosure
+├── LICENSE / NOTICE              ← Apache 2.0; provenance and third-party notices
 │
 ├── Polaris.command               ← double-click launcher (macOS)
 ├── polaris_mac_launch.sh         ← launcher logic
 │
-├── polaris_web/        ← Flask app (app.py + WebAuthn + ZK wrapper)
-│   ├── Dockerfile / docker-compose.yml            ← dev image + dev stack
-│   ├── Dockerfile.prod / docker-compose.prod.yml  ← prod image + full prod stack
+├── polaris_web/        ← the Flask application
+│   ├── app.py / security.py / webauthn_auth.py / custody.py / pqc_signing.py
+│   ├── templates/ static/                         ← Jinja2 templates; external-only JS and CSS
+│   ├── Dockerfile / docker-compose.yml            ← dev image and dev stack
+│   ├── Dockerfile.prod / docker-compose.prod.yml  ← prod image and the five-service stack
+│   ├── docker-compose.bluegreen.yml               ← the zero-downtime profile
 │   ├── Dockerfile.caddy / Caddyfile               ← self-built TLS edge (rate_limit compiled in)
 │   ├── Dockerfile.pgbouncer / pgbouncer.ini       ← self-built connection pooler
-│   ├── Dockerfile.postgres / pgbackrest.conf      ← DB image + WAL-archiving config
+│   ├── Dockerfile.postgres / pgbackrest.conf      ← database image with WAL archiving
 │   └── gunicorn.conf.py                           ← prod WSGI config
-├── polaris_sql/        ← schema, procedures, triggers, atlas, migrations
-├── polaris_zk/         ← Plonky2 ZK-SNARK Rust crate + witness2/ second witness
-├── polaris_cli/        ← CLI utilities
-├── polaris_checks/     ← flat C1-C10 invariant layer
+├── polaris_sql/        ← schema, procedures, triggers, atlas functions, migrations/
+├── polaris_zk/         ← Plonky2 ZK-SNARK Rust crate; witness2/ is the independent second witness
+├── polaris_cli/        ← the operator CLI
+├── polaris_checks/     ← the flat invariant layer that gates CI
 │
-├── deploy/             ← observability configs (prometheus.yml + polaris-alerts.yml)
-├── docs/               ← all documentation (operator runbooks + reference + story + paper + PRODUCTION-READINESS.md)
-├── meta/               ← structural records (constraint lattice, redaction proof, TLA+)
-├── DEVNOTES/           ← informal developer notes
-├── scripts/            ← operator (polaris-*) + workflow (ai-*) scripts
-├── assets/             ← branding (logo)
+├── deploy/
+│   ├── helm/polaris/   ← the Kubernetes reference profile (plus kind-config.yaml for CI)
+│   ├── linux/          ← install.sh and the systemd units and timers
+│   └── observability/  ← Prometheus, Alertmanager, alert rules and their tests, Grafana dashboards, Tempo
+├── docs/
+│   ├── ARCHITECTURE-OVERVIEW.md, PRODUCTION-READINESS.md, RED-TEAM-SCOPE.md, THESIS.md, SEED_DATA.md, CONVENTIONS.md
+│   ├── operator/       ← the runbooks (seventeen documents and an index)
+│   ├── reference/      ← this directory
+│   ├── story/          ← PRINCIPLES.md
+│   └── paper/          ← the academic report (TeX and PDF)
+├── DEVNOTES/           ← design notes, the project record, per-ship notes under ships/
+├── meta/               ← structural records (redaction proof, structural architecture, the TLA+ model)
+├── scripts/            ← operator tools (polaris-*) and the workflow scripts (ai-*)
+├── assets/             ← the logo and the Atlas captures
+├── site/               ← the demo website (GitHub Pages)
 │
-├── .git/               ← genesis 2026-05-15
-├── .github/workflows/  ← CI (ci.yml; 14 jobs, named below; dr-drill.yml monthly)
-├── .gitignore          ← venv, caches, secrets, .DS_Store, .hypothesis
-└── .pre-commit-config.yaml  ← local hooks (link-check, invariants)
+├── .github/workflows/  ← ci.yml (14 jobs), dr-drill.yml (monthly), sbom.yml (per release), pages.yml (the site)
+├── .github/dependabot.yml, .pre-commit-config.yaml, .gitignore, .coveragerc, .trivyignore
 ```
 
 **CI jobs** ([`.github/workflows/ci.yml`](../../.github/workflows/ci.yml)):
@@ -68,109 +74,83 @@ polaris/                          ← repo root
 - `image-cve-scan`: Trivy scan of the self-built prod images; gates on fixable CRITICALs.
 - `prod-stack-boot`: boots the full prod compose end to end and asserts `/api/health` serves through the TLS edge.
 
-`dr-drill.yml` runs the same drill monthly and commits the measured row to [`docs/operator/DR-DRILLS.md`](../operator/DR-DRILLS.md).
+`dr-drill.yml` runs the same drill monthly and commits the measured row to
+[`docs/operator/DR-DRILLS.md`](../operator/DR-DRILLS.md). `sbom.yml` attaches
+SPDX bills of materials with SLSA provenance to every release. `pages.yml`
+publishes `site/`.
 
 ---
 
 ## The three layers
 
-Polaris is built in **three layers**, each with a distinct role.
-Understanding the layer-of-the-thing tells you 90% of what you need.
+### Layer 1: the product
 
-### Layer 1: Polaris itself (the identity-token system)
-
-The actual product — the thing being built.
-
-| Layer-1 dir | What |
+| Directory | What |
 |---|---|
-| [`polaris_web/`](../../polaris_web/) | Flask web app — routes; 29 schema tables; ZK wrapper; WebAuthn |
-| [`polaris_sql/`](../../polaris_sql/) | DDL + procedures + triggers + atlas functions + migrations |
-| [`polaris_zk/`](../../polaris_zk/) | Rust crate — Plonky2 ZK-SNARK prover/verifier + `witness2/` independent second witness |
-| [`polaris_cli/`](../../polaris_cli/) | CLI utilities |
+| [`polaris_sql/`](../../polaris_sql/) | The schema (29 tables, 33 in a migrated deployment), procedures, triggers, atlas functions, migrations. The security boundary. |
+| [`polaris_web/`](../../polaris_web/) | The Flask application: every route, the security layer, WebAuthn, custody and signing, tracing, the Atlas. |
+| [`polaris_zk/`](../../polaris_zk/) | The Plonky2 Merkle-inclusion prover and verifier in Rust, and `witness2/`, the independent Python re-derivation. |
+| [`polaris_cli/`](../../polaris_cli/) | The operator CLI: the same operations without a browser. |
 
-### Layer 2: Checks and structural records
+### Layer 2: enforcement and tooling
 
-The flat invariant layer plus the structural records.
-
-| Layer-2 dir | What |
+| Directory | What |
 |---|---|
-| [`polaris_checks/`](../../polaris_checks/) | Flat C1-C10 invariant layer — one `check_*(repo_root)` per constraint; gates CI via `python3 -m polaris_checks.run` |
-| [`scripts/`](../../scripts/) | operator (polaris-*) + workflow (ai-*) scripts |
-| [`meta/`](../../meta/) | Structural records (constraint lattice, redaction proof, structural architecture, TLA+ models) |
+| [`polaris_checks/`](../../polaris_checks/) | The flat invariant layer: plain `check_*(repo_root)` functions with detection tests; `python3 -m polaris_checks.run` gates CI. |
+| [`scripts/`](../../scripts/) | Operator tools (`polaris-*`): deploy, backup, restore, drills, migration, secrets, recovery. Workflow scripts (`ai-*`): the ship gate, the link checker, the test wrapper, coverage. |
+| [`deploy/`](../../deploy/) | The Helm profile, the Linux install and units, the observability configuration. |
+| [`meta/`](../../meta/) | Structural records: the redaction proof, the structural-architecture note, the TLA+ model of C3. |
 
-### Layer 3: Documentation (for humans)
+### Layer 3: documentation
 
-What the operator + developer + auditor needs to read.
-
-| Layer-3 dir | What |
+| Directory | What |
 |---|---|
-| [`docs/operator/`](../operator/) | Runbooks (INSTALL, DEPLOYMENT, OPERATIONS, DR, FAILOVER, SECRETS, SECURITY, PRIVACY, RUNBOOKS, SLOS, ENCRYPTION-AT-REST, WEBAUTHN-ROLLOUT) |
-| [`docs/reference/`](../reference/) | Technical reference (API, DATA-MODEL, GLOSSARY, SCALING, PQC-POSTURE, **this SYSTEM-MAP**) |
-| [`docs/story/`](../story/) | Principles (PRINCIPLES) |
-| [`docs/paper/`](../paper/) | Academic write-up |
-| [`DEVNOTES/`](../../DEVNOTES/) | Informal developer notes (cross-cutting + per-ship in `ships/`) |
+| [`docs/operator/`](../operator/README.md) | INSTALL, DEPLOYMENT, LINUX-SERVER, KUBERNETES, HARDENING, OPERATIONS, SECRETS, KEY-CEREMONY, SECURITY, PRIVACY, DR, DR-DRILLS (ledger), FAILOVER, ENCRYPTION-AT-REST, SLOS, RUNBOOKS, WEBAUTHN-ROLLOUT |
+| [`docs/reference/`](README.md) | API, DATA-MODEL, PQC-POSTURE, PERFORMANCE-BASELINE, SCALING, GLOSSARY, this map |
+| [`docs/`](../README.md) | ARCHITECTURE-OVERVIEW, PRODUCTION-READINESS (the bound on every claim), RED-TEAM-SCOPE, THESIS, SEED_DATA, CONVENTIONS |
+| [`docs/story/`](../story/) | PRINCIPLES |
+| [`docs/paper/`](../paper/) | The academic report |
+| [`DEVNOTES/`](../../DEVNOTES/) | Design notes (audit of record, concurrency, threat model, substrate, ZK soundness, the two-witness principle, style), the project record, and one note per major ship under `ships/` |
 
 ---
 
 ## The constitutional spine
 
-These documents are the load-bearing constitutional surfaces.
-
 ```
-MISSION.md (constitution)
-    ├── C1-C10 hard constraints (enforced at the DB level)
-    ├── The Vocation (anti-coercion)
-    └── Mission v1 + v2 done-lists
-
-polaris_checks/checks.py (machine-checkable enforcement of C1-C10)
-meta/constraint-lattice.md (how C1-C10 compose and depend on each other)
-
-CHANGELOG.md (every ship; never edited retroactively)
+MISSION.md                         the constitution: C1-C10 and the vocation
+polaris_checks/checks.py           the machine-checkable enforcement, gating CI
+docs/PRODUCTION-READINESS.md       the bound on every claim: what is open, and who decides it
+ROADMAP.md                         what comes next, phase by phase
+CHANGELOG.md                       every ship, never edited retroactively
 ```
 
 ---
 
-## Cross-reference quick map
-
-**"Where do I look for X?"** (matches CLAUDE.md's table; replicated
-here for self-contained navigation):
+## Where do I look for X?
 
 | Question | Look here |
 |---|---|
-| What is Polaris? What is it NOT? | [`MISSION.md`](../../MISSION.md) |
-| What's next? | [`ROADMAP.md`](../../ROADMAP.md) |
-| What just shipped? | [`CHANGELOG.md`](../../CHANGELOG.md) (top entry = latest) |
-| Agent runbook / onboarding | [`CLAUDE.md`](../../CLAUDE.md) |
-| How do C1-C10 compose? | [`meta/constraint-lattice.md`](../../meta/constraint-lattice.md) |
-| Cross-cutting principle (AoR, concurrency, threat-model, style) | [`DEVNOTES/<name>.md`](../../DEVNOTES/) |
-| How does ship X work? | [`DEVNOTES/ships/<short-name>.md`](../../DEVNOTES/ships/) |
-| Naming + structural conventions | [`docs/CONVENTIONS.md`](../CONVENTIONS.md) |
-| Architectural map (this doc) | [`docs/reference/SYSTEM-MAP.md`](SYSTEM-MAP.md) |
-| The C1-C10 checks | [`polaris_checks/checks.py`](../../polaris_checks/checks.py) |
+| What is Polaris? What is it not? | [`MISSION.md`](../../MISSION.md) |
+| Can it hold real identity data yet? | [`docs/PRODUCTION-READINESS.md`](../PRODUCTION-READINESS.md) |
+| What is next? | [`ROADMAP.md`](../../ROADMAP.md) |
+| What just shipped? | [`CHANGELOG.md`](../../CHANGELOG.md) (top entry is the latest) |
+| How do I work on it? | [`CLAUDE.md`](../../CLAUDE.md), [`CONTRIBUTING.md`](../../CONTRIBUTING.md) |
+| How is it built, layer by layer? | [`docs/ARCHITECTURE-OVERVIEW.md`](../ARCHITECTURE-OVERVIEW.md) |
+| A cross-cutting design question (audit of record, concurrency, threat model) | [`DEVNOTES/`](../../DEVNOTES/README.md) |
+| How does ship X work? | [`DEVNOTES/ships/`](../../DEVNOTES/ships/) |
+| Naming and structural conventions | [`docs/CONVENTIONS.md`](../CONVENTIONS.md) |
+| The checks | [`polaris_checks/checks.py`](../../polaris_checks/checks.py) |
 
 ---
 
 ## Who reads what
 
-| Audience | Primary reading order |
+| Reader | Order |
 |---|---|
-| **Agent (Claude) starting a fresh session** | [`CLAUDE.md`](../../CLAUDE.md) → [`MISSION.md`](../../MISSION.md) → `python3 -m polaris_checks.run` |
-| **Operator deploying Polaris** | [`docs/operator/INSTALL.md`](../operator/INSTALL.md) → [`docs/operator/DEPLOYMENT.md`](../operator/DEPLOYMENT.md) → [`docs/operator/OPERATIONS.md`](../operator/OPERATIONS.md) |
-| **Developer contributing** | [`README.md`](../../README.md) → [`docs/CONVENTIONS.md`](../CONVENTIONS.md) → [`DEVNOTES/style.md`](../../DEVNOTES/style.md) → relevant `polaris_*/README.md` |
-| **Compliance auditor** | [`docs/operator/SECURITY.md`](../operator/SECURITY.md) → [`docs/operator/PRIVACY.md`](../operator/PRIVACY.md) → [`docs/operator/DR.md`](../operator/DR.md) |
-| **Academic reviewer** | `docs/paper/polaris_project_report.pdf` → [`docs/THESIS.md`](../THESIS.md) → [`docs/story/PRINCIPLES.md`](../story/PRINCIPLES.md) |
+| An operator deploying Polaris | [INSTALL.md](../operator/INSTALL.md) or [LINUX-SERVER.md](../operator/LINUX-SERVER.md) or [KUBERNETES.md](../operator/KUBERNETES.md), then [OPERATIONS.md](../operator/OPERATIONS.md), [SECRETS.md](../operator/SECRETS.md), [DR.md](../operator/DR.md) |
+| An assessor | [PRODUCTION-READINESS.md](../PRODUCTION-READINESS.md), [SECURITY.md](../operator/SECURITY.md), [PRIVACY.md](../operator/PRIVACY.md), [PQC-POSTURE.md](PQC-POSTURE.md), [RED-TEAM-SCOPE.md](../RED-TEAM-SCOPE.md) |
+| An integrator | [API.md](API.md), then [DATA-MODEL.md](DATA-MODEL.md) |
+| A contributor, human or agent | [CLAUDE.md](../../CLAUDE.md), [MISSION.md](../../MISSION.md), then `python3 -m polaris_checks.run` |
+| An academic reviewer | [the report](../paper/README.md), then [THESIS.md](../THESIS.md) |
 
----
-
-## What this document is NOT
-
-- Not source code (that's in `polaris_*/`)
-- Not the constitution (that's `MISSION.md`)
-- Not informal notes (those are `DEVNOTES/`)
-- Not the structural records (those are in `meta/`)
-
-`SYSTEM-MAP.md` is **the architectural centerpiece** — the single
-document that, if read in full, gives a complete sense of how
-Polaris's many parts fit together.
-
-Last refreshed: 2026-06-10 (v9.142, production-surface refresh).
+Last regenerated: 2026-09-02 (v9.198).

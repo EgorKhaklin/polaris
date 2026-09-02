@@ -1,4 +1,9 @@
-# DATA-MODEL.md — schema reference
+# DATA-MODEL.md: schema reference
+
+**Reader:** an integrator or reviewer who needs to know what each table
+holds and which invariant guards it. **Job:** every table in the schema
+and its migrations, grouped, with the constraint that makes each
+guarantee true.
 
 The Polaris schema is **29 tables** in `01_schema.sql` (v9.194), organized
 into six functional groups. A migrated deployment holds **33 tables**: those,
@@ -225,7 +230,7 @@ raises `insufficient_privilege`. Constraint C1.
 | `event_timestamp` | TIMESTAMP NOT NULL DEFAULT now() |
 | `extra` | JSONB |
 
-### `OperatorSession` (v9.189 / roadmap P1.7)
+### `OperatorSession`
 
 The server-side registry of operator web sessions, added by migration
 `2026-09-01-001-operator-session`. One row per login; consulted on every
@@ -245,6 +250,38 @@ written to `AuthAuditLog`.
 
 ---
 
+### `OperatorWebauthnCredential` (migration-added)
+
+One row per WebAuthn credential enrolled by an operator account
+(`user_id` references `AppUser`). Holds the credential id, the public
+key, the signature counter (checked non-negative, so a cloned
+authenticator that replays an old counter is detected), the transports,
+the attestation format and AAGUID the attestation policy evaluated at
+enrollment, a device label, and the enrollment and last-use timestamps.
+Added by migration `2026-05-14-002-operator-webauthn`.
+
+### `AuditAccessLog` (migration-added; constraint C1: append-only)
+
+The meta-audit: who read which audit table, with what filter, and how
+many rows came back. `accessed_table` is CHECKed to the four audit
+surfaces (`TokenLifecycleEvent`, `VerificationEvent`, `AuthAuditLog`,
+`DuressEvent`). Append-only by trigger (`trg_audit_access_append_only`).
+Added by migration `2026-05-15-003-audit-access-log`.
+
+### `IndividualErasureEvent` (constraint C1: append-only)
+
+One row per right-to-erasure pseudonymization performed through
+`uc_pseudonymize_individual`: the individual, the pseudonym assigned,
+the operator who did it, a non-empty reason, and the timestamp. It
+records who, when and why, never the prior name. Append-only by trigger
+(`trg_erasure_append_only`).
+
+### `ZkVerificationNonce`
+
+The single-use nonce store behind `/api/zk/verify`. A verified proof
+consumes `(epoch_id, context_id, nonce)`; a replay of the same bundle
+hits the primary key and is rejected. Holds no token or holder data.
+
 ## Records & substrate tables
 
 ### `DeviceBinding`
@@ -263,7 +300,7 @@ row per anchored token. As of v8.21 / R10-2 / M2-2, extended with
 co-NULL CHECK constraint — pending anchors carry NULL, batched
 anchors carry both.
 
-### `AnchorBatch` (M2-2 / R10-2, added v8.21)
+### `AnchorBatch`
 
 Per-batch Merkle commitment of `BlockchainAnchor` leaves. One row per
 `close_anchor_batch` invocation. The Polaris schema is the off-chain
@@ -273,7 +310,7 @@ audit-of-record (see `DEVNOTES/audit-of-record.md`); append-only via
 for the eventual external-PQ-ledger integration. See
 `DEVNOTES/ships/anchoring.md`.
 
-### `DuressEvent` (M2-10 / R11-5, added v8.24)
+### `DuressEvent`
 
 Compulsion-resistance audit-of-record (PDF §9.5). Each row is a
 detected duress signal: the holder typed their secondary duress code (a Werkzeug scrypt
@@ -292,7 +329,7 @@ does NOT join to `DuressEvent`. Only admins/auditors with explicit
 access (via `/api/duress/events` or SQL console) can see duress
 events. See `DEVNOTES/ships/duress-codes.md`.
 
-### `TokenStateEpoch` (M2-1 / R10-1, added v8.23)
+### `TokenStateEpoch`
 
 Per-epoch Merkle commitment over the active-token set. Append-only via
 `enforce_epoch_immutability`: once an epoch is closed, its
@@ -302,7 +339,7 @@ validity; the verifier checks this before accepting a proof. The
 Merkle root is a Poseidon hash (not SHA3-256, because Poseidon is
 SNARK-friendly for the Plonky2 circuit). See `DEVNOTES/ships/zk-snark.md`.
 
-### `TokenStateEpochLeaf` (M2-1 / R10-1, added v8.23)
+### `TokenStateEpochLeaf`
 
 Per-token witness within an epoch. Each row stores the
 (epoch_id, token_id, leaf_hash, proof_path) tuple — the prover
@@ -311,7 +348,7 @@ reads its row to generate a ZK proof. Append-only (inherits
 witness per token per epoch. v1 stores `proof_path` in plaintext;
 v2 would encrypt under the holder's key. See `DEVNOTES/ships/zk-snark.md`.
 
-### `AgencyTrustAttestation` (M2-8 / R11-3, added v8.22)
+### `AgencyTrustAttestation`
 
 Federation trust graph: directional edges of the form "verifying
 agency V accepts issuing agency I for context C, valid until D." The
@@ -337,7 +374,7 @@ attestations (`signed_by AppUser`); v2 path is cryptographic
 agency-signed attestations (left out of v8.22 by design — see
 `DEVNOTES/ships/federation.md`'s "v1 vs v2 split").
 
-### `GenomicAnchor` (M2-4 / R10-4)
+### `GenomicAnchor`
 
 Hash-only commitment to a genomic identifier per token. Three CHECK
 constraints enforce the privacy invariant: (1) hash must be hex,
@@ -345,7 +382,7 @@ constraints enforce the privacy invariant: (1) hash must be hex,
 solely of {A,C,G,T,U,N} characters (i.e., cannot be plaintext
 genomic data). See `DEVNOTES/substrate.md`.
 
-### `QuantumObserverBinding` (M2-5 / R10-5, scaffold)
+### `QuantumObserverBinding` (scaffold)
 
 Substrate-level reservation for a quantum-measurement attestation
 primitive (Appendix F.2). Every current row has `binding_status =
@@ -353,7 +390,7 @@ primitive (Appendix F.2). Every current row has `binding_status =
 enforce the SCAFFOLD ↔ OPERATIONAL state transition structurally.
 See `DEVNOTES/ships/quantum-observer.md`.
 
-### `IssuerDiscretionPolicy` (M2-11 / R11-6)
+### `IssuerDiscretionPolicy`
 
 Per-agency overrides for the rolling-window revocation rate cap
 enforced by `uc8_revoke_token`. Absence of a row for an agency
@@ -365,7 +402,7 @@ is auditable from the row alone. Implements the PDF §9
 *"constitutional limits on issuer discretion"* leg of the
 issuer-trust-concentration triad. See `DEVNOTES/ships/issuer-discretion.md`.
 
-### `AgencyQuota` (v9.190 / roadmap P1.8)
+### `AgencyQuota`
 
 Opt-in per-agency caps enforced by the `enforce_agency_quota` trigger on
 every write path: `issue_per_day` (IdentityToken inserts by
@@ -382,7 +419,7 @@ under concurrency; the (cap + 1)th write is refused with
 `polaris quota-set`; migration `2026-09-01-002-agency-quota`. The sibling
 of `IssuerDiscretionPolicy`: a bound on agency behaviour, never on a person.
 
-### `EnrollmentStatusEvent` (M2-9 / R11-4)
+### `EnrollmentStatusEvent`
 
 Append-only log of enrollment-state transitions per `Individual`.
 Five-status CHECK enum (`NOT_ENROLLED`, `PENDING_ENROLLMENT`,
@@ -404,7 +441,7 @@ The companion view `IndividualCurrentEnrollment` (defined in
 returns per-jurisdiction × status counts only — per-individual
 enumeration of `NOT_ENROLLED` is deliberately not first-class.
 
-### `RecoveryRequest` (M2-7 / R11-2)
+### `RecoveryRequest`
 
 Two-phase out-of-band recovery ceremony for catastrophic token loss
 (PDF §9.1). Four CHECK constraints encode the mechanism: cool-down ≥
@@ -423,7 +460,7 @@ admin-only completion (operator initiates, admin decides) and uses
 correctness. See `DEVNOTES/ships/recovery-ceremony.md` for the adversary
 walk and the administrative-vs-operational grace-period framing.
 
-### `TokenSignature` (M2-6 / R11-1)
+### `TokenSignature`
 
 M:N resolution of `IdentityToken → signature`. A token can carry
 signatures from multiple algorithms during a cryptographic-migration
@@ -494,7 +531,7 @@ in v8.3 for server-side filter-chip support.
 
 ## Archive audit tables
 
-### `LifecycleArchiveCheckpoint` (Arc B Phase 2b / v8.87)
+### `LifecycleArchiveCheckpoint`
 
 Audit-of-record for archive-then-delete purges (the
 constitutional carve-out for deleting audit rows from hot storage
@@ -571,6 +608,19 @@ so operators don't go looking for the wrong shape.
   SystemDependency`; mirrors `DEVNOTES/substrate.md`.
 
 ---
+
+## The migration registry
+
+### `schema_version`
+
+Created by `00_migrations_table.sql`, outside `01_schema.sql`. One row
+per migration event, `applied` or `reverted`, with the migration name
+(CHECKed to the dated naming pattern), the actor, the timestamp, and
+the SHA-256 of the file that was applied. Append-only by trigger
+(`trg_schema_version_append_only`): a revert appends a row rather than
+deleting the apply row, so "currently applied" is the last event per
+name. It records deployments, not identity operations, and is therefore
+not counted among the audit-of-record surfaces.
 
 ## Migration policy
 

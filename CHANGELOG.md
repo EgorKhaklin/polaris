@@ -5,6 +5,45 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.198 — 2026-09-02 (P1.13 ship 6: the reference set describes the running code)
+
+- **API.md is complete in both directions, and a check keeps it so.**
+  `check_api_routes_documented` (108 checks) compares every
+  `@app.route('/api/...')` in `app.py` with the route headings in
+  `docs/reference/API.md`, ignoring converters and parameter names, and
+  fails when a route is undocumented or a documented route does not exist.
+  The six routes it found undocumented are now described: `/api/health/live`
+  and `/api/health/ready` (the liveness and readiness contracts), `/metrics`
+  and `/api/metrics` under a new Observability section that states plainly
+  that both are unauthenticated and must be restricted at the edge,
+  `/api/atlas/subject` and `/api/atlas/subjects/search` (roles, caps, the
+  withheld-count rule for ZERO_KNOWLEDGE events), and `/api/tokens/<id>/export`.
+  The two phantom routes (`POST /tokens/new`, `POST /tokens/<id>/edit`) are
+  gone; the token section names the routes that exist. The stored-procedure
+  table named seven procedures that do not exist (`issue_token`,
+  `verify_token`, ...); it now lists the fifteen that do. The rate-limit
+  table is the real policy (10 logins per 60 s per IP; one shared 60-per-60-s
+  write bucket per IP; GETs unlimited at the application; the
+  `POLARIS_RATE_LIMIT_*` overrides; the backend selection). The health
+  contract gains the `custody` component and a version placeholder instead
+  of a literal. The two `docs/BACKLOG.md` references, the false pre-commit
+  claim and every ticket tag in a heading are gone.
+- **DATA-MODEL.md covers every table.** Sections added for
+  `OperatorWebauthnCredential`, `AuditAccessLog`, `IndividualErasureEvent`,
+  `ZkVerificationNonce` and the `schema_version` registry; the heading tags
+  (`M2-2 / R10-2, added v8.21` and the like) are stripped.
+- **SCALING.md is retitled around its 10-million-event measurement**, with the
+  reader and job up front. **GLOSSARY.md** loses the internal vocabulary
+  (the G27/G28/G29 guard IDs, done-list, larping, patterns, semantic memory
+  and the rest of the governance section; STRIDE stays under "Threat
+  modelling"). **docs/reference/README.md** is rewritten as a short index
+  whose conventions state the stamp rule instead of a versioning-marker
+  convention. **SYSTEM-MAP.md** is regenerated from the tree: `deploy/`,
+  `site/` and every workflow file appear, all seventeen operator documents
+  and all eight reference documents are listed, the constitutional spine is
+  MISSION, the checks, the readiness ledger, the roadmap and the CHANGELOG,
+  and the reading orders name the reader.
+
 ## v9.197 — 2026-09-02 (P1.13 ship 4: the architecture document ends at the architecture)
 
 - **docs/ARCHITECTURE-OVERVIEW.md rewritten around what exists.** It opens with

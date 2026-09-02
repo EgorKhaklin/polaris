@@ -1,13 +1,13 @@
-# Scaling Polaris to 2M+ events
+# Scaling Polaris: measured at 10 million events
 
-This document covers the v6 architectural changes that take Polaris from
-the 17-event sample state to interactive responsiveness at 2M+ events,
-and the concurrency hardening that ships alongside.
-
-The numbers in this document are measured against a real PostgreSQL 16
-running on a developer-class machine with 2,000,009 verification events
-loaded. Production deployments with proper Postgres tuning, connection
-pooling, and HTTP-layer caching will be substantially faster.
+**Reader:** the operator or reviewer asking whether the Atlas and the
+verification log stay interactive at national volumes. **Job:** the
+measurements, the indexes and caps behind them, and the concurrency
+hardening that ships alongside. The headline measurement below was taken
+at 10 million verification events (v9.150); the later sections describe
+the architecture that was first proven at 2 million and still holds.
+Production deployments with tuned Postgres, connection pooling and edge
+caching are faster than these developer-laptop numbers.
 
 ---
 
