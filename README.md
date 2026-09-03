@@ -4,7 +4,7 @@
 
 # POLARIS
 
-**A working reference implementation of a post-quantum, zero-knowledge,<br>compulsion-resistant national identity system.**
+**A working reference implementation of a post-quantum, zero-knowledge,<br>compulsion-resistant national identity-token system.**
 
 Educational project; notional data only. It is not a slide deck: CI boots the full production stack on every push.
 

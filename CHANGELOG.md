@@ -5,6 +5,23 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.202 — 2026-09-03 (P1.14 ship 2: one sentence on all four surfaces)
+
+- **The About** on github.com/EgorKhaklin/polaris-id is the project's own
+  canonical sentence, mirrored by hand from CLAUDE.md: "A working reference
+  implementation of a post-quantum, zero-knowledge, compulsion-resistant
+  national identity-token system. Educational; notional data only." The
+  README heading, the site's hero, `<title>` and description, and CLAUDE.md
+  now carry the same words; the README and the site said "identity system"
+  and the About said something else again. The About lives in repository
+  settings outside version control, so it is a manual mirror, not a
+  drift-proof one.
+- **Topics** pruned to twelve that place the project among identity and
+  post-quantum work rather than next to framework tutorials: added
+  `reference-implementation`, `ml-dsa`, `fips-204`, `slsa`, `digital-identity`;
+  dropped `flask`, `postgresql`, `rust`, `mfa`, `audit-log`, `merkle-tree`,
+  `snark`, `identity-management`.
+
 ## v9.201 — 2026-09-03 (P1.14 ship 1: the repository's security features are on, and the policy says what is true)
 
 - **Repository settings, in dependency order, by the owner:** Dependabot
