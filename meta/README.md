@@ -1,4 +1,4 @@
-# meta/ — invariant architecture and decision records
+# meta/: invariant architecture and decision records
 
 This directory holds the documents that explain how Polaris is constrained:
 the structural reasoning beneath the ten hard constraints C1-C10 in

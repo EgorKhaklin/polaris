@@ -1,4 +1,4 @@
-# ZK soundness ledger — what Polaris's Merkle-inclusion proof actually guarantees
+# ZK soundness ledger: what Polaris's Merkle-inclusion proof actually guarantees
 
 Polaris's `polaris_zk` crate uses the words *proof*, *zero-knowledge*, and
 *post-quantum*. This is the honest ledger: which of those claims are rigorous,
@@ -24,7 +24,7 @@ to be misled. Keep them separate.
 
 ---
 
-## 1. The differential / consistency guarantee — strong and real
+## 1. The differential / consistency guarantee: strong and real
 
 This is the guarantee Polaris now delivers rigorously, and it is not itself a
 cryptographic claim. It is a correctness claim about the implementation.
@@ -58,7 +58,7 @@ implementation also rejects.
 
 ---
 
-## 2. The cryptographic guarantee — demo-scale, with specific caveats
+## 2. The cryptographic guarantee: demo-scale, with specific caveats
 
 The soundness of the *proof object itself* (the FRI / Plonky2 proof, that a
 cheating prover cannot forge membership) rests entirely on the upstream
@@ -114,8 +114,8 @@ cost is practical; that optimization is the named next step for this layer.
 
 The second witness is a **statement-level** check, by design. It re-establishes:
 
-- **membership** — the leaf really hashes up its path to the committed root, and
-- **binding** — the bundle's public inputs equal the ones the proof committed to.
+- **membership**: the leaf really hashes up its path to the committed root, and
+- **binding**: the bundle's public inputs equal the ones the proof committed to.
 
 It deliberately **ABSTAINS** on one axis: the integrity of the Plonky2 proof
 *bytes*. It does not parse or re-run the FRI object, so it cannot detect a

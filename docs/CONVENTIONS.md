@@ -1,10 +1,10 @@
-# docs/CONVENTIONS.md — naming + structural conventions
+# docs/CONVENTIONS.md: naming + structural conventions
 
 The implicit conventions that make Polaris's structure coherent,
 named explicitly so future contributors (and future agents) can
 follow them without re-deriving.
 
-If the convention isn't named here, it isn't a convention — it's
+If the convention isn't named here, it isn't a convention: it's
 just an emergent pattern. Codify or change.
 
 ---
@@ -17,8 +17,8 @@ unprefixed nouns for everything else.
 | Pattern | Example | Why |
 |---|---|---|
 | `polaris_<domain>/` | `polaris_web/`, `polaris_sql/`, `polaris_checks/`, `polaris_zk/`, `polaris_cli/` | Python package convention; namespaced; unambiguous when `pip install`'d |
-| Unprefixed singular | `assets/`, `journal/` | Doesn't grow plural ("we have 1 logo" / "we have 1 journal-stream") |
-| Unprefixed plural | `docs/`, `scripts/`, `meta/`, `archive/`, `DEVNOTES/` | Container of similar items |
+| Unprefixed singular | `assets/`, `site/` | One thing: the brand assets, the demo site |
+| Unprefixed plural | `docs/`, `scripts/`, `meta/`, `deploy/`, `DEVNOTES/` | Container of similar items |
 | ALL_CAPS | `DEVNOTES/` | Historical (v8.x); preserved per v8.20 AoR |
 
 **Rule:** never rename a top-level directory casually (it touches
@@ -33,7 +33,7 @@ conventional + agent-runbook docs; `lowercase.<ext>` for everything else.
 
 | Pattern | Example | What |
 |---|---|---|
-| `ALL_CAPS.md` | `MISSION.md`, `ROADMAP.md`, `CHANGELOG.md`, `LICENSE`, `NOTICE` | Constitutional / legal — the load-bearing docs |
+| `ALL_CAPS.md` | `MISSION.md`, `ROADMAP.md`, `CHANGELOG.md`, `LICENSE`, `NOTICE` | Constitutional / legal: the load-bearing docs |
 | `Title.md` | `README.md`, `CLAUDE.md` | Conventional + agent-runbook |
 | `lowercase.ext` | `polaris_mac_launch.sh`, `Polaris.command` | Executables (note: `Polaris.command` is the macOS double-click convention) |
 | Hidden | `.gitignore`, `.pre-commit-config.yaml`, `.github/`, `.git/` | Tooling config |
@@ -54,7 +54,7 @@ the doc-comment. Format:
 ```bash
 #!/bin/bash
 # =============================================================================
-# scripts/<name>.sh — <one-line purpose>
+# scripts/<name>.sh: <one-line purpose>
 #
 # <multi-paragraph context>
 #
@@ -104,8 +104,8 @@ polaris_<domain>/
 convention so `00_load_all.sql` can `\i` them in order:
 
 ```
-00_migrations_table.sql       # FIRST — the schema_version registry (v8.95)
-00_load_all.sql               # entry point — \i each file in order
+00_migrations_table.sql       # FIRST: the schema_version registry (v8.95)
+00_load_all.sql               # entry point: \i each file in order
 01_schema.sql                 # DDL (tables + constraints)
 02_indexes.sql                # indexes (incl. R10-2/R11-* indexes)
 03_view.sql                   # views
@@ -148,26 +148,13 @@ invariants: `Test<ShipID><ShipFeatureName>`.
 
 ---
 
-## 7. Journal entries
-
-Path: `journal/<YYYY-MM-DD>.md` (per-day flat-list).
-
-**Entry format:**
-```markdown
-- **decision** HH:MM — <ship-version SHIPPED — title; description>
-- **learning** HH:MM — <what was learned + cross-ref>
-- **bug** HH:MM — <bug found + fix landed>
-```
-
----
-
 ## 8. CHANGELOG entries
 
 `CHANGELOG.md` at repo root. New entries at TOP of file (newest first).
 
 **Header format:**
 ```markdown
-## v<N.NN> — <YYYY-MM-DD> (<one-line title with sections separated by ·>)
+## v<N.NN>: <YYYY-MM-DD> (<one-line title with sections separated by ·>)
 ```
 
 **Body sections** (when applicable):
@@ -177,9 +164,8 @@ Path: `journal/<YYYY-MM-DD>.md` (per-day flat-list).
 - **Live drill** verified
 - `POLARIS_VERSION` bump line
 
-**v8.20 AoR pin:** old CHANGELOG entries are NEVER edited
-retroactively. Corrections land as new entries cross-referencing
-the prior.
+Old CHANGELOG entries are never edited retroactively. Corrections land
+as new entries cross-referencing the prior.
 
 ---
 
@@ -188,12 +174,10 @@ the prior.
 `POLARIS_VERSION` lives in [`polaris_web/__version__.py`](../polaris_web/__version__.py)
 (canonical source as of v9.06 / C5). Format: `MAJOR.MINOR` (e.g., `9.08`).
 
-**Bump procedure** (codified in `__version__.py` doc-comment):
-1. Edit `__version__` literal
-2. Add CHANGELOG entry
-3. Add CLAUDE.md state-map row
-4. Add journal entry
-5. Run final verification
+**Bump procedure** (the ship discipline in [`../CLAUDE.md`](../CLAUDE.md)):
+1. Edit the `__version__` literal and `appVersion` in `deploy/helm/polaris/Chart.yaml`
+2. Prepend the CHANGELOG entry
+3. Run `python3 -m polaris_checks.run`, then `scripts/ai-done.sh` (must report READY)
 
 ---
 
@@ -204,29 +188,31 @@ walks every Markdown link of shape `[text]` followed by `(path)` and
 confirms target exists. CI runs this on every push.
 
 **Cross-references prefer relative paths:**
-- `[X](../meta/constraint-lattice.md)` — relative ✓
-- `[X](/Users/vanta/Desktop/polaris/meta/constraint-lattice.md)` — absolute ✗
-- `[X](https://github.com/.../meta/constraint-lattice.md)` — URL ✗ (would
+- `[X](../meta/constraint-lattice.md)`: relative ✓
+- `[X](/Users/vanta/Desktop/polaris/meta/constraint-lattice.md)`: absolute ✗
+- `[X](https://github.com/.../meta/constraint-lattice.md)`, URL ✗ (would
   rot when fork count grows)
 
 **Cross-arc references are typed:**
-- "v8.95 (CHANGELOG) — schema migration framework"
-- "v9.04 / Wave 1 / A1" — for ship + wave + item identification
+- "v8.95 (CHANGELOG): schema migration framework"
+- "v9.04 / Wave 1 / A1": for ship + wave + item identification
 
 ---
 
 ## 11. Em-dashes
 
-**Forbidden in own-prose Markdown** per `DEVNOTES/style.md` (VANTA
-standing instruction). The `em-dash-warn` pre-commit hook surfaces
-violations informationally.
+**Forbidden in prose** across every human-facing surface: the root
+documents, `docs/`, `DEVNOTES/`, `meta/`, the package READMEs, `site/`,
+`deploy/`, and the application's templates and messages. This is a project
+standard (see [`../DEVNOTES/style.md`](../DEVNOTES/style.md)); the
+`em-dash-block-new` pre-commit hook rejects a commit that adds one.
 
 **Allowed exceptions:**
-- CHANGELOG entries (audit-of-record; can't be retroactively
-  edited per v8.20)
-- Historical journal entries (pruned from the tree in v9.57; the
-  shipped record lives in git history)
-- Direct quotes from VANTA / external sources
+- CHANGELOG entries (the audit of record is never edited retroactively)
+- Verbatim records: `DEVNOTES/record.md`, `DEVNOTES/ships/`, the
+  machine-written `docs/operator/DR-DRILLS.md`, and the frozen section of
+  MISSION.md
+- Direct quotes from external sources
 
 **Substitutes:** `:` (colon), `,` (comma), `(` `)` (parens),
 sentence break.
@@ -246,9 +232,9 @@ reader.
 - Reference callers ("used by module Y")
 
 **Do:**
-- Reference the constitutional source ("per C2 — zero-knowledge")
+- Reference the constitutional source ("per C2, zero-knowledge")
 - Name the surprising-to-a-reader fact ("SET LOCAL evaporates at
-  COMMIT — that's intentional carve-out closure")
+  COMMIT; that is the intentional carve-out closure")
 
 ---
 
@@ -259,8 +245,7 @@ reader.
 1. Add a CHANGELOG entry under the deletion ship
 2. Add a `check_*` to `polaris_checks/checks.py` pinning the deletion
    if the deletion is itself load-bearing
-3. NEVER silently delete from CHANGELOG/journal — those are
-   v8.20 AoR
+3. Never silently delete from the CHANGELOG; it is the audit of record
 
 ---
 
@@ -270,7 +255,5 @@ This file (`docs/CONVENTIONS.md`) is the single source of truth.
 Changes happen here, then propagate by reference. Other docs that
 mention conventions cross-reference here rather than redefining.
 
-For the project-wide architecture map, see [`reference/SYSTEM-MAP.md`](reference/SYSTEM-MAP.md).
-
-For the constitutional principles beneath these conventions, see
-[`story/PRINCIPLES.md`](story/PRINCIPLES.md).
+For the project-wide architecture map, see [`reference/SYSTEM-MAP.md`](reference/SYSTEM-MAP.md);
+for the constitution beneath these conventions, [`../MISSION.md`](../MISSION.md).

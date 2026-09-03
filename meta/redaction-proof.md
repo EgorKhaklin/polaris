@@ -1,16 +1,16 @@
-# meta/redaction-proof.md — verification-graph redaction (M2-12 / R11-7)
+# meta/redaction-proof.md: verification-graph redaction (M2-12 / R11-7)
 
 **Status:** Active. Companion to property tests in
 `polaris_web/test_redaction_property.py`.
 
-C2 — the schema-level invariant that `VerificationEvent.token_id IS NULL`
-when `disclosure_level = 'ZERO_KNOWLEDGE'` — is a *syntactic* claim. A
+C2: the schema-level invariant that `VerificationEvent.token_id IS NULL`
+when `disclosure_level = 'ZERO_KNOWLEDGE'`: is a *syntactic* claim. A
 syntactic claim is necessary but not sufficient: the column being NULL
 does not, by itself, guarantee that the holder of a ZK event cannot be
 identified by an adversary with full database read access. This document
 strengthens C2 from "the column is NULL" to "the privacy claim holds
 against an explicit adversary model." It also enumerates the
-counterexamples — the operational conditions under which the syntactic
+counterexamples: the operational conditions under which the syntactic
 NULL is not enough.
 
 ## 1. Adversary model
@@ -22,7 +22,7 @@ exfiltrated a database snapshot and can read it indefinitely.
 
 **Cannot do.** Insert, update, or delete any row. Observe future
 events. Observe network-layer or timing side-channels at insertion
-time (the schema records them only with the granularity it stores —
+time (the schema records them only with the granularity it stores:
 `event_timestamp` is the field that exposes timing, with one-second
 resolution by default).
 
@@ -116,7 +116,7 @@ commitments (otherwise commitments themselves cluster events from a
 holder). If a buggy or coerced implementation produces deterministic
 per-holder commitments, the privacy claim degrades immediately.
 
-**Test:** `test_proof_commitments_are_unique_per_event` — across all
+**Test:** `test_proof_commitments_are_unique_per_event`, across all
 sample data, no two ZK events share a commitment. A regression
 breaks this test.
 
@@ -135,7 +135,7 @@ contribute noise.
 For a single ZK event with no nearby SELECTIVE/FULL events from the
 same holder, no spatially-unique location, and a uniformly-distributed
 `proof_commitment`, the adversary's information about the holder is
-exactly the prior `P(holder = h_i)` — typically uniform `1/n`.
+exactly the prior `P(holder = h_i)`: typically uniform `1/n`.
 
 The property tests in `test_redaction_property.py` instantiate this
 case: a synthetic population, ZK-only events, no temporal/spatial
@@ -145,7 +145,7 @@ empirically indistinguishable from `1/n`.
 ## 5. Counterexamples (the failure modes)
 
 The same property-test file demonstrates the failure modes
-explicitly. These are not weaknesses being papered over — they are
+explicitly. These are not weaknesses being papered over: they are
 limitations being made testable:
 
 - **CE-1 (Temporal):** SELECTIVE event at time `T` with
@@ -201,12 +201,12 @@ token" (PDF §1, paragraph 9).
 This proof should be revisited when:
 
 - A new column is added to `VerificationEvent` (any new column is a
-  new potential side-channel — does it survive the analysis?).
+  new potential side-channel: does it survive the analysis?).
 - Schema-level changes alter what an adversary sees (e.g., M2-9
   tiered enrollment exposes a new `EnrollmentStatus` column on
   `Individual` that adversaries can pivot through).
 - M2-1 (real ZK-SNARK) lands and the `proof_commitment` becomes a
-  real proof — re-verify §3 S4 against the new construction's
+  real proof: re-verify §3 S4 against the new construction's
   properties.
 - A new operational deployment introduces a side-channel not listed
   in §3.

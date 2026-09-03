@@ -1,4 +1,4 @@
-# polaris-backup.service — one encrypted full backup (roadmap P1.1).
+# polaris-backup.service: one encrypted full backup (roadmap P1.1).
 # Driven by polaris-backup.timer (daily); also `systemctl start polaris-backup`.
 [Unit]
 Description=Polaris database backup (pg_dump tarball with SHA-256 manifest)

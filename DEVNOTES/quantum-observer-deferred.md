@@ -1,4 +1,4 @@
-# QuantumObserverBinding — RESERVED-NOT-PLANNED
+# QuantumObserverBinding: RESERVED-NOT-PLANNED
 
 **Status:** RESERVED-NOT-PLANNED
 **Origin:** M2-5 substrate scaffold shipped v8.11
@@ -103,7 +103,7 @@ ANTI-COERCION-NEUTRAL. This is a future-cryptography substrate, not a
 direct anti-coercion primitive. The explicit deferral *is* anti-larping,
 which is itself a small anti-coercion contribution (an operator
 inspecting Polaris sees an honest accounting of what is and is not
-built; this honest accounting is itself coercion-resistant — a
+built; this honest accounting is itself coercion-resistant: a
 coercer cannot leverage an inflated capability claim against the
 operator if the capability is documented as unbuilt).
 
@@ -111,9 +111,9 @@ operator if the capability is documented as unbuilt).
 
 ## Related decisions
 
-- v9.16 — RESERVED-NOT-PLANNED framing originated here
-- v8.11 — M2-5 scaffold shipped
-- v8.20 — old documents are frozen; the v8.11 ship's SCAFFOLD status
+- v9.16, RESERVED-NOT-PLANNED framing originated here
+- v8.11, M2-5 scaffold shipped
+- v8.20: old documents are frozen; the v8.11 ship's SCAFFOLD status
   is not retroactively edited
 
 ---

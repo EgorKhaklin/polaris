@@ -1,4 +1,4 @@
-# RASP rules — runtime application self-protection
+# RASP rules: runtime application self-protection
 
 **Status:** Rule catalog with implemented vs gap status per rule
 
@@ -14,11 +14,11 @@ implementation status.
 
 Three rule classes:
 
-1. **Rate-limit rules** — bound the rate at which a principal can take
+1. **Rate-limit rules**: bound the rate at which a principal can take
    an action
-2. **Anomaly rules** — detect deviation from baseline and emit a HYDRA
+2. **Anomaly rules**: detect deviation from baseline and emit a HYDRA
    finding
-3. **Edge rules** — Caddy-layer protections that run before requests
+3. **Edge rules**: Caddy-layer protections that run before requests
    reach the app
 
 ---
@@ -40,12 +40,12 @@ Three rule classes:
 **Gap:** none
 
 ### R-RL-3: per-(agency, individual) rate limit on verification
-**Status:** ⚠️ GAP — exists at app layer; not at DB layer
+**Status:** ⚠️ GAP, exists at app layer; not at DB layer
 **Surface:** verification recording in `uc_record_verification`
 **Limit (proposed):** 30 verifications / hour / (agency_id, individual_id)
 **Backend:** PostgreSQL advisory locks + ring-buffer; alternative is
 Redis with a composite key
-**Vocation:** ANTI-COERCION-DIRECT — caps the rate at which a
+**Vocation:** ANTI-COERCION-DIRECT, caps the rate at which a
 single agency can verify a single individual, preventing coercer-driven
 bulk-attestation patterns
 **Implementation note:** see `polaris_sql/05_procedures.sql`
@@ -65,43 +65,43 @@ would run inside the same transaction so race conditions are sealed.
 ## Anomaly rules
 
 ### R-AN-1: unusually high verification volume per individual
-**Status:** ⚠️ GAP — adversary_watcher emits NO finding for this
+**Status:** ⚠️ GAP, adversary_watcher emits NO finding for this
 **Surface:** HYDRA's adversary_watcher
 **Trigger (proposed):** if any individual receives >50 verifications in
 the last hour, emit `{node_id: "adversary:high-verify-rate", level:
-"WARN", individual_id: ...}` — does NOT block, just surfaces
+"WARN", individual_id: ...}`, does NOT block, just surfaces
 **Implementation:** add channel to `polaris_hydra/watchers/adversary_watcher.py`;
 reads `VerificationEvent` GROUP BY individual_id WHERE created_at >
 now() - INTERVAL '1 hour'
 
 ### R-AN-2: failed-login spike from a single IP
-**Status:** ⚠️ GAP — security_watcher counts globally, not per-IP
+**Status:** ⚠️ GAP, security_watcher counts globally, not per-IP
 **Trigger (proposed):** if any IP produces >20 failed-logins in
 10 minutes, emit `{node_id: "adversary:auth-spike", level: "WARN",
-src_ip: ...}`. Distinct from R-RL-1 (which throttles) — this signals
+src_ip: ...}`. Distinct from R-RL-1 (which throttles), this signals
 *pattern*, not enforces *throughput*.
 
 ### R-AN-3: enrollment-event burst from a single agency
 **Status:** ⚠️ GAP
 **Trigger (proposed):** if a single agency produces >5 enrollment
-events in 5 minutes, emit a HYDRA finding. Vocation: anti-coercion —
+events in 5 minutes, emit a HYDRA finding. Vocation: anti-coercion:
 coerced bulk enrollment is detectable.
 
 ### R-AN-4: ZK-disclosure-level downgrade attempts
-**Status:** ✅ IMPLEMENTED — the C2 CHECK constraint (`chk_disclosure_token_consistency`) refuses at DB level; logged
+**Status:** ✅ IMPLEMENTED, the C2 CHECK constraint (`chk_disclosure_token_consistency`) refuses at DB level; logged
 in `TokenLifecycleEvent` as REJECTED operation
 **Trigger:** any verification request with disclosure-level FULL on
-a token whose policy is ZERO_KNOWLEDGE — C6 server-side enforcement
+a token whose policy is ZERO_KNOWLEDGE, C6 server-side enforcement
 **Watcher coverage:** security_watcher channel 3 (v8.x) scans for
 REJECTED rows
 **Gap:** none (this is constitutionally enforced)
 
 ### R-AN-5: foresight category drift
-**Status:** ⚠️ GAP — foresight surface (v9.12) has no off-mission
+**Status:** ⚠️ GAP, foresight surface (v9.12) has no off-mission
 detection
 **Trigger (proposed):** if `_acceptance_log.json` shows >2 FS-XXXXXXXX
 candidates with `vocation_alignment != anti-coercion-*`, emit
-WARN — the foresight surface is drifting from its constitutional
+WARN: the foresight surface is drifting from its constitutional
 purpose
 **Implementation:** new channel in adversary_watcher or extend
 foresight promotion to refuse non-anti-coercion candidates outright
@@ -134,7 +134,7 @@ TLS, Caddy can enforce:
 **Gap:** none
 
 ### R-ED-2: connection-rate limit at Caddy
-**Status:** ⚠️ GAP — Caddy can apply `rate_limit` directive but the
+**Status:** ⚠️ GAP, Caddy can apply `rate_limit` directive but the
 Caddyfile in `polaris_web/deploy/` does not include one
 **Proposed:**
 ```caddy
@@ -164,7 +164,7 @@ Redis rate-limiter is the primary. Both should be enabled in
 production.
 
 ### R-ED-3: WAF rule for common injection patterns
-**Status:** ⚠️ GAP — Caddy does not ship a WAF; commercial WAFs
+**Status:** ⚠️ GAP, Caddy does not ship a WAF; commercial WAFs
 (Cloudflare, AWS WAF) can be in front but are deployment-specific
 **Note:** the app is parameterized-SQL throughout (psycopg2 bind
 parameters); injection at the SQL boundary is structurally impossible.
@@ -172,7 +172,7 @@ A WAF would catch upstream attempts pre-app, but the structural
 defense is the primary line.
 
 ### R-ED-4: TLS configuration
-**Status:** ✅ IMPLEMENTED — Caddy handles Let's Encrypt + modern
+**Status:** ✅ IMPLEMENTED, Caddy handles Let's Encrypt + modern
 TLS suite by default; no `tls_min_version` override needed
 **Gap:** none
 
@@ -186,13 +186,13 @@ R-AN-2, R-AN-3, R-AN-5, R-ED-2, R-ED-3) is a candidate for a future
 incremental ship; operator priority + vocation alignment determines order.
 
 Recommended order (vocation-weighted):
-1. R-RL-3 (per-agency-individual rate limit) — anti-coercion direct
-2. R-AN-1 (high-verify-rate finding) — anti-coercion-indirect
-3. R-AN-3 (enrollment burst) — anti-coercion-indirect
-4. R-ED-2 (Caddy rate-limit) — anti-coercion-indirect (DoS defense)
-5. R-AN-2 (auth-spike finding) — security hardening
-6. R-AN-5 (foresight drift detection) — constitutional self-monitoring
-7. R-ED-3 (WAF in front) — deployment-specific; operator decision
+1. R-RL-3 (per-agency-individual rate limit): anti-coercion direct
+2. R-AN-1 (high-verify-rate finding): anti-coercion-indirect
+3. R-AN-3 (enrollment burst): anti-coercion-indirect
+4. R-ED-2 (Caddy rate-limit): anti-coercion-indirect (DoS defense)
+5. R-AN-2 (auth-spike finding): security hardening
+6. R-AN-5 (foresight drift detection): constitutional self-monitoring
+7. R-ED-3 (WAF in front): deployment-specific; operator decision
 
 ---
 

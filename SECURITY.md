@@ -125,9 +125,9 @@ This policy commits to:
 If you are reporting under duress, indicate this in the initial message.
 We will treat the report as a duress-channel event (mirrors C2 / C9
 reasoning) and respond accordingly. **There is no "duress code" for
-this channel** — the cryptographic duress-codes mechanism is for
+this channel**: the cryptographic duress-codes mechanism is for
 end-users authenticating into Polaris, not for security researchers
-reporting vulnerabilities — but the operator commits to the same
+reporting vulnerabilities: but the operator commits to the same
 spirit: a coerced report should not entail retaliation against the
 researcher.
 
@@ -151,5 +151,5 @@ referencing this policy.
 ---
 
 *Maintainer: VANTA / Egor Khaklin*
-*Last updated: 2026-06-03 (v9.56)*
+*Last updated: 2026-09-02 (v9.200)*
 *Per RFC 9116 / live `/security.txt` route shipped v9.13*

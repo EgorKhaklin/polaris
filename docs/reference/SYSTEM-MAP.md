@@ -45,7 +45,6 @@ polaris/
 │   ├── ARCHITECTURE-OVERVIEW.md, PRODUCTION-READINESS.md, RED-TEAM-SCOPE.md, THESIS.md, SEED_DATA.md, CONVENTIONS.md
 │   ├── operator/       ← the runbooks (seventeen documents and an index)
 │   ├── reference/      ← this directory
-│   ├── story/          ← PRINCIPLES.md
 │   └── paper/          ← the academic report (TeX and PDF)
 ├── DEVNOTES/           ← design notes, the project record, per-ship notes under ships/
 ├── meta/               ← structural records (redaction proof, structural architecture, the TLA+ model)
@@ -108,7 +107,6 @@ publishes `site/`.
 | [`docs/operator/`](../operator/README.md) | INSTALL, DEPLOYMENT, LINUX-SERVER, KUBERNETES, HARDENING, OPERATIONS, SECRETS, KEY-CEREMONY, SECURITY, PRIVACY, DR, DR-DRILLS (ledger), FAILOVER, ENCRYPTION-AT-REST, SLOS, RUNBOOKS, WEBAUTHN-ROLLOUT |
 | [`docs/reference/`](README.md) | API, DATA-MODEL, PQC-POSTURE, PERFORMANCE-BASELINE, SCALING, GLOSSARY, this map |
 | [`docs/`](../README.md) | ARCHITECTURE-OVERVIEW, PRODUCTION-READINESS (the bound on every claim), RED-TEAM-SCOPE, THESIS, SEED_DATA, CONVENTIONS |
-| [`docs/story/`](../story/) | PRINCIPLES |
 | [`docs/paper/`](../paper/) | The academic report |
 | [`DEVNOTES/`](../../DEVNOTES/) | Design notes (audit of record, concurrency, threat model, substrate, ZK soundness, the two-witness principle, style), the project record, and one note per major ship under `ships/` |
 

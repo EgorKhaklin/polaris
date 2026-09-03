@@ -21,7 +21,7 @@ the user_memories block and accumulated across sessions.
 
 - **Intelligence-report aesthetic.** Navy / gold visual hierarchy.
   Compact tables. Authoritative tone. The Atlas globe is a deliberate
-  Gotham-brain reference — operational investigation surface, not
+  Gotham-brain reference: operational investigation surface, not
   dashboard.
 
 - **No cosmic-significance framing as substitute for output.** If I
@@ -35,7 +35,7 @@ the user_memories block and accumulated across sessions.
 
 ---
 
-## Quality bar — "holy shit, that's done"
+## Quality bar: "holy shit, that's done"
 
 - **Complete, permanent solutions.** No workarounds when the real fix
   is within reach.
@@ -122,7 +122,7 @@ issuing authorities**. NOT a single token carrying spending authority.
 
 The ugly part of #3 (single token = identity + money) is that
 `ADMINISTRATIVE_PAPERWORK_ERROR` becomes existential rather than
-annoying. Already in the sample data — David Okafor's revoked token
+annoying. Already in the sample data, David Okafor's revoked token
 demonstrates the failure mode at scale.
 
 If VANTA pushes for it anyway, build it as a **separate repo** that

@@ -329,6 +329,14 @@ the primitive is redundant; if no, the primitive is load-bearing. The
 `polaris_checks/` layer is the machine-checkable record of which
 primitives are load-bearing.
 
+The principles are stable; the implementations are not. MISSION.md states
+the constraints abstractly. A future maintainer may replace the mechanism
+that enforces one (a different schema construct, a check layer in another
+language) without changing the constitution, provided the replacement is
+enforced where policy cannot bypass it and a detection-tested check pins
+it. Substituting the implementation is permitted; weakening the guarantee
+is not.
+
 ---
 
 ## §XI. See the constraints refuse

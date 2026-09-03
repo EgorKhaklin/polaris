@@ -1,4 +1,4 @@
-# polaris_zk/ — R10-1 / M2-1 · Plonky2 ZK-SNARK prover
+# polaris_zk/: R10-1 / M2-1 · Plonky2 ZK-SNARK prover
 
 This Rust crate is the post-quantum-comfortable ZK-SNARK
 implementation for Polaris's `ZERO_KNOWLEDGE` verification
@@ -39,10 +39,10 @@ polaris_zk/
 ```
 
 CLI subcommands (`polaris-zk`):
-- `compute-root --leaves <file>` — Merkle root over leaves
-- `compute-leaves --epoch <id>` — extract canonical leaves for an epoch
-- `prove --leaves <file> --leaf-idx <n>` — generate SNARK
-- `verify --proof <file> --root <hex>` — verify SNARK against root
+- `compute-root --leaves <file>`: Merkle root over leaves
+- `compute-leaves --epoch <id>`: extract canonical leaves for an epoch
+- `prove --leaves <file> --leaf-idx <n>`: generate SNARK
+- `verify --proof <file> --root <hex>`: verify SNARK against root
 
 The Flask app calls this binary as a subprocess via
 `polaris_web/zk.py` (avoids embedding Rust into the Python web
@@ -85,9 +85,9 @@ in the per-procedure advisory-lock catalog; first non-per-entity
 one) atomically closes an epoch and computes its Merkle root.
 
 Three `/api/zk/*` routes:
-- `POST /api/zk/epoch/<id>/close` — close current epoch (admin-only)
-- `GET /api/zk/epoch/<id>/proof?leaf=<n>` — generate ZK proof for a leaf
-- `POST /api/zk/verify` — verify a proof against an epoch root
+- `POST /api/zk/epoch/<id>/close`: close current epoch (admin-only)
+- `GET /api/zk/epoch/<id>/proof?leaf=<n>`: generate ZK proof for a leaf
+- `POST /api/zk/verify`: verify a proof against an epoch root
 
 ---
 
@@ -96,14 +96,14 @@ Three `/api/zk/*` routes:
 This crate is on the cryptographic substrate side; the relevant
 constraints:
 
-- **C2** — `ZERO_KNOWLEDGE` events have `token_id IS NULL`
+- **C2**: `ZERO_KNOWLEDGE` events have `token_id IS NULL`
   (CHECK constraint + form-layer coercion). The ZK proof is
   what makes this honest: the verifier can confirm validity
   without ever seeing `token_id`.
-- **C7** — Cryptographic algorithm metadata flows through
+- **C7**: Cryptographic algorithm metadata flows through
   `CryptographicAlgorithm` table. Plonky2 + Poseidon hash
   registered there; never hardcoded in app code.
-- **PQ-comfortable** — Plonky2 is FRI-based (hash-function
+- **PQ-comfortable**: Plonky2 is FRI-based (hash-function
   security only); no elliptic-curve assumption. Survives
   Shor's algorithm if Poseidon survives Grover (which it does
   with the 256-bit security level used here).

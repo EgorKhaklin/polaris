@@ -5,6 +5,56 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.200 — 2026-09-02 (P1.13 ship 7: the indexes and the voice gate)
+
+The last ship of row P1.13. Every document under `docs/` is reachable from the
+index of its own directory, and a check keeps it so; the prose across the
+documentation carries no em-dash; the hook that stops new ones covers every
+human-facing surface.
+
+- **docs/README.md is a hub.** One row per document in the directory
+  (PRODUCTION-READINESS first, named as the bound on every claim), one row
+  per sub-directory delegating to its own index. The false scripts-grep
+  rationale, the "Added v8.59" archaeology, the M2 enumeration, the
+  "semantic memory" framing and the re-evaluation triggers are gone.
+  `check_docs_index_coverage` (110 checks) walks `docs/` and fails when a
+  Markdown document is not linked from the README of its directory or a
+  sub-directory is not delegated; the link checker proves links resolve but
+  could never see an omission.
+- **docs/story/ is gone; PRINCIPLES.md merged.** Its constraint table
+  duplicated MISSION.md, its audit-of-record table duplicated
+  DEVNOTES/audit-of-record.md, and its vocation section duplicated MISSION.md;
+  the one argument that lived nowhere else, substitutability of the
+  implementation under a fixed constitution, is now in
+  ARCHITECTURE-OVERVIEW.md §X. README, CLAUDE.md, CONVENTIONS §14, the paper
+  index, SYSTEM-MAP, the SQL READMEs and the checks that scanned it are
+  repointed.
+- **NOTICE, CONVENTIONS, CONTRIBUTING, SECURITY.** NOTICE's About is two
+  factual sentences and its attribution clause no longer cites a "strategic
+  moment framing" or a "nine instances" count. CONVENTIONS drops the journal
+  entry spec and the `journal/` and `archive/` directory rows (neither exists
+  in the tree), states the real bump procedure (version, chart appVersion,
+  CHANGELOG, gate) instead of a five-step one that named a journal, and
+  restates the em-dash rule as a project standard with its exemptions.
+  CONTRIBUTING keeps one statement of the constitutional refusal instead of
+  three, corrects "a fourth uniqueness-pattern convention" (there are two),
+  carries the pre-commit section moved from OPERATIONS.md in v9.199, and is
+  restamped; the root SECURITY.md is restamped.
+- **The em-dash sweep.** 499 em-dashes converted across 51 files: `docs/`,
+  `DEVNOTES/` (except the verbatim record and the per-ship notes), `meta/`,
+  the package READMEs, CLAUDE.md, NOTICE, CONTRIBUTING, SECURITY.md,
+  `assets/README.md` and the comments in `deploy/`. Rules, not judgment per
+  sentence: a term followed by an explanation takes a colon; a paired aside
+  takes commas; headings and table cells take a colon. CHANGELOG.md,
+  DEVNOTES/record.md, DEVNOTES/ships/, the machine-written DR-DRILLS.md and
+  MISSION.md's frozen section are exempt by the standard. The application's
+  templates and scripts (173 and 102) are P1.17's, not this ship's.
+- **The hook.** `.pre-commit-config.yaml`'s `em-dash-block-new` now inspects
+  every staged Markdown file, `docs/`, `DEVNOTES/`, `meta/`, `site/`,
+  `deploy/`, the templates and NOTICE, with the same exemptions, instead of
+  five root files.
+
+
 ## v9.199 — 2026-09-02 (P1.13 ship 5: the operator surface has one owner per subject)
 
 Seventeen runbooks, one owner per subject, every claim re-verified against

@@ -30,7 +30,7 @@ Two facts decide whether this scales, and both are measured above:
 1. **The operator's real workflow is index-served and bbox-bounded.** Zooming
    to a region, a city, a street, or one subject reads a tight bounding box
    through the `(latitude, longitude)` partial index and returns in single-digit
-   milliseconds — at 10M events, and at 100M, because the bbox bounds the scan,
+   milliseconds: at 10M events, and at 100M, because the bbox bounds the scan,
    not the table size. This is the path that matters: nobody investigates by
    staring at an un-aggregated planet.
 
@@ -38,7 +38,7 @@ Two facts decide whether this scales, and both are measured above:
    rollup, not an index.** `EXPLAIN` shows the overview sorting and grouping
    every non-ZK row (no index can avoid reading rows you are aggregating). At
    10M that is ~2.9 s cold. A materialized grid rollup pre-computes those cells;
-   reading the overview from it is **0.04 ms — roughly 70,000× faster** — and
+   reading the overview from it is **0.04 ms, roughly 70,000× faster**, and
    the ~2.6 s build runs on a refresh schedule, off the request path. The live
    API also caches cluster results (`_atlas_cache`), so even without the rollup
    the cold overview is computed once per viewport and then served from cache.
@@ -159,7 +159,7 @@ don't include legacy data points and stay small.
 
 PostGIS would give us proper spatial indexes (GiST on a `geography`
 type, R-tree on `geometry`) and allow polygon queries, but plain B-tree
-composite indexes on (lat, lon) are sufficient for bbox queries — the
+composite indexes on (lat, lon) are sufficient for bbox queries: the
 only spatial primitive Atlas needs.
 
 ---
@@ -229,7 +229,7 @@ globe re-renders cleanly on every fetch. Cluster nodes get a sqrt-scaled
 radius and the count rendered inside the ring; point nodes get the full
 reticle ornament with leader line + label.
 
-`scheduleFetch()` is debounced at 220 ms — pan/zoom events trigger one
+`scheduleFetch()` is debounced at 220 ms: pan/zoom events trigger one
 batched API call rather than one per frame. AbortController cancels the
 previous fetch when a new one starts.
 
@@ -262,7 +262,7 @@ synthetic verification events distributed across 30 cities globally:
 | `/api/atlas/events` first page    |   31 ms  | Top-N + late join |
 
 User-perceptible latency at 1M+ scale would benefit from caching at the
-API layer (Redis) keyed by `(bbox, grid, kind)` with a short TTL — a
+API layer (Redis) keyed by `(bbox, grid, kind)` with a short TTL: a
 typical operator's pan/zoom oscillates over a small set of common views.
 
 ---
@@ -278,7 +278,7 @@ The implementation uses `LIMIT N+1 OFFSET (page-1)*N`, where the +1
 detects whether a next page exists without a separate `count(*)`
 query. **Limitation**: deep pages are slow because OFFSET has to scan
 past skipped rows. Page 1 is 62 ms; page 100 is 1.6 s; page 20000 is
-13.6 s. Cursor pagination would make all pages O(log n) — that's a
+13.6 s. Cursor pagination would make all pages O(log n): that's a
 clean follow-up. Filtering (the typical operator workflow) reduces the
 row set so deep pages are rare.
 
@@ -334,7 +334,7 @@ wrong past a holder's second active token, regardless of concurrency).
 The fix computes `MAX(activation_sequence) + 1` inside the row-locked
 region above, eliminating both the always-2 bug and the TOCTOU race.
 
-### Unique partial index — the bullet-proof guarantee
+### Unique partial index: the bullet-proof guarantee
 
 Already present pre-v6. `uq_one_active_per_person` on
 `IdentityToken(individual_id) WHERE status = 'ACTIVE'` enforces the
@@ -370,13 +370,13 @@ push (v9.191, roadmap P1.9).
 
 ## What's not yet covered
 
-- - **Cursor-based deep pagination** on the list pages — current
+- - **Cursor-based deep pagination** on the list pages: current
   implementation uses OFFSET, which is slow past page 100.
-- **API-layer caching** — a Redis cache keyed by `(bbox, grid, kind)`
+- **API-layer caching**: a Redis cache keyed by `(bbox, grid, kind)`
   with 30s TTL would push p95 latency for repeat views to <50 ms.
-- **Frontend zoom-aware grid auto-sizing** — currently a fixed sliding
+- **Frontend zoom-aware grid auto-sizing**: currently a fixed sliding
   scale; could be adaptive based on visible cluster density.
-- **Stress test scheduling** — `_stress_seed.sql` is a one-shot script;
+- **Stress test scheduling**: `_stress_seed.sql` is a one-shot script;
   a proper benchmark suite would run the full curl matrix against
   multiple data sizes (10K, 100K, 1M, 10M) and produce a regression
   table.

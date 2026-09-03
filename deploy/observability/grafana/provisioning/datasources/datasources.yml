@@ -1,4 +1,4 @@
-# Polaris — Grafana datasource provisioning (v9.187 / roadmap P1.6).
+# Polaris: Grafana datasource provisioning (v9.187 / roadmap P1.6).
 #
 # Dashboards-as-code: Grafana boots with its datasources DECLARED, not
 # clicked together. The service names match docker-compose.observability.yml;

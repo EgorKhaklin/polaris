@@ -1,6 +1,6 @@
 # DEVNOTES/threat-model.md
 
-<!-- coherence:taxonomy-allowed — STRIDE is a standard taxonomy (S, T, R, I, D, E) + scope + deferred + coverage + how-to-use; consolidating S+T+R+I+D+E would invert the entire frame -->
+<!-- coherence:taxonomy-allowed, STRIDE is a standard taxonomy (S, T, R, I, D, E) + scope + deferred + coverage + how-to-use; consolidating S+T+R+I+D+E would invert the entire frame -->
 
 STRIDE-categorized threat model for Polaris. Every threat is mapped
 to a control or explicitly listed as ACCEPTED / DEFERRED with
@@ -24,7 +24,7 @@ This document closed v1 done-list item 8 (the record is in [`record.md`](record.
 
 ---
 
-## S — Spoofing
+## S: Spoofing
 
 ### T-S1: forged signing key issues fake tokens
 
@@ -45,7 +45,7 @@ signs new `IdentityToken` rows that the rest of the system trusts.
   enumerate every token issued under the compromised key
 
 **Residual risk:** ACCEPTED. Key compromise is out of scope for
-software controls — addressed by HSM / key-rotation procedures
+software controls: addressed by HSM / key-rotation procedures
 documented in `docs/operator/SECURITY.md`.
 
 ### T-S2: session fixation
@@ -99,7 +99,7 @@ system.
 - WebAuthn is **phishing-resistant by design**: assertions are bound
   to `POLARIS_DOMAIN` via the origin check inside the
   authenticator. A credential issued for `polaris.example.com` will
-  not assert on `polar1s.example.com` — the look-alike domain that
+  not assert on `polar1s.example.com`: the look-alike domain that
   steals a password cannot replay the assertion.
 - Public-key cryptography: the private key never leaves the
   authenticator. A breach disclosure of `password_hash` is
@@ -123,7 +123,7 @@ audited and time-bounded (default 15 min).
 
 ---
 
-## T — Tampering
+## T: Tampering
 
 ### T-T1: direct DB write bypasses lifecycle invariants
 
@@ -136,7 +136,7 @@ manually `UPDATE`s `IdentityToken.status` from REVOKED back to ACTIVE.
 - `audit_token_state_change` trigger on `IdentityToken` writes a
   `TokenLifecycleEvent` row for EVERY status change, including
   manual ones
-- `TokenLifecycleEvent` is append-only (constraint C1) — the manual
+- `TokenLifecycleEvent` is append-only (constraint C1): the manual
   unrevoke is permanently recorded
 - Partial unique index `uq_one_active_per_person` (constraint C3)
   may catch the manual unrevoke if another ACTIVE token exists
@@ -162,7 +162,7 @@ replays it later to gain access.
   cannot be replayed against BANKING (constraint architecture)
 
 **Residual risk:** LOW within freshness window. **DEFERRED:** explicit
-nonce table for cross-context replay protection — currently relies on
+nonce table for cross-context replay protection: currently relies on
 context-side enforcement.
 
 ### T-T3: tampering with `predecessor_token_id` to disconnect succession
@@ -184,7 +184,7 @@ backlog item; current implementation relies on app-layer checks.
 
 ---
 
-## R — Repudiation
+## R: Repudiation
 
 ### R-R1: agency denies issuing a token they actually issued
 
@@ -217,7 +217,7 @@ verification.
 - For `FULL` disclosure events, the holder is logged by name; for
   `SELECTIVE`, by attribute set; for `ZERO_KNOWLEDGE`, the system
   records the verification but cannot identify the holder (this is
-  intentional — privacy by design)
+  intentional: privacy by design)
 
 **Residual risk:** ZK events ARE inherently repudiable for the
 holder. This is the privacy/repudiability tradeoff that
@@ -225,7 +225,7 @@ holder. This is the privacy/repudiability tradeoff that
 
 ---
 
-## I — Information Disclosure
+## I: Information Disclosure
 
 ### I-I1: unauthorized read of holder PII
 
@@ -249,7 +249,7 @@ data sources to deanonymize.
 **Affected:** `VerificationEvent` with disclosure='ZERO_KNOWLEDGE'
 
 **Controls:**
-- ZK events have `token_id IS NULL` (constraint C2) — no direct link
+- ZK events have `token_id IS NULL` (constraint C2): no direct link
 - Event timestamps are recorded but not co-mingled with holder
   identifiers in the ZK event row
 
@@ -289,7 +289,7 @@ app surfaces verbatim, leaking column names or query structure.
 
 ---
 
-## D — Denial of Service
+## D: Denial of Service
 
 ### D-D1: unbounded API result set OOMs server or browser
 
@@ -322,7 +322,7 @@ out, or to crack a weak password.
 
 **Residual risk:** LOW under single-process; **DEFERRED** under
 multi-worker (the in-memory limiter is per-worker; multi-worker needs
-Redis — backlog item R8-2).
+Redis: backlog item R8-2).
 
 ### D-D3: write-amplification via append-only triggers
 
@@ -355,7 +355,7 @@ the gunicorn worker pool.
 
 ---
 
-## E — Elevation of Privilege
+## E: Elevation of Privilege
 
 ### E-E1: SQL injection bypasses role enforcement
 
@@ -457,7 +457,7 @@ least one threat where it serves as a control:
 | C7 (algorithm metadata) | T-S1 |
 | C8 (atlas hard caps) | D-D1 |
 | C9 (concurrency tests) | D-D2 (verified atomicity) |
-| C10 (identity ≠ money) | architectural — would multiply blast radius of all above |
+| C10 (identity ≠ money) | architectural: would multiply blast radius of all above |
 
 If a constraint were removed, the controls in the corresponding row
 would be lost. This makes the relationship explicit for future

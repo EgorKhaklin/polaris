@@ -1,8 +1,8 @@
-# Polaris — Tempo trace-backend config (v9.187 / roadmap P1.6).
+# Polaris: Tempo trace-backend config (v9.187 / roadmap P1.6).
 #
 # The smallest useful Tempo: OTLP in (the app's exporter POSTs OTLP/HTTP to
 # tempo:4318/v1/traces), local storage, bounded retention. Reference-scale by
-# design — an authority running at state scale brings its own trace backend
+# design: an authority running at state scale brings its own trace backend
 # and points OTEL_EXPORTER_OTLP_ENDPOINT at it; every config here is standard
 # OTel/Tempo, nothing Polaris-specific to migrate.
 server:

@@ -47,7 +47,7 @@ ship; the row is done when every ship under it is `[x]`.
 | P1.13 | 4. The architecture document; QUICKSTART absorbed | [x] v9.197 |
 | P1.13 | 5. The operator surface | [x] v9.199 |
 | P1.13 | 6. The reference surface | [x] v9.198 |
-| P1.13 | 7. The indexes and the voice gate (docs hub, index-coverage check, PRINCIPLES merged, NOTICE and CONVENTIONS, CONTRIBUTING dedupe, the em-dash sweep across docs/ DEVNOTES/ meta/ and the package READMEs, the widened hook) | [ ] |
+| P1.13 | 7. The indexes and the voice gate (docs hub, index-coverage check, PRINCIPLES merged, NOTICE and CONVENTIONS, CONTRIBUTING dedupe, the em-dash sweep across docs/ DEVNOTES/ meta/ and the package READMEs, the widened hook) | [x] v9.200 |
 | P1.14 | 1. Repository settings and the security policy | [ ] |
 | P1.14 | 2. About, topics, the four-surface self-description | [ ] |
 | P1.14 | 3. Community health files | [ ] |

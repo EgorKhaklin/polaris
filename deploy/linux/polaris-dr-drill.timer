@@ -1,4 +1,4 @@
-# polaris-dr-drill.timer — monthly, the 1st at 05:00 UTC (roadmap P1.10, v9.192).
+# polaris-dr-drill.timer: monthly, the 1st at 05:00 UTC (roadmap P1.10, v9.192).
 [Unit]
 Description=Monthly Polaris DR drill (measured RPO + RTO, appended to the host ledger)
 

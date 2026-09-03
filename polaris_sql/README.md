@@ -1,4 +1,4 @@
-# Polaris — Identity Token System: SQL Implementation
+# Polaris: Identity Token System: SQL Implementation
 
 This directory contains the complete SQL realization of the Polaris
 database design specified in `docs/paper/polaris_project_report.pdf`. The schema
@@ -63,7 +63,7 @@ That single command:
    (`05_procedures.sql`)
 6. Installs the state-machine trigger, the append-only triggers on
    every audit-of-record table (thirteen surfaces at v9.194; the list
-   is in `docs/story/PRINCIPLES.md`), auto-audit trigger,
+   is in `DEVNOTES/audit-of-record.md`), auto-audit trigger,
    revocation-velocity-bound trigger (R11-6), enrollment-seed
    trigger (R11-4), active-signature + signature-immutability
    triggers (R11-1), attestation immutability (R11-3),
@@ -199,7 +199,7 @@ The data is constructed so that:
 comes from the `PERFORM _record(...)` and similar test-helper calls in
 the suite files.
 
-### Core suite — `08_tests.sql` (36 assertions, 10 sections)
+### Core suite: `08_tests.sql` (36 assertions, 10 sections)
 
 | Section | Assertions | What it tests |
 |---------|-----------|---------------|
@@ -214,13 +214,13 @@ the suite files.
 | I: Relational-algebra results | 4 | Q2, Q3, Q5, Q6 produce expected results |
 | J: View ActiveTokens | 2 | Reflects current ACTIVE tokens after section H mutations |
 
-### v7 hardening suite — `12_v7_constraints.sql`
+### v7 hardening suite: `12_v7_constraints.sql`
 
 Additional assertions for v7's schema-hardening pass: NFR-4 trigger
 behavior under concurrent writes, partial-index correctness under
 state-machine churn, and the auto-audit trigger's idempotency.
 
-### Substrate-manifest suite — `13_substrate.sql`
+### Substrate-manifest suite: `13_substrate.sql`
 
 Assertions on the `SystemDependency` view: ≥ 15 primitives, no NULL
 fail-modes, all layer labels in {crypto, network, storage, runtime,
@@ -245,7 +245,7 @@ Reasoning:
 - `04_data.sql` requires the schema (and benefits from indexes being present)
 - `05_procedures.sql` requires tables and indexes
 - `06_triggers.sql` runs AFTER `04_data.sql` (the data load is bulk;
-  triggers would slow it ~10× — deliberate)
+  triggers would slow it ~10×: deliberate)
 - `07_queries.sql` requires data
 - `08_tests.sql` requires everything in the core schema
 - `09_grants.sql` is independent (role + GRANT statements)

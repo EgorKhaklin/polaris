@@ -1,10 +1,10 @@
-# docs/SEED_DATA.md — what's in the demo database after a clean load
+# docs/SEED_DATA.md: what's in the demo database after a clean load
 
 This is the answer to "what data exists if I just ran `00_load_all.sql`
 or `Polaris.command` for the first time." The seed is intentionally
 small (8 individuals, 6 agencies, 5 algorithms) so that every UC and
 every Q (relational-algebra query) returns a non-empty, plausible
-result — and so the v2 substrate primitives are observable from
+result: and so the v2 substrate primitives are observable from
 clean load.
 
 If you're investigating "where does this number come from" or "why
@@ -15,7 +15,7 @@ your map.
 
 ## Principals
 
-### Individuals (8 — `polaris_sql/04_data.sql`)
+### Individuals (8: `polaris_sql/04_data.sql`)
 
 | ID | Legal name | DOB | Jurisdiction | Notes |
 |---|---|---|---|---|
@@ -54,7 +54,7 @@ your map.
 `BANKING`(1), `EMPLOYMENT`(2), `HEALTHCARE`(3), `TRAVEL`(4),
 `VOTING`(5), `MOTOR_VEHICLE`(6), `GOVERNMENT_BENEFITS`(7).
 
-### AppUser (3 — `polaris_sql/10_auth.sql`)
+### AppUser (3: `polaris_sql/10_auth.sql`)
 
 | ID | Username | Role | Password |
 |---|---|---|---|
@@ -87,16 +87,16 @@ Werkzeug scrypt hashes stored. Production deployments must rotate.
 
 ## v2 substrate primitives (observable from clean load)
 
-### `AnchorBatch` (R10-2 / M2-2 — v8.21)
+### `AnchorBatch` (R10-2 / M2-2: v8.21)
 
 - **Batch 1** (algorithm 1 ML-DSA-65): root
-  `1944806a…0bc5c8` — single leaf for anchor #1 (T2 Maria's BANKING anchor)
-- **Batch 2** (algorithm 3 SLH-DSA): root `852266d0…d0c4c9` — single leaf
+  `1944806a…0bc5c8`: single leaf for anchor #1 (T2 Maria's BANKING anchor)
+- **Batch 2** (algorithm 3 SLH-DSA): root `852266d0…d0c4c9`, single leaf
   for anchor #2 (T4 Priya)
 
 Both batches `committed_to_chain = FALSE` (operator-discretion field).
 
-### `AgencyTrustAttestation` (R11-3 / M2-8 — v8.22)
+### `AgencyTrustAttestation` (R11-3 / M2-8: v8.22)
 
 Six seed attestations explaining the 8 demo verifications:
 
@@ -108,9 +108,9 @@ Six seed attestations explaining the 8 demo verifications:
 - Bank (5) → PA (2) for BANKING
 
 NO transitive trust. No HEALTHCARE attestations (Maria's HEALTHCARE
-verifications happen at same-agency CA — implicit trust).
+verifications happen at same-agency CA: implicit trust).
 
-### `TokenStateEpoch` (R10-1 / M2-1 — v8.23)
+### `TokenStateEpoch` (R10-1 / M2-1: v8.23)
 
 - **Epoch 1** (BANKING context): merkle_root
   `fd02e50f…7474d` (depth-14 commitment). Commits 3 leaves (T2, T3, T4). `valid_until =
@@ -120,7 +120,7 @@ verifications happen at same-agency CA — implicit trust).
 `TokenStateEpochLeaf` has 3 rows (one per token) with pre-computed
 proof paths.
 
-### `DuressEvent` (R11-5 / M2-10 — v8.24)
+### `DuressEvent` (R11-5 / M2-10: v8.24)
 
 Empty at clean load (no duress events triggered). T2 has a
 `duress_code_hash` enrolled with plaintext `911911`. A successful
@@ -143,22 +143,22 @@ operator-visible `/verifications` doesn't surface duress; the
 
 ## Recovery / Enrollment / Other audit-of-record state
 
-- **RecoveryRequest #1** (PENDING) — David Okafor (#5); requested 50h
+- **RecoveryRequest #1** (PENDING), David Okafor (#5); requested 50h
   ago by operator; cool-down passed; three OOB channels populated;
   awaiting admin decision. Demo for UC-9 queue.
-- **EnrollmentStatusEvent** — 17 rows: 8 trigger-seeded
+- **EnrollmentStatusEvent**: 17 rows: 8 trigger-seeded
   (`NOT_ENROLLED` per Individual); 9 explicit (ENROLLED/LAPSED/EXEMPT
   transitions per R11-4). See SQL test L for verification.
-- **TokenSignature** — backfilled, one per IdentityToken (R11-1
+- **TokenSignature**: backfilled, one per IdentityToken (R11-1
   contract: every ACTIVE token has ≥ 1 active signature).
-- **IssuerDiscretionPolicy** — 2 rows: agency 2 (PA) and agency 3
+- **IssuerDiscretionPolicy**: 2 rows: agency 2 (PA) and agency 3
   (CA) overrides for R11-6 revocation-velocity-bound demo.
 
 ---
 
 ## v2 mission status
 
-**12/12 ✅** — every PDF §9 open problem structurally addressed. See
+**12/12 ✅**: every PDF §9 open problem structurally addressed. See
 [`DEVNOTES/record.md`](../DEVNOTES/record.md) for the full done-list. Both PDF §9 triads complete:
 
 - Holder-protection: R11-4 entry + R11-6 exit + R11-2 recovery

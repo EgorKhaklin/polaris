@@ -1,4 +1,4 @@
-# DEVNOTES/substrate.md — what Polaris depends on, and what breaks if it's compromised
+# DEVNOTES/substrate.md: what Polaris depends on, and what breaks if it's compromised
 
 **Mission link:** v2 M2-3 / R10-3. Companion to `meta/redaction-proof.md`
 and the project report's Appendix E ("Why Identity Cannot Outrun Its
@@ -21,19 +21,19 @@ considered the manifest being out of sync.
 
 Each row records:
 
-- **Primitive** — the named dependency.
-- **Layer** — `crypto` / `network` / `storage` / `runtime` / `standards`
+- **Primitive**: the named dependency.
+- **Layer**: `crypto` / `network` / `storage` / `runtime` / `standards`
   / `hardware` / `human`. Maps to the layered stack in Appendix E.
-- **Authority** — who governs this primitive (NIST, IETF, the kernel,
+- **Authority**: who governs this primitive (NIST, IETF, the kernel,
   ourselves, etc.). When the primitive is governed by an external body,
   that body's stance is load-bearing for Polaris.
-- **Role** — where Polaris uses it. Specific column/file/function
+- **Role**: where Polaris uses it. Specific column/file/function
   references where applicable.
-- **Fail mode** — what is no longer true if this primitive is compromised
+- **Fail mode**: what is no longer true if this primitive is compromised
   or withdrawn. Stated as a positive claim that becomes false.
-- **Replacement** — the path off the broken primitive. Sometimes a
+- **Replacement**: the path off the broken primitive. Sometimes a
   scheduled migration; sometimes a reissuance of every credential.
-- **Detection** — the signal Polaris (or its operator) sees when this
+- **Detection**: the signal Polaris (or its operator) sees when this
   primitive starts to fail. Where the schema can detect, that's named;
   where only operational policy can, the policy is named.
 
@@ -51,12 +51,12 @@ Each row records:
   ↔ holder, token ↔ algorithm) becomes asserted by whoever recovers the
   signing key, not the original issuer. The schema's authenticity claim
   has no referent.
-- **Replacement:** Multi-signature transitional state (M2-6 / R11-1) —
+- **Replacement:** Multi-signature transitional state (M2-6 / R11-1):
   each token carries signatures from N algorithms during the migration
   window; verification accepts any in the active set. Without M2-6,
   replacement requires simultaneous mass reissuance of every token.
 - **Detection:** `CryptographicAlgorithm.deprecation_date` is the
-  proactive signal — set when a cryptanalytic advance becomes public,
+  proactive signal: set when a cryptanalytic advance becomes public,
   before the substrate transitions. Reactive signal: third-party
   cryptanalysis publication.
 
@@ -66,7 +66,7 @@ Each row records:
 - **Role:** Hedge against ML-DSA cryptanalysis. Stateless hash-based
   signature; security reduces to the hash function rather than algebraic
   hardness, so it survives breaks that do not also break SHA-3.
-- **Fail mode:** If SLH-DSA breaks, the hedge is gone — but only ML-DSA
+- **Fail mode:** If SLH-DSA breaks, the hedge is gone, but only ML-DSA
   tokens issued under the same hedge assumption are at risk. SLH-DSA
   itself is not the operational default.
 - **Status at v9.194:** registry rows only; no SLH-DSA signer is wired
@@ -76,7 +76,7 @@ Each row records:
   under different mathematical assumptions; if both break together,
   the assumption-diversity hedge has failed and the response is
   qualitatively the same as ML-DSA-only failure.
-- **Detection:** Same as ML-DSA — `deprecation_date` and external
+- **Detection:** Same as ML-DSA, `deprecation_date` and external
   cryptanalysis.
 
 #### ECDSA / RSA
@@ -84,12 +84,12 @@ Each row records:
 - **Authority:** NIST (legacy)
 - **Role:** Present in `CryptographicAlgorithm` only for migration
   semantics. NEW tokens are not issued under classical algorithms (this
-  is a sovereignty stance, not a technical preference — see Appendix E
+  is a sovereignty stance, not a technical preference: see Appendix E
   §3 "second implication").
 - **Fail mode:** Already known to be quantum-broken (Shor 1994). Any
   token issued under classical algorithms is in a latent pre-collapse
   state per Mosca's inequality.
-- **Replacement:** N/A — these are the algorithms being replaced.
+- **Replacement:** N/A, these are the algorithms being replaced.
 - **Detection:** `CryptographicAlgorithm.quantum_resistant = FALSE`
   flags every classical row; `idx_identitytoken_individual` lets a
   query identify every token bound to a non-PQ algorithm in O(log n)
@@ -125,7 +125,7 @@ Each row records:
 - **Fail mode:** Password hashes lose pre-image resistance under
   realistic attacker compute budgets. Stolen hashes become recoverable
   passwords.
-- **Replacement:** Argon2id is the canonical successor — Werkzeug supports
+- **Replacement:** Argon2id is the canonical successor, Werkzeug supports
   it; switching is a single string change in `security.py:hash_password`
   plus a re-hash-on-next-login migration window.
 - **Detection:** When the OWASP-recommended cost parameter for scrypt
@@ -137,10 +137,10 @@ Each row records:
 - **Role:** CSRF token signing in `security.py:_csrf_sign`. Signs
   `(session_id, salt)` so a stolen CSRF cookie can't be replayed
   cross-session.
-- **Fail mode:** CSRF token forgeability — any cross-site request can
+- **Fail mode:** CSRF token forgeability, any cross-site request can
   forge a valid token. C-tier defense reduces to body-based protections
   alone.
-- **Replacement:** HMAC-SHA3 / HMAC-BLAKE3 — algorithm is a single
+- **Replacement:** HMAC-SHA3 / HMAC-BLAKE3, algorithm is a single
   parameter to Python's `hmac` module.
 - **Detection:** Cryptanalysis of SHA-256 specifically (extremely
   unlikely near-term).
@@ -156,7 +156,7 @@ Each row records:
   attacker can forge sessions, CSRF tokens, and ZK commitments.
 - **Replacement:** Hardware RNG fallback (RDRAND / TPM); user-space
   entropy mixing. This is a kernel-level concern, not a Polaris
-  concern — but Polaris depends on it.
+  concern: but Polaris depends on it.
 - **Detection:** OS-level audit. Polaris can't detect a compromised
   PRNG from inside the application.
 
@@ -173,7 +173,7 @@ Each row records:
   cookies. PQ-ready TLS (Kyber-based key exchange) is the migration
   target.
 - **Replacement:** TLS 1.3 with PQ-hybrid key exchange (e.g.,
-  X25519+Kyber768) — already deployable in modern reverse proxies.
+  X25519+Kyber768): already deployable in modern reverse proxies.
 - **Detection:** Operator-level (TLS configuration audit).
 
 #### HTTP/HTTPS framing, cookies, headers
@@ -194,14 +194,14 @@ Each row records:
 - **Authority:** PostgreSQL Global Development Group
 - **Role:** Every CHECK constraint, every trigger, every partial unique
   index is the schema's enforcement mechanism. The append-only audit
-  invariant (C1) is enforced by `reject_audit_modification` —
+  invariant (C1) is enforced by `reject_audit_modification`:
   PostgreSQL is the place that enforcement lives.
 - **Fail mode:** A PostgreSQL bug that allows trigger bypass would
-  silently violate C1. A privilege escalation (rare but possible —
+  silently violate C1. A privilege escalation (rare but possible:
   CVE history exists) gives the attacker DDL, which can DROP the
   triggers and ALTER the table. Both compromise the audit invariant
   (the load-bearing security claim per MISSION.md).
-- **Replacement:** Polaris is portable PostgreSQL — the dialect is
+- **Replacement:** Polaris is portable PostgreSQL, the dialect is
   standard enough that migration to a same-family replacement (Aurora,
   CockroachDB, EnterpriseDB) is mechanical. The schema-level
   enforcement of state-machine triggers is the part most likely to
@@ -221,7 +221,7 @@ Each row records:
   envelope encryption).
 - **Detection:** Outside Polaris's purview.
 
-#### Redis (R8-2 — multi-process rate limiter)
+#### Redis (R8-2: multi-process rate limiter)
 - **Layer:** storage
 - **Authority:** Redis Ltd.
 - **Role:** Atomic sliding-window per-IP rate counters when
@@ -272,7 +272,7 @@ Each row records:
 - **Role:** PostgreSQL driver. Parameterized-query enforcement (no
   string concatenation) is what makes Polaris SQL-injection-safe.
 - **Fail mode:** Driver-level CVE.
-- **Replacement:** psycopg3 — drop-in for the API surface Polaris uses.
+- **Replacement:** psycopg3, drop-in for the API surface Polaris uses.
 - **Detection:** psycopg2 advisories.
 
 #### gunicorn
@@ -281,7 +281,7 @@ Each row records:
 - **Role:** WSGI server in production; worker model defines whether
   the rate limiter needs Redis (see docs/operator/DEPLOYMENT.md).
 - **Fail mode:** Pre-fork model bug; worker isolation breach.
-- **Replacement:** uWSGI / Hypercorn / direct ASGI — mechanical given
+- **Replacement:** uWSGI / Hypercorn / direct ASGI, mechanical given
   the WSGI app object.
 - **Detection:** gunicorn release notes.
 
@@ -294,10 +294,10 @@ Each row records:
   schema's commitment to FIPS-finalized primitives is "a sovereignty
   stance, not a technical preference" (Appendix E §3 implication 2).
 - **Fail mode:** Standards withdrawal or revision. NIST's authority
-  itself is the load-bearing assumption — if NIST were politically
+  itself is the load-bearing assumption: if NIST were politically
   captured to mandate adversary-authored algorithms, the sovereignty
   argument collapses regardless of the schema's local enforcement.
-- **Replacement:** Cryptographic-diversity stance — issue under
+- **Replacement:** Cryptographic-diversity stance, issue under
   multiple PQ algorithms from different national standards bodies
   (NIST + ETSI + Korean KCMVP). Not currently modeled; would extend
   M2-6 (R11-1) to include source-of-standard.
@@ -314,25 +314,25 @@ Each row records:
   most revisions; a complete rewrite would force schema migration.
 - **Replacement:** Schema migration (column type change). The
   underlying anchor mechanism (M2-2 / R10-2) is independent of the
-  DID standard — DID is the naming convention, not the cryptographic
+  DID standard, DID is the naming convention, not the cryptographic
   primitive.
 - **Detection:** W3C-DID working group publications.
 
 #### Merkle tree commitment (in-tree, R10-2 / M2-2 / v8.21)
 - **Layer:** crypto
-- **Authority:** in-tree primitive — `polaris_web/anchoring.py`
+- **Authority:** in-tree primitive, `polaris_web/anchoring.py`
   (`compute_batch`, `merkle_root`, `inclusion_proof`, `verify_proof`).
 - **Role:** Per-batch commitment to one or more `BlockchainAnchor`
-  leaves under a per-algorithm advisory lock. Realizes PDF §9 — the
-  off-chain audit-of-record (5th instance — see `audit-of-record.md`).
+  leaves under a per-algorithm advisory lock. Realizes PDF §9: the
+  off-chain audit-of-record (5th instance: see `audit-of-record.md`).
 - **Fail mode:** Hash-function compromise voids every batch closed
   under that algorithm. Detection is via `GET /api/anchor/verify/<id>`
-  (server-side proof reconstruction) — a tampered log fails
+  (server-side proof reconstruction): a tampered log fails
   verification, so root compromise is detectable but not preventable
   retroactively.
 - **Replacement:** Add the new hash name to `SUPPORTED_HASHES` in
   `anchoring.py`; thereafter `close_anchor_batch` calls under the new
-  algorithm pick it up. Existing batches keep their original hash —
+  algorithm pick it up. Existing batches keep their original hash:
   the audit is per-batch, not global.
 - **Detection:** Operator must monitor NIST hash-function status; SHA3
   has no known weakness as of 2026 but is on a 20-year radar.
@@ -340,12 +340,12 @@ Each row records:
 
 #### Plonky2 SNARK (in-tree, R10-1 / M2-1 / v8.23)
 - **Layer:** crypto
-- **Authority:** in-tree dependency — `polaris_zk/` Rust crate using
+- **Authority:** in-tree dependency, `polaris_zk/` Rust crate using
   `plonky2 = "0.2"` from crates.io (upstream: `mir-protocol/plonky2`).
 - **Role:** Real ZK-SNARK for ZERO_KNOWLEDGE verifications. The
   Plonky2 circuit (`polaris_zk/src/lib.rs`) proves Merkle inclusion
   in `TokenStateEpoch.merkle_root` bound to `(epoch_id, context_id,
-  nonce)` public inputs. FRI-based, hash-only — post-quantum-
+  nonce)` public inputs. FRI-based, hash-only: post-quantum-
   comfortable. The C3+A4+B3 pick from the M2-1 alignment-exploration
   Sanctum. Closes Substrate-D arc to 5/5.
 - **Fail mode:** A circuit soundness bug accepts invalid witnesses
@@ -382,7 +382,7 @@ Each row records:
 - **Authority:** ISO
 - **Role:** `Individual.jurisdiction` and `Agency.jurisdiction` use
   ISO 3166-2 codes (e.g., `US-PA`).
-- **Fail mode:** Code reassignment (rare but happens — e.g., `RS-CS`
+- **Fail mode:** Code reassignment (rare but happens, e.g., `RS-CS`
   reassigned). A Polaris row with the old code becomes ambiguous.
 - **Replacement:** Operator policy: when ISO publishes a reassignment,
   run a one-time UPDATE.
@@ -395,7 +395,7 @@ Each row records:
 - **Authority:** token vendor
 - **Role:** Stores biometric template; performs the signing operation;
   enforces the local biometric-match-required-for-sign property.
-  Polaris records `IdentityToken.biometric_binding_type` — the
+  Polaris records `IdentityToken.biometric_binding_type`: the
   enclave is the substrate that makes that field meaningful.
 - **Fail mode:** Enclave compromise → biometric template extractable
   → biometric anchor reversible → genomic-anchor analog (M2-4)
@@ -411,7 +411,7 @@ Each row records:
 - **Role:** Server-side key sealing; secret_key at-rest protection.
 - **Fail mode:** Server compromise → secret_key extractable → all
   active sessions forgeable.
-- **Replacement:** Operator policy — secret rotation; HSM custody.
+- **Replacement:** Operator policy, secret rotation; HSM custody.
 - **Detection:** Outside Polaris.
 
 ### Human / operational substrate (Appendix E §3 implication 3)
@@ -436,7 +436,7 @@ Each row records:
 - **Authority:** operator policy
 - **Role:** UC-4 reserve activation (today) and M2-7 catastrophic-loss
   recovery (R11-2, future) both require identity verification by
-  channels other than the token itself — biometric + sworn statement
+  channels other than the token itself: biometric + sworn statement
   + secondary identification. Polaris records the result; the
   verification process is human.
 - **Fail mode:** Compromised out-of-band channels enable reissuance
@@ -451,19 +451,19 @@ Each row records:
 - **Layer:** hardware
 - **Authority:** Quantum-information research community; NIST PQC
   follow-on program
-- **Role:** M2-5 / R10-5 — `QuantumObserverBinding` table reserves the
+- **Role:** M2-5 / R10-5, `QuantumObserverBinding` table reserves the
   substrate slot for an eventual quantum-measurement attestation
   primitive (Appendix F.2). Every current row is `binding_status =
   'SCAFFOLD'` with functional fields NULL. When quantum-observer
   hardware deploys and the protocol vocabulary stabilizes, rows
-  transition to `OPERATIONAL` — no breaking schema migration.
+  transition to `OPERATIONAL`: no breaking schema migration.
 - **Fail mode:** None today (scaffold state). When operational, a
   compromised observer would break the no-cloning-theorem invariant
   the binding rests on, which would invalidate quantum-attested
   bindings retroactively.
 - **Replacement:** The no-cloning theorem itself is the floor. Today,
   the `qob_scaffold_defers_functional` CHECK constraint prevents
-  premature population — any "early adopter" insert with populated
+  premature population: any "early adopter" insert with populated
   functional fields fires the constraint.
 - **Detection:** `binding_status` field surfaces the SCAFFOLD →
   OPERATIONAL transition; the first OPERATIONAL row should trigger an
@@ -478,17 +478,17 @@ This manifest must be revisited when:
   the row here.
 - **An external authority publishes a withdrawal or deprecation
   notice** (NIST FIPS 204 successor, RFC obsolescence, vendor EOL).
-- **A primitive moves between layers** — e.g., if hardware-binding
+- **A primitive moves between layers**: e.g., if hardware-binding
   becomes a software emulation, that's a layer demotion that changes
   the fail-mode analysis.
-- **A new substrate-relevant mission item ships** — M2-1 (real
+- **A new substrate-relevant mission item ships**: M2-1 (real
   ZK-SNARK) lands a Groth16 dependency, still pending; M2-2 (DID
   anchoring) landed in v8.21 and is recorded above as
   "Merkle tree commitment (in-tree)".
 
 ## Additional dependencies
 
-- **D3 v7** (`polaris_web/static/vendor/d3.v7.min.js`) — JavaScript
+- **D3 v7** (`polaris_web/static/vendor/d3.v7.min.js`), JavaScript
   visualization library; vendored locally (no CDN). Powers the atlas
   globe. **Required** for the v6 atlas operator UI. Replacement = any
   D3-API-compatible force-graph library; no equivalent in the standard
@@ -496,14 +496,14 @@ This manifest must be revisited when:
 
 ## Cross-references
 
-- **Appendix E** of `docs/paper/polaris_project_report.pdf` — the architectural
+- **Appendix E** of `docs/paper/polaris_project_report.pdf`: the architectural
   argument this manifest operationalizes.
-- `MISSION.md` C7 — `CryptographicAlgorithm` table is the proximate
+- `MISSION.md` C7: `CryptographicAlgorithm` table is the proximate
   schema-level expression of "primitives are queryable".
-- `DEVNOTES/threat-model.md` — STRIDE threats; this manifest enumerates
+- `DEVNOTES/threat-model.md`: STRIDE threats; this manifest enumerates
   the substrate behind those threats.
-- `DEVNOTES/rate-limiter.md` — Redis dependency detail.
-- `meta/redaction-proof.md` — the privacy claim built on top of the
+- `DEVNOTES/rate-limiter.md`: Redis dependency detail.
+- `meta/redaction-proof.md`: the privacy claim built on top of the
   cryptographic primitives listed here.
-- `polaris_sql/13_substrate.sql` — the queryable mirror
+- `polaris_sql/13_substrate.sql`: the queryable mirror
   (`SystemDependency` view).

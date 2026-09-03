@@ -1,4 +1,4 @@
-# polaris.service — the Polaris production stack under systemd (roadmap P1.1).
+# polaris.service: the Polaris production stack under systemd (roadmap P1.1).
 #
 # Installed by deploy/linux/install.sh with __INSTALL_DIR__ and __ENV_FILE__
 # substituted. The stack is the production docker compose project; systemd owns

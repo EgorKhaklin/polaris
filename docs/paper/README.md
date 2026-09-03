@@ -1,4 +1,4 @@
-# docs/paper/ — academic write-up
+# docs/paper/: academic write-up
 
 The formal academic write-up of Polaris, in LaTeX + rendered PDF, for
 academic and technical reviewers. Provenance is in [NOTICE](../../NOTICE).
@@ -9,8 +9,8 @@ academic and technical reviewers. Provenance is in [NOTICE](../../NOTICE).
 
 | File | Purpose |
 |---|---|
-| [`polaris_project_report.tex`](polaris_project_report.tex) | LaTeX source — edit this; render with `pdflatex` |
-| `polaris_project_report.pdf` | Rendered output — NOT edited by hand |
+| [`polaris_project_report.tex`](polaris_project_report.tex) | LaTeX source: edit this; render with `pdflatex` |
+| `polaris_project_report.pdf` | Rendered output: NOT edited by hand |
 
 ---
 
@@ -28,9 +28,8 @@ pdflatex polaris_project_report.tex
 
 - Not the operator runbook (that's in [`../operator/`](../operator/))
 - Not the technical reference (that's in [`../reference/`](../reference/))
-- Not the narrative (that's in [`../story/`](../story/))
 - Not informal developer notes (that's in [`../../DEVNOTES/`](../../DEVNOTES/))
 
-`docs/paper/` is **the artifact submitted for academic review** —
+`docs/paper/` is **the artifact submitted for academic review**:
 self-contained, citation-ready, no external dependencies for
 reading.

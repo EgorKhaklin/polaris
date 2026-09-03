@@ -1,4 +1,4 @@
-# polaris-dr-drill.service — kill a scratch pgBackRest-archiving primary, restore
+# polaris-dr-drill.service: kill a scratch pgBackRest-archiving primary, restore
 # it from the archive, bring the app up against it, and record the measured RPO
 # and RTO in /var/lib/polaris/dr-drills.md. Driven by polaris-dr-drill.timer
 # (monthly). Runs its own scratch containers on this host's Docker; it never

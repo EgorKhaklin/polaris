@@ -23,11 +23,11 @@ backlog item.
 ### From PyPI (recommended)
 
 ```bash
-# Core install — every read command and every use-case procedure works:
+# Core install: every read command and every use-case procedure works:
 pip install polaris-id-cli
 
 # Optional extra for the user-management commands (lazy-imports werkzeug
-# for scrypt password hashing — needed only by `user-create` and
+# for scrypt password hashing: needed only by `user-create` and
 # `user-passwd`):
 pip install 'polaris-id-cli[user-mgmt]'
 ```
@@ -191,7 +191,7 @@ Create a new application user. Username must match `[a-z0-9._-]{3,50}` (the
 CLI lowercases automatically). Role must be `admin`, `operator`, or `auditor`.
 
 Password is read interactively (no echo) by default, with confirmation.
-Pass `--password` for scripting (less secure — visible in process listings).
+Pass `--password` for scripting (less secure: visible in process listings).
 
 Password complexity is enforced: ≥12 characters, at least one digit, one
 letter, and one symbol.
@@ -214,7 +214,7 @@ Rotate a user's password. Also resets `failed_login_count` and
 # Interactive:
 polaris-id user-passwd alice
 
-# After detecting a credential leak — rotate immediately:
+# After detecting a credential leak: rotate immediately:
 polaris-id user-passwd admin --password 'NewStrongPass456!'
 ```
 

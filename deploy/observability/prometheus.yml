@@ -1,4 +1,4 @@
-# Polaris — Prometheus scrape + rules config (v9.115)
+# Polaris: Prometheus scrape + rules config (v9.115)
 #
 # A ready-to-use Prometheus config: scrape the app's /metrics and load the
 # Polaris alerting rules. Point `static_configs.targets` at your deployment and
@@ -11,7 +11,7 @@ global:
 rule_files:
   - polaris-alerts.yml
 
-# v9.175 (P0.10) — the shipped Alertmanager (alertmanager.yml routes to the
+# v9.175 (P0.10): the shipped Alertmanager (alertmanager.yml routes to the
 # pager receiver). `alertmanager:9093` is the service name on the deployment's
 # network; change the host if yours differs.
 alerting:

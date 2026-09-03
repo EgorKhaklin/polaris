@@ -1,6 +1,6 @@
-# Polaris — identity cannot outrun its primitives
+# Polaris: identity cannot outrun its primitives
 
-**Status:** INCONCLUSIVE — the strong claim is permanently retired (the
+**Status:** INCONCLUSIVE, the strong claim is permanently retired (the
 v9.40 terminus passed with no external cold read).
 **Author:** Egor Khaklin (VANTA)
 **Reading time:** 8 minutes.
@@ -134,7 +134,7 @@ The thesis was not refuted; it was never independently tested, and the
 deadline to test it lapsed. The distinction still matters: "retired as
 inconclusive" is an honest terminal state, whereas an untested hypothesis
 published as a verified result is the failure mode this whole project
-exists to avoid. The disposition is closed by default — a later cold read
+exists to avoid. The disposition is closed by default: a later cold read
 could reopen it only through an explicit, recorded maintainer decision
 (see `ROADMAP.md`), never by an automatic flip when evidence appears.
 

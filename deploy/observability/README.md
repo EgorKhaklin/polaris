@@ -13,7 +13,7 @@ reaches the pager webhook. What stays yours: the pager product and its URL.
 | [`polaris-alerts.yml`](polaris-alerts.yml) | Six alerting rules, severity-labelled to the `docs/operator/DR.md` SEV ladder. |
 | [`alertmanager.yml`](alertmanager.yml) | Routing (duress: no wait, re-page every 15m; other SEV-1: immediate; SEV-2/3: batched) and the `pager` webhook receiver, whose URL is read from a mounted secret file. |
 | [`tempo.yml`](tempo.yml) | Tempo trace backend (v9.187 / P1.6): OTLP in on 4318/4317, local storage, 7-day retention. The app's opt-in exporter (`POLARIS_OTEL=1`) points here by default. |
-| [`grafana/`](grafana/) | Dashboards-as-code (v9.187 / P1.6): datasource + dashboard provisioning and the committed dashboard JSONs (`polaris-overview`, `polaris-traces`). Edit the JSON, commit, redeploy — the UI copies are disposable. |
+| [`grafana/`](grafana/) | Dashboards-as-code (v9.187 / P1.6): datasource + dashboard provisioning and the committed dashboard JSONs (`polaris-overview`, `polaris-traces`). Edit the JSON, commit, redeploy: the UI copies are disposable. |
 
 ## Deploy
 
@@ -99,14 +99,14 @@ docker compose -f docker-compose.prod.yml -f docker-compose.observability.yml up
 Prometheus, Alertmanager, Tempo, and a PROVISIONED Grafana join the stack
 network. Before first up, write two more one-line secret files next to the
 pager URL: `grafana_admin_password`, and point `prometheus.yml`'s scrape
-target at `app:8000` (scheme `http` — inside the stack network the scrape
+target at `app:8000` (scheme `http`, inside the stack network the scrape
 does not cross the TLS edge). Grafana listens on `127.0.0.1:3000` only: its
 dashboards can display the duress signal, so the same access rule as
 `/metrics` applies.
 
 Tracing is the app's choice, not the stack's: set `POLARIS_OTEL=1` on the
 app service (the exporter endpoint already defaults to `http://tempo:4318`).
-The request span carries the v9.122 correlation id as `polaris.request_id` —
+The request span carries the v9.122 correlation id as `polaris.request_id`:
 the id a caller quotes finds its trace (`{span.polaris.request_id="<id>"}`),
 and every structured-log line emitted inside a traced request carries
 `trace_id`/`span_id`, so logs and traces join in both directions. What spans
@@ -117,6 +117,6 @@ CI proves the claims on every push (`scripts/polaris-trace-drill.sh`, the
 `trace-drill` job): the dashboards validate as provisionable JSON querying
 the real metric names, the overlay renders against the production compose
 file, and the OTLP wire path exports a span carrying the caller's exact
-X-Request-ID — with the request's query string asserted ABSENT from the
+X-Request-ID: with the request's query string asserted ABSENT from the
 payload bytes. The DB half (psycopg2 client spans inside the request trace)
 is `DistributedTracingTests` in the product suite.

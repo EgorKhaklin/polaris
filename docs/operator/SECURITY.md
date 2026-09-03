@@ -217,7 +217,7 @@ SQL self-tests : 78 assertions in 08_tests.sql, plus 12_v7_constraints.sql and 1
 Web            : 462 (test_app.py, 12 skipped without optional backends) + 72 constraint tests + 16 property tests + 19 secret-store tests
 CLI            : 71 (test_cli.py)
 Crypto         : 76 passing of 80 collected across the signing, custody and ZK witness suites (4 need AWS KMS)
-Invariants     : 109 checks, each with a detection test (polaris_checks, v9.199)
+Invariants     : 110 checks, each with a detection test (polaris_checks, v9.200)
 ```
 
 Run with:

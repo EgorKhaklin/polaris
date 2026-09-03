@@ -1,4 +1,4 @@
-# Polaris — Alertmanager routing + pager receiver template (v9.175, roadmap P0.10)
+# Polaris: Alertmanager routing + pager receiver template (v9.175, roadmap P0.10)
 #
 # A real, amtool-validated Alertmanager config. Prometheus (prometheus.yml)
 # sends the Polaris alerts here; this routes them to ONE receiver, `pager`, a

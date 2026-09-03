@@ -1,6 +1,6 @@
 # DEVNOTES/audit-of-record.md
 
-**Introduced:** v8.20 (this file). The principle predates the file — it
+**Introduced:** v8.20 (this file). The principle predates the file, it
 governs the design of four schema elements that shipped between v6 and
 v8.19. This document is the retroactive codification, written after
 the v8.19 self-audit named the phrase as load-bearing vocabulary
@@ -11,8 +11,8 @@ without canonical definition.
 ## The principle
 
 An **audit-of-record** is a schema element (table, document, or
-event) whose own state — combined with append-only or strictly-bounded
-mutation invariants on that state — fully reconstructs the history of
+event) whose own state: combined with append-only or strictly-bounded
+mutation invariants on that state: fully reconstructs the history of
 the operation it records, **without requiring a separate event-log
 table**.
 
@@ -88,12 +88,12 @@ was first written (thirteen surfaces at v9.194).
 | 1 | **`TokenLifecycleEvent`** | Token state transitions (RESERVE → ACTIVE → REVOKED etc.) | None, fully append-only | Forbidden by `reject_audit_modification` trigger |
 | 2 | **`VerificationEvent`** | Verification outcomes per token × context | None, fully append-only | Forbidden by `reject_audit_modification` trigger |
 | 3 | **`EnrollmentStatusEvent`** (R11-4) | Civic-enrollment status transitions (NOT_ENROLLED → ENROLLED → LAPSED → EXEMPT) | None, fully append-only | Forbidden by `trg_enrollment_event_append_only` trigger |
-| 4 | **`RecoveryRequest`** | Catastrophic-loss recovery ceremonies (PENDING → APPROVED/REJECTED/EXPIRED) | `decided_at`, `decided_by_user_id`, `decision_reason`, `resulting_token_id`, `status` — only as part of `uc9_complete_recovery` | Not enforced by trigger; partial unique index `uq_one_pending_recovery_per_individual` prevents new PENDING during open one |
+| 4 | **`RecoveryRequest`** | Catastrophic-loss recovery ceremonies (PENDING → APPROVED/REJECTED/EXPIRED) | `decided_at`, `decided_by_user_id`, `decision_reason`, `resulting_token_id`, `status`: only as part of `uc9_complete_recovery` | Not enforced by trigger; partial unique index `uq_one_pending_recovery_per_individual` prevents new PENDING during open one |
 | 5 | **`TokenSignature`** | Algorithm migrations (signature added, optionally deprecated) | Only `deprecation_date`, one-way NULL → timestamp | Forbidden by `enforce_token_signature_immutability` trigger |
 | 6 | **`AnchorBatch`** (v8.21 / R10-2 / M2-2) | Per-batch Merkle commitments of `BlockchainAnchor` leaves | None, fully append-only (operator-set `committed_to_chain` / `external_chain` are out-of-scope future-fields, NOT yet wired) | Forbidden by `reject_audit_modification` trigger |
-| 7 | **`AgencyTrustAttestation`** (v8.22 / R11-3 / M2-8) | Federation trust graph (cross-agency mutual recognition per context) | `revocation_date` + `revocation_reason` pair — one-way NULL → timestamp + non-NULL reason ≥ 8 chars | Forbidden by `enforce_attestation_immutability` trigger |
+| 7 | **`AgencyTrustAttestation`** (v8.22 / R11-3 / M2-8) | Federation trust graph (cross-agency mutual recognition per context) | `revocation_date` + `revocation_reason` pair: one-way NULL → timestamp + non-NULL reason ≥ 8 chars | Forbidden by `enforce_attestation_immutability` trigger |
 | 8 | **`TokenStateEpoch`** (v8.23 / R10-1 / M2-1) | Per-epoch Merkle commitment of the active-token set (ZK-SNARK base) | None, fully append-only after closure | Forbidden by `enforce_epoch_immutability` trigger |
-| 9 | **`DuressEvent`** (v8.24 / R11-5 / M2-10) | Detected compulsion signals (silent OOB alert for verifier under coercion) | `oob_notified_at` only — set once when a responder acknowledges (forward-only) | Forbidden by `reject_audit_modification` trigger |
+| 9 | **`DuressEvent`** (v8.24 / R11-5 / M2-10) | Detected compulsion signals (silent OOB alert for verifier under coercion) | `oob_notified_at` only: set once when a responder acknowledges (forward-only) | Forbidden by `reject_audit_modification` trigger |
 
 | 10 | **`AuthAuditLog`** | Operator authentication events (logins, lockouts, session revocations) | None, fully append-only | Forbidden by `reject_audit_modification` trigger (`trg_authaudit_append_only`) |
 | 11 | **`IndividualErasureEvent`** (v9.125) | Right-to-erasure pseudonymization ceremonies | None, fully append-only | Forbidden by `reject_audit_modification` trigger (`trg_erasure_append_only`) |
@@ -134,7 +134,7 @@ This asymmetry is honest, not aspirational:
   replace cross-cutting audit.
 - **Not append-only in the strict sense for every instance.**
   Append-only means "no UPDATE, no DELETE." Audit-of-record allows
-  *bounded* UPDATE — typically a single one-way field — because the
+  *bounded* UPDATE, typically a single one-way field, because the
   bound is what makes the row a *living state record* rather than
   an immutable snapshot. The mutation surface must be narrow enough
   that the row's future state is fully predictable from its
@@ -157,7 +157,7 @@ When designing a new schema element that records an operation, ask:
 If the answers are "no" to #2 or #4, consider a separate event-log
 table instead. The principle is not a hammer.
 
-## No FK CASCADE — ever (v8.50)
+## No FK CASCADE: ever (v8.50)
 
 A corollary of the principle, codified after the v8.45 schema-scan
 agent surfaced it as an implicit-but-unnamed rule:
@@ -185,7 +185,7 @@ effectively undeletable. Both paths preserve the audit trail.
 For non-AoR tables (e.g., `Individual`, `Agency`, `CryptographicAlgorithm`,
 `VerificationContext`), the same rule applies for consistency:
 referenced principals are effectively undeletable once their
-identifiers appear in any audit row. That's *correct* — deleting
+identifiers appear in any audit row. That's *correct*: deleting
 the issuing agency of a verification event would erase
 information needed to interpret the event later.
 
@@ -217,14 +217,14 @@ information needed to interpret the event later.
 
 ## Cross-references
 
-- `polaris_sql/01_schema.sql` — TokenLifecycleEvent, RecoveryRequest,
+- `polaris_sql/01_schema.sql`: TokenLifecycleEvent, RecoveryRequest,
   TokenSignature definitions.
-- `polaris_sql/06_triggers.sql` — `reject_audit_modification`,
+- `polaris_sql/06_triggers.sql`: `reject_audit_modification`,
   `enforce_token_signature_immutability`, the trigger enforcement
   layer.
-- `polaris_checks/checks.py` — `check_no_fk_cascade`, the
+- `polaris_checks/checks.py`: `check_no_fk_cascade`, the
   machine-checked enforcement of the no-CASCADE corollary.
-- `DEVNOTES/concurrency.md` — adjacent principle: per-entity
+- `DEVNOTES/concurrency.md`: adjacent principle: per-entity
   advisory locks are the concurrency complement to audit-of-record.
-- v8.19 self-audit — the audit that named this principle as
+- v8.19 self-audit: the audit that named this principle as
   load-bearing-but-undefined vocabulary.

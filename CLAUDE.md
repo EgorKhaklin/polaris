@@ -1,4 +1,4 @@
-# CLAUDE.md — agent runbook for Polaris
+# CLAUDE.md: agent runbook for Polaris
 
 The developer onboarding doc for Polaris. If you are an agent (Claude) in a
 fresh session, read this first.
@@ -11,11 +11,11 @@ A working reference implementation of a post-quantum, zero-knowledge,
 compulsion-resistant national identity-token system. Educational; notional data
 only. The real system:
 
-- [`polaris_sql/`](polaris_sql/) — 29-table schema, stored procedures, triggers (the security boundary).
-- [`polaris_web/`](polaris_web/) — the Flask app (`app.py`), `security.py`, `zk.py`, WebAuthn, the operational atlas.
-- [`polaris_zk/`](polaris_zk/) — the Plonky2 Merkle-inclusion ZK crate + `witness2/` (the independent second witness).
-- [`polaris_cli/`](polaris_cli/) — the CLI.
-- [`polaris_checks/`](polaris_checks/) — the flat C1-C10 invariant layer (see below).
+- [`polaris_sql/`](polaris_sql/): 29-table schema, stored procedures, triggers (the security boundary).
+- [`polaris_web/`](polaris_web/): the Flask app (`app.py`), `security.py`, `zk.py`, WebAuthn, the operational atlas.
+- [`polaris_zk/`](polaris_zk/): the Plonky2 Merkle-inclusion ZK crate + `witness2/` (the independent second witness).
+- [`polaris_cli/`](polaris_cli/): the CLI.
+- [`polaris_checks/`](polaris_checks/): the flat C1-C10 invariant layer (see below).
 
 ---
 
@@ -71,7 +71,7 @@ A ship is a coherent change, verified:
    `polaris_web/test_*.py` for behavior. `python3 -m polaris_checks.run` must pass.
 3. **Bump** `polaris_web/__version__.py` (`MAJOR.MINOR`) and `appVersion` in
    `deploy/helm/polaris/Chart.yaml` to match (`check_helm_chart_version_current`).
-4. **CHANGELOG:** prepend a `## vX.Y — DATE (subtitle)` block.
+4. **CHANGELOG:** prepend a `## vX.Y, DATE (subtitle)` block.
 5. **Gate:** `bash scripts/ai-done.sh` must report READY; `ai-link-check.sh --ci`
    must resolve.
 6. **Definition of shipped:** the new test passes, the gate passes, the work
@@ -91,7 +91,7 @@ A ship is a coherent change, verified:
 | Flask app / templates / CSS | [`polaris_web/app.py`](polaris_web/app.py) / `templates/` / `static/` |
 | ZK crate + second witness | [`polaris_zk/src/lib.rs`](polaris_zk/src/lib.rs) / [`polaris_zk/witness2/`](polaris_zk/witness2/) |
 | System map | [`docs/reference/SYSTEM-MAP.md`](docs/reference/SYSTEM-MAP.md) |
-| Conventions / principles | [`docs/CONVENTIONS.md`](docs/CONVENTIONS.md) / [`docs/story/PRINCIPLES.md`](docs/story/PRINCIPLES.md) |
+| Conventions | [`docs/CONVENTIONS.md`](docs/CONVENTIONS.md) |
 
 ---
 
@@ -99,7 +99,7 @@ A ship is a coherent change, verified:
 
 1. **DB user/host.** Tests connect via `POLARIS_DB_*` env vars; the local
    `polaris_test` DB is owned by `vanta` (no password). The repo `polaris_web/venv`
-   is Python 3.9 and too old for the pinned requirements — use a **3.12** venv
+   is Python 3.9 and too old for the pinned requirements: use a **3.12** venv
    with `pip install -r polaris_web/requirements.txt` for the DB/app suites.
 2. **Postgres restart between turns:** `pg_ctlcluster 16 main start` (Linux) or it
    may already be up locally on `:5432`. Wait ~5s before reconnecting.
@@ -121,6 +121,6 @@ A ship is a coherent change, verified:
 ## Quality bar (VANTA's standing instructions)
 
 Read [`DEVNOTES/style.md`](DEVNOTES/style.md). No em-dashes in prose; declarative;
-"holy shit, that's done" — no workarounds, no tabling. When drifting toward
-cosmic-significance framing ("larping"), name it and back off — the v9.55 apparatus
+"holy shit, that's done": no workarounds, no tabling. When drifting toward
+cosmic-significance framing ("larping"), name it and back off: the v9.55 apparatus
 removal was the structural enforcement of that discipline.

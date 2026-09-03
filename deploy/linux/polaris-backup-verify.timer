@@ -1,4 +1,4 @@
-# polaris-backup-verify.timer — weekly, Sunday 04:00 UTC.
+# polaris-backup-verify.timer: weekly, Sunday 04:00 UTC.
 [Unit]
 Description=Weekly Polaris backup verification
 

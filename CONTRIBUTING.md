@@ -43,16 +43,12 @@ be refused on sight.
 
 Changes are sized by blast radius:
 
-- **Small** — docs, tests, a dev-script tweak, an isolated bug fix. Follow the
+- **Small**: docs, tests, a dev-script tweak, an isolated bug fix. Follow the
   Quick path above: open an issue, submit a focused PR with a clear before/after.
-- **Substantive** — multi-surface work, new behavior, or anything touching the
+- **Substantive**: multi-surface work, new behavior, or anything touching the
   schema, the security boundary, or the C1-C10 constraints. Open an issue first
   describing the change and its constraint/vocation alignment; the maintainer
   reviews the approach before you build it.
-
-A change that weakens any of C1-C10, or moves Polaris toward becoming a coercion
-vector, is refused regardless of how it is submitted. You cannot bypass that by
-sending a large PR cold.
 
 ---
 
@@ -74,8 +70,8 @@ A PR is not ready to merge if any of the following hold:
 - `./scripts/ai-done.sh` returns a non-zero exit code.
 
 For new features, add at least one new test that would fail in the
-absence of your change. For a new constitutional invariant — a property
-that must hold across the system — add a `check_*` to
+absence of your change. For a new constitutional invariant: a property
+that must hold across the system: add a `check_*` to
 `polaris_checks/checks.py` with a detection test in
 `polaris_checks/test_checks.py`.
 
@@ -122,7 +118,7 @@ clone with no network.
 VANTA's standing instructions: read `DEVNOTES/style.md`. Summary:
 
 - Declarative style, no filler.
-- "Holy shit, that's done" — no workarounds, no tabling.
+- "Holy shit, that's done": no workarounds, no tabling.
 - When something feels like cosmic-significance framing instead of
   concrete building, name the pattern and back off.
 - Audit-of-record by construction (every shipped instance documented in
@@ -144,8 +140,8 @@ VANTA's standing instructions: read `DEVNOTES/style.md`. Summary:
 - Inline JavaScript in templates. CSP enforces `script-src 'self'`
   with no `'unsafe-inline'`; external `static/*.js` files are the
   pattern. See gotcha #5 in `CLAUDE.md`.
-- Adding a fourth uniqueness-pattern convention (we have `uq_*` and
-  `idx_*`; match the surrounding convention).
+- A third index-naming convention (we have `uq_*` and `idx_*`; match the
+  surrounding one).
 - Documentation prose generated without reading the codebase. Every doc
   claim must be traceable to the code or schema it describes.
 
@@ -169,9 +165,6 @@ substantive change, the typical flow is:
 3. The change ships in one pass: implementation, tests, and documentation
    together.
 
-A change that weakens C1-C10 is refused regardless of how it is submitted;
-you cannot bypass that by sending a large PR cold.
-
 ---
 
 ## License
@@ -187,6 +180,5 @@ license condition.
 
 ---
 
-*Maintainer: VANTA / Egor Khaklin*
-*Agent: Claude (Anthropic)*
-*Last updated: 2026-06-03 (v9.56)*
+*Maintainer: Egor Khaklin (VANTA), with Claude as the working agent.*
+*Last updated: 2026-09-02 (v9.200)*

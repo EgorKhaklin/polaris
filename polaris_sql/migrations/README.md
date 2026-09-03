@@ -1,4 +1,4 @@
-# `polaris_sql/migrations/` — schema-migration files
+# `polaris_sql/migrations/`: schema-migration files
 
 This directory holds the hand-written SQL files that the `schema_version`
 registry (see `00_migrations_table.sql`) tracks.
@@ -17,9 +17,9 @@ Every migration is exactly two files:
 <YYYY-MM-DD>-<NNN>-<slug>.down.sql
 ```
 
-- `<YYYY-MM-DD>` — calendar date the migration was authored
-- `<NNN>`        — zero-padded counter, monotonic within the day (`001`, `002`, …)
-- `<slug>`       — lowercase, kebab-case description; `[a-z0-9_-]*`
+- `<YYYY-MM-DD>`: calendar date the migration was authored
+- `<NNN>`       : zero-padded counter, monotonic within the day (`001`, `002`, …)
+- `<slug>`      : lowercase, kebab-case description; `[a-z0-9_-]*`
 
 Examples:
 
@@ -28,8 +28,8 @@ Examples:
 
 The pattern is enforced both by the `schema_version.name` CHECK constraint
 in `00_migrations_table.sql` and by `validate_filenames()` in
-`polaris-migrate.sh`. Any file that doesn't match — or any `up.sql` without
-a matching `down.sql` — fails the run with exit code 4.
+`polaris-migrate.sh`. Any file that doesn't match: or any `up.sql` without
+a matching `down.sql`: fails the run with exit code 4.
 
 Lexicographic ordering on the filename is the apply order. The
 `YYYY-MM-DD-NNN` prefix makes the order obvious, stable, and
@@ -42,7 +42,7 @@ collision-resistant even when multiple authors work the same day.
 Every migration ships with a `.down.sql`. There is no exception.
 
 If the change is genuinely irreversible (e.g., a DROP COLUMN that
-discarded data), the `.down.sql` MUST still exist — its job is to
+discarded data), the `.down.sql` MUST still exist: its job is to
 document, in SQL comments, that no revert is possible. It is the
 audit-of-record for the irreversibility decision. The
 `polaris-migrate.sh --down` flow will run it as a transaction, so
@@ -74,7 +74,7 @@ the original apply-row; it appends a new row with `event_type='reverted'`.
 This is the same audit-of-record discipline as `TokenLifecycleEvent`,
 `VerificationEvent`, `EnrollmentStatusEvent`, and the other
 audit-of-record instances in Polaris (thirteen at v9.194; the list is in
-`docs/story/PRINCIPLES.md`).
+`DEVNOTES/audit-of-record.md`).
 
 "Currently applied" is computed dynamically as "the last event for this
 `name` is `applied`, not `reverted`." Re-applying a previously-reverted
@@ -93,7 +93,7 @@ recorded one).
 
 If you legitimately need to change an already-applied migration,
 the answer is almost always "write a new migration that fixes the
-problem" — not "edit the old one." If you must edit, the recourse is
+problem": not "edit the old one." If you must edit, the recourse is
 to manually audit the diff, manually mark the registry, and only then
 proceed; the runner will not do this for you.
 
@@ -114,7 +114,7 @@ COMMIT;
 If the migration fails (constraint violation, syntax error, conflicting
 state), the transaction rolls back and NO `schema_version` row is written.
 The migration is treated as if it had never been attempted. PostgreSQL
-supports transactional DDL — `CREATE TABLE`, `CREATE INDEX`, `ALTER TABLE`
+supports transactional DDL: `CREATE TABLE`, `CREATE INDEX`, `ALTER TABLE`
 all participate. The notable exception is `CREATE INDEX CONCURRENTLY`,
 which cannot run inside a transaction; if you need it, either:
 
@@ -203,7 +203,7 @@ Polaris already ships its own operator scripts (`polaris-create-operator.sh`,
 discipline that maps perfectly to `schema_version`, and already speaks
 hand-written SQL in numbered files. Adopting an external tool would
 have meant adopting its conventions, its conflict model, its config
-format, and its dependency surface — all to wrap the same INSERT.
+format, and its dependency surface: all to wrap the same INSERT.
 
 Custom is right-sized for Polaris. ~340 lines of bash + 95 lines of SQL
 + this README, fully readable in one sitting, with no hidden state

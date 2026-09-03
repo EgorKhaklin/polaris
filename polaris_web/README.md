@@ -1,4 +1,4 @@
-# Polaris Identity Token System — Web Interface
+# Polaris Identity Token System: Web Interface
 
 A web interface to the Polaris identity-token database. Implements query, add,
 update, and delete operations across the schema's principal entities, plus the
@@ -8,7 +8,7 @@ UC-9 initiate + complete recovery, `close_anchor_batch` for R10-2 DID
 anchoring, `uc10_attest_trust` + `uc10_revoke_attestation` for R11-3
 federation, `uc11_close_epoch` for R10-1 ZK-SNARK, `uc12_record_duress`
 for R11-5 compulsion resistance, `uc_archive_purge` for the archive-bound
-purge, and `uc_pseudonymize_individual` for right-to-erasure), a read-only SQL console, and **Atlas** —
+purge, and `uc_pseudonymize_individual` for right-to-erasure), a read-only SQL console, and **Atlas**:
 a single-page God's-eye view of the running system.
 
 ## Stack
@@ -31,8 +31,8 @@ docker compose up
 ```
 
 This brings up PostgreSQL 16 with the schema, sample data, indexes, view,
-stored procedures, and triggers all loaded automatically — plus the Flask app
-behind gunicorn — in about 30 seconds. Open <http://localhost:5000>.
+stored procedures, and triggers all loaded automatically: plus the Flask app
+behind gunicorn: in about 30 seconds. Open <http://localhost:5000>.
 
 To run the test suite against the running stack:
 
@@ -103,7 +103,7 @@ nginx reverse-proxy configuration.
 
 ## Route Map
 
-### Atlas — God's eye view
+### Atlas: God's eye view
 
 | Route        | Method | Purpose                                              |
 |--------------|--------|------------------------------------------------------|
@@ -185,34 +185,34 @@ The SQL console is hardened against abuse:
 - A **5-second statement timeout** per query, surfaced as a clean
   user-readable timeout message
 - An **EXPLAIN ANALYZE button** lets users inspect query plans (still read-only)
-- The `polaris_app` role has **no DDL privileges** at the database level — even
+- The `polaris_app` role has **no DDL privileges** at the database level: even
   if the application-layer whitelist were bypassed, `DROP TABLE` etc. would be
   rejected by Postgres
 
 ## Atlas: God's-eye View
 
-The `/atlas` page is the operational investigation surface — an
+The `/atlas` page is the operational investigation surface: an
 intelligence-report aesthetic over a live globe (`atlas-globe.js`,
 viewport-aware d3 rendering over topojson countries):
 
-1. **Two-band toolbar** (v8.2-v8.3) — operational chrome (view/modifier/
+1. **Two-band toolbar** (v8.2-v8.3): operational chrome (view/modifier/
    context pickers) on top, temporal lens (time-window selector +
    histogram strip) below. Filter state model: `{view, window,
    modifiers, contexts}` with four typed setters that serialize to
    query string and back.
-2. **Live globe** — reticles for every verification and lifecycle event
+2. **Live globe**: reticles for every verification and lifecycle event
    in the time window; new events get a `.node-fresh` pulse animation;
    filter chips toggle visibility server-side via the `kind` parameter
-3. **HUD** — four operational ratios at-a-glance: Active Tokens,
+3. **HUD**: four operational ratios at-a-glance: Active Tokens,
    Anomalies (failed verifs + full disclosures), Post-Quantum %,
    Zero-Knowledge %
-4. **Server-side filter API** (v8.3) — `_parse_atlas_filters` helper
+4. **Server-side filter API** (v8.3): `_parse_atlas_filters` helper
    in `app.py` translates URL params (`view`, `window`, `outcomes`,
    `disclosure`, `contexts`, `event_types`, `since`) into SQL
    parameters threaded through 6 SQL functions in `11_atlas.sql`
-5. **Histogram strip** — log-scale bars showing event density in the
+5. **Histogram strip**: log-scale bars showing event density in the
    selected window; click to scrub
-6. **Hard caps** (C8 enforcement) — `_ATLAS_MAX_*` constants in
+6. **Hard caps** (C8 enforcement): `_ATLAS_MAX_*` constants in
    `app.py` prevent unbounded result sets (DoS defense)
 
 The atlas was scaled to 2M+ events in v6 (viewport-aware rendering +
@@ -241,7 +241,7 @@ rows transactionally.
 ### Append-only invariants respected
 
 `TokenLifecycleEvent` and `VerificationEvent` are append-only at the database
-trigger layer (per NFR-4 in the report). The UI respects this — the
+trigger layer (per NFR-4 in the report). The UI respects this: the
 verification list page offers Add but not Update/Delete, and the token detail
 page shows lifecycle history read-only.
 
@@ -300,12 +300,12 @@ def individuals_new():
 **Controls applied** (full report in `../docs/operator/SECURITY.md`):
 
 - Authentication: scrypt-hashed passwords, atomic increment of
-  `failed_login_count` (C4 — no TOCTOU), lockout after 5 failures in 10 min
+  `failed_login_count` (C4: no TOCTOU), lockout after 5 failures in 10 min
 - CSRF: HMAC-signed token bound to session, validated on every POST
 - Rate limiting (R8-2): 10 logins/min/IP, 60 writes/min/IP. Two
   pluggable backends:
-  - `InMemoryRateLimiter` — single-process, GIL-atomic deque (dev/test)
-  - `RedisRateLimiter` — multi-process via a Lua sliding-window script,
+  - `InMemoryRateLimiter`: single-process, GIL-atomic deque (dev/test)
+  - `RedisRateLimiter`: multi-process via a Lua sliding-window script,
     fails closed if Redis unreachable (production with `POLARIS_REDIS_URL`)
 - Security headers: CSP `script-src 'self'` (C5), X-Frame-Options DENY,
   Referrer-Policy, Permissions-Policy, HSTS (production), no-store on
@@ -341,7 +341,7 @@ optional backends, measured at v9.194) covers:
 - Token list with cursor pagination (R7-3); HTML-entity-escaped cursor
   round-trips
 - Token detail page, state transitions (legal and illegal)
-- Auto-audit trigger correctness — status changes produce
+- Auto-audit trigger correctness: status changes produce
   TokenLifecycleEvent rows automatically; non-status updates do not
 - All four use-case forms (UC-1 / UC-4 / UC-5 / UC-7), full end-to-end
   UC-4 happy path with explicit precondition setup
@@ -349,38 +349,38 @@ optional backends, measured at v9.194) covers:
 - SQL console execution, whitelist enforcement, length cap, statement
   timeout, EXPLAIN ANALYZE
 - Error handling (404, schema-level constraint violations)
-- Atlas filter API (`AtlasFilterAPITests`) — every URL filter combo
+- Atlas filter API (`AtlasFilterAPITests`): every URL filter combo
   produces the expected `kind`/`since`/`outcomes`/`disclosure`/
   `contexts`/`event_types` SQL parameters
-- Rate limiter (R8-2) — `RateLimiterContractMixin` runs the same suite
+- Rate limiter (R8-2): `RateLimiterContractMixin` runs the same suite
   against `InMemoryRateLimiter` and `RedisRateLimiter` (latter via the
   test-local redis on :6399)
-- GenomicAnchor (M2-4) — 11 tests covering all three CHECK constraints
-- QuantumObserverBinding (M2-5) — 9 tests covering the SCAFFOLD ↔
+- GenomicAnchor (M2-4): 11 tests covering all three CHECK constraints
+- QuantumObserverBinding (M2-5): 9 tests covering the SCAFFOLD ↔
   OPERATIONAL state machine
-- Issuer-discretion bounds (R11-6 / M2-11) — `IssuerDiscretionBoundsTests`
-- Tiered enrollment (R11-4 / M2-9) — `TieredEnrollmentTests`
-- Catastrophic-loss recovery (R11-2 / M2-7) — `CatastrophicLossRecoveryTests`
-- Multi-signature transitional state (R11-1 / M2-6) — `MultiSignatureTests`
-- DID anchoring (R10-2 / M2-2) — `AnchorBatchTests`
-- Issuer federation (R11-3 / M2-8) — `IssuerFederationTests`
-- ZK-SNARK over Plonky2 (R10-1 / M2-1) — `ZKSnarkTests`
+- Issuer-discretion bounds (R11-6 / M2-11): `IssuerDiscretionBoundsTests`
+- Tiered enrollment (R11-4 / M2-9): `TieredEnrollmentTests`
+- Catastrophic-loss recovery (R11-2 / M2-7): `CatastrophicLossRecoveryTests`
+- Multi-signature transitional state (R11-1 / M2-6): `MultiSignatureTests`
+- DID anchoring (R10-2 / M2-2): `AnchorBatchTests`
+- Issuer federation (R11-3 / M2-8): `IssuerFederationTests`
+- ZK-SNARK over Plonky2 (R10-1 / M2-1): `ZKSnarkTests`
   exercising the Rust prover/verifier via subprocess
-- Duress codes (R11-5 / M2-10) — `DuressCodeTests`
+- Duress codes (R11-5 / M2-10): `DuressCodeTests`
   covering constant-time hash comparison, identical-behavior across
   branches, and the R6 anti-revealing posture
 - Concurrency hazards (`ConcurrencyTests`) using real threading, not
-  mocks (C9) — covers per-agency / per-individual / per-token /
+  mocks (C9): covers per-agency / per-individual / per-token /
   per-algorithm / per-attesting-agency / per-procedure advisory locks
-- Substrate manifest (`SubstrateManifestTests`) — verifies the prose
+- Substrate manifest (`SubstrateManifestTests`): verifies the prose
   form in `../DEVNOTES/substrate.md` matches the SQL view in
   `../polaris_sql/13_substrate.sql`
 
 Supplementary suites:
 
-- **`test_invariants_property.py`** — Hypothesis property tests for
+- **`test_invariants_property.py`**: Hypothesis property tests for
   C1, C2, C3 invariants (skipped if `hypothesis` not installed)
-- **`test_redaction_property.py`** — M2-12 redaction-adversary tests
+- **`test_redaction_property.py`**: M2-12 redaction-adversary tests
   with three adversary classes (UniformGuess, TemporalCorrelation,
   SpatialUniqueness)
 
@@ -410,7 +410,7 @@ polaris_web/
     ├── polaris.css              Hand-written stylesheet, navy/gold (~3,460 lines)
     ├── atlas-globe.js           Viewport-aware d3 globe (~1,318 lines)
     ├── data/                    countries-110m.json topojson
-    └── vendor/                  d3, topojson — no CDN dependency
+    └── vendor/                  d3, topojson: no CDN dependency
 ```
 
 ## Visual Design
@@ -419,7 +419,7 @@ The aesthetic matches the project report: navy (`#0a2540`) primary with gold
 (`#c9a352`) accents on a paper-white background. Status pills color-coded by
 state. Use-case pages have a distinctive gradient banner.
 
-The Atlas page uses inline SVG for the schema topology and state machine — no
+The Atlas page uses inline SVG for the schema topology and state machine: no
 JavaScript libraries, no client-side rendering, no build step. The graphics
 are part of the HTML response and render instantly.
 

@@ -95,14 +95,14 @@ Structured JSON contract:
 | `atlas_cache` | always healthy (informational only) | n/a | n/a |
 | `custody` | real PQC off (custody not required), or real PQC on and the custody driver loaded (driver and key id reported) | real PQC on with no persistent key (ephemeral signing) | the custody backend failed to load; issuance would fail |
 
-`atlas_cache` does NOT contribute to the overall status — it's
+`atlas_cache` does NOT contribute to the overall status: it's
 preserved for backwards compatibility with operational
 dashboards that were built against the v7.5 contract.
 
 **Status codes:**
 
-- `200` — overall status is `healthy` or `degraded`
-- `503` — overall status is `unhealthy` (at least one critical
+- `200`: overall status is `healthy` or `degraded`
+- `503`: overall status is `unhealthy` (at least one critical
   check is unhealthy)
 
 **Tested by:** the health-endpoint tests in
@@ -357,10 +357,10 @@ transitions the token to `REVOKED`, and inserts into
 
 Errors (PostgreSQL SQLSTATE):
 
-- `23514` `check_violation` — rate exceeds bound, no co-signer.
-- `42501` `insufficient_privilege` — raw UPDATE that bypassed the
+- `23514` `check_violation`: rate exceeds bound, no co-signer.
+- `42501` `insufficient_privilege`: raw UPDATE that bypassed the
   procedure (caught by the belt-and-suspenders trigger).
-- Free-form RAISE EXCEPTION — invalid co-signer, already-terminal
+- Free-form RAISE EXCEPTION: invalid co-signer, already-terminal
   token, missing authorization.
 
 See `DEVNOTES/ships/issuer-discretion.md` for the policy choices (N=5.00%,
@@ -381,7 +381,7 @@ without requiring an active token" requirement at the aggregate level.
 The page renders a pivot table (jurisdiction down the side, status
 across the top) plus the five-status vocabulary glossary.
 Per-individual enumeration of `NOT_ENROLLED` is deliberately NOT
-exposed as a route — an admin who needs it writes the join against
+exposed as a route: an admin who needs it writes the join against
 `IndividualCurrentEnrollment` directly, which leaves an
 `AuthAuditLog` trace.
 
@@ -431,10 +431,10 @@ EXCEPTION on non-admin.
 
 Errors:
 
-- `42501` `insufficient_privilege` — deciding user lacks admin role.
-- `23514` `check_violation` — cool-down not expired, three channels
+- `42501` `insufficient_privilege`: deciding user lacks admin role.
+- `23514` `check_violation`: cool-down not expired, three channels
   not present, or approved/cool-down arithmetic violation.
-- Free-form RAISE EXCEPTION — recovery not PENDING (already
+- Free-form RAISE EXCEPTION: recovery not PENDING (already
   decided), approver = requester, missing new-token parameters on
   APPROVED.
 
@@ -462,11 +462,11 @@ The signature bytes are inserted as a deterministic placeholder
 
 Errors:
 
-- `23505` `unique_violation` — token already has an active signature
+- `23505` `unique_violation`: token already has an active signature
   under the requested algorithm.
-- Free-form RAISE EXCEPTION — token does not exist, algorithm does
+- Free-form RAISE EXCEPTION: token does not exist, algorithm does
   not exist or is itself deprecated.
-- `42501` `insufficient_privilege` — direct UPDATE/DELETE on
+- `42501` `insufficient_privilege`: direct UPDATE/DELETE on
   `TokenSignature` that bypasses the procedure.
 
 See `DEVNOTES/ships/multi-sig-migration.md` for the verification
@@ -577,7 +577,7 @@ Response (success):
 }
 ```
 
-Response (pending — not yet batched):
+Response (pending: not yet batched):
 
 ```json
 {
@@ -636,9 +636,9 @@ Response:
 ```
 
 Errors:
-- `400` — required fields missing / unknown agencies or context / signer not admin / zero-or-negative-duration validity / duplicate active attestation for this triple
-- `401` — session missing user_id (should not happen if `login_required` decorator ran)
-- `403` — operator role lacks federation-attestation privilege
+- `400`: required fields missing / unknown agencies or context / signer not admin / zero-or-negative-duration validity / duplicate active attestation for this triple
+- `401`: session missing user_id (should not happen if `login_required` decorator ran)
+- `403`: operator role lacks federation-attestation privilege
 
 ### `POST /api/federation/revoke` (admin)
 
@@ -666,9 +666,9 @@ Response:
 ```
 
 Errors:
-- `400` — required fields missing / attestation already revoked / reason too short
-- `403` — operator role lacks federation-revocation privilege
-- `404` — attestation_id does not exist
+- `400`: required fields missing / attestation already revoked / reason too short
+- `403`: operator role lacks federation-revocation privilege
+- `404`: attestation_id does not exist
 
 ### Federation check at verification time
 
@@ -694,12 +694,12 @@ code into `POST /verifications/new`'s optional `duress_code` field,
 the system silently records a DuressEvent if the code matches the
 token's enrolled `duress_code_hash` (Werkzeug constant-time
 comparison). The coercer-visible response is identical to a normal
-verification (R2 audit refinement — identical observable behavior).
+verification (R2 audit refinement: identical observable behavior).
 
 ### `GET /api/duress/events` (admin/auditor)
 
 Returns up to 200 recent duress events. **NOT** accessible to the
-operator role — R6 anti-revealing posture means only admins and
+operator role, R6 anti-revealing posture means only admins and
 auditors can see the duress dashboard.
 
 Response:
@@ -744,8 +744,8 @@ Response:
 ```
 
 Errors:
-- `400` — required fields missing or token has no enrolled duress code
-- `403` — auditor role lacks write privilege
+- `400`: required fields missing or token has no enrolled duress code
+- `403`: auditor role lacks write privilege
 
 ### Duress flow at the verification path
 
@@ -753,12 +753,12 @@ When `POST /verifications/new` is called with an optional `duress_code`
 field set:
 
 1. The verification path runs normally (federation check, SUCCESS
-   gating, etc.) — completely identical to a non-duress call.
+   gating, etc.): completely identical to a non-duress call.
 2. If `token_id` is set AND the token has a non-NULL
    `duress_code_hash` AND `werkzeug.security.check_password_hash`
    matches: `uc12_record_duress` is invoked, writing a row to
    `DuressEvent`.
-3. The user-visible response is identical to step 1 — same flash,
+3. The user-visible response is identical to step 1: same flash,
    same redirect, same `VerificationEvent` row.
 
 The duress mechanism is purely additive: the coercer cannot
@@ -778,7 +778,7 @@ write-up.
 Closes a ZK epoch: snapshots currently-valid `ACTIVE` tokens with
 their `TokenPermission` for the given context, derives per-token
 leaf seeds, computes the Merkle root via the Rust prover, and
-calls `uc11_close_epoch` (per-procedure advisory lock — 6th catalog
+calls `uc11_close_epoch` (per-procedure advisory lock: 6th catalog
 entry; v8.23).
 
 Request body:
@@ -862,12 +862,12 @@ Error messages are sanitized through `db_error_to_message()` in
 [the threat model](../../DEVNOTES/threat-model.md)).
 
 Status codes:
-- `200` — success
-- `400` — bad input (validation failure)
-- `401` — not authenticated
-- `403` — authenticated but insufficient role
-- `429` — rate limited
-- `500` — server error (sanitized)
+- `200`: success
+- `400`: bad input (validation failure)
+- `401`: not authenticated
+- `403`: authenticated but insufficient role
+- `429`: rate limited
+- `500`: server error (sanitized)
 
 ---
 

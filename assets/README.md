@@ -1,4 +1,4 @@
-# assets/ — branding + visual identity
+# assets/: branding + visual identity
 
 Logos, icons, and other visual artifacts that aren't code or
 documentation. Referenced from [`README.md`](../README.md).
@@ -30,5 +30,5 @@ documentation. Referenced from [`README.md`](../README.md).
   no user uploads)
 - Not the academic paper PDF (that's in [`../docs/paper/`](../docs/paper/))
 
-`assets/` is **the visual identity surface** — what makes Polaris
+`assets/` is **the visual identity surface**: what makes Polaris
 recognizable as Polaris.

@@ -1,4 +1,4 @@
-# `meta/tla/` — formal-verification demonstrator
+# `meta/tla/`: formal-verification demonstrator
 
 **Status:** Demonstrator artifact, NOT maintained verification
 infrastructure.
@@ -7,7 +7,7 @@ infrastructure.
 ## What this directory IS
 
 A demonstration of the TLA+ technique applied to ONE Polaris
-constraint (C3 — one identity per person). The spec
+constraint (C3: one identity per person). The spec
 `c3-one-active-token.tla` models the schema-level partial unique
 index + the application-layer FOR UPDATE locking, and shows that
 the C3 invariant holds under all interleavings of concurrent
@@ -50,7 +50,7 @@ Expected output (abbreviated):
 TLC2 Version 2.18 ...
 Computing initial states...
 Finished computing initial states: 1 distinct state.
-Progress(N) at ... — 9,847 states generated, 2,103 distinct states.
+Progress(N) at ...: 9,847 states generated, 2,103 distinct states.
 ...
 Model checking completed. No error has been found.
 ```
@@ -60,7 +60,7 @@ Model checking completed. No error has been found.
 - **State:** the set of `IdentityToken` rows (id, individual_id,
   status) + the set of FOR UPDATE locks held by active transactions
 - **Actions:** AcquireLock, IssueToken, RevokeToken, ReleaseLock
-- **Invariant:** C3_OneActiveTokenPerIndividual — no two ACTIVE
+- **Invariant:** C3_OneActiveTokenPerIndividual, no two ACTIVE
   tokens may share an individual_id at any reachable state
 
 ## What the spec does NOT cover

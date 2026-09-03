@@ -3749,3 +3749,17 @@ def test_compose_trusts_edge_check_fails_without_trust_proxy(tmp_path):
     (tmp_path / "polaris_web/docker-compose.prod.yml").write_text(compose)
     (tmp_path / "polaris_web/Caddyfile").write_text("reverse_proxy app:8000\n")
     assert checks.check_prod_compose_trusts_edge(tmp_path)[0].level == "FAIL", "must FAIL when the edge does not rewrite X-Forwarded-For"
+
+
+def test_docs_index_coverage_check_fails_on_an_unlisted_document(tmp_path):
+    (tmp_path / "docs/operator").mkdir(parents=True)
+    (tmp_path / "docs/README.md").write_text("[A](A.md)\n[operator](operator/README.md)\n")
+    (tmp_path / "docs/A.md").write_text("a\n")
+    (tmp_path / "docs/operator/README.md").write_text("[INSTALL](INSTALL.md)\n")
+    (tmp_path / "docs/operator/INSTALL.md").write_text("i\n")
+    assert checks.check_docs_index_coverage(tmp_path)[0].level == "OK", "must PASS when every document is indexed"
+    (tmp_path / "docs/operator/DR.md").write_text("d\n")
+    assert checks.check_docs_index_coverage(tmp_path)[0].level == "FAIL", "must FAIL when a runbook is not in its directory index"
+    (tmp_path / "docs/operator/DR.md").unlink()
+    (tmp_path / "docs/reference").mkdir(); (tmp_path / "docs/reference/API.md").write_text("x\n")
+    assert checks.check_docs_index_coverage(tmp_path)[0].level == "FAIL", "must FAIL when a sub-directory has no index or is not delegated"

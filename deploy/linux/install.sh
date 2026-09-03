@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================================
-# deploy/linux/install.sh — a fresh Linux server to a healthy Polaris production
+# deploy/linux/install.sh: a fresh Linux server to a healthy Polaris production
 # stack, from this script alone (roadmap P1.1).
 #
 #   sudo POLARIS_DOMAIN=polaris.example.org deploy/linux/install.sh

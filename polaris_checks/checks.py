@@ -2010,7 +2010,7 @@ def check_table_count_matches_doc(root: pathlib.Path) -> list[Finding]:
 _STATED_COUNT_DOCS = (
     "README.md", "CLAUDE.md", "ROADMAP.md", "MISSION.md", "CONTRIBUTING.md",
     "docs/ARCHITECTURE-OVERVIEW.md", "docs/reference/SYSTEM-MAP.md",
-    "docs/reference/DATA-MODEL.md", "docs/reference/README.md", "docs/story/PRINCIPLES.md",
+    "docs/reference/DATA-MODEL.md", "docs/reference/README.md",
     "docs/PRODUCTION-READINESS.md", "polaris_sql/README.md", "polaris_web/README.md",
     "polaris_cli/README.md", "polaris_checks/README.md", "site/index.html",
 )
@@ -2089,13 +2089,13 @@ def check_stated_counts(root: pathlib.Path) -> list[Finding]:
 # ---------------------------------------------------------------------------
 # Constitution objects — MISSION.md's C1-C10 "Where enforced" column names the
 # concrete object that enforces each constraint, and the sibling summaries in
-# CLAUDE.md, PRINCIPLES.md, PRIVACY.md and ARCHITECTURE-OVERVIEW.md repeat those
+# CLAUDE.md, audit-of-record.md, PRIVACY.md and ARCHITECTURE-OVERVIEW.md repeat those
 # names. Every one must exist in the code. At v9.193 four did not
 # (reject_update_delete, disclosure_consistency, secure_headers, enforce_zk_typing):
 # a reviewer who grepped for them found nothing and had to conclude the
 # constitution was decorative.
 # ---------------------------------------------------------------------------
-_OBJECT_DOCS = ("MISSION.md", "CLAUDE.md", "docs/story/PRINCIPLES.md",
+_OBJECT_DOCS = ("MISSION.md", "CLAUDE.md", "DEVNOTES/audit-of-record.md",
                 "docs/operator/PRIVACY.md", "docs/ARCHITECTURE-OVERVIEW.md")
 _OBJECT_SEARCH_DIRS = ("polaris_sql", "polaris_sql/migrations", "polaris_web", "polaris_cli")
 _OBJECT_NAME_PREFIXES = ("enforce_", "reject_", "chk_", "uq_", "trg_", "idx_")
@@ -2240,6 +2240,40 @@ def check_prod_compose_trusts_edge(root: pathlib.Path) -> list[Finding]:
                      "docker-compose.prod.yml app service must set POLARIS_TRUST_PROXY so client_ip() "
                      "sees the real peer behind Caddy")
     return _ok("compose_trusts_edge", "the prod compose trusts Caddy's rewritten X-Forwarded-For")
+
+
+# ---------------------------------------------------------------------------
+# Documentation index coverage — every Markdown document under docs/ is linked
+# from the README.md of its own directory, so a reader who follows the indexes
+# reaches every document. The link checker proves links resolve; it cannot see
+# an omission. v9.193's docs/README.md listed eleven of thirty-three documents.
+# ---------------------------------------------------------------------------
+def check_docs_index_coverage(root: pathlib.Path) -> list[Finding]:
+    docs = root / "docs"
+    if not docs.is_dir():
+        return _fail("docs_index_coverage", "docs/ is missing")
+    missing: list[str] = []
+    for d in sorted(p for p in [docs, *docs.rglob("*")] if p.is_dir() and ".git" not in p.parts):
+        index = d / "README.md"
+        members = sorted(p for p in d.glob("*.md") if p.name != "README.md")
+        subdirs = sorted(p for p in d.iterdir() if p.is_dir() and any(p.rglob("*.md")))
+        if not members and not subdirs:
+            continue
+        if not index.is_file():
+            missing.append(f"{d.relative_to(root)}/README.md (no index)")
+            continue
+        text = index.read_text(encoding="utf-8", errors="replace")
+        for m in members:
+            if not re.search(r"\]\(" + re.escape(m.name) + r"\)", text):
+                missing.append(str(m.relative_to(root)))
+        for sd in subdirs:
+            if not re.search(r"\]\(" + re.escape(sd.name) + r"/(?:README\.md)?\)", text):
+                missing.append(f"{sd.relative_to(root)}/ (sub-directory not delegated)")
+    if missing:
+        return _fail("docs_index_coverage",
+                     f"{len(missing)} document(s) not linked from the index of their own directory: "
+                     + ", ".join(missing[:8]) + (" ..." if len(missing) > 8 else ""))
+    return _ok("docs_index_coverage", "every document under docs/ is linked from its directory's README")
 
 
 # ---------------------------------------------------------------------------
@@ -4180,6 +4214,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_helm_chart_version_current,
     check_api_routes_documented,
     check_prod_compose_trusts_edge,
+    check_docs_index_coverage,
 ]
 
 

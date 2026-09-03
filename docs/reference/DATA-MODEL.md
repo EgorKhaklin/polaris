@@ -41,7 +41,7 @@ add to a running database (`OperatorWebauthnCredential`, `OperatorSession`,
 Schema is in `polaris_sql/01_schema.sql`. Indexes in
 `polaris_sql/02_indexes.sql`. Triggers (state machine, append-only,
 audit) in `polaris_sql/06_triggers.sql`. The reserved future
-primitive (`QuantumObserverBinding`) is in scaffold state — see
+primitive (`QuantumObserverBinding`) is in scaffold state: see
 `DEVNOTES/ships/quantum-observer.md`.
 
 ---
@@ -105,7 +105,7 @@ permitted for that purpose.
 
 ### `AppUser`
 
-Operator credentials for the web app. NOT the same as Individual —
+Operator credentials for the web app. NOT the same as Individual:
 this is who logs in to use the system, not who holds tokens.
 
 | column | type | notes |
@@ -143,17 +143,17 @@ The core state-bearing object.
 
 **Indexes:**
 
-- `uq_one_active_per_person` — partial unique on `(individual_id)
+- `uq_one_active_per_person`: partial unique on `(individual_id)
   WHERE status = 'ACTIVE'`. Constraint C3.
-- `idx_token_individual_status` — composite on
+- `idx_token_individual_status`: composite on
   `(individual_id, status)` for per-holder status lookups.
-- `idx_token_status` — single-column for global status filtering.
+- `idx_token_status`: single-column for global status filtering.
 
 **Triggers:**
 
-- `trg_token_state_machine` (BEFORE UPDATE OF status) — rejects
+- `trg_token_state_machine` (BEFORE UPDATE OF status): rejects
   illegal transitions; legal set is in `06_triggers.sql`.
-- `trg_token_audit` (AFTER UPDATE) — emits a TokenLifecycleEvent for
+- `trg_token_audit` (AFTER UPDATE): emits a TokenLifecycleEvent for
   every status change, automatically.
 
 ### `RevocationList`
@@ -197,7 +197,7 @@ Every verification attempt.
 | column | type | notes |
 |---|---|---|
 | `event_id` | SERIAL PK | |
-| `token_id` | INTEGER FK | **NULLABLE** — must be NULL for ZERO_KNOWLEDGE; constraint C2 |
+| `token_id` | INTEGER FK | **NULLABLE**: must be NULL for ZERO_KNOWLEDGE; constraint C2 |
 | `requesting_agency_id` | INTEGER NOT NULL FK | |
 | `context_id` | INTEGER NOT NULL FK | |
 | `event_timestamp` | TIMESTAMP NOT NULL DEFAULT now() | |
@@ -210,7 +210,7 @@ Every verification attempt.
 **CHECK constraint** `chk_disclosure_token_consistency`:
 - `ZERO_KNOWLEDGE` → `token_id IS NULL`
 - `FULL` → `token_id IS NOT NULL`
-- `SELECTIVE` — either is permitted
+- `SELECTIVE`: either is permitted
 
 **Trigger:** `trg_verification_append_only` (BEFORE UPDATE OR DELETE)
 raises `insufficient_privilege`. Constraint C1.
@@ -225,7 +225,7 @@ raises `insufficient_privilege`. Constraint C1.
 |---|---|
 | `auth_id` | SERIAL PK |
 | `username` | VARCHAR(64) NOT NULL FK |
-| `event_type` | VARCHAR(20) NOT NULL — `LOGIN_SUCCESS` \| `LOGIN_FAIL` \| `LOGOUT` |
+| `event_type` | VARCHAR(20) NOT NULL: `LOGIN_SUCCESS` \| `LOGIN_FAIL` \| `LOGOUT` |
 | `ip_address` | INET |
 | `event_timestamp` | TIMESTAMP NOT NULL DEFAULT now() |
 | `extra` | JSONB |
@@ -287,7 +287,7 @@ hits the primary key and is rejected. Holds no token or holder data.
 ### `DeviceBinding`
 
 Hardware-token binding records (UC-5). One row per device bound to
-a token — phone, watch, tablet — with `binding_method` ∈
+a token, phone, watch, tablet, with `binding_method` ∈
 {SECURE_ENCLAVE, TITAN_SECURITY, TRUSTED_PLATFORM_MODULE}.
 
 ### `BlockchainAnchor`
@@ -297,7 +297,7 @@ Optional anchoring of tokens with per-token DID + commitment hash.
 migration paths (ALGORAND_PQ, HYPERLEDGER_INDY, CUSTOM_LATTICE). One
 row per anchored token. As of v8.21 / R10-2 / M2-2, extended with
 `batch_id` (FK to `AnchorBatch`) and `merkle_proof` (JSONB), with a
-co-NULL CHECK constraint — pending anchors carry NULL, batched
+co-NULL CHECK constraint: pending anchors carry NULL, batched
 anchors carry both.
 
 ### `AnchorBatch`
@@ -342,9 +342,9 @@ SNARK-friendly for the Plonky2 circuit). See `DEVNOTES/ships/zk-snark.md`.
 ### `TokenStateEpochLeaf`
 
 Per-token witness within an epoch. Each row stores the
-(epoch_id, token_id, leaf_hash, proof_path) tuple — the prover
+(epoch_id, token_id, leaf_hash, proof_path) tuple: the prover
 reads its row to generate a ZK proof. Append-only (inherits
-`reject_audit_modification`). Unique on (epoch_id, token_id) — one
+`reject_audit_modification`). Unique on (epoch_id, token_id): one
 witness per token per epoch. v1 stores `proof_path` in plaintext;
 v2 would encrypt under the holder's key. See `DEVNOTES/ships/zk-snark.md`.
 
@@ -353,7 +353,7 @@ v2 would encrypt under the holder's key. See `DEVNOTES/ships/zk-snark.md`.
 Federation trust graph: directional edges of the form "verifying
 agency V accepts issuing agency I for context C, valid until D." The
 verification flow consults this table when V ≠ I; same-agency
-verification is implicit and requires no row. NO transitive trust —
+verification is implicit and requires no row. NO transitive trust:
 the lookup is single-row, not transitive-closure (R1 audit
 refinement).
 
@@ -361,9 +361,9 @@ An audit-of-record: append-only via
 `enforce_attestation_immutability`, with bounded mutation limited to
 the `(revocation_date, revocation_reason)` pair (set together
 one-way, never un-set). Three CHECK constraints:
-- `attestation_no_self_attestation` — same-agency rows rejected
-- `attestation_validity_floor` — `valid_until > attested_date::DATE`
-- `attestation_revocation_consistency` — fields move together;
+- `attestation_no_self_attestation`: same-agency rows rejected
+- `attestation_validity_floor`: `valid_until > attested_date::DATE`
+- `attestation_revocation_consistency`: fields move together;
   revocation_reason ≥ 8 chars
 
 A partial unique index on `(attesting, attested, context_id) WHERE
@@ -371,7 +371,7 @@ revocation_date IS NULL` enforces "at most one active attestation per
 triple" and serves the read path. Revoked rows fall out of the index
 and the audit trail accumulates. v1 ships with operator-logged
 attestations (`signed_by AppUser`); v2 path is cryptographic
-agency-signed attestations (left out of v8.22 by design — see
+agency-signed attestations (left out of v8.22 by design: see
 `DEVNOTES/ships/federation.md`'s "v1 vs v2 split").
 
 ### `GenomicAnchor`
@@ -428,7 +428,7 @@ Five-status CHECK enum (`NOT_ENROLLED`, `PENDING_ENROLLMENT`,
 for every new `Individual` row so the default state is materialized
 rather than inferred. The append-only invariant is enforced by the
 extension of `reject_audit_modification` to this table. State-machine
-sequencing is NOT trigger-enforced — application policy enforces
+sequencing is NOT trigger-enforced: application policy enforces
 order where it matters. Implements the PDF §9 *Population coverage*
 open problem; see `DEVNOTES/ships/tiered-enrollment.md` for the asymmetric
 design rationale (EXEMPT frictionless, mass-NOT_ENROLLED enumeration
@@ -438,7 +438,7 @@ The companion view `IndividualCurrentEnrollment` (defined in
 `03_view.sql`) returns the latest event per individual with a
 `COALESCE` fallback to `NOT_ENROLLED`. The companion function
 `civic_enrollment_summary(jurisdiction)` (in `07_queries.sql`)
-returns per-jurisdiction × status counts only — per-individual
+returns per-jurisdiction × status counts only: per-individual
 enumeration of `NOT_ENROLLED` is deliberately not first-class.
 
 ### `RecoveryRequest`
@@ -562,7 +562,7 @@ CHECK (rows_purged_total >= 0)                 -- rows_purged_total_nonneg
 **Append-only at full strictness (G30).** The trigger
 `trg_checkpoint_append_only` (function:
 `reject_checkpoint_modification`) rejects every UPDATE and
-DELETE unconditionally — no GUC carve-out applies at this layer
+DELETE unconditionally: no GUC carve-out applies at this layer
 because the checkpoint chain IS the audit-of-record for the
 deletion carve-out.
 
@@ -626,7 +626,7 @@ not counted among the audit-of-record surfaces.
 
 There are no `up`/`down` migration scripts yet (BACKLOG schema
 section). Schema reload is via `polaris_sql/00_load_all.sql` which
-runs `DROP TABLE … CASCADE` and reloads from scratch — destructive.
+runs `DROP TABLE … CASCADE` and reloads from scratch: destructive.
 Production deployments that need non-destructive migrations should
 introduce versioned migrations (Alembic-style) before going live.
 

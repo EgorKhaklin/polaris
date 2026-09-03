@@ -56,14 +56,14 @@ down -v && docker compose up`.
 CSP is set in `security.py::apply_security_headers()`. It blocks all inline
 executable `<script>` blocks AND all inline event-handler attributes
 (`onclick=`, `onsubmit=`, `onchange=`, etc.). **v8.46 cleaned this up
-in templates** — the heartbeat moved to `static/heartbeat.js`; the
+in templates**: the heartbeat moved to `static/heartbeat.js`; the
 6 `onclick`/`onsubmit`/`onchange` handlers became `data-confirm="…"`
 and `data-submit-on-change` attribute opt-ins served by
 `static/confirm-submit.js`; `verifications_form.html` and
 `sql_console.html` got their own dedicated external scripts.
 
 The only remaining inline `<script>` is the `<script id="atlas-globe-data"
-type="application/json">[]</script>` **data-island** at `atlas.html:157` —
+type="application/json">[]</script>` **data-island** at `atlas.html:157`:
 this is correct because the browser places the tag in the DOM (readable
 via `getElementById`) but never executes it (`type` is `application/json`,
 not JavaScript). No CSP violation.
@@ -92,7 +92,7 @@ convention; don't introduce a third.
 
 Pre-v6 the static `var nodeSelection = ...enter().append(...)` chain
 guaranteed nodeSelection was always defined. Post-v6, render is
-async — first redraw fires before fetchData() completes. Always
+async: first redraw fires before fetchData() completes. Always
 null-guard: `if (nodeSelection) nodeSelection.each(...)`.
 
 ### Filter chips broke clusters
@@ -149,7 +149,7 @@ If you migrate schemas via `pg_dump`, prepend `--no-owner
 
 ## Behavioral
 
-### "Larping" — VANTA's named pattern to monitor
+### "Larping": VANTA's named pattern to monitor
 
 Cosmic-significance framing instead of concrete building. When I write
 "This represents a substrate-level shift in identity infrastructure
@@ -179,7 +179,7 @@ session ended mid-execution.
 
 Symptom: every probe shows the d3 selection has the right size and the
 right data, but the class never lands on the DOM elements. v8.2 / V2
-hit this when adding `.node-fresh` to entering reticles — classed()
+hit this when adding `.node-fresh` to entering reticles: classed()
 through enter+merge silently no-op'd.
 
 Fix: skip the `enter.merge(sel)` form. Re-`selectAll('g.d3-globe-node')`
@@ -203,7 +203,7 @@ the cached resource even when its URL gets a fresh query string,
 - New URL (different query string AT NAVIGATION TIME) → reliably fresh
 
 Reliable reset: navigate to `/atlas?nuke=$(date +%s)` (a NEW URL with a
-random param) — this forces Flask to re-render the template, and any
+random param): this forces Flask to re-render the template, and any
 new `?v=` in that template lands. Just hard-reloading the same URL
 sometimes doesn't.
 
@@ -366,7 +366,7 @@ The combined regression-guard family (six tests across the
 launcher-watch-mode surface) is now the canonical guard against
 this whole class of failure.
 
-### CSP externalization (v8.46) — inline JS is gone from templates
+### CSP externalization (v8.46): inline JS is gone from templates
 
 Pre-v8.46, the heartbeat lived as an inline `<script>` in
 `base.html` and 6 templates had `onclick=`/`onsubmit=`/`onchange=`

@@ -1,4 +1,4 @@
-Polaris — Identity Token System
+Polaris, Identity Token System
 Copyright 2026 Egor Khaklin
 
 This product is licensed under the Apache License, Version 2.0 (see the
@@ -9,21 +9,14 @@ http://www.apache.org/licenses/LICENSE-2.0).
 About this work
 ================================================================================
 
-Polaris is a reference implementation of a national identity token system —
-what a sovereign-grade identity layer would look like if you designed it
-from first principles in 2026, knowing what we now know about post-quantum
-cryptography, zero-knowledge proofs, append-only audit, and the failure
-modes of every CBDC pilot.
+Polaris is a reference implementation of a national identity token system:
+post-quantum signatures, zero-knowledge verification, and an append-only
+audit of record, enforced in the database schema rather than in policy.
 
-Built as the portfolio piece for SCS-230 (Database Management Systems) at
-Seton Hill University, Spring 2026. The course is the occasion; the
-engineering bar is production-grade.
-
-The constitution (the ten hard constraints C1–C10 plus the Vocation)
-lives in MISSION.md. The audit-of-record principle —
-that every state-changing decision in the system has a schema element or
-equivalent artifact reconstructing operation history — lives in
-DEVNOTES/audit-of-record.md.
+It began as the author's project for SCS-230 (Database Management Systems)
+at Seton Hill University in spring 2026 and is maintained as a working
+system prepared for national deployment. The constitution (the ten hard
+constraints C1 to C10 and the vocation) is MISSION.md.
 
 ================================================================================
 Components and their separate notices
@@ -39,9 +32,9 @@ copyright MapLibre contributors; original license header preserved in the
 vendored source. The street-level basemap uses CARTO's free dark-matter
 vector tiles, which are derived from OpenStreetMap data (© OpenStreetMap
 contributors, ODbL) and served by CARTO (© CARTO); both are attributed in
-the on-map attribution control. The earlier D3/TopoJSON globe
-(polaris_web/static/atlas-globe.js, both BSD-3-Clause, vendored) is retained
-for reference; original copyright notices preserved in the vendored source.
+the on-map attribution control. D3 and TopoJSON (both BSD-3-Clause) are
+vendored for the earlier globe renderer; original copyright notices are
+preserved in the vendored source.
 
 The web application uses Flask, Werkzeug, psycopg2, and redis-py. Each
 retains its own license; consult requirements.txt for versions and the
@@ -59,13 +52,12 @@ sources under fair-use academic citation conventions.
 Attribution
 ================================================================================
 
-If you build on Polaris — code, schema, architectural patterns
-(audit-of-record discipline, constraint lattice),
-or the post-v2 strategic moment framing — please retain the LICENSE +
-NOTICE files and the author attribution per Apache 2.0 §4.
+If you build on Polaris, whether the code, the schema, or its patterns
+(the audit-of-record discipline above all), retain the LICENSE and NOTICE
+files and the author attribution, per Apache 2.0 section 4.
 
 The audit-of-record discipline is the project's central methodological
-contribution: state-changing decisions are recorded in the schema (nine
-append-only trigger instances) and on the filesystem (CHANGELOG.md plus
-git history). The same discipline applies at the license level:
-provenance is preserved.
+contribution: state-changing decisions are recorded in the schema by
+append-only tables guarded by triggers, and on the filesystem by
+CHANGELOG.md and the git history. The same discipline applies at the
+license level: provenance is preserved.

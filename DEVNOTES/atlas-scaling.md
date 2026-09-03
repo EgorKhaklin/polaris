@@ -6,7 +6,7 @@ The scaling story in 60 lines. Full treatment in `docs/reference/SCALING.md`.
 
 ## Why the architecture is what it is
 
-Atlas at 1M+ events cannot send the data to the browser — payload is
+Atlas at 1M+ events cannot send the data to the browser: payload is
 gigabytes. The fix is server-side spatial aggregation: the browser
 sends the visible bounding box, the server returns at most a few
 hundred cluster summaries (centroid + counts), the browser renders
@@ -86,7 +86,7 @@ performance is comparable to non-wrapping bboxes.
 3. **The 220ms debounce.** Below 150ms the API gets hammered during a
    smooth pan. Above 400ms feels laggy.
 
-4. **The hard caps (5000 / 2000 / 500).** They're not arbitrary —
+4. **The hard caps (5000 / 2000 / 500).** They're not arbitrary:
    above these, JSON serialization and DOM updates begin to dominate
    render time.
 
@@ -120,11 +120,11 @@ scan was expected.
 The default schema uses composite B-tree indexes on
 `(latitude, longitude)` for atlas spatial queries. B-tree starts to
 break down past ~10M events because the index doesn't model
-2-dimensional proximity natively — a bbox query degrades toward a
+2-dimensional proximity natively: a bbox query degrades toward a
 range scan over one dimension.
 
 **v8.88 ships an optional PostGIS migration** (`polaris_sql/13_postgis.sql`)
-that — when the `postgis` extension is available — adds a generated
+that, when the `postgis` extension is available, adds a generated
 `geography(Point, 4326)` column to `VerificationEvent` and
 `TokenLifecycleEvent` plus a GiST index on each. GiST models 2D
 proximity correctly; bbox + radius queries return a logarithmic
@@ -152,7 +152,7 @@ changes.
 
 The application-layer atlas functions (`atlas_clusters_*`,
 `atlas_points_*`, etc.) still use the B-tree path until a v8.x
-follow-up ship rewrites them — that rewrite is gated on a
+follow-up ship rewrites them: that rewrite is gated on a
 PostGIS-enabled environment plus a 10M-event benchmark dataset
 where the ≥3× R8-4 acceptance criterion can be measured. Until
 then, operators can hand-query the GiST index:

@@ -19,7 +19,7 @@ Bump procedure (see CLAUDE.md "Shipping"):
     3. Run `bash scripts/ai-done.sh` (polaris_checks + link-check) until READY.
 """
 
-__version__: str = "9.199"
+__version__: str = "9.200"
 
 
 # Backwards-compat alias for code that imported `POLARIS_VERSION`

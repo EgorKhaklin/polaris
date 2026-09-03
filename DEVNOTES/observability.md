@@ -1,4 +1,4 @@
-# DEVNOTES/observability.md — operator runbook for application metrics
+# DEVNOTES/observability.md: operator runbook for application metrics
 
 **Audience:** operator running a deployed Polaris instance.
 **Scope:** this document covers OBSERVING THE RUNNING APPLICATION.
@@ -21,7 +21,7 @@ metrics backend is required.
 
 As of v9.27, **duress events are the
 headline.** An unobservable duress signal is the coercion-cover
-failure mode — the duress-code feature (R11-5 / M2-10) becomes
+failure mode: the duress-code feature (R11-5 / M2-10) becomes
 decorative if no one alerts on it.
 
 ---
@@ -63,7 +63,7 @@ If you have an alerting system, the baseline alerts (in increasing
 severity):
 
 ```yaml
-# Pseudocode — adapt to your alerting tool
+# Pseudocode: adapt to your alerting tool
 
 - name: polaris-stack-down
   condition: request_rate_per_minute == 0 for 5m

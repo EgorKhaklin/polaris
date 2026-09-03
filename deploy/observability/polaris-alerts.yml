@@ -1,4 +1,4 @@
-# Polaris — Prometheus alerting rules (v9.115)
+# Polaris: Prometheus alerting rules (v9.115)
 #
 # A real, validated rules file the operator drops into Prometheus
 # (rule_files in prometheus.yml), not just a doc snippet. Severity labels map
@@ -7,13 +7,13 @@
 #
 # Metric-aggregation note: as of v9.120 the app's /metrics aggregates across all
 # gunicorn workers (Prometheus multiprocess mode), so an absolute counter is
-# whole-app — which is what makes PolarisDuressEvent's `increase(...)` correct.
+# whole-app: which is what makes PolarisDuressEvent's `increase(...)` correct.
 # The ratio/quantile alerts (5xx share, latency percentiles) were valid even
 # per-worker and remain so. Validate with: promtool check rules polaris-alerts.yml
 groups:
   - name: polaris
     rules:
-      # SEV-1 — the app is unreachable to the scraper (target down) or the
+      # SEV-1: the app is unreachable to the scraper (target down) or the
       # process is up but not reporting its info gauge.
       - alert: PolarisAppDown
         expr: up{job="polaris"} == 0
@@ -31,9 +31,9 @@ groups:
           severity: sev1
         annotations:
           summary: "polaris_app_info absent for 5m"
-          description: "The app metadata gauge is missing — the process is not serving /metrics normally."
+          description: "The app metadata gauge is missing, the process is not serving /metrics normally."
 
-      # SEV-1 — the headline anti-coercion alarm. A duress-code match recorded a
+      # SEV-1: the headline anti-coercion alarm. A duress-code match recorded a
       # silent DuressEvent; a coerced operator needs a human to know NOW. Fires
       # immediately on any new event (no `for`: duress cannot wait out a window).
       # An increase on the multiprocess-aggregated counter (v9.120) is whole-app.
@@ -42,10 +42,10 @@ groups:
         labels:
           severity: sev1
         annotations:
-          summary: "Duress code matched — a coerced verification was recorded"
+          summary: "Duress code matched, a coerced verification was recorded"
           description: "polaris_duress_events_total increased: at least one duress-code match in the last 5m. Treat as a person signalling coercion; work the PolarisDuressEvent runbook out-of-band."
 
-      # SEV-2 — sustained 5xx share. A ratio: valid per worker.
+      # SEV-2: sustained 5xx share. A ratio: valid per worker.
       - alert: PolarisHigh5xx
         expr: |
           sum(rate(polaris_requests_total{status=~"5.."}[5m]))
@@ -58,7 +58,7 @@ groups:
           summary: "5xx rate > 1% sustained for 10m"
           description: "The server-error share of requests has exceeded 1% for 10 minutes."
 
-      # SEV-2 — DB round-trip p99 over 5s (matches DR.md's SEV-2 threshold).
+      # SEV-2: DB round-trip p99 over 5s (matches DR.md's SEV-2 threshold).
       - alert: PolarisHighDBLatency
         expr: |
           histogram_quantile(0.99,
@@ -68,9 +68,9 @@ groups:
           severity: sev2
         annotations:
           summary: "DB query p99 latency > 5s"
-          description: "The /api/health DB round-trip p99 has exceeded 5 seconds — the database is slow or saturated."
+          description: "The /api/health DB round-trip p99 has exceeded 5 seconds, the database is slow or saturated."
 
-      # SEV-3 — request latency p99 elevated (degraded, not down).
+      # SEV-3: request latency p99 elevated (degraded, not down).
       - alert: PolarisHighRequestLatency
         expr: |
           histogram_quantile(0.99,
@@ -82,7 +82,7 @@ groups:
           summary: "Request p99 latency > 2s"
           description: "Per-route request p99 latency has exceeded 2 seconds for 10 minutes."
 
-      # v9.190 (roadmap P1.8) — velocity anomaly alerts. An agency doing far
+      # v9.190 (roadmap P1.8): velocity anomaly alerts. An agency doing far
       # more than its own recent baseline is the abuse signal that quotas may
       # not have been set for: the last hour against 4x its trailing 7-day
       # hourly mean (offset one hour so the burst is not in its own baseline),
@@ -127,7 +127,7 @@ groups:
           summary: "Verification velocity anomaly for agency {{ $labels.agency_id }}"
           description: "Agency {{ $labels.agency_id }} recorded more than 200 verifications in the last hour and more than 4x its trailing 7-day hourly mean. Mass verification is the dragnet shape the vocation refuses."
 
-      # SEV-3 — an AgencyQuota cap is refusing writes. Either abuse the cap is
+      # SEV-3: an AgencyQuota cap is refusing writes. Either abuse the cap is
       # doing its job against, or a cap set too low for legitimate volume;
       # both need a human to look. No `for`: one refusal is a fact.
       - alert: PolarisQuotaRefusals
