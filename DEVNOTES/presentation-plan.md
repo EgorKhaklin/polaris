@@ -36,6 +36,11 @@ ship; the row is done when every ship under it is `[x]`.
   P1.17 ship 4 decides once and applies it everywhere.
 - Endpoint names, route paths, environment variables and check names are
   never renamed by a presentation ship; only what a reader sees changes.
+- `.github/FUNDING.yml` stays. The owner set up GitHub Sponsors across the
+  project repositories on purpose; sponsoring the project is not a bug
+  bounty, and SECURITY.md's no-bounty statement is about payment for
+  findings. `check_presentation_surface` (P1.14 ship 5) must not require its
+  absence.
 
 ## Status
 
@@ -50,7 +55,7 @@ ship; the row is done when every ship under it is `[x]`.
 | P1.13 | 7. The indexes and the voice gate (docs hub, index-coverage check, PRINCIPLES merged, NOTICE and CONVENTIONS, CONTRIBUTING dedupe, the em-dash sweep across docs/ DEVNOTES/ meta/ and the package READMEs, the widened hook) | [x] v9.200 |
 | P1.14 | 1. Repository settings and the security policy | [x] v9.201 (settings flipped by the owner 2026-09-03: alerts, security updates, private reporting, secret scanning, push protection; Projects off) |
 | P1.14 | 2. About, topics, the four-surface self-description | [x] v9.202 |
-| P1.14 | 3. Community health files | [ ] |
+| P1.14 | 3. Community health files | [x] v9.203 (FUNDING.yml kept; see the ruling above) |
 | P1.14 | 4. CONTRIBUTING in public voice; README above the fold | [ ] |
 | P1.14 | 5. Release-note shape; `check_presentation_surface` | [ ] |
 | P1.15 | 1. The site truth pass | [ ] (counts and the SLH-DSA and WebAuthn claims corrected v9.194; the launcher tile, the warrant-grade and globe captions and the notional-data statements remain) |

@@ -2172,7 +2172,12 @@ def check_helm_chart_version_current(root: pathlib.Path) -> list[Finding]:
         return _fail("helm_chart_version",
                      f"deploy/helm/polaris/Chart.yaml appVersion is {chart.group(1).strip()} but "
                      f"polaris_web/__version__.py is {ver.group(1)}; bump the chart with the ship")
-    return _ok("helm_chart_version", f"Chart.yaml appVersion matches __version__ ({ver.group(1)})")
+    cite = re.search(r'^version:\s*"?([^"\n]+)"?\s*$', _read(root, "CITATION.cff"), re.M)
+    if cite and cite.group(1).strip() != ver.group(1):
+        return _fail("helm_chart_version",
+                     f"CITATION.cff version is {cite.group(1).strip()} but __version__ is {ver.group(1)}; "
+                     "bump the citation with the ship")
+    return _ok("helm_chart_version", f"Chart.yaml appVersion and CITATION.cff match __version__ ({ver.group(1)})")
 
 
 # ---------------------------------------------------------------------------

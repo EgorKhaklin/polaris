@@ -1,0 +1,53 @@
+name: Bug report
+description: Something in Polaris behaves differently from what its documentation says.
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not report a security vulnerability here. Use the private advisory linked from the issue chooser, or see SECURITY.md.
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - Web application (polaris_web)
+        - SQL schema, procedures or triggers (polaris_sql)
+        - ZK prover or second witness (polaris_zk)
+        - CLI (polaris_cli)
+        - Invariant checks (polaris_checks)
+        - Operator scripts (scripts/)
+        - Deployment (compose, Linux installer, Helm)
+        - macOS launcher
+        - Documentation
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The value of `version` from `/api/health`, or the tag you installed.
+      placeholder: "9.203"
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: The exact commands or clicks, starting from a fresh stack where possible.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected, and which document says so
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened instead
+      description: Paste the relevant log lines; the structured log and `/api/health` output are the most useful.
+    validations:
+      required: true

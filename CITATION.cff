@@ -1,0 +1,24 @@
+cff-version: 1.2.0
+message: "If you use or build on Polaris, please cite it as below."
+title: "Polaris: a post-quantum, zero-knowledge, compulsion-resistant national identity-token reference implementation"
+type: software
+authors:
+  - family-names: Khaklin
+    given-names: Egor
+version: "9.203"
+date-released: "2026-09-03"
+repository-code: "https://github.com/EgorKhaklin/polaris-id"
+url: "https://egorkhaklin.github.io/polaris-id/"
+license: Apache-2.0
+keywords:
+  - digital identity
+  - post-quantum cryptography
+  - zero-knowledge proofs
+  - ML-DSA
+  - anti-coercion
+abstract: >-
+  A working reference implementation of a national identity-token system whose
+  guarantees are enforced in the database schema: post-quantum signatures
+  (ML-DSA-65), zero-knowledge verification with an independent second witness,
+  an append-only audit of record, and duress-resistant operation. Educational;
+  notional data only.

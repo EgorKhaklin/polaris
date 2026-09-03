@@ -5,6 +5,30 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.203 — 2026-09-03 (P1.14 ship 3: the community files a reader expects)
+
+- **CODE_OF_CONDUCT.md** (Contributor Covenant 2.1, enforcement through the
+  project mailbox), linked from CONTRIBUTING.md's opening.
+- **Issue forms.** `.github/ISSUE_TEMPLATE/config.yml` disables blank issues
+  and routes security reports to the private advisory and operator questions
+  to the runbooks; a bug-report form captures the component, the version from
+  `/api/health`, the reproduction, the expectation and the document that set
+  it; a change-proposal form captures the need, the change, the C1 to C10 and
+  vocation alignment CONTRIBUTING asks for, and the blast radius, with a
+  required acknowledgement that the proposal is not a monetary (C10) or
+  aggregation feature.
+- **PULL_REQUEST_TEMPLATE.md** with motivation, change, blast radius,
+  constraints, and the test-discipline checklist (checks READY, the DB-backed
+  suites, the link checker, a test or check for new behaviour, the version
+  and CHANGELOG bump, the documentation).
+- **CITATION.cff** with the version pinned to `polaris_web/__version__.py`;
+  `check_helm_chart_version_current` now fails when the citation lags the
+  version, and the README's report row points at it.
+- **`.github/FUNDING.yml` stays.** The plan proposed deleting it as
+  contradicting the no-bounty statement; the owner set up Sponsors across
+  the project repositories deliberately, and sponsoring a project is not
+  payment for findings. The ruling is recorded in the sub-roadmap.
+
 ## v9.202 — 2026-09-03 (P1.14 ship 2: one sentence on all four surfaces)
 
 - **The About** on github.com/EgorKhaklin/polaris-id is the project's own

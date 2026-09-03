@@ -7,6 +7,8 @@ against `MISSION.md`. Contributions are welcome, but this is not
 a typical open-source project; the bar is unusual, and the process
 documented here reflects that.
 
+Participation is governed by the [Code of Conduct](CODE_OF_CONDUCT.md).
+
 If you're here from the GitHub navigation chrome looking for the "how do I
 file a PR" page: read the **Quick path** below. If you're considering a
 substantive change to architecture or constitutional constraints, read the

@@ -1,0 +1,41 @@
+name: Change proposal
+description: A substantive change to behaviour, the schema, the security boundary or the constraints. Open this before building it.
+title: "[proposal] "
+labels: ["proposal"]
+body:
+  - type: textarea
+    id: need
+    attributes:
+      label: The need, in concrete terms
+      description: What a deployment cannot do today, and who is affected.
+    validations:
+      required: true
+  - type: textarea
+    id: change
+    attributes:
+      label: The change you propose
+    validations:
+      required: true
+  - type: textarea
+    id: alignment
+    attributes:
+      label: Constraint and vocation alignment
+      description: Which of C1 to C10 (MISSION.md) the change touches, how each stays enforced at the database level, and how the change advances anti-coercion or at least does not move toward surveillance, aggregation or unbounded retention.
+    validations:
+      required: true
+  - type: textarea
+    id: blast
+    attributes:
+      label: Blast radius
+      description: Tables, routes, scripts, documents and checks that change; what an operator must do on upgrade.
+    validations:
+      required: true
+  - type: checkboxes
+    id: acknowledgements
+    attributes:
+      label: Acknowledgements
+      options:
+        - label: This is not a payment, banking or monetary feature (C10) and not a cross-individual aggregation or scoring feature.
+          required: true
+        - label: I have read CONTRIBUTING.md and expect to ship the check or test that pins the new behaviour.
+          required: true

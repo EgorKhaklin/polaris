@@ -3763,3 +3763,13 @@ def test_docs_index_coverage_check_fails_on_an_unlisted_document(tmp_path):
     (tmp_path / "docs/operator/DR.md").unlink()
     (tmp_path / "docs/reference").mkdir(); (tmp_path / "docs/reference/API.md").write_text("x\n")
     assert checks.check_docs_index_coverage(tmp_path)[0].level == "FAIL", "must FAIL when a sub-directory has no index or is not delegated"
+
+
+def test_version_check_pins_the_citation_file(tmp_path):
+    (tmp_path / "polaris_web").mkdir(); (tmp_path / "deploy/helm/polaris").mkdir(parents=True)
+    (tmp_path / "polaris_web/__version__.py").write_text('__version__ = "9.203"\n')
+    (tmp_path / "deploy/helm/polaris/Chart.yaml").write_text('apiVersion: v2\nname: polaris\nappVersion: "9.203"\n')
+    (tmp_path / "CITATION.cff").write_text('cff-version: 1.2.0\nversion: "9.203"\n')
+    assert checks.check_helm_chart_version_current(tmp_path)[0].level == "OK", "must PASS when the citation matches"
+    (tmp_path / "CITATION.cff").write_text('cff-version: 1.2.0\nversion: "9.200"\n')
+    assert checks.check_helm_chart_version_current(tmp_path)[0].level == "FAIL", "must FAIL when CITATION.cff lags the version"
