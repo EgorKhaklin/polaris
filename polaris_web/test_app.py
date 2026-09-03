@@ -30,6 +30,7 @@ import os
 import re
 import sys
 import unittest
+from unittest.mock import patch
 from contextlib import closing
 from datetime import datetime, timedelta
 import psycopg2
@@ -274,10 +275,26 @@ class AtlasTests(PolarisTestCase):
     def test_atlas_renders(self):
         r = self.client.get('/atlas')
         self.assertEqual(r.status_code, 200)
-        # v8.2: id-strip text shortened from "ATLAS / OPERATIONAL OVERVIEW"
-        # to "OPERATIONAL" — "Atlas" is already the active nav link, so
-        # the redundant prefix was costing toolbar real estate at 1280-wide.
-        self.assertHTML(r, '<div class="atlas-id-strip">OPERATIONAL</div>')
+        # The id strip is the Atlas's provenance label: outside production it
+        # says the data is notional (v9.206); production renders the
+        # operator's deployment label, or nothing.
+        self.assertHTML(r, '<div class="atlas-id-strip">NOTIONAL DATA</div>')
+
+    def test_atlas_provenance_follows_deployment_state(self):
+        """Production renders the operator-configured label on every
+        provenance surface, and never the notional-data label; without a
+        label it renders no id strip at all."""
+        with patch.object(flask_app, '_PRODUCTION', True), \
+             patch.object(flask_app, 'DEPLOYMENT_LABEL', 'COUNTY OF EXAMPLE'):
+            body = self.client.get('/atlas').get_data(as_text=True)
+        self.assertIn('<div class="atlas-id-strip">COUNTY OF EXAMPLE</div>', body)
+        self.assertIn('OPERATIONAL ATLAS · COUNTY OF EXAMPLE', body)
+        self.assertNotIn('NOTIONAL DATA', body)
+        with patch.object(flask_app, '_PRODUCTION', True), \
+             patch.object(flask_app, 'DEPLOYMENT_LABEL', ''):
+            body = self.client.get('/atlas').get_data(as_text=True)
+        self.assertNotIn('atlas-id-strip', body)
+        self.assertNotIn('NOTIONAL DATA', body)
 
     def test_atlas_has_gotham_chrome(self):
         """The reframed Atlas uses fullbleed layout, gold id-strip, and
@@ -383,26 +400,60 @@ class DashboardAnalyticsTests(PolarisTestCase):
 
 
 class HeartbeatTests(PolarisTestCase):
-    """Browser-presence beacons used by the launcher's --watch mode.
-    These endpoints must work without authentication and without CSRF."""
+    """Browser-presence beacons used by the launcher's watch mode. They
+    exist only under POLARIS_LAUNCHER_WATCH (v9.206); when on, they work
+    without authentication and without CSRF, and the beacon script is on
+    every page; when off, the routes are 404 and no page carries the script."""
 
-    def test_heartbeat_post_returns_204(self):
-        r = self.client.post('/api/heartbeat')
+    def test_heartbeat_post_returns_204_in_launcher_mode(self):
+        with patch.object(flask_app, 'LAUNCHER_WATCH', True):
+            r = self.client.post('/api/heartbeat')
         self.assertEqual(r.status_code, 204)
 
-    def test_quit_post_returns_204(self):
-        r = self.client.post('/api/quit')
+    def test_quit_post_returns_204_in_launcher_mode(self):
+        with patch.object(flask_app, 'LAUNCHER_WATCH', True):
+            r = self.client.post('/api/quit')
         self.assertEqual(r.status_code, 204)
 
-    def test_since_heartbeat_returns_json(self):
-        # Send a heartbeat first so the file exists
-        self.client.post('/api/heartbeat')
-        r = self.client.get('/api/since-heartbeat')
-        self.assertEqual(r.status_code, 200)
-        self.assertEqual(r.content_type.split(';')[0], 'application/json')
-        payload = r.get_json()
-        self.assertIn('since_s', payload)
-        self.assertIn('quit_requested', payload)
+    def test_beacon_script_only_in_launcher_mode(self):
+        with patch.object(flask_app, 'LAUNCHER_WATCH', True):
+            self.assertIn('heartbeat.js', self.client.get('/dashboard').get_data(as_text=True))
+        with patch.object(flask_app, 'LAUNCHER_WATCH', False):
+            self.assertNotIn('heartbeat.js', self.client.get('/dashboard').get_data(as_text=True))
+
+    def test_launcher_routes_absent_outside_launcher_mode(self):
+        with patch.object(flask_app, 'LAUNCHER_WATCH', False):
+            self.assertEqual(self.client.post('/api/heartbeat').status_code, 404)
+            self.assertEqual(self.client.post('/api/quit').status_code, 404)
+            self.assertEqual(self.client.get('/api/since-heartbeat').status_code, 404)
+
+
+class DemoGateTests(PolarisTestCase):
+    """The synthetic walkthrough and its landing call to action exist only
+    under DEMO_MODE, which is never on in production (v9.206)."""
+
+    def test_demo_served_and_advertised_in_demo_mode(self):
+        with patch.object(flask_app, 'DEMO_MODE', True):
+            self.assertEqual(self.client.get('/demo').status_code, 200)
+            landing = self.client.get('/', follow_redirects=False)
+            body = landing.get_data(as_text=True)
+        if landing.status_code == 200:
+            self.assertIn('data-cta="demo"', body)
+
+    def test_demo_absent_outside_demo_mode(self):
+        with patch.object(flask_app, 'DEMO_MODE', False):
+            self.assertEqual(self.client.get('/demo').status_code, 404)
+            landing = self.client.get('/', follow_redirects=False)
+            body = landing.get_data(as_text=True)
+        if landing.status_code == 200:
+            self.assertNotIn('data-cta="demo"', body)
+            self.assertIn('data-cta="signin"', body)
+
+    def test_demo_mode_cannot_be_forced_on_in_production(self):
+        env = {'POLARIS_ENV': 'production', 'POLARIS_DEMO_MODE': '1'}
+        with patch.dict(os.environ, env):
+            prod = os.environ.get('POLARIS_ENV', '').lower() == 'production'
+            self.assertFalse(flask_app._env_flag('POLARIS_DEMO_MODE', not prod) and not prod)
 
 
 # ============================================================================
@@ -3605,8 +3656,9 @@ class F01_AuthenticationTests(UnauthenticatedTestCase):
 
     # v9.13: `/` is the public landing page (introduces Polaris to anonymous
     # visitors). Authenticated users get redirected to /dashboard.
-    # `/demo` is also intentionally public (synthetic walkthrough; no real
-    # holder data). All other paths below require authentication.
+    # `/demo` is public when DEMO_MODE is on (synthetic walkthrough; no real
+    # holder data) and 404 otherwise; DemoGateTests covers both. All other
+    # paths below require authentication.
     PROTECTED_PATHS = [
         '/atlas',
         '/individuals',
@@ -6933,6 +6985,13 @@ class CrossSiteGuardTests(unittest.TestCase):
 
     def setUp(self):
         self.client = flask_app.app.test_client()
+        # The launcher routes exist only in launcher mode; the guard is
+        # exercised there (v9.206).
+        self._mode = patch.object(flask_app, 'LAUNCHER_WATCH', True)
+        self._mode.start()
+
+    def tearDown(self):
+        self._mode.stop()
 
     def test_cross_site_quit_rejected(self):
         r = self.client.post('/api/quit', headers={'Sec-Fetch-Site': 'cross-site'})

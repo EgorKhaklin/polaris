@@ -392,7 +392,7 @@ has none.
 | Route | What you see |
 |---|---|
 | `/` | Landing page (public) |
-| `/demo` | Live walk-through of issue, verify, revoke |
+| `/demo` | Live walk-through of issue, verify, revoke; served only when `POLARIS_DEMO_MODE` is on, never in production |
 | `/dashboard` | The operator dashboard |
 | `/atlas` | World-map view of verification activity |
 | `/individuals`, `/agencies` | The people and the issuers |

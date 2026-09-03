@@ -141,7 +141,7 @@
     </footer>
     {% block scripts %}{% endblock %}
 
-    <script src="{{ url_for('static', filename='heartbeat.js') }}?v=heart002" defer></script>
+    {% if launcher_watch %}<script src="{{ url_for('static', filename='heartbeat.js') }}?v=heart002" defer></script>{% endif %}
     <script src="{{ url_for('static', filename='flash-dismiss.js') }}?v=flash001" defer></script>
     <script src="{{ url_for('static', filename='nav-dropdown.js') }}?v=navdd001" defer></script>
     <script src="{{ url_for('static', filename='confirm-submit.js') }}?v=conf001" defer></script>

@@ -5,6 +5,38 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.206 — 2026-09-03 (P1.17 ship 1: the demo and the launcher beacon exist only where they belong)
+
+- **Two presentation gates, on separate axes, derived from state that
+  already exists.** `POLARIS_DEMO_MODE` defaults to "not production" and
+  can never be turned on under `POLARIS_ENV=production` (the boot log says
+  so if asked), so a production deployment cannot advertise notional data
+  over real records and a dev checkout cannot lose its honest label.
+  `POLARIS_LAUNCHER_WATCH` defaults off; the macOS launcher and the dev
+  compose set it. Both reach the templates through the context processor,
+  never from env in Jinja.
+- **The demo surface is gated.** `/demo` answers 404 outside demo mode, and
+  the landing page's call-to-action pair becomes a single Sign in button.
+- **The launcher beacon is gated.** `/api/heartbeat` and `/api/quit` exist
+  only in launcher mode (still unauthenticated by design, still guarded
+  against cross-site POSTs, still exempt from the write rate limit only
+  there); the beacon script that every rendered page, including the login
+  page, used to POST every ten seconds is included only in launcher mode.
+  `GET /api/since-heartbeat` is deleted: nothing called it (the launcher
+  reads the state files directly) and it answered anyone. 72 routes.
+- **The Atlas tells the truth about its provenance from one flag.** The
+  id strip and the status-bar tag render `NOTIONAL DATA` outside production
+  and the operator's `POLARIS_DEPLOYMENT_LABEL` in production (or nothing);
+  the "Collection / OP / POLARIS-LIVE" readout, which never changed value,
+  is gone. A test exercises the production branch.
+- Tests repinned and added: the Atlas provenance assertions, HeartbeatTests
+  and CrossSiteGuardTests run against a launcher-mode client and prove the
+  routes are absent otherwise, DemoGateTests cover both modes and the
+  production refusal. API.md's launcher section now says what the two
+  routes do (204, no body, no auth, cross-site refused, launcher mode only)
+  instead of an authenticated admin-only quit and a timestamp-returning
+  heartbeat that never existed. DEPLOYMENT.md documents the three variables.
+
 ## v9.205 — 2026-09-03 (P1.14 ship 5: the release shape, and a check on the front door)
 
 The last ship of row P1.14. Every release now has the same body; the

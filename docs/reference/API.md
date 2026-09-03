@@ -906,21 +906,22 @@ file in the same change. `check_api_routes_documented` in
 
 ---
 
-## Internal endpoints (operator UI plumbing)
+## Launcher endpoints
 
-These endpoints support the Polaris operator UI and the macOS launcher.
-They are NOT intended for external consumption.
+These two routes exist only when `POLARIS_LAUNCHER_WATCH` is on, which the
+macOS launcher and the dev compose set and no server deployment does; anywhere
+else they answer 404, and no page carries the beacon script. Both are
+unauthenticated by design (the browser tab may hold no session) and refuse
+cross-site requests (`Sec-Fetch-Site: cross-site` is 403), so a page the
+operator merely visits cannot shut the local instance down.
 
 ### `POST /api/heartbeat`
 
-Returns the timestamp of the most recent operator activity. Used by
-the launcher's `--watch` mode to detect idle.
-
-### `GET /api/since-heartbeat`
-
-Returns seconds elapsed since the last `/api/heartbeat` call.
+Touches the heartbeat file the launcher's watch loop reads. Returns `204`
+with no body. The page's beacon script posts it every ten seconds while a
+tab is open.
 
 ### `POST /api/quit`
 
-Graceful shutdown. Authenticated; admin-only. Used by the launcher's
-"quit polaris" button.
+Touches the quit file; the launcher tears the stack down. Returns `204` with
+no body.

@@ -12,6 +12,7 @@
     </p>
 
     <div class="landing-cta">
+        {% if demo_mode %}
         <a href="{{ url_for('demo') }}" class="btn btn-gold" data-cta="demo">
             Try the demo
             <span class="cta-sub">no sign-in needed</span>
@@ -20,6 +21,12 @@
             Sign in
             <span class="cta-sub">for operators</span>
         </a>
+        {% else %}
+        <a href="{{ url_for('login') }}" class="btn btn-gold" data-cta="signin">
+            Sign in
+            <span class="cta-sub">for operators</span>
+        </a>
+        {% endif %}
     </div>
 
     <p class="landing-version">

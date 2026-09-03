@@ -26,7 +26,7 @@ XL (multi-arc). Risk is delivery risk, not security risk.
 ## Where we are (inventory at v9.196)
 
 **Have, working, CI-proven:** a 29-table constraint-enforced schema (33 tables
-in a migrated deployment) with append-only audit; a 73-route application with
+in a migrated deployment) with append-only audit; a 72-route application with
 WebAuthn operator MFA, a server-side session registry, per-role network policy,
 per-agency quotas and the Atlas; an operator CLI; Plonky2 ZK Merkle inclusion
 with an independent Python second witness and a parameterized tree depth; real

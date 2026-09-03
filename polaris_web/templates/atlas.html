@@ -13,7 +13,7 @@
 
     {# ---- Command bar: one row, every operational control ---- #}
     <div class="atlas-commandbar" aria-label="Atlas filters and controls">
-        <div class="atlas-id-strip">OPERATIONAL</div>
+        {% if atlas_provenance %}<div class="atlas-id-strip">{{ atlas_provenance }}</div>{% endif %}
 
         <div class="chip-group" role="radiogroup" aria-label="View mode">
             <button class="toolbar-chip toolbar-chip-active" type="button"
@@ -115,10 +115,6 @@
         <div class="globe-stage">
             <div class="globe-hud globe-hud-tl">
                 <div class="hud-stack">
-                    <span class="hud-label">Collection</span>
-                    <span class="hud-value-small">OP / POLARIS-LIVE</span>
-                </div>
-                <div class="hud-stack hud-stack-gap">
                     <span class="hud-label">Active Tokens</span>
                     <span class="hud-value" data-atlas-active-tokens>{{ health.tokens_active }}</span>
                     <span class="hud-label hud-label-tight">{{ health.tokens_reserve }} reserve · {{ health.tokens_terminal }} terminal</span>
@@ -218,7 +214,7 @@
 
     {# ---- Status bar: classification · activity histogram · readouts ---- #}
     <div class="atlas-statusbar">
-        <span class="cls-tag">POLARIS / OPERATIONAL ATLAS — NOTIONAL DATA · DEMONSTRATION</span>
+        <span class="cls-tag">POLARIS / OPERATIONAL ATLAS{% if atlas_provenance %} · {{ atlas_provenance }}{% endif %}</span>
         <div class="atlas-timeline-strip" data-atlas-timeline
              aria-label="Activity histogram for selected window"></div>
         <div class="statusbar-readouts">

@@ -442,6 +442,8 @@ sync_db_docker() {
 }
 
 launch_docker() {
+    # The launcher watches the browser: the beacon and its routes exist only under this flag.
+    export POLARIS_LAUNCHER_WATCH=1
     require_layout
     cd "$WEB_DIR"
 
@@ -621,6 +623,7 @@ build_zk_binary() {
 }
 
 launch_native() {
+    export POLARIS_LAUNCHER_WATCH=1
     require_layout
 
     if native_running; then

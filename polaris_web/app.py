@@ -235,6 +235,45 @@ app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=security.SESSION_LIFE
 # removes that foot-gun rather than trusting the operator to set the flag,
 # mirroring the secret-key guard below.
 _PRODUCTION = os.environ.get('POLARIS_ENV', '').lower() == 'production'
+
+
+def _env_flag(name, default):
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in ('1', 'true', 'yes', 'on')
+
+
+# Two presentation gates on separate axes, both derived from state that
+# already exists, both read by the templates through the context processor
+# (never from env in Jinja).
+#
+# DEMO_MODE: the public synthetic walkthrough (/demo) and the landing page's
+# demo call to action. Defaults to "not production" and can never be turned
+# on under POLARIS_ENV=production, so a production deployment cannot
+# advertise notional data over real records, and a dev checkout cannot lose
+# its honest label by forgetting a flag.
+DEMO_MODE = _env_flag('POLARIS_DEMO_MODE', not _PRODUCTION) and not _PRODUCTION
+if _PRODUCTION and _env_flag('POLARIS_DEMO_MODE', False):
+    print("[boot] POLARIS_DEMO_MODE is ignored under POLARIS_ENV=production", file=sys.stderr)
+
+# LAUNCHER_WATCH: the macOS launcher's browser-presence beacon and its two
+# control routes. Off unless the launcher (or the dev compose it drives) says
+# so, so a server deployment renders no beacon script and answers 404 on the
+# launcher routes.
+LAUNCHER_WATCH = _env_flag('POLARIS_LAUNCHER_WATCH', False)
+
+# DEPLOYMENT_LABEL: what a production Atlas shows as its provenance (an
+# operator-chosen deployment name); empty renders no label. Outside
+# production the Atlas labels itself as notional data.
+DEPLOYMENT_LABEL = os.environ.get('POLARIS_DEPLOYMENT_LABEL', '').strip()
+
+
+def atlas_provenance():
+    """The one string every Atlas provenance surface renders."""
+    if not _PRODUCTION:
+        return 'NOTIONAL DATA'
+    return DEPLOYMENT_LABEL
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 app.config['SESSION_COOKIE_SECURE']   = _PRODUCTION or (
@@ -541,9 +580,8 @@ def _security_before_request():
     # Rate-limit all state-changing requests (per IP) — but exempt the
     # heartbeat / quit endpoints, which fire every 10s by design and are
     # not user-initiated state changes.
-    if request.method in ('POST', 'PUT', 'PATCH', 'DELETE') \
-            and not request.path.startswith('/api/heartbeat') \
-            and not request.path.startswith('/api/quit'):
+    launcher_beacon = LAUNCHER_WATCH and request.path.startswith(('/api/heartbeat', '/api/quit'))
+    if request.method in ('POST', 'PUT', 'PATCH', 'DELETE') and not launcher_beacon:
         if not security.rate_limiter.allow(
             f"write:{security.client_ip()}",
             security.RATE_LIMIT_WRITE_MAX,
@@ -674,8 +712,14 @@ observability.structured_log(
 
 @app.context_processor
 def _inject_security_context():
-    """Make csrf_token() and current_user available in templates."""
-    return security.template_context_processor()
+    """csrf_token(), current_user, and the presentation gates, for every template."""
+    ctx = security.template_context_processor()
+    ctx.update({
+        'demo_mode': DEMO_MODE,
+        'launcher_watch': LAUNCHER_WATCH,
+        'atlas_provenance': atlas_provenance(),
+    })
+    return ctx
 
 
 # ----------------------------------------------------------------------------
@@ -715,7 +759,10 @@ def _ensure_state_dir():
 @app.route('/api/heartbeat', methods=['POST'])
 @security.reject_cross_site
 def api_heartbeat():
-    """Browser is still alive; refresh the heartbeat timestamp."""
+    """Browser is still alive; refresh the heartbeat timestamp. 204, no body.
+    Exists only when the launcher's watch mode is on."""
+    if not LAUNCHER_WATCH:
+        abort(404)
     _ensure_state_dir()
     try:
         pathlib.Path(HEARTBEAT_FILE).touch()
@@ -727,24 +774,17 @@ def api_heartbeat():
 @app.route('/api/quit', methods=['POST'])
 @security.reject_cross_site
 def api_quit():
-    """Browser tab is closing; explicit shutdown signal for the launcher."""
+    """Browser tab is closing; explicit shutdown signal for the launcher.
+    Unauthenticated by design (the tab may have no session); guarded against
+    cross-site drive-by POSTs; exists only when the launcher's watch mode is on."""
+    if not LAUNCHER_WATCH:
+        abort(404)
     _ensure_state_dir()
     try:
         pathlib.Path(QUIT_FILE).touch()
     except (OSError, PermissionError):
         pass
     return ('', 204)
-
-
-@app.route('/api/since-heartbeat')
-def api_since_heartbeat():
-    """Returns seconds since last heartbeat. The launcher polls this when
-    the host filesystem mount isn't available (e.g. native mode where the
-    state dir is shared directly). Anyone can call this; no auth."""
-    if not os.path.exists(HEARTBEAT_FILE):
-        return {'since_s': None, 'quit_requested': os.path.exists(QUIT_FILE)}, 200
-    age = time.time() - os.path.getmtime(HEARTBEAT_FILE)
-    return {'since_s': age, 'quit_requested': os.path.exists(QUIT_FILE)}, 200
 
 
 # ----------------------------------------------------------------------------
@@ -1112,7 +1152,10 @@ def demo():
     Four-step token lifecycle (ISSUE → ACTIVATE → VERIFY → REVOKE)
     showing the procedure called, the effect, and the constraint
     enforced at each step. No real holder data; no auth required.
+    Served only when DEMO_MODE is on, which is never in production.
     """
+    if not DEMO_MODE:
+        abort(404)
     return render_template('demo.html')
 
 

@@ -68,7 +68,7 @@ ship; the row is done when every ship under it is `[x]`.
 | P1.16 | 4. Missing READMEs (deploy/, polaris_checks/, site/) | [ ] |
 | P1.16 | 5. DEVNOTES split and merges | [ ] |
 | P1.16 | 6. The map's coverage check and housekeeping | [ ] |
-| P1.17 | 1. The demo and launcher gates | [ ] |
+| P1.17 | 1. The demo and launcher gates | [x] v9.206 |
 | P1.17 | 2. The identifier and jargon sweep in templates | [ ] |
 | P1.17 | 3. The messages | [ ] |
 | P1.17 | 4. The CLI | [ ] |
