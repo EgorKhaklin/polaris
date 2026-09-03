@@ -30,6 +30,19 @@
 # Main site
 {$POLARIS_DOMAIN} {
 
+    # The two metrics surfaces carry the duress signal, and neither
+    # authenticates: whoever can scrape them can observe that, and roughly
+    # when, a duress alarm fired. Restrict them here, at the edge, to the
+    # monitoring network. The default allows private ranges only (an
+    # in-network Prometheus scrapes; the public internet gets 404, which
+    # does not even confirm the surface exists). Override with
+    # POLARIS_METRICS_ALLOW, for example "10.20.0.0/16".
+    @metrics_from_outside {
+        path /metrics /api/metrics
+        not remote_ip {$POLARIS_METRICS_ALLOW:private_ranges}
+    }
+    respond @metrics_from_outside 404
+
     # Reverse proxy to the Polaris app (gunicorn :8000 inside the network)
     reverse_proxy {$POLARIS_UPSTREAMS:app:8000} {
         header_up X-Real-IP {remote_host}

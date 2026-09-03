@@ -227,7 +227,7 @@ def activate(span_processor=None) -> bool:
         # no-op here would be the invisible-telemetry failure mode inverted —
         # the operator believes they have traces and they do not).
         observability.structured_log(
-            'tracing_unavailable',
+            'boot.tracing_unavailable',
             reason='opentelemetry packages not installed (see requirements.txt)',
         )
         return False
@@ -257,7 +257,7 @@ def activate(span_processor=None) -> bool:
         'exclude': _excluded_prefixes(),
     }
     observability.structured_log(
-        'tracing_enabled',
+        'boot.tracing_enabled',
         service=resource.attributes.get('service.name', 'polaris-web'),
         endpoint=os.environ.get('OTEL_EXPORTER_OTLP_ENDPOINT',
                                 'http://localhost:4318'),

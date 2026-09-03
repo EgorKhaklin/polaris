@@ -394,7 +394,7 @@ agency and the kind (`issue`, `revoke`, `verify`).
 
 **Diagnosis.**
 1. `polaris-id quota-show <agency_id>` for the cap and its justification (the row explains why it exists).
-2. The `quota_refused` structured log lines carry the request ids; the
+2. The `quota.refused` structured log lines carry the request ids; the
    corresponding velocity alert above says whether the volume is anomalous.
 3. Ask the agency. A legitimate surge has a name and a contact.
 

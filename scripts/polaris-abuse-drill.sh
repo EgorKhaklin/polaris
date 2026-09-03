@@ -185,6 +185,6 @@ after_ver=$(metric polaris_verifications_total disclosure_level=ZERO_KNOWLEDGE)
 [ "$events" -eq "$recorded" ] || fail "polaris_agency_events_total{kind=verify,agency_id=$AGENCY}=$events, expected $recorded"
 [ "$refusals" -eq "$refused" ] || fail "polaris_quota_refusals_total{kind=verify,agency_id=$AGENCY}=$refusals, expected $refused"
 [ $(( after_ver - before_ver )) -eq "$recorded" ] || fail "polaris_verifications_total moved by $(( after_ver - before_ver )), expected $recorded"
-grep -q '"event": "quota_refused"' "$WORK/app.log" || fail "no quota_refused structured log line"
+grep -q '"event": "quota.refused"' "$WORK/app.log" || fail "no quota.refused structured log line"
 "${PSQL[@]}" -c "DELETE FROM AgencyQuota WHERE agency_id = $AGENCY" >/dev/null
 echo "== ABUSE DRILL PASSED: cap $CAP held under load ($recorded recorded, $refused refused as 429), DB=$db_count, metrics agree, alerts unit-tested =="

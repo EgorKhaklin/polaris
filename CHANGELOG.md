@@ -5,6 +5,44 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.210 — 2026-09-03 (P1.17 ship 5: the metrics surfaces are closed at the edge, and the log stream is namespaced)
+
+The duress signal rides on two unauthenticated routes. Until this ship the
+control over who could read it existed only in prose.
+
+- **Both shipped edges now refuse `/metrics` and `/api/metrics` from outside
+  the monitoring network.** The compose `Caddyfile` and the Helm chart's
+  Caddy config answer 404 on those two paths to any client outside
+  `POLARIS_METRICS_ALLOW` (chart value `edge.metricsAllow`), which defaults
+  to Caddy's `private_ranges`: an in-network Prometheus scrapes, the public
+  internet does not, and a 404 does not even confirm the surface exists.
+  Every other route is unaffected.
+- **Exercised, not asserted.** The `caddy-edge` CI job now runs the edge
+  image against a stub upstream and probes both branches: in-network gets 200
+  on both paths, a client outside the range gets 404 on both, and an ordinary
+  route serves 200 either way. Run locally against the built image before
+  shipping, with the same result. `check_metrics_edge_acl` (113 checks) fails
+  the build if either edge stops refusing, if a matcher stops covering both
+  paths, if the operator loses the knob, or if CI stops exercising it.
+- **One statement about access, in three places that agree.** The two route
+  docstrings contradicted each other (one said no auth is fine because the
+  counters carry no per-user data, the other said the surface must be
+  ACL'd); both now say the same thing and point at
+  `deploy/observability/README.md`, which describes the shipped control, the
+  override, and the CI proof.
+- **`observability.py` is written for an operator**: what the log stream
+  emits, what each of the four counters means, why `duress_events_total` is
+  the load-bearing one, and the single operational instruction. The lineage
+  narrative moves to this CHANGELOG.
+- **Event names are namespaced by subject**, so an operator can select a
+  family from the log stream: `auth.failure`, `duress.signal`,
+  `quota.refused`, `db.error`, and the start-up announcements
+  `boot.session_policy`, `boot.tracing_enabled`,
+  `boot.tracing_unavailable`. The inventory is published in the module
+  docstring. Every consumer moved in the same commit: the abuse drill's
+  grep, two runbooks, the observability note, the tracing check and its
+  detection-test fixture.
+
 ## v9.209 — 2026-09-03 (P1.17 ship 4: the CLI documents itself, and it has one name)
 
 - **The command list is generated from the registry.** Six of the twenty

@@ -2353,6 +2353,38 @@ def check_cli_help_lists_every_command(root: pathlib.Path) -> list[Finding]:
 
 
 # ---------------------------------------------------------------------------
+# Metrics exposure — /metrics and /api/metrics carry polaris_duress_events_total
+# and neither route authenticates, so whoever can scrape them can observe that,
+# and roughly when, a duress alarm fired. Both shipped edges (the compose
+# Caddyfile and the Helm configmap) must refuse them from outside the
+# monitoring network. Through v9.208 neither did, and the docstrings described
+# an ACL that existed only in prose.
+# ---------------------------------------------------------------------------
+def check_metrics_edge_acl(root: pathlib.Path) -> list[Finding]:
+    edges = (("polaris_web/Caddyfile", "POLARIS_METRICS_ALLOW"),
+             ("deploy/helm/polaris/templates/configmap-caddy.yaml", "metricsAllow"))
+    for rel, knob in edges:
+        conf = _read(root, rel)
+        if not conf:
+            return _fail("metrics_edge_acl", f"{rel} is missing")
+        if "@metrics_from_outside" not in conf or "respond @metrics_from_outside 404" not in conf:
+            return _fail("metrics_edge_acl",
+                         f"{rel} must refuse /metrics and /api/metrics from outside the monitoring "
+                         "network (a named matcher plus `respond ... 404`)")
+        matcher = conf[conf.index("@metrics_from_outside"):]
+        matcher = matcher[:matcher.index("}")]
+        for needle in ("/metrics", "/api/metrics", "not remote_ip"):
+            if needle not in matcher:
+                return _fail("metrics_edge_acl", f"{rel}'s matcher does not cover {needle}")
+        if knob not in conf:
+            return _fail("metrics_edge_acl", f"{rel} must let the operator name the allowed range ({knob})")
+    ci = _read(root, ".github/workflows/ci.yml")
+    if "metrics surfaces are refused from outside" not in ci:
+        return _fail("metrics_edge_acl", "ci.yml must exercise the ACL, not just validate the config")
+    return _ok("metrics_edge_acl", "both edges refuse the metrics surfaces from outside the monitoring network, proven in CI")
+
+
+# ---------------------------------------------------------------------------
 # Launcher currency — the macOS launcher (the SCS-230 deliverable surface) must
 # track the real stack, not drift. Pin the three properties that went stale: it
 # installs native deps from requirements.txt (not a hardcoded list that misses
@@ -3692,7 +3724,7 @@ def check_distributed_tracing(root: pathlib.Path) -> list[Finding]:
     if "POLARIS_OTEL" not in tr or "def is_enabled" not in tr:
         return _fail("distributed_tracing", "tracing.py must gate on POLARIS_OTEL (opt-in is the vocation posture: "
                      "no telemetry the operator did not switch on)")
-    if "tracing_enabled" not in tr or "tracing_unavailable" not in tr:
+    if "boot.tracing_enabled" not in tr or "boot.tracing_unavailable" not in tr:
         return _fail("distributed_tracing", "tracing.py must ANNOUNCE both states in the log stream (hidden "
                      "instrumentation, and silently-missing instrumentation, are both coercion-shaped failures)")
     for needle, why in (("Psycopg2Instrumentor", "DB client spans (traces across app AND db)"),
@@ -4293,6 +4325,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_docs_index_coverage,
     check_presentation_surface,
     check_cli_help_lists_every_command,
+    check_metrics_edge_acl,
 ]
 
 

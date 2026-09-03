@@ -20,6 +20,11 @@ images:
 domain: polaris.example.org
 
 edge:
+  # Who may scrape /metrics and /api/metrics. They carry the duress signal
+  # and do not authenticate, so the edge answers 404 to anyone else.
+  # "private_ranges" is Caddy's own token; narrow it to the Prometheus
+  # CIDR in a real deployment, for example "10.20.0.0/16".
+  metricsAllow: "private_ranges"
   # acme: Let's Encrypt for `domain` (needs a reachable LoadBalancer on 80/443).
   # internal: Caddy's internal CA (evaluation, kind, private networks).
   tls: internal

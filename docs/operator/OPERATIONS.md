@@ -924,7 +924,7 @@ The `enforce_agency_quota` trigger binds every write path (the stored
 procedures, the SQL console, a bulk loader) and is exact under concurrent
 writers; a refused write is an HTTP 429 with the trigger's own sentence
 (`quota exceeded: agency 5 has reached its verify quota of 500 per hour (AgencyQuota)`),
-a `quota_refused` structured log line, and a `polaris_quota_refusals_total`
+a `quota.refused` structured log line, and a `polaris_quota_refusals_total`
 increment. The percentage bound on revocation velocity
 (`trg_enforce_revocation_velocity`) still applies; whichever trips first
 refuses. An uncapped agency pays one primary-key lookup per write.

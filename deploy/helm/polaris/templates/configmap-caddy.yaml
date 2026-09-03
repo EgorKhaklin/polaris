@@ -32,6 +32,16 @@ data:
         tls internal
         {{- end }}
 
+        # The metrics surfaces carry the duress signal and do not
+        # authenticate: restrict them to the monitoring network at the edge.
+        # The chart's default allows private ranges only; set
+        # edge.metricsAllow to the Prometheus CIDR to narrow it.
+        @metrics_from_outside {
+            path /metrics /api/metrics
+            not remote_ip {{ .Values.edge.metricsAllow | default "private_ranges" }}
+        }
+        respond @metrics_from_outside 404
+
         reverse_proxy {{ include "polaris.fullname" . }}-app:8000 {
             header_up X-Real-IP {remote_host}
             header_up X-Forwarded-For {remote_host}

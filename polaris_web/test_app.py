@@ -7818,14 +7818,14 @@ class DistributedTracingTests(UnauthenticatedTestCase):
         import io as _io
         buf = _io.StringIO()
         with contextlib.redirect_stdout(buf):
-            # A failed login emits structured_log('auth_failure') INSIDE the
+            # A failed login emits structured_log('auth.failure') INSIDE the
             # traced request — the realistic join, not a synthetic one.
             self.client.post('/login', data={'username': 'admin',
                                              'password': 'wrong-password-zz'})
         lines = [json.loads(l) for l in buf.getvalue().splitlines()
                  if l.startswith('{')]
-        joined = [l for l in lines if l.get('event') == 'auth_failure']
-        self.assertTrue(joined, 'expected an auth_failure structured log line')
+        joined = [l for l in lines if l.get('event') == 'auth.failure']
+        self.assertTrue(joined, 'expected an auth.failure structured log line')
         server = self._server_spans()
         self.assertTrue(server)
         want = format(server[-1].context.trace_id, '032x')

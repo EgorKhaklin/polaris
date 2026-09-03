@@ -36,7 +36,7 @@ watch -n 60 'curl -fsS http://localhost:5000/api/metrics | jq .'
 
 # Tail structured logs for duress events specifically
 docker compose -f polaris_web/docker-compose.prod.yml logs gunicorn -f \
-  | jq -c 'select(.event == "duress_event")'
+  | jq -c 'select(.event == "duress.signal")'
 ```
 
 ### Production (operator-side aggregation)
@@ -98,8 +98,8 @@ Every line emitted is `{"ts": ..., "pid": ..., "event": ..., ...fields}`.
 
 | Event                  | When emitted                                  | Fields                                    |
 |------------------------|-----------------------------------------------|-------------------------------------------|
-| `auth_failure`         | bad password / WebAuthn / recovery-code      | `kind`, `username`                        |
-| `duress_event`         | duress-code login succeeded                  | `individual_id`, `agency_id`              |
+| `auth.failure`         | bad password / WebAuthn / recovery-code      | `kind`, `username`                        |
+| `duress.signal`        | duress-code matched during verification      | `individual_id`, `agency_id`              |
 | (future)               | additional events added per ship             |                                           |
 
 The taxonomy is deliberately minimal: events should be the

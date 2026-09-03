@@ -3209,7 +3209,7 @@ def test_helm_reference_profile_check_discriminates(tmp_path):
 def test_distributed_tracing_check_discriminates(tmp_path):
     TRACING = (
         "POLARIS_OTEL\ndef is_enabled():\n    pass\n"
-        "tracing_enabled tracing_unavailable\n"
+        "boot.tracing_enabled boot.tracing_unavailable\n"
         "Psycopg2Instrumentor().instrument(tracer_provider=provider)\n"
         "rule = request.url_rule.rule if request.url_rule else 'UNMATCHED'\n"
         "span.set_status(StatusCode.ERROR, type(exc).__name__)\n"
@@ -3818,3 +3818,31 @@ def test_cli_help_check_fails_when_a_command_is_undocumented(tmp_path):
 
     cli.write_text(good.replace('EPILOG = "exit codes:\\n  0 ok"\n', ""))
     assert checks.check_cli_help_lists_every_command(tmp_path)[0].level == "FAIL", "must FAIL when the exit codes are undocumented"
+
+
+def test_metrics_edge_acl_check_fails_when_an_edge_leaves_metrics_open(tmp_path):
+    def write(files):
+        for rel, body in files.items():
+            p = tmp_path / rel; p.parent.mkdir(parents=True, exist_ok=True); p.write_text(body)
+    matcher = ("@metrics_from_outside {\n    path /metrics /api/metrics\n"
+               "    not remote_ip {$POLARIS_METRICS_ALLOW:private_ranges}\n}\n"
+               "respond @metrics_from_outside 404\n")
+    helm = matcher.replace("{$POLARIS_METRICS_ALLOW:private_ranges}", '{{ .Values.edge.metricsAllow }}')
+    good = {
+        "polaris_web/Caddyfile": "site {\n" + matcher + "reverse_proxy app:8000\n}\n",
+        "deploy/helm/polaris/templates/configmap-caddy.yaml": "data:\n  Caddyfile: |\n" + helm,
+        ".github/workflows/ci.yml": "jobs:\n  caddy-edge:\n    steps:\n      - name: The metrics surfaces are refused from outside the monitoring network\n",
+    }
+    write(good)
+    assert checks.check_metrics_edge_acl(tmp_path)[0].level == "OK", "must PASS when both edges refuse and CI proves it"
+
+    write({"polaris_web/Caddyfile": "site {\nreverse_proxy app:8000\n}\n"})
+    assert checks.check_metrics_edge_acl(tmp_path)[0].level == "FAIL", "must FAIL when the compose edge leaves metrics open"
+
+    write({"polaris_web/Caddyfile": good["polaris_web/Caddyfile"],
+           "deploy/helm/polaris/templates/configmap-caddy.yaml": "data:\n  Caddyfile: |\n    reverse_proxy app:8000\n"})
+    assert checks.check_metrics_edge_acl(tmp_path)[0].level == "FAIL", "must FAIL when the chart leaves metrics open"
+
+    write({"deploy/helm/polaris/templates/configmap-caddy.yaml": good["deploy/helm/polaris/templates/configmap-caddy.yaml"],
+           ".github/workflows/ci.yml": "jobs:\n  caddy-edge:\n    steps: []\n"})
+    assert checks.check_metrics_edge_acl(tmp_path)[0].level == "FAIL", "must FAIL when CI does not exercise the ACL"

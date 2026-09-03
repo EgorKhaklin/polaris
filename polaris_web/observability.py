@@ -1,47 +1,59 @@
-"""polaris_web/observability.py — operator-readable application metrics.
+"""polaris_web/observability.py: what a running Polaris tells its operator.
 
-v9.27 / BIG MISSION Tier 8 #11. Separate from the meta-swarm
-(which observes the cognitive layer); this module observes the
-RUNNING APPLICATION in production terms.
+Two surfaces, one purpose: an operator watching a deployment should be able to
+see throughput, failures, and above all a duress signal, without attaching a
+debugger and without a metrics backend this project does not ship.
 
-**Anti-Architect constraints (per Sanctum 2026-05-16 §II T8#11):**
+**The log stream.** `structured_log(event, **fields)` writes one JSON object
+per line to stdout. Every line carries `ts`, `pid`, `event`, `request_id`, and,
+while an OpenTelemetry span is recording, `trace_id` and `span_id`, so a log
+line and a trace join on the same request. Point stdout wherever the deployment
+keeps logs; nothing here writes to disk or to the database.
 
-1. No new metrics backend. No Prometheus exporter, no StatsD, no
-   tracing system. Polaris is a reference implementation; operators
-   pipe stdout structured logs wherever they like.
-   (Amended v9.187 / roadmap P1.6: an OPT-IN OpenTelemetry tracing
-   layer now lives in tracing.py — off by default, announced in the
-   log stream when on, nothing identity-derived, nothing persisted
-   to the DB. This module stays backend-free; tracing.py registers
-   the trace-context hook below so structured_log lines can carry
-   trace_id/span_id while a span is recording.)
+Event names are namespaced by subject, so an operator can select a family:
 
-2. Duress events are the headline metric. An unobservable duress
-   signal is the coercion-cover failure mode (a coerced operator's
-   duress code raises a row that no one reads → the duress feature
-   is decorative).
+    auth.failure            a password, WebAuthn or recovery-code attempt failed
+                            (fields: kind, username)
+    duress.signal           a holder's duress code matched during verification
+                            (fields: individual_id, agency_id)
+    quota.refused           an agency's issuance, revocation or verification
+                            quota refused a write (fields: kind, agency_id)
+    db.error                the database refused a statement; the message is
+                            truncated and never echoed to the caller
+                            (fields: detail)
+    boot.session_policy     the per-role session and WebAuthn policy this
+                            process started with
+    boot.tracing_enabled    OpenTelemetry tracing is on (fields: service, endpoint)
+    boot.tracing_unavailable  tracing was asked for and the packages are absent
 
-3. Operator-readable first, analytics-tool-readable second. JSON
-   shape that grep + jq handle directly.
+The `boot.*` events are state announcements, emitted once at start; the others
+are events, emitted as they happen.
 
-**What this module provides:**
+**The counters.** Four in-process counters, thread-safe, no external
+dependency, served as JSON at `/api/metrics` and, in Prometheus text format
+with the per-route HTTP series, at `/metrics`:
 
-- `Counter` class: thread-safe in-process counters (no external deps)
-- `structured_log(event, **fields)`: emits one JSON object per line
-  to stdout. operator pipes to journald / CloudWatch / file rotation.
-- `MetricsSnapshot.collect()`: returns a dict of current counter values
-  suitable for serving at `/api/metrics`.
+    request_rate_per_minute     trailing five-minute average throughput
+    error_rate_per_minute       trailing five-minute 5xx and uncaught exceptions
+    auth_failures_per_minute    trailing five-minute failed authentications
+    duress_events_total         monotonic count since this process started
 
-The four headline metrics (per Sanctum joint resolution):
-- `request_rate_per_minute`     — operational throughput
-- `error_rate_per_minute`       — 5xx + uncaught exceptions
-- `auth_failures_per_minute`    — failed-login + WebAuthn rejections
-- `duress_events_total`         — count since process start
+`duress_events_total` is the load-bearing one. A duress code that raises a row
+nobody reads makes the whole duress mechanism decorative, so this counter is
+what the shipped `PolarisDuressEvent` alert fires on, immediately, at severity
+one.
 
-These are integration points for app.py + security.py to call. They
-are NOT auto-instrumented at import time — explicit call sites only,
-because hidden instrumentation is itself a coercion risk (a coerced
-operator can't disable what they can't see).
+**One operational instruction.** Both metrics surfaces are unauthenticated, and
+both carry the duress signal, so whoever can scrape them can observe that, and
+roughly when, a duress alarm fired. Restrict `/metrics` and `/api/metrics` at
+the edge to the monitoring network. The control is access to the surface, not
+suppression of the metric: the operator's own monitoring is exactly the
+audience that needs it in order to page. The access rule, and the Caddy matcher
+that enforces it, are in `deploy/observability/README.md`.
+
+Nothing here is auto-instrumented at import: every counter has an explicit call
+site, because instrumentation an operator cannot see is instrumentation an
+operator cannot switch off.
 """
 
 from __future__ import annotations
@@ -229,7 +241,7 @@ def record_auth_failure(*, kind: str = "password", username: str = "") -> None:
     `kind` is one of: 'password', 'webauthn', 'recovery_code'.
     """
     _REGISTRY.auth_failures.inc()
-    structured_log("auth_failure", kind=kind, username=username)
+    structured_log("auth.failure", kind=kind, username=username)
 
 
 def record_duress_event(*, individual_id: int = 0, agency_id: int = 0) -> None:
@@ -242,7 +254,7 @@ def record_duress_event(*, individual_id: int = 0, agency_id: int = 0) -> None:
     the duress-code mechanism (R11-5) is decorative.
     """
     _REGISTRY.duress_events.inc()
-    structured_log("duress_event",
+    structured_log("duress.signal",
                    individual_id=individual_id,
                    agency_id=agency_id)
 

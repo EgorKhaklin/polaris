@@ -57,13 +57,32 @@ they cover the whole path from a holder's duress code to the pager URL.
 
 ## Access control (required)
 
-`/metrics` is unauthenticated by design (Prometheus scrapes it), but as of v9.128
-it carries the **duress signal** (`polaris_duress_events_total`). A party who can
-scrape `/metrics` can observe that, and roughly when, a duress alarm fired.
-**`/metrics` MUST be reachable only by your monitoring**, never the public
-internet: restrict it at the reverse proxy (Caddy) or the network layer to the
-Prometheus host. That is the same audience that needs it to page, so the control
-is *who can reach `/metrics`*, not the metric itself.
+`/metrics` and `/api/metrics` are unauthenticated by design (Prometheus scrapes
+the first; an operator curls the second), and both carry the **duress signal**
+(`polaris_duress_events_total`). Whoever can scrape them can observe that, and
+roughly when, a duress alarm fired. That is the same audience which needs the
+signal in order to page, so the control is access to the surface, not
+suppression of the metric.
+
+**The shipped edges enforce it.** Both the compose `Caddyfile` and the Helm
+chart's Caddy config answer `404` on those two paths to any client outside the
+allowed range, and serve every other route normally. The default range is
+Caddy's `private_ranges`, so an in-network Prometheus scrapes and the public
+internet does not. Narrow it to your monitoring host:
+
+```bash
+POLARIS_METRICS_ALLOW=10.20.0.0/16      # compose
+```
+
+```yaml
+edge:
+  metricsAllow: "10.20.0.0/16"          # Helm values
+```
+
+The `caddy-edge` CI job proves both branches on every push: an in-network client
+gets `200` on both paths, a client outside the range gets `404` on both, and an
+ordinary route is unaffected either way. `check_metrics_edge_acl` fails the
+build if either edge stops refusing.
 
 ## The alerts
 

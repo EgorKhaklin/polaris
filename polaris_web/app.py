@@ -437,7 +437,7 @@ def _quota_refused(e, kind, agency_id):
             _METRICS_QUOTA_REFUSALS.labels(kind=kind, agency_id=str(agency)).inc()
         except Exception:
             pass
-    observability.structured_log('quota_refused', kind=kind, agency_id=agency)
+    observability.structured_log('quota.refused', kind=kind, agency_id=agency)
     return True
 
 
@@ -513,7 +513,7 @@ def db_error_to_message(e):
     # Unknown error path — DON'T leak internal details. Log server-side.
     # v9.122: route through structured_log so the line carries the request id
     # (the single most useful line to correlate to a caller's failed request).
-    observability.structured_log(event='db_error', detail=msg[:500])
+    observability.structured_log(event='db.error', detail=msg[:500])
     return "An internal database error occurred. The administrator has been notified."
 
 
@@ -704,7 +704,7 @@ tracing.init_app(app)
 _ROLE_POLICY = security.validate_role_policies()
 _WEBAUTHN_POLICY = webauthn_auth.validate_policy()
 observability.structured_log(
-    'session_policy',
+    'boot.session_policy',
     **{f'{role}_{key}': value
        for role, limits in _ROLE_POLICY.items() for key, value in limits.items()},
     **{f'webauthn_{key}': value for key, value in _WEBAUTHN_POLICY.items()})
@@ -2323,27 +2323,25 @@ def api_health_live():
 def api_metrics():
     """Operator-readable application metrics (v9.31 freeze condition 6).
 
-    No metrics backend by design (no Prometheus exporter, no StatsD).
-    Operators pipe stdout structured logs wherever they like; this
-    endpoint exposes the in-process counters as JSON for grep + jq.
+    The same four counters `/metrics` exposes, as JSON, for an operator at a
+    shell with curl and jq. Prometheus scrapes `/metrics`; this route exists
+    so reading them needs no scraper.
 
-    Headline fields per `polaris_web/observability.py` (v9.27 / Tier 8 #11):
+        request_rate_per_minute    trailing five-minute average throughput
+        error_rate_per_minute      trailing five-minute 5xx and uncaught
+        auth_failures_per_minute   trailing five-minute failed authentications
+        duress_events_total        monotonic count since this process started
+        uptime_seconds             seconds since this process started
+        process_id                 the OS pid, so a multi-worker deployment
+                                   can tell its workers apart
 
-        request_rate_per_minute    — trailing-5-minute average throughput
-        error_rate_per_minute      — trailing-5-minute 5xx + uncaught
-        auth_failures_per_minute   — trailing-5-minute failed-login + WebAuthn
-        duress_events_total        — monotonic count since process start
-        uptime_seconds             — seconds since process started
-        process_id                 — OS pid
+    A non-zero `duress_events_total` is the anti-coercion alarm; the shipped
+    `PolarisDuressEvent` rule pages on it immediately.
 
-    `duress_events_total` is the load-bearing anti-coercion alarm. A
-    coerced operator's duress code raises a row that no one reads is
-    the failure mode the v9.27 Sanctum joint resolution called out;
-    this endpoint makes the signal observable. **NON-ZERO IS THE
-    ANTI-COERCION ALARM. Page immediately.**
-
-    No auth required — uptime monitors + operator scripts need access
-    without secrets, and the four counters expose no per-user data.
+    ACCESS: unauthenticated, and carrying the duress signal, so this route and
+    `/metrics` must both be restricted at the edge to the monitoring network.
+    The control is access to the surface, not suppression of the metric. The
+    rule and the Caddy matcher are in `deploy/observability/README.md`.
     """
     snapshot = observability.MetricsSnapshot.collect()
     return jsonify(snapshot.to_dict()), 200
@@ -2397,20 +2395,13 @@ def metrics():
     Liveness signals refreshed at scrape time:
       - polaris_app_info: version metadata
 
-    No authentication required (consumed by Prometheus scrapers running
-    in the cluster network or behind operator-internal ACLs). If the
-    deployment exposes /metrics to the public internet without an ACL,
-    that's a configuration choice the operator makes deliberately at
-    the reverse-proxy layer (Caddy can rate-limit or route this path
-    differently than user-facing routes).
-
-    SECURITY (v9.129): as of v9.128 this surface carries the duress signal
-    (`polaris_duress_events_total`). /metrics MUST be reachable only by the
-    operator's monitoring (an internal-only ACL), NOT the public internet: a
-    party who can scrape it can observe that — and roughly when — a duress alarm
-    fired. That is the same audience (the operator's Prometheus) that needs it to
-    page, so the control is /metrics access, not the metric. See
-    deploy/observability/README.md.
+    ACCESS: unauthenticated, and carrying the duress signal
+    (`polaris_duress_events_total`), so this route and `/api/metrics` must both
+    be restricted at the edge to the monitoring network. Whoever can scrape it
+    can observe that, and roughly when, a duress alarm fired; that is the same
+    audience which needs it in order to page, so the control is access to the
+    surface, not suppression of the metric. The rule and the Caddy matcher are
+    in `deploy/observability/README.md`.
 
     Graceful fallback: if prometheus_client isn't installed (ad-hoc
     dev environment), returns HTTP 503 with a plain-text message.
