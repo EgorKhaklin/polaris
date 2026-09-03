@@ -5,6 +5,30 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.201 — 2026-09-03 (P1.14 ship 1: the repository's security features are on, and the policy says what is true)
+
+- **Repository settings, in dependency order, by the owner:** Dependabot
+  alerts, then Dependabot security updates, then private vulnerability
+  reporting, then secret scanning, then push protection; the empty Projects
+  tab is off. None of these can be observed from inside the repository, so no
+  check pins them and no document states them as a standing guarantee; the
+  policy names the private-reporting path because the button now exists.
+- **SECURITY.md rewritten** for the researcher and the reviewer: GitHub's
+  private advisory as the primary reporting path with the mailbox as
+  fallback, the do-not-file-a-public-issue line kept, the plaintext demo
+  credential replaced by a description and a pointer to the quickstart, the
+  empty Hall of fame retitled Credit with the no-bounty statement folded in,
+  a Dependencies section stating the merge policy so a reviewer can reconcile
+  the 33 closed Dependabot PRs with the commit history and the CVE gates that
+  run regardless, the `gh attestation verify` verification kept verbatim, the
+  archaeology (`v8.95+`, "shipped v9.13") gone, and a restamp.
+- **`.github/dependabot.yml`** loses its 26-line internal decision record.
+  Its header now says what the file does (weekly version updates) and what it
+  does not (security advisories come from the repository setting), the merge
+  policy in four lines, and the rule that removing an ignore block is the
+  record of taking a major; the per-version history it carried is already in
+  this CHANGELOG.
+
 ## v9.200 — 2026-09-02 (P1.13 ship 7: the indexes and the voice gate)
 
 The last ship of row P1.13. Every document under `docs/` is reachable from the

@@ -48,7 +48,7 @@ ship; the row is done when every ship under it is `[x]`.
 | P1.13 | 5. The operator surface | [x] v9.199 |
 | P1.13 | 6. The reference surface | [x] v9.198 |
 | P1.13 | 7. The indexes and the voice gate (docs hub, index-coverage check, PRINCIPLES merged, NOTICE and CONVENTIONS, CONTRIBUTING dedupe, the em-dash sweep across docs/ DEVNOTES/ meta/ and the package READMEs, the widened hook) | [x] v9.200 |
-| P1.14 | 1. Repository settings and the security policy | [ ] |
+| P1.14 | 1. Repository settings and the security policy | [x] v9.201 (settings flipped by the owner 2026-09-03: alerts, security updates, private reporting, secret scanning, push protection; Projects off) |
 | P1.14 | 2. About, topics, the four-surface self-description | [ ] |
 | P1.14 | 3. Community health files | [ ] |
 | P1.14 | 4. CONTRIBUTING in public voice; README above the fold | [ ] |

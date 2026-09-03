@@ -1,29 +1,13 @@
-# Dependabot — automated dependency-update PRs for new security advisories.
-#
-# v9.105 (production-readiness, Wave 4). Pairs with the pip-audit `cve-scan`
-# job in ci.yml: pip-audit GATES the build on a known CVE in the runtime
-# surface; Dependabot proactively opens PRs to bump packages when a new
-# advisory lands, so the fix is one review away rather than a manual sweep.
-#
-# MERGE POLICY (P0.3 / v9.161). Patch and minor bumps, GitHub Actions majors,
-# and same-tag digest refreshes are batch-applied directly to main by the
-# maintaining agent and validated by one full CI run; Dependabot then closes
-# its PRs on its next scan. Majors of FOUNDATION dependencies are never
-# auto-taken: they are deliberate roadmap work, and the `ignore` blocks below
-# keep Dependabot from re-proposing them every week. Currently ignored:
-#   - postgres major (the entire stack, CI, and docs pin PostgreSQL 16; a PG
-#     major is a migration project, revisited in the P2 scale phase)
-#   - python base-image major (runtime is pinned and tested on 3.12)
-#   - plonky2 / plonky2_field major (the proving system itself; requires
-#     proof-format compatibility study + two-witness revalidation). The
-#     0.2->1.x major was taken deliberately in v9.170 after that revalidation
-#     (roots bit-identical, two-witness re-passing). The ignore stays so a
-#     FUTURE major (2.x) gets the same bit-for-bit treatment, never a blind bump.
-#   - (webauthn major: taken in v9.189 / roadmap P1.7 with its own ceremony
-#     test pass; its ignore block was removed then, which IS the record)
-#   - (redis major: taken in v9.190 / roadmap P1.8 with its own test pass; its
-#     ignore block was removed then, which IS the record)
-# Removing an ignore block IS the decision record for taking that major.
+# Dependabot: weekly version-update PRs for the Python, Rust, GitHub Actions
+# and Docker surfaces. Security advisories arrive through the repository's
+# Dependabot alerts and security updates (repository settings), not this file;
+# pip-audit in the cve-scan CI job gates the build on a known CVE regardless.
+# Merge policy (stated for readers in SECURITY.md): patch and minor bumps are
+# batch-applied to main and validated by one full CI run, after which
+# Dependabot closes its PRs; majors of foundation dependencies (PostgreSQL,
+# the Python base image, plonky2) are deliberate roadmap work, kept out by the
+# ignore blocks below. Removing an ignore block is the decision record for
+# taking that major.
 version: 2
 updates:
   # Python runtime + dev dependencies (both requirements files live here).
@@ -36,8 +20,6 @@ updates:
       - dependencies
     commit-message:
       prefix: deps
-    # No ignores on the Python surface as of v9.190: the webauthn (v9.189)
-    # and redis (v9.190) majors were taken with their own test passes.
 
   # The Rust ZK crate.
   - package-ecosystem: cargo
@@ -65,10 +47,9 @@ updates:
     commit-message:
       prefix: ci
 
-  # Docker base images + the prod compose's digest-pinned images (v9.114).
-  # Tracks the FROM lines in the Dockerfiles and the digest-pinned image: refs
-  # in docker-compose.prod.yml, opening PRs to bump a pinned digest when the
-  # upstream tag moves (a frozen digest otherwise never gets security updates).
+  # Docker base images and the prod compose's digest-pinned images: a PR
+  # bumps a pinned digest when the upstream tag moves, so a frozen digest
+  # still receives security updates.
   - package-ecosystem: docker
     directory: /polaris_web
     schedule:
