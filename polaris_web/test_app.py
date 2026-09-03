@@ -6797,8 +6797,8 @@ class V2SubstrateUITests(PolarisTestCase):
       - /anchors (R10-2 AnchorBatch list)
       - /epochs (R10-1 TokenStateEpoch list) + ?epoch_id=N leaves view
       - /federation (R11-3 AgencyTrustAttestation viewer)
-      - /tokens/<id> v2 Substrate State section
-      - SUBSTRATE nav menu (admin/operator/auditor)
+      - /tokens/<id> signatures, anchors and proofs section
+      - PROOFS nav menu (admin/operator/auditor)
     """
 
     # ---------- dashboard tiles ----------
@@ -6807,7 +6807,7 @@ class V2SubstrateUITests(PolarisTestCase):
         r = self.client.get('/dashboard')
         self.assertEqual(r.status_code, 200)
         body = r.data.decode()
-        self.assertIn('v2 Substrate', body)
+        self.assertIn('Proofs and trust', body)
         self.assertIn('Anchor Batches', body)
         self.assertIn('ZK Epochs', body)
         self.assertIn('Trust Attestations', body)
@@ -6887,7 +6887,7 @@ class V2SubstrateUITests(PolarisTestCase):
         """The page must explain that there is NO transitive trust."""
         r = self.client.get('/federation')
         body = r.data.decode()
-        self.assertIn('NO transitive', body)
+        self.assertIn('No transitive', body)
 
     # ---------- /tokens/<id> v2 Substrate State ----------
 
@@ -6896,11 +6896,11 @@ class V2SubstrateUITests(PolarisTestCase):
         r = self.client.get('/tokens/2')
         self.assertEqual(r.status_code, 200)
         body = r.data.decode()
-        self.assertIn('v2 Substrate State', body)
+        self.assertIn('Signatures, anchors and proofs', body)
         self.assertIn('ENROLLED', body)
-        self.assertIn('Token Signatures (R11-1)', body)
-        self.assertIn('Anchor Batch Membership (R10-2)', body)
-        self.assertIn('Epoch Leaves (R10-1)', body)
+        self.assertIn('Token Signatures', body)
+        self.assertIn('Anchor Batch Membership', body)
+        self.assertIn('Epoch Leaves', body)
 
     def test_token_detail_v2_substrate_state_not_enrolled(self):
         """T1 (Egor) has no duress code."""
@@ -6922,7 +6922,7 @@ class V2SubstrateUITests(PolarisTestCase):
     def test_substrate_menu_visible_for_admin(self):
         r = self.client.get('/dashboard')
         body = r.data.decode()
-        self.assertIn('SUBSTRATE', body)
+        self.assertIn('PROOFS', body)
         self.assertIn('Anchor Batches', body)
         self.assertIn('ZK Epochs', body)
         self.assertIn('Federation', body)
@@ -6931,7 +6931,7 @@ class V2SubstrateUITests(PolarisTestCase):
         self._logout()
         self._login('operator')
         r = self.client.get('/dashboard')
-        self.assertIn('SUBSTRATE', r.data.decode())
+        self.assertIn('PROOFS', r.data.decode())
 
 
 class NextUrlSafetyTests(unittest.TestCase):

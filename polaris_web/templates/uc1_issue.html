@@ -84,7 +84,7 @@
         <div class="form-group">
             <label for="liveness_check_type">Liveness Check</label>
             <select id="liveness_check_type" name="liveness_check_type">
-                <option value="">— (none) —</option>
+                <option value="">None</option>
                 <option value="PASSIVE">PASSIVE</option>
                 <option value="ACTIVE_CHALLENGE">ACTIVE_CHALLENGE</option>
                 <option value="MULTI_MODAL" selected>MULTI_MODAL</option>
@@ -93,7 +93,7 @@
         <div class="form-group">
             <label for="witness_agency_id">Witness Agency (optional)</label>
             <select id="witness_agency_id" name="witness_agency_id">
-                <option value="">— (none) —</option>
+                <option value="">None</option>
                 {% for ag in agencies %}
                     <option value="{{ ag.agency_id }}">#{{ ag.agency_id }} {{ ag.name }}</option>
                 {% endfor %}

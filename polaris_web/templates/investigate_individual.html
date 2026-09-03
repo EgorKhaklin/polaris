@@ -4,15 +4,15 @@
 <h1>Investigate · Individual #{{ individual.individual_id }}</h1>
 
 <p class="help" style="max-width: 720px;">
-    Investigation surface — single-individual view of holding history +
+    Investigation surface: single-individual view of holding history +
     recent verifications. Distinct from the operational record at
     {% if current_user.role == 'admin' %}
     <a href="{{ url_for('individuals_edit', ind_id=individual.individual_id) }}">/individuals/{{ individual.individual_id }}/edit</a>.
     {% else %}
     <a href="{{ url_for('individuals_list') }}">/individuals</a>.
     {% endif %}
-    Per v9.18 anti-coercion vocation: single-individual focused; no
-    cross-individual aggregation exists in Polaris by design.
+    One individual at a time, by design: Polaris has no cross-individual
+    aggregation view.
 </p>
 
 <h2>Semantic record</h2>
@@ -28,7 +28,7 @@
         {% if individual.most_recent_token_issued_at %}
             {{ individual.most_recent_token_issued_at.strftime('%Y-%m-%d %H:%M') }}
         {% else %}
-            — (no tokens issued)
+            <span class="muted">None issued</span>
         {% endif %}
     </dd></div>
 </dl>
@@ -58,12 +58,12 @@
             <td><span class="pill pill-{{ t.status|lower }}">{{ t.status }}</span></td>
             <td>{{ t.activation_sequence }}</td>
             <td class="mono" style="white-space: nowrap;">{{ t.issued_date.strftime('%Y-%m-%d') }}</td>
-            <td class="mono" style="white-space: nowrap;">{{ t.expiration_date.strftime('%Y-%m-%d') if t.expiration_date else '—' }}</td>
+            <td class="mono" style="white-space: nowrap;">{{ t.expiration_date.strftime('%Y-%m-%d') if t.expiration_date else 'None' }}</td>
             <td>
                 {% if t.predecessor_token_id %}
                     <a href="{{ url_for('investigate_token', tok_id=t.predecessor_token_id) }}">#{{ t.predecessor_token_id }}</a>
                 {% else %}
-                    —
+                    <span class="muted">None</span>
                 {% endif %}
             </td>
             <td>{% if t.has_duress_code %}<span class="pill pill-active">YES</span>{% else %}<span class="muted">no</span>{% endif %}</td>
@@ -97,7 +97,7 @@
                 {% if v.token_id %}
                     <a href="{{ url_for('investigate_token', tok_id=v.token_id) }}">#{{ v.token_id }}</a>
                 {% else %}
-                    <span class="muted" title="ZERO_KNOWLEDGE verification — token_id is NULL by C2 constitutional invariant">— (ZK)</span>
+                    <span class="muted" title="ZERO_KNOWLEDGE verification, token_id is NULL by C2 constitutional invariant">None (ZK)</span>
                 {% endif %}
             </td>
             <td><span class="pill pill-{{ v.outcome|lower }}">{{ v.outcome }}</span></td>
@@ -108,8 +108,8 @@
                     <span class="pill" style="background: #2a3550; color: #d8d8c4;">{{ v.disclosure_level }}</span>
                 {% endif %}
             </td>
-            <td>{{ v.context_type or '—' }}</td>
-            <td>{{ v.requesting_agency_name or '—' }}</td>
+            <td>{{ v.context_type or 'None' }}</td>
+            <td>{{ v.requesting_agency_name or 'None' }}</td>
         </tr>
         {% endfor %}
     </tbody>

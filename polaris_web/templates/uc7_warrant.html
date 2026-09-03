@@ -7,8 +7,8 @@
     <div class="uc-desc">
         Wraps <code>uc7_warrant_audit</code>. Reconstructs an individual's verification history under
         legal authority, returning identifying data only for SELECTIVE and FULL events. ZERO_KNOWLEDGE
-        events are returned with <code>token_id</code> and <code>legal_name</code> redacted to NULL —
-        the schema literally never stored those fields, so the warrant cannot recover them.
+        events are returned with <code>token_id</code> and <code>legal_name</code> redacted to NULL:
+        the schema never stored those fields, so no warrant can recover them.
     </div>
 </div>
 
@@ -18,10 +18,10 @@
         <div class="form-group">
             <label for="individual_id">Subject (Individual ID)</label>
             <select id="individual_id" name="individual_id" required>
-                <option value="">— select —</option>
+                <option value="">Select&hellip;</option>
                 {% for i in individuals %}
                     <option value="{{ i.individual_id }}" {% if individual_id == i.individual_id %}selected{% endif %}>
-                        #{{ i.individual_id }} — {{ i.legal_name }} ({{ i.jurisdiction }})
+                        #{{ i.individual_id }}: {{ i.legal_name }} ({{ i.jurisdiction }})
                     </option>
                 {% endfor %}
             </select>
@@ -29,7 +29,7 @@
         <div class="form-group">
             <label for="context_filter">Context Filter (optional)</label>
             <select id="context_filter" name="context_filter">
-                <option value="">— all contexts —</option>
+                <option value="">All contexts</option>
                 {% for c in ['BANKING', 'EMPLOYMENT', 'HEALTHCARE', 'TRAVEL', 'VOTING', 'MOTOR_VEHICLE', 'GOVERNMENT_BENEFITS'] %}
                     <option value="{{ c }}">{{ c }}</option>
                 {% endfor %}
@@ -83,7 +83,7 @@
             </td>
             <td>
                 {%- if r.requestor_location %}{{ r.requestor_location }}
-                {%- else %}<em style="color: var(--steel-light);">—</em>{% endif %}
+                {%- else %}<em style="color: var(--steel-light);">None</em>{% endif %}
             </td>
         </tr>
         {% endfor %}

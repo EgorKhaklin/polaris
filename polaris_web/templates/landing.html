@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Polaris — Identity Token System{% endblock %}
+{% block title %}Polaris: Identity Token System{% endblock %}
 {% block body_class %} body-landing{% endblock %}
 {% block content %}
 
@@ -69,8 +69,9 @@
             </header>
             <p>
                 Verifications at the <code>ZERO_KNOWLEDGE</code>
-                disclosure level have <code>token_id IS NULL</code>
-                — enforced by trigger, CHECK, and form coercion.
+                disclosure level have <code>token_id IS NULL</code>,
+                enforced by a CHECK constraint on the row and by form
+                coercion before it.
                 The verification graph cannot be reconstructed
                 from ZK events. A real Plonky2 ZK-SNARK proves
                 membership without revealing which token.
@@ -119,11 +120,11 @@
         <strong>C9</strong> concurrency hazards tested with real threading,
         not mocks. The four cards above are the highlight reel for first-time
         visitors; the canonical text for all ten lives in
-        <a href="https://github.com/EgorKhaklin/polaris-id/blob/main/MISSION.md#the-hard-constraints-do-not-violate">MISSION.md §"The hard constraints"</a>.
-        Anti-coercion is the <em>vocation</em> all ten constraints
-        serve — named in
-        <a href="https://github.com/EgorKhaklin/polaris-id/blob/main/MISSION.md#vocation">MISSION.md §"Vocation"</a>
-        above C1-C10 (v9.11).
+        <a href="https://github.com/EgorKhaklin/polaris-id/blob/main/MISSION.md#the-hard-constraints-do-not-violate">MISSION.md, "The hard constraints"</a>.
+        Anti-coercion is the <em>vocation</em> all ten constraints serve,
+        stated in
+        <a href="https://github.com/EgorKhaklin/polaris-id/blob/main/MISSION.md#vocation">MISSION.md, "Vocation"</a>,
+        above C1 to C10.
     </p>
 </section>
 
@@ -169,10 +170,10 @@
     </p>
 
     <ul class="cognitive-list">
-        <li><strong>Schema-level enforcement</strong> — C1-C10 live in the database, not in policy. A reviewer can read the triggers and indexes and see each guarantee directly.</li>
-        <li><strong>polaris_checks</strong> — a flat layer of plain check functions: one per constitutional constraint plus production-posture pins, each provably able to catch its violation, gating CI on every run.</li>
-        <li><strong>Independent second witness</strong> — the zero-knowledge epoch root is recomputed by a separate Python implementation and checked bit-for-bit against the Rust prover. No single implementation is trusted alone.</li>
-        <li><strong>Append-only audit-of-record</strong> — every state change leaves a row the system can reconstruct; UPDATE and DELETE are rejected by trigger.</li>
+        <li><strong>Schema-level enforcement</strong>: C1-C10 live in the database, not in policy. A reviewer can read the triggers and indexes and see each guarantee directly.</li>
+        <li><strong>polaris_checks</strong>: a flat layer of plain check functions: one per constitutional constraint plus production-posture pins, each provably able to catch its violation, gating CI on every run.</li>
+        <li><strong>Independent second witness</strong>: the zero-knowledge epoch root is recomputed by a separate Python implementation and checked bit-for-bit against the Rust prover. No single implementation is trusted alone.</li>
+        <li><strong>Append-only audit-of-record</strong>: every state change leaves a row the system can reconstruct; UPDATE and DELETE are rejected by trigger.</li>
     </ul>
 </section>
 
@@ -204,12 +205,12 @@ curl -fsS https://${POLARIS_DOMAIN}/api/health | jq .</code></pre>
 <section class="landing-foot" aria-labelledby="foot-title">
     <h2 id="foot-title" class="landing-section-title">Read more</h2>
     <ul class="landing-foot-links">
-        <li><a href="https://github.com/EgorKhaklin/polaris-id/blob/main/docs/THESIS.md">The thesis</a> — why identity cannot outrun its cryptographic primitives</li>
-        <li><a href="https://github.com/EgorKhaklin/polaris-id/blob/main/docs/reference/GLOSSARY.md">Glossary</a> — every defined term</li>
-        <li><a href="https://github.com/EgorKhaklin/polaris-id/blob/main/docs/reference/DATA-MODEL.md">Data model</a> — every table, every constraint</li>
-        <li><a href="https://github.com/EgorKhaklin/polaris-id/blob/main/docs/reference/API.md">API reference</a> — every endpoint</li>
-        <li><a href="https://github.com/EgorKhaklin/polaris-id/blob/main/docs/operator/SECURITY.md">Security posture</a> — threat model, controls, audit</li>
-        <li><a href="https://github.com/EgorKhaklin/polaris-id/blob/main/docs/operator/PRIVACY.md">Privacy posture</a> — data minimization, rotation, what the schema doesn't carry</li>
+        <li><a href="https://github.com/EgorKhaklin/polaris-id/blob/main/docs/THESIS.md">The thesis</a>: why identity cannot outrun its cryptographic primitives</li>
+        <li><a href="https://github.com/EgorKhaklin/polaris-id/blob/main/docs/reference/GLOSSARY.md">Glossary</a>: every defined term</li>
+        <li><a href="https://github.com/EgorKhaklin/polaris-id/blob/main/docs/reference/DATA-MODEL.md">Data model</a>: every table and every constraint</li>
+        <li><a href="https://github.com/EgorKhaklin/polaris-id/blob/main/docs/reference/API.md">API reference</a>: every endpoint</li>
+        <li><a href="https://github.com/EgorKhaklin/polaris-id/blob/main/docs/operator/SECURITY.md">Security posture</a>: the threat model, the controls, the audit</li>
+        <li><a href="https://github.com/EgorKhaklin/polaris-id/blob/main/docs/operator/PRIVACY.md">Privacy posture</a>: data minimization, rotation, and what the schema does not carry</li>
     </ul>
 </section>
 

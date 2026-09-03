@@ -1,5 +1,5 @@
-{# AI-context: HUD slots use data-atlas-* attributes; JS auto-populates via updateAtlasStats(). Inline <script> blocked by CSP — use external .js. See DEVNOTES/atlas-scaling.md.
-   v9.144 — full-viewport console shell: command bar / stage + dock / status
+{# AI-context: HUD slots use data-atlas-* attributes; JS auto-populates via updateAtlasStats(). Inline <script> blocked by CSP, use external .js. See DEVNOTES/atlas-scaling.md.
+   Full-viewport console shell: command bar, stage and dock, status
    bar. The page does not scroll; the globe is sized by its stage box (no
    pixel cap), the node console docks beside the feed instead of floating
    over the globe, and heading/pitch/zoom + the activity histogram live in
@@ -25,7 +25,7 @@
         <span class="chip-divider" aria-hidden="true"></span>
 
         {# Default window is ALL: with notional/seed data the recent windows
-           are empty and the globe rendered blank on first load (v9.143). #}
+           are empty and the globe rendered blank on first load. #}
         <span class="cmd-label">WINDOW</span>
         <div class="chip-group" role="radiogroup" aria-label="Time window">
             <button class="toolbar-chip" type="button"
@@ -66,7 +66,7 @@
             </div>
         </details>
 
-        {# v9.146 operational AGENCY filter — pivot the map by issuing/acting
+        {# Operational AGENCY filter: pivot the map by issuing or acting
            agency. Operational, never demographic. (At national scale this
            becomes a typeahead; a chip flyout is right for the demo roster.) #}
         <details class="chip-context-picker">
@@ -81,7 +81,7 @@
             </div>
         </details>
 
-        {# Subject focus — single-subject warrant-audit investigation (UC-7).
+        {# Subject focus: single-subject warrant-audit investigation (UC-7).
            Admin/auditor only; the endpoints enforce the same gate and audit-log
            every access. This isolates ONE named subject, never filters the
            population by attribute. ZK events stay withheld even here. #}
@@ -143,7 +143,7 @@
                 </div>
             </div>
 
-            {# v9.146 — MapLibre GL globe→street basemap (CARTO dark-matter,
+            {# MapLibre GL globe-to-street basemap (CARTO dark-matter,
                free vector tiles). Events fetched per-viewport from
                /api/atlas/* and plotted as a GeoJSON source; ZERO_KNOWLEDGE
                events are never plotted (C6, enforced server-side). #}
@@ -154,7 +154,7 @@
                      aria-label="Interactive map of Polaris token and verification activity. Drag to pan, scroll to zoom from globe to street level."></div>
             </div>
 
-            {# Subject-focus banner — shown while one subject is isolated. #}
+            {# Subject-focus banner: shown while one subject is isolated. #}
             <div class="atlas-subject-banner" data-atlas-subject-banner role="status" hidden>
                 <span class="subject-banner-label">INVESTIGATING</span>
                 <span class="subject-banner-name" data-atlas-subject-name></span>
@@ -162,7 +162,7 @@
                 <button type="button" class="subject-banner-clear" data-atlas-subject-clear>✕ Clear focus</button>
             </div>
 
-            {# Tone legend — operators should not have to guess the color code. #}
+            {# Tone legend: operators should not have to guess the color code. #}
             <div class="globe-legend" aria-label="Reticle color legend">
                 <span class="legend-item"><span class="legend-dot legend-zk"></span>zero-knowledge</span>
                 <span class="legend-item"><span class="legend-dot legend-selective"></span>selective</span>
@@ -184,7 +184,7 @@
 
             {# Empty-viewport hint: a blank globe should explain itself. #}
             <div class="atlas-empty-chip" data-atlas-empty hidden>
-                <span>NO EVENTS IN THIS VIEW — widen the time window, clear filters, or rotate to another region</span>
+                <span>NO EVENTS IN THIS VIEW: widen the time window, clear filters, or rotate to another region</span>
             </div>
         </div>
 
@@ -218,11 +218,11 @@
         <div class="atlas-timeline-strip" data-atlas-timeline
              aria-label="Activity histogram for selected window"></div>
         <div class="statusbar-readouts">
-            <span class="sb-item"><span class="sb-key">CUR</span> <span class="sb-val sb-cursor" id="atlas-hud-cursor">— —</span></span>
+            <span class="sb-item"><span class="sb-key">CUR</span> <span class="sb-val sb-cursor" id="atlas-hud-cursor">--</span></span>
             <span class="sb-item"><span class="sb-key">HDG</span> <span class="sb-val" id="atlas-hud-heading">000°</span></span>
             <span class="sb-item"><span class="sb-key">PIT</span> <span class="sb-val" id="atlas-hud-pitch">+0°</span></span>
             <span class="sb-item"><span class="sb-key">ZM</span> <span class="sb-val" id="atlas-hud-zoom">1.00x</span></span>
-            <span class="sb-item sb-clock" id="atlas-hud-time">— —</span>
+            <span class="sb-item sb-clock" id="atlas-hud-time">--</span>
         </div>
     </div>
 
@@ -236,7 +236,7 @@
 {% endblock %}
 
 {% block scripts %}
-    {# MapLibre GL — self-hosted (static/vendor), no Mapbox token. The dark
+    {# MapLibre GL: self-hosted (static/vendor), no Mapbox token. The dark
        basemap tiles come from CARTO's free dark-matter vector tiles; the CSP
        relaxation for those origins is scoped to this endpoint only. #}
     <link rel="stylesheet" href="{{ url_for('static', filename='vendor/maplibre-gl.css') }}">

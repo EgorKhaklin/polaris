@@ -2,15 +2,15 @@
 {% block title %}UC-9: Initiate Recovery{% endblock %}
 {% block content %}
 <div class="uc-banner">
-    <div class="uc-id">Use Case 9 — Phase 1</div>
+    <div class="uc-id">Use Case 9: Phase 1</div>
     <h1>Initiate Catastrophic-Loss Recovery</h1>
     <div class="uc-desc">
-        Out-of-band recovery ceremony for the case PDF §9.1 names: a holder loses ALL of their tokens and devices
-        simultaneously. This is phase 1 — open a <code>PENDING</code> request. No token is issued here. A
+        Out-of-band recovery ceremony for the case where a holder loses all of their tokens and devices
+        at once. This is phase 1: open a <code>PENDING</code> request. No token is issued here. A
         <strong>different</strong> administrator must complete phase 2 after the 48-hour cool-down and after all
         three out-of-band channels (biometric, sworn statement, witness agency co-sign) are verified.
-        Implements R11-2 / M2-7. The third leg of the
-        <em>"schema doesn't weaponize itself against the holder"</em> triad.
+        Recovery, tiered enrollment and bounded revocation together keep the schema from being
+        turned against the holder.
     </div>
 </div>
 
@@ -27,10 +27,10 @@
         <div class="form-group full">
             <label for="individual_id">Claimed Individual</label>
             <select id="individual_id" name="individual_id" required>
-                <option value="">— select —</option>
+                <option value="">Select&hellip;</option>
                 {% for ind in individuals %}
                     <option value="{{ ind.individual_id }}">
-                        #{{ ind.individual_id }} — {{ ind.legal_name }}
+                        #{{ ind.individual_id }}: {{ ind.legal_name }}
                         ({{ ind.jurisdiction }}; enrollment: {{ ind.enrollment_status }})
                     </option>
                 {% endfor %}
@@ -43,9 +43,9 @@
         <div class="form-group full">
             <label for="requesting_agency_id">Requesting Agency</label>
             <select id="requesting_agency_id" name="requesting_agency_id" required>
-                <option value="">— select —</option>
+                <option value="">Select&hellip;</option>
                 {% for ag in agencies %}
-                    <option value="{{ ag.agency_id }}">#{{ ag.agency_id }} — {{ ag.name }} ({{ ag.agency_type }})</option>
+                    <option value="{{ ag.agency_id }}">#{{ ag.agency_id }}, {{ ag.name }} ({{ ag.agency_type }})</option>
                 {% endfor %}
             </select>
             <span class="help">The agency on whose behalf the recovery is being initiated.</span>

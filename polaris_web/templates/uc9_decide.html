@@ -2,11 +2,11 @@
 {% block title %}UC-9: Decide Recovery #{{ req.recovery_id }}{% endblock %}
 {% block content %}
 <div class="uc-banner">
-    <div class="uc-id">Use Case 9 — Phase 2</div>
+    <div class="uc-id">Use Case 9: Phase 2</div>
     <h1>Decide Recovery #{{ req.recovery_id }}</h1>
     <div class="uc-desc">
-        Admin decision on a PENDING recovery. APPROVED issues a new ACTIVE token (with predecessor_token_id=NULL —
-        the prior chain was lost) and transitions all of the individual's non-terminal tokens to LOST, publishing
+        Admin decision on a PENDING recovery. APPROVED issues a new ACTIVE token (with predecessor_token_id=NULL,
+        because the prior chain was lost) and transitions all of the individual's non-terminal tokens to LOST, publishing
         each to RevocationList. Every transition is audit-tagged <code>[RECOVERY:{{ req.recovery_id }}]</code>.
     </div>
 </div>
@@ -15,20 +15,20 @@
     <h2>Request summary</h2>
     <dl class="kv">
         <dt>Claimed individual</dt>
-        <dd>#{{ req.claimed_individual_id }} — <strong>{{ req.legal_name }}</strong></dd>
+        <dd>#{{ req.claimed_individual_id }}: <strong>{{ req.legal_name }}</strong></dd>
 
         <dt>Requested at</dt>
         <dd class="mono">{{ req.requested_at.strftime('%Y-%m-%d %H:%M:%S') }}</dd>
 
         <dt>Requesting agency</dt>
-        <dd>#{{ req.requesting_agency_id }} — {{ req.requesting_agency_name }}</dd>
+        <dd>#{{ req.requesting_agency_id }}: {{ req.requesting_agency_name }}</dd>
 
         <dt>Requesting user</dt>
         <dd>{{ req.requesting_username }} (user #{{ req.requesting_user_id }})</dd>
 
         <dt>Cool-down expires</dt>
         <dd class="mono">{{ req.cooldown_expires_at.strftime('%Y-%m-%d %H:%M:%S') }}
-            — {% if req.cooldown_passed %}
+            {% if req.cooldown_passed %}
                 <span class="pill pill-success">passed</span>
             {% else %}
                 <span class="pill pill-warn">not yet</span>
@@ -53,7 +53,7 @@
             {% if req.three_channels_present %}
                 <span class="pill pill-success">all three verified</span>
             {% else %}
-                <span class="pill pill-warn">incomplete — APPROVED will be refused</span>
+                <span class="pill pill-warn">incomplete: APPROVED will be refused</span>
             {% endif %}
         </dd>
     </dl>
@@ -66,8 +66,8 @@
         <div class="form-group">
             <label for="decision">Decision</label>
             <select id="decision" name="decision" required>
-                <option value="APPROVED">APPROVED — issue new token</option>
-                <option value="REJECTED">REJECTED — close without issuing</option>
+                <option value="APPROVED">APPROVED: issue new token</option>
+                <option value="REJECTED">REJECTED: close without issuing</option>
             </select>
         </div>
         <div class="form-group full">
@@ -98,10 +98,10 @@
         <div class="form-group">
             <label for="algorithm_id">Signing algorithm</label>
             <select id="algorithm_id" name="algorithm_id">
-                <option value="">— select —</option>
+                <option value="">Select&hellip;</option>
                 {% for alg in algorithms %}
                     <option value="{{ alg.algorithm_id }}">
-                        #{{ alg.algorithm_id }} — {{ alg.name }}
+                        #{{ alg.algorithm_id }}: {{ alg.name }}
                         {% if alg.quantum_resistant %} · PQ{% endif %}
                     </option>
                 {% endfor %}
@@ -110,7 +110,7 @@
         <div class="form-group">
             <label for="biometric_binding">Biometric binding</label>
             <select id="biometric_binding" name="biometric_binding">
-                <option value="">— select —</option>
+                <option value="">Select&hellip;</option>
                 <option value="IRIS">IRIS</option>
                 <option value="FINGERPRINT">FINGERPRINT</option>
                 <option value="FACE">FACE</option>
@@ -119,7 +119,7 @@
         <div class="form-group">
             <label for="liveness_check">Liveness check</label>
             <select id="liveness_check" name="liveness_check">
-                <option value="">— select —</option>
+                <option value="">Select&hellip;</option>
                 <option value="MULTI_MODAL">MULTI_MODAL</option>
                 <option value="ACTIVE_CHALLENGE">ACTIVE_CHALLENGE</option>
                 <option value="PASSIVE">PASSIVE</option>

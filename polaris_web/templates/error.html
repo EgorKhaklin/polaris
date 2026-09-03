@@ -12,7 +12,7 @@
         <p class="error-hint">
             The path you requested isn't part of Polaris's public
             surface. If you arrived here by following a link in
-            our own documentation, that's a bug — please let an
+            our own documentation, that's a bug: please let an
             operator know.
         </p>
     {% elif code == 403 %}
@@ -30,7 +30,7 @@
         <p class="error-hint">
             Polaris is reporting unhealthy on
             <code>/api/health</code>. The dependency that's failing
-            is in the structured response — typically the database
+            is in the structured response: typically the database
             or the rate-limiter backend.
         </p>
     {% endif %}

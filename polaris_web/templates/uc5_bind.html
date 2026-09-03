@@ -25,9 +25,9 @@
         <div class="form-group full">
             <label for="token_id">Active Token</label>
             <select id="token_id" name="token_id" required>
-                <option value="">— select —</option>
+                <option value="">Select&hellip;</option>
                 {% for t in active_tokens %}
-                    <option value="{{ t.token_id }}">#{{ t.token_id }} — {{ t.legal_name }} ({{ t.token_value }})</option>
+                    <option value="{{ t.token_id }}">#{{ t.token_id }}, {{ t.legal_name }} ({{ t.token_value }})</option>
                 {% endfor %}
             </select>
             <span class="help">Procedure rejects bindings to non-ACTIVE tokens.</span>

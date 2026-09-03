@@ -3,11 +3,12 @@
 {% block content %}
 <h1>Duress Signals</h1>
 <p class="subtitle">
-    Detected compulsion signals (R11-5 / M2-10). When a holder enters their
-    duress code during verification, the system silently records a
+    Detected compulsion signals. When a holder enters their duress code
+    during verification, the system silently records a
     <code>DuressEvent</code> row here while the user-visible flow proceeds
-    identically. <strong>Admins and auditors only</strong> — operators do
-    NOT have access to this view (R6 anti-revealing posture).
+    identically. <strong>Admins and auditors only</strong>: operators do
+    not have access to this view, so nothing an operator's screen shows can
+    reveal the signal.
 </p>
 
 <div class="actions-bar">
@@ -65,14 +66,16 @@
         input. When the holder enters their duress code under coercion:
     </p>
     <ol>
-        <li><strong>R1 (constant-time):</strong> <code>check_password_hash</code> compares the input against the stored hash in constant time — a coercer measuring response latency cannot distinguish match from mismatch.</li>
-        <li><strong>R2 (identical observable behavior):</strong> the verification flow proceeds with whatever outcome the operator specified. The coercer-visible response page is identical to a normal verification.</li>
-        <li><strong>R3 (audit-of-record):</strong> a row appears in this table. <code>DuressEvent</code> is the 8th audit-of-record instance, append-only via trigger.</li>
-        <li><strong>R6 (anti-revealing):</strong> the operator-visible <code>/verifications</code> list does NOT join to <code>DuressEvent</code>. Only this page and the JSON API expose duress signals, both gated to admin/auditor role.</li>
+        <li><strong>Constant-time comparison:</strong> the input is compared against the stored hash in constant time, so a coercer timing the response learns nothing.</li>
+        <li><strong>Identical observable behaviour:</strong> the verification proceeds with whatever outcome the operator recorded; the coercer-visible response is the same with or without the signal.</li>
+        <li><strong>Audit of record:</strong> a row appears in this table. <code>DuressEvent</code> is append-only by trigger.</li>
+        <li><strong>Anti-revealing:</strong> the operator-visible verification list never joins to <code>DuressEvent</code>; only this page and the admin and auditor roles see it.</li>
     </ol>
     <p class="footnote">
-        See <code>DEVNOTES/ships/duress-codes.md</code> for the full mechanism design,
-        the OOB channel future-fields (SMS, Slack, SIEM), and the v1/v2 split.
+        Every new row increments <code>polaris_duress_events_total</code>, which
+        fires the <code>PolarisDuressEvent</code> alert immediately and pages the
+        on-call responder; the response runbook is
+        <code>docs/operator/RUNBOOKS.md</code>.
     </p>
 </div>
 {% endblock %}

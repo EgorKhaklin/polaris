@@ -6,7 +6,7 @@
     <title>{% block title %}Polaris{% endblock %} | Identity Token System</title>
     <meta name="description" content="Polaris identity-token console: post-quantum signing, zero-knowledge verification, append-only audit-of-record, compulsion-resistant by design.">{# SEO: Lighthouse meta-description audit #}
     {# Bump ?v= when editing CSS so dev browsers don't serve stale styles.
-       v9.142 — one unified stylesheet; the former polaris-scifi.css skin
+       v9.142: one unified stylesheet; the former polaris-scifi.css skin
        layer was merged into polaris.css (single dark design system). #}
     <link rel="stylesheet" href="{{ url_for('static', filename='polaris.css') }}?v=v9145a">
     <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
@@ -34,18 +34,18 @@
                     {% endif %}
                     {% if current_user.role in ('admin', 'operator', 'auditor') %}
                         <details class="nav-uc-menu">
-                            <summary class="nav-uc-summary">SUBSTRATE</summary>
+                            <summary class="nav-uc-summary">PROOFS</summary>
                             <div class="nav-uc-panel" role="menu">
                                 <a href="{{ url_for('anchors_list') }}" class="nav-uc-item" role="menuitem">
-                                    <span class="uc-id">R10-2</span>
+                                    <span class="uc-id">Merkle</span>
                                     <span class="uc-name">Anchor Batches</span>
                                 </a>
                                 <a href="{{ url_for('epochs_list') }}" class="nav-uc-item" role="menuitem">
-                                    <span class="uc-id">R10-1</span>
+                                    <span class="uc-id">ZK</span>
                                     <span class="uc-name">ZK Epochs</span>
                                 </a>
                                 <a href="{{ url_for('federation_viewer') }}" class="nav-uc-item" role="menuitem">
-                                    <span class="uc-id">R11-3</span>
+                                    <span class="uc-id">Trust</span>
                                     <span class="uc-name">Federation</span>
                                 </a>
                             </div>

@@ -5,18 +5,18 @@
     Investigate · Token #{{ token.token_id }}
     <span class="pill pill-{{ token.status|lower }}" style="font-size: 13px; vertical-align: middle;">{{ token.status }}</span>
     {% if token.has_duress_code %}
-        <span class="pill pill-revoked" style="font-size: 13px; vertical-align: middle;" title="Token has a duress-code enrolled (R11-5 anti-coercion primitive)">DURESS-ENROLLED</span>
+        <span class="pill pill-revoked" style="font-size: 13px; vertical-align: middle;" title="Token has a duress code enrolled (the holder can signal coercion silently)">DURESS-ENROLLED</span>
     {% endif %}
 </h1>
 
 <p class="help" style="max-width: 720px;">
-    Investigation surface — single-token chronological view assembled from
+    Investigation surface: single-token chronological view assembled from
     [v_ontology_token] + [v_ontology_token_timeline]. Distinct from the
     operational view at <a href="{{ url_for('tokens_detail', tok_id=token.token_id) }}">/tokens/{{ token.token_id }}</a>
     which exposes state-transition controls. This page is read-only investigative
     context: the chronological history, the linked holder, the succession
-    chain. Per v9.18 anti-coercion vocation: single-entity focused; no
-    cross-token aggregation.
+    chain. Single entity at a time, by design: there is no cross-token
+    aggregation view.
 </p>
 
 <h2>Semantic record</h2>
@@ -32,8 +32,8 @@
     <div><dt>Issuing Agency</dt><dd>{{ token.issuing_agency_name }} (#{{ token.issuing_agency_id }})</dd></div>
     <div><dt>Algorithm</dt><dd class="mono">{{ token.algorithm_name }} {% if token.quantum_resistant %}<span class="pill pill-active">PQ</span>{% else %}<span class="pill pill-revoked">CLASSICAL</span>{% endif %}</dd></div>
     <div><dt>Issued</dt><dd>{{ token.issued_date.strftime('%Y-%m-%d %H:%M') }}</dd></div>
-    <div><dt>Activated</dt><dd>{{ token.activated_date.strftime('%Y-%m-%d %H:%M') if token.activated_date else '—' }}</dd></div>
-    <div><dt>Expires</dt><dd>{{ token.expiration_date.strftime('%Y-%m-%d') if token.expiration_date else '—' }}</dd></div>
+    <div><dt>Activated</dt><dd>{{ token.activated_date.strftime('%Y-%m-%d %H:%M') if token.activated_date else 'None' }}</dd></div>
+    <div><dt>Expires</dt><dd>{{ token.expiration_date.strftime('%Y-%m-%d') if token.expiration_date else 'None' }}</dd></div>
     <div><dt>Age</dt><dd>{{ '%.1f'|format(token.age_days) }} days</dd></div>
     <div><dt>Activation Sequence</dt><dd>{{ token.activation_sequence }}</dd></div>
     <div><dt>Has Duress Code</dt><dd>{% if token.has_duress_code %}<span class="pill pill-active">YES</span>{% else %}<span class="pill">no</span>{% endif %}</dd></div>
@@ -49,7 +49,7 @@
             </a>
             <span class="pill pill-{{ predecessor.status|lower }}" style="font-size: 11px;">{{ predecessor.status }}</span>
         {% else %}
-            <span class="muted">— (original issuance)</span>
+            <span class="muted">None (original issuance)</span>
         {% endif %}
     </dd></div>
     <div><dt>Successor</dt><dd>
@@ -59,7 +59,7 @@
             </a>
             <span class="pill pill-{{ successor.status|lower }}" style="font-size: 11px;">{{ successor.status }}</span>
         {% else %}
-            <span class="muted">— (no successor; current or terminal)</span>
+            <span class="muted">None (current or terminal)</span>
         {% endif %}
     </dd></div>
 </dl>
@@ -90,16 +90,16 @@
             <td class="mono">{{ ev.event_subtype }}</td>
             <td>
                 {% if ev.event_kind == 'lifecycle' %}
-                    {{ ev.actor_agency_name or '—' }}
+                    {{ ev.actor_agency_name or 'None' }}
                 {% else %}
-                    {{ ev.requesting_agency_name or '—' }}
+                    {{ ev.requesting_agency_name or 'None' }}
                 {% endif %}
             </td>
             <td>
                 {% if ev.event_kind == 'lifecycle' %}
-                    {{ ev.reason_code or '—' }}
+                    {{ ev.reason_code or 'None' }}
                 {% else %}
-                    {{ ev.context_type or '—' }}
+                    {{ ev.context_type or 'None' }}
                 {% endif %}
             </td>
             <td>
@@ -109,7 +109,7 @@
                         <span class="pill" style="background: #2a3550; color: #889; font-size: 10px;">{{ ev.disclosure_level }}</span>
                     {% endif %}
                 {% else %}
-                    —
+                    <span class="muted">None</span>
                 {% endif %}
             </td>
         </tr>

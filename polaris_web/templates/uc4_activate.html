@@ -31,9 +31,9 @@
         <div class="form-group">
             <label for="lost_token_id">Active Token Being Lost</label>
             <select id="lost_token_id" name="lost_token_id" required>
-                <option value="">— select —</option>
+                <option value="">Select&hellip;</option>
                 {% for t in active_tokens %}
-                    <option value="{{ t.token_id }}">#{{ t.token_id }} — {{ t.legal_name }} ({{ t.token_value }})</option>
+                    <option value="{{ t.token_id }}">#{{ t.token_id }}, {{ t.legal_name }} ({{ t.token_value }})</option>
                 {% endfor %}
             </select>
         </div>
@@ -55,9 +55,9 @@
         <div class="form-group">
             <label for="reserve_token_id">Reserve Token to Promote</label>
             <select id="reserve_token_id" name="reserve_token_id" required>
-                <option value="">— select —</option>
+                <option value="">Select&hellip;</option>
                 {% for t in reserve_tokens %}
-                    <option value="{{ t.token_id }}">#{{ t.token_id }} — {{ t.legal_name }} ({{ t.token_value }})</option>
+                    <option value="{{ t.token_id }}">#{{ t.token_id }}, {{ t.legal_name }} ({{ t.token_value }})</option>
                 {% endfor %}
             </select>
             <span class="help">Procedure validates the reserve belongs to the same individual as the lost token.</span>

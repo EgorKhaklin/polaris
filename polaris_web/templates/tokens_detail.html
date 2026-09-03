@@ -9,15 +9,15 @@
 <dl class="detail-grid">
     <div><dt>Token Value</dt><dd class="mono">{{ token.token_value }}</dd></div>
     <div><dt>Physical Serial</dt><dd class="mono">{{ token.physical_serial }}</dd></div>
-    <div><dt>Hardware Model</dt><dd>{{ token.hardware_model or '—' }}</dd></div>
+    <div><dt>Hardware Model</dt><dd>{{ token.hardware_model or 'None' }}</dd></div>
     <div><dt>Holder</dt><dd>{{ token.legal_name }} (#{{ token.individual_id }})</dd></div>
     <div><dt>Issuer</dt><dd>{{ token.issuer_name }}</dd></div>
     <div><dt>Algorithm</dt><dd class="mono">{{ token.alg_name }} {% if token.quantum_resistant %}<span class="pill pill-active">PQ</span>{% else %}<span class="pill pill-revoked">CLASSICAL</span>{% endif %}</dd></div>
     <div><dt>Biometric Binding</dt><dd>{{ token.biometric_binding_type }}</dd></div>
-    <div><dt>Liveness Check</dt><dd>{{ token.liveness_check_type or '—' }}</dd></div>
+    <div><dt>Liveness Check</dt><dd>{{ token.liveness_check_type or 'None' }}</dd></div>
     <div><dt>Issued</dt><dd>{{ token.issued_date.strftime('%Y-%m-%d %H:%M') }}</dd></div>
-    <div><dt>Activated</dt><dd>{{ token.activated_date.strftime('%Y-%m-%d %H:%M') if token.activated_date else '—' }}</dd></div>
-    <div><dt>Expires</dt><dd>{{ token.expiration_date.strftime('%Y-%m-%d') if token.expiration_date else '—' }}</dd></div>
+    <div><dt>Activated</dt><dd>{{ token.activated_date.strftime('%Y-%m-%d %H:%M') if token.activated_date else 'None' }}</dd></div>
+    <div><dt>Expires</dt><dd>{{ token.expiration_date.strftime('%Y-%m-%d') if token.expiration_date else 'None' }}</dd></div>
     <div><dt>Activation Sequence</dt><dd>{{ token.activation_sequence }}</dd></div>
     {% if token.predecessor_token_id %}
     <div><dt>Predecessor</dt><dd><a href="{{ url_for('tokens_detail', tok_id=token.predecessor_token_id) }}">Token #{{ token.predecessor_token_id }}</a></dd></div>
@@ -40,7 +40,7 @@
                     {% endif %}
                 {% endfor %}
             </select>
-            <span class="help">The state-machine trigger will reject illegal transitions per Appendix A.</span>
+            <span class="help">The state-machine trigger rejects any transition the lifecycle does not allow.</span>
         </div>
     </div>
     <div class="form-actions">
@@ -59,9 +59,9 @@
         <tr>
             <td>#{{ e.event_id }}</td>
             <td><strong>{{ e.event_type }}</strong></td>
-            <td>{{ e.actor_name or '—' }}</td>
+            <td>{{ e.actor_name or 'None' }}</td>
             <td>{{ e.event_timestamp.strftime('%Y-%m-%d %H:%M') }}</td>
-            <td class="mono">{{ e.reason_code or '—' }}</td>
+            <td class="mono">{{ e.reason_code or 'None' }}</td>
         </tr>
         {% else %}
         <tr><td colspan="5" class="empty">No lifecycle events.</td></tr>
@@ -85,7 +85,7 @@
             <td>{{ v.event_timestamp.strftime('%Y-%m-%d %H:%M') }}</td>
         </tr>
         {% else %}
-        <tr><td colspan="6" class="empty">No verifications yet (or all were ZERO_KNOWLEDGE — they don't reference this token by design).</td></tr>
+        <tr><td colspan="6" class="empty">No verifications yet (or all were ZERO_KNOWLEDGE, they don't reference this token by design).</td></tr>
         {% endfor %}
     </tbody>
 </table>
@@ -104,7 +104,7 @@
             <td class="mono">{{ d.binding_method }}</td>
             <td><span class="pill pill-{{ d.status|lower }}">{{ d.status }}</span></td>
             <td>{{ d.authorized_date.strftime('%Y-%m-%d') }}</td>
-            <td>{{ d.expires_date.strftime('%Y-%m-%d') if d.expires_date else '—' }}</td>
+            <td>{{ d.expires_date.strftime('%Y-%m-%d') if d.expires_date else 'None' }}</td>
         </tr>
         {% else %}
         <tr><td colspan="7" class="empty">No device bindings.</td></tr>
@@ -144,7 +144,7 @@
             <td>{{ r.revoker_name }}</td>
             <td>{{ r.reason_code }}</td>
             <td>{{ r.effective_date }}</td>
-            <td class="mono">{{ r.published_location or '—' }}</td>
+            <td class="mono">{{ r.published_location or 'None' }}</td>
         </tr>
         {% else %}
         <tr><td colspan="5" class="empty">No revocations.</td></tr>
@@ -170,13 +170,11 @@
     </tbody>
 </table>
 
-{# ================== v2 SUBSTRATE STATE (v8.28) ==================
-   Surfaces the per-token presence in the v2 audit-of-record tables:
-   TokenSignature (R11-1 M:N), AnchorBatch membership via
-   BlockchainAnchor (R10-2), TokenStateEpochLeaf (R10-1), and the
-   non-revealing duress-enrollment flag (R11-5 — boolean only; the
-   hash itself is never surfaced and not joined into operator views). #}
-<h2>v2 Substrate State</h2>
+{# The token's presence in the proof and trust tables: TokenSignature,
+   AnchorBatch membership via BlockchainAnchor, TokenStateEpochLeaf, and the
+   duress-enrollment flag (a boolean only; the hash is never rendered and
+   never joined into operator views). #}
+<h2>Signatures, anchors and proofs</h2>
 <div class="v2-substrate-grid">
     <div class="v2-substrate-card">
         <div class="v2-substrate-label">Duress Code</div>
@@ -188,8 +186,8 @@
             {% endif %}
         </div>
         <div class="v2-substrate-note">
-            R11-5. Hash never displayed (R6 anti-revealing); enrollment
-            visible because it's policy, not content.
+            The hash is never displayed; enrollment is shown because it
+            is policy, not content.
         </div>
     </div>
     <div class="v2-substrate-card">
@@ -198,21 +196,21 @@
             {{ v2_signatures|selectattr('deprecation_date', 'none')|list|length }}
             <span class="footnote">/ {{ v2_signatures|length }} total</span>
         </div>
-        <div class="v2-substrate-note">R11-1 M:N (active + deprecated).</div>
+        <div class="v2-substrate-note">Active and deprecated signatures.</div>
     </div>
     <div class="v2-substrate-card">
         <div class="v2-substrate-label">Anchor Receipts</div>
         <div class="v2-substrate-value">{{ v2_anchor_batches|length }}</div>
-        <div class="v2-substrate-note">R10-2 BlockchainAnchor rows.</div>
+        <div class="v2-substrate-note">BlockchainAnchor rows.</div>
     </div>
     <div class="v2-substrate-card">
         <div class="v2-substrate-label">Epoch Leaves</div>
         <div class="v2-substrate-value">{{ v2_epoch_leaves|length }}</div>
-        <div class="v2-substrate-note">R10-1 ZK inclusion witnesses.</div>
+        <div class="v2-substrate-note">ZK inclusion witnesses.</div>
     </div>
 </div>
 
-<h3>Token Signatures (R11-1)</h3>
+<h3>Token Signatures</h3>
 <table class="data">
     <thead>
         <tr><th>ID</th><th>Algorithm</th><th>Signed</th><th>State</th><th>Verification</th></tr>
@@ -255,7 +253,7 @@
     </tbody>
 </table>
 
-<h3>Anchor Batch Membership (R10-2)</h3>
+<h3>Anchor Batch Membership</h3>
 <table class="data">
     <thead>
         <tr>
@@ -280,7 +278,7 @@
                     <span class="pill pill-warn">PENDING</span>
                 {% endif %}
             </td>
-            <td>{{ a.algorithm_name or '—' }}</td>
+            <td>{{ a.algorithm_name or 'None' }}</td>
             <td>
                 {% if a.batch_id and a.committed_to_chain %}
                     <span class="pill pill-success">{{ a.external_chain or 'COMMITTED' }}</span>
@@ -295,7 +293,7 @@
     </tbody>
 </table>
 
-<h3>Epoch Leaves (R10-1)</h3>
+<h3>Epoch Leaves</h3>
 <table class="data">
     <thead>
         <tr>

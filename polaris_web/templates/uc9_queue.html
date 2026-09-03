@@ -3,7 +3,7 @@
 {% block content %}
 <h1>Recovery Queue</h1>
 <p class="subtitle">
-    Catastrophic-loss recovery requests (R11-2 / M2-7). PENDING rows are at the top.
+    Catastrophic-loss recovery requests. PENDING rows are at the top.
     <strong>Only administrators</strong> can decide; operators can initiate, auditors are read-only.
 </p>
 
@@ -40,7 +40,7 @@
                 <span class="pill pill-{{ r.status|lower }}">{{ r.status }}</span>
             </td>
             <td>
-                #{{ r.claimed_individual_id }} — <strong>{{ r.legal_name }}</strong>
+                #{{ r.claimed_individual_id }}: <strong>{{ r.legal_name }}</strong>
             </td>
             <td>{{ r.requesting_username }} (user #{{ r.requesting_user_id }})</td>
             <td>{{ r.requesting_agency_name }}</td>
@@ -53,7 +53,7 @@
                         <span class="pill pill-warn">until {{ r.cooldown_expires_at.strftime('%Y-%m-%d %H:%M') }}</span>
                     {% endif %}
                 {% else %}
-                    <span class="muted">—</span>
+                    <span class="muted">None</span>
                 {% endif %}
             </td>
             <td>
@@ -66,7 +66,7 @@
                     by <strong>{{ r.decided_by_username }}</strong><br>
                     <span class="mono">{{ r.decided_at.strftime('%Y-%m-%d %H:%M') }}</span>
                 {% else %}
-                    <span class="muted">—</span>
+                    <span class="muted">None</span>
                 {% endif %}
             </td>
             <td class="actions">
@@ -86,9 +86,9 @@
     <h2>Out-of-band channels</h2>
     <p>Each PENDING request requires three independent channels verified before an APPROVED decision is permitted:</p>
     <ul>
-        <li><strong>B — Biometric</strong>: holder presents at the requesting agency for live biometric capture.</li>
-        <li><strong>S — Sworn statement</strong>: holder signs an affidavit; only its hash is stored (per the GenomicAnchor pattern).</li>
-        <li><strong>W — Witness agency</strong>: an independent agency co-signs the recovery.</li>
+        <li><strong>B: Biometric</strong>: holder presents at the requesting agency for live biometric capture.</li>
+        <li><strong>S: Sworn statement</strong>: holder signs an affidavit; only its hash is stored (per the GenomicAnchor pattern).</li>
+        <li><strong>W: Witness agency</strong>: an independent agency co-signs the recovery.</li>
     </ul>
     <p class="footnote">
         These channels are designed to have independent failure modes. Compromising one is not enough.

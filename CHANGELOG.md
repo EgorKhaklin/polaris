@@ -5,6 +5,46 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.207 — 2026-09-03 (P1.17 ship 2: the application names things for the operator, not for the backlog)
+
+Every internal identifier is gone from what an operator reads, and the
+application's prose carries no em-dashes.
+
+- **No ticket numbers on screen.** The nav menu is PROOFS with Merkle, ZK and
+  Trust kickers instead of SUBSTRATE with R10-2, R10-1 and R11-3; the
+  dashboard section is "Proofs and trust" instead of "v2 Substrate" and its
+  five tiles describe what they count; the token page's section is
+  "Signatures, anchors and proofs" and its three tables and four cards lost
+  their R-numbers. The duress queue, the epoch list, the enrollment summary,
+  the anchor list, the federation viewer and the three use-case banners
+  (bounded revocation, algorithm migration, recovery) say what the mechanism
+  does; the R1 to R6 labels in the duress explainer are the plain properties
+  they always described (constant-time comparison, identical observable
+  behaviour, audit of record, anti-revealing).
+- **No citation of documents the reader does not have.** Every "PDF §9",
+  "Appendix A" and "Appendix E and F" reference is replaced by the fact it
+  was standing in for. The Sanctum parenthetical on the verification form and
+  the exploration footnote on the epoch page are gone; the epoch page's
+  "Substrate-D closure" item, which described a mission roster rather than
+  the system, is deleted.
+- **The demo walkthrough is rewritten in the same register.** Eleven inline
+  version citations and every R-number are gone; C1, C2, C3 and C7 stay,
+  because they are the one identifier scheme the page defines for its reader.
+  Its claim is narrowed to what it can support: the procedures, triggers and
+  constraints named are the ones this repository ships and its tests
+  exercise, and the data is synthetic.
+- **The duress explainer now ends with the operator's next action** (the
+  metric, the alert that pages, and the response runbook) instead of a
+  pointer to a design note.
+- **The em-dash sweep reaches the application.** 137 conversions across 22
+  templates under the same rules the documentation used, plus 52 placeholder
+  glyphs repaired: an em-dash standing in for an empty table cell or a select
+  prompt is now "None", "All", "Select" or the two-hyphen readout the Atlas
+  JavaScript overwrites, so no page renders a comma where a value is absent.
+- Assertions repinned in the same commit: the dashboard section heading, the
+  token page's section and three table headings, the nav menu label, and the
+  federation page's transitive-trust sentence. Suite 467 passed.
+
 ## v9.206 — 2026-09-03 (P1.17 ship 1: the demo and the launcher beacon exist only where they belong)
 
 - **Two presentation gates, on separate axes, derived from state that

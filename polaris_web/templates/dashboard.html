@@ -34,18 +34,16 @@
     </div>
 </div>
 
-{# ================== v2 SUBSTRATE TILES (v8.28) ==================
-   Five tiles surfacing the v2 audit-of-record primitives that previously
-   lived only in the schema and JSON APIs. Each tile links to a detail
-   list page. The duress tile is admin/auditor-gated (R6); the other four
-   are visible to all logged-in roles. #}
-<h2 class="scifi-reveal" style="--reveal-delay: 0.12s">v2 Substrate</h2>
+{# Five tiles for the proof and trust structures behind the tokens. Each
+   links to its list page. The duress tile is admin/auditor only; the other
+   four are visible to every logged-in role. #}
+<h2 class="scifi-reveal" style="--reveal-delay: 0.12s">Proofs and trust</h2>
 <div class="stats-grid scifi-reveal" style="--reveal-delay: 0.14s">
     <a href="{{ url_for('anchors_list') }}" class="stat-card stat-card-link">
         <div class="label">Anchor Batches</div>
         <div class="value">{{ v2_substrate.anchor_batch_count }}</div>
         <div class="sublabel">
-            R10-2 · audit-of-record
+            Merkle commitments, append-only
             {% if v2_substrate.anchor_batch_latest %}
                 · last {{ v2_substrate.anchor_batch_latest.strftime('%m-%d') }}
             {% endif %}
@@ -55,7 +53,7 @@
         <div class="label">ZK Epochs</div>
         <div class="value">{{ v2_substrate.epoch_count }}</div>
         <div class="sublabel">
-            R10-1 · Plonky2 substrate
+            Plonky2 inclusion proofs
             {% if v2_substrate.epoch_latest %}
                 · last {{ v2_substrate.epoch_latest.strftime('%m-%d') }}
             {% endif %}
@@ -65,7 +63,7 @@
         <div class="label">Trust Attestations</div>
         <div class="value">{{ v2_substrate.attestation_active }}</div>
         <div class="sublabel">
-            R11-3 · {{ v2_substrate.attestation_active }} active /
+            {{ v2_substrate.attestation_active }} active /
             {{ v2_substrate.attestation_total }} total
         </div>
     </a>
@@ -73,8 +71,8 @@
         <div class="label">Token Signatures</div>
         <div class="value">{{ v2_substrate.signature_active }}</div>
         <div class="sublabel">
-            R11-1 · {{ v2_substrate.signature_active }} active /
-            {{ v2_substrate.signature_total }} total (M:N)
+            {{ v2_substrate.signature_active }} active /
+            {{ v2_substrate.signature_total }} total
         </div>
     </div>
     {% if current_user.role in ('admin', 'auditor') %}
@@ -82,7 +80,7 @@
         <div class="label">Duress Signals</div>
         <div class="value">{{ v2_substrate.duress_count }}</div>
         <div class="sublabel">
-            R11-5 · admin/auditor only
+            admin and auditor only
             {% if v2_substrate.duress_latest %}
                 · last {{ v2_substrate.duress_latest.strftime('%m-%d') }}
             {% endif %}
@@ -213,7 +211,7 @@
                     <td class="mono alg-name-cell">{{ r.name }}</td>
                     <td>{% if r.quantum_resistant %}<span class="pill pill-pq">PQ</span>{% else %}<span class="pill pill-classical">CLASSICAL</span>{% endif %}</td>
                     <td>{{ r.n }}</td>
-                    <td>—</td>
+                    <td>None</td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -299,7 +297,7 @@
                 {% endfor %}
             </div>
         {% else %}
-            <p style="color: var(--steel); font-style: italic;">No succession chains yet — no token has been replaced through UC-1 reissuance or UC-4 reserve activation.</p>
+            <p style="color: var(--steel); font-style: italic;">No succession chains yet, no token has been replaced through UC-1 reissuance or UC-4 reserve activation.</p>
         {% endif %}
     </div>
 
@@ -341,8 +339,8 @@
             <td class="token-issuer">{{ t.issuing_agency }}</td>
             <td class="mono {% if t.quantum_resistant %}alg-name-pq{% else %}alg-name-classical{% endif %}">{{ t.algorithm }}</td>
             <td>{% if t.quantum_resistant %}<span class="pill pill-pq">PQ</span>{% else %}<span class="pill pill-classical">CLASSICAL</span>{% endif %}</td>
-            <td>{{ t.activated_date.strftime('%Y-%m-%d') if t.activated_date else '—' }}</td>
-            <td>{{ t.expiration_date.strftime('%Y-%m-%d') if t.expiration_date else '—' }}</td>
+            <td>{{ t.activated_date.strftime('%Y-%m-%d') if t.activated_date else 'None' }}</td>
+            <td>{{ t.expiration_date.strftime('%Y-%m-%d') if t.expiration_date else 'None' }}</td>
         </tr>
         {% else %}
         <tr><td colspan="8" class="empty">No active tokens.</td></tr>
@@ -350,7 +348,7 @@
     </tbody>
 </table>
 
-{# v8.35 — "Quick Actions" block removed. The USE CASES dropdown in the
+{# v8.35: "Quick Actions" block removed. The USE CASES dropdown in the
    masthead nav is the single canonical entry point to UC-1 / UC-4 / UC-5 /
    UC-6 / UC-7 / UC-8 / UC-9 / UC-12; duplicating them as buttons on the
    dashboard was visual noise. #}

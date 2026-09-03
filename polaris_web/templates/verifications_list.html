@@ -62,13 +62,13 @@
             <td>{{ r.event_timestamp.strftime('%Y-%m-%d %H:%M') }}</td>
             <td>
                 {%- if r.holder_name %}{{ r.holder_name }}
-                {%- else %}<em style="color: var(--steel-light);">— (ZK)</em>{% endif %}
+                {%- else %}<em style="color: var(--steel-light);">None (ZK)</em>{% endif %}
             </td>
             <td>{{ r.context_type }}</td>
             <td>{{ r.verifier_name }}</td>
             <td><span class="pill pill-{{ r.outcome|lower }}">{{ r.outcome }}</span></td>
             <td><span class="pill pill-{{ r.disclosure_level|lower }}">{{ r.disclosure_level }}</span></td>
-            <td>{{ r.requestor_location or '—' }}</td>
+            <td>{{ r.requestor_location or 'None' }}</td>
         </tr>
         {% else %}
         <tr><td colspan="8" class="empty">No verification events.</td></tr>
@@ -79,7 +79,7 @@
 <p style="font-size: 12px; color: var(--steel); margin-top: 12px;">
     <strong>Note:</strong> This table is append-only by trigger. UPDATE and DELETE operations are rejected
     by the database to preserve the audit invariant (NFR-4). To remove an event, the trigger must be
-    explicitly dropped — a deliberate friction point.
+    explicitly dropped: a deliberate friction point.
 </p>
 {{ render_pager(page, has_prev, has_next, page_size,
                 cursor_mode=cursor_mode|default(false),

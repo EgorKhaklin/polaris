@@ -3,12 +3,12 @@
 {% block content %}
 <h1>Issuer Federation</h1>
 <p class="subtitle">
-    Explicit-only trust attestations (R11-3 / M2-8 / v8.22). An attesting
+    Explicit-only trust attestations. An attesting
     agency vouches that an attested agency may verify in a context, until
     <code>valid_until</code> or explicit revocation. The
     <code>_federation_trust_holds()</code> check gates SUCCESS outcomes
-    on verifications crossing agency boundaries. <strong>NO transitive
-    trust</strong> — if A vouches for B and B vouches for C, A does NOT
+    on verifications crossing agency boundaries. <strong>No transitive
+    trust</strong>: if A vouches for B and B vouches for C, A does NOT
     implicitly vouch for C. Same-agency verifications are implicit.
 </p>
 

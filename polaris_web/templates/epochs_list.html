@@ -3,13 +3,12 @@
 {% block content %}
 <h1>ZK Epochs</h1>
 <p class="subtitle">
-    Plonky2 ZK-SNARK epochs (R10-1 / M2-1 / v8.23). Each closed epoch
+    Plonky2 ZK-SNARK epochs. Each closed epoch
     carries a Merkle root the prover commits to; the SNARK proves Merkle
     inclusion of a token leaf into that root, bound to
     <code>(epoch_id, context_id, nonce)</code> as public inputs. Closing
     is operator-initiated via <code>uc11_close_epoch</code> under a
-    per-procedure advisory lock — the 6th lock granularity in the
-    catalog, and the first non-per-entity entry.
+    per-procedure advisory lock.
 </p>
 
 <div class="actions-bar">
@@ -96,12 +95,9 @@
         <li><strong>Closure:</strong> <code>uc11_close_epoch</code> takes a list of <code>(token_id, leaf_hash, proof_path)</code> tuples and a precomputed <code>merkle_root</code>, then writes one <code>TokenStateEpoch</code> + N <code>TokenStateEpochLeaf</code> rows under a per-procedure <code>pg_advisory_xact_lock</code>.</li>
         <li><strong>Public inputs:</strong> the Plonky2 circuit binds the proof to <code>(epoch_id, context_id, nonce)</code>. Replay with a different nonce fails verification. Cross-epoch substitution fails verification.</li>
         <li><strong>Substrate:</strong> Plonky2 is FRI-based (post-quantum-comfortable). The Rust crate <code>polaris_zk/</code> is the prover/verifier; <code>polaris_web/zk.py</code> is the Python subprocess wrapper.</li>
-        <li><strong>Substrate-D closure:</strong> M2-1 is the 5th and final substrate-D mission item. Every primitive in PDF Appendices E and F is in-tree or scaffolded.</li>
     </ol>
     <p class="footnote">
         Mechanism design: <code>DEVNOTES/ships/zk-snark.md</code>.
-        The exploration Sanctum picked C3+A4+B3 (transparent setup,
-        Plonky2, hybrid-Merkle reusing R10-2).
     </p>
 </div>
 {% endblock %}

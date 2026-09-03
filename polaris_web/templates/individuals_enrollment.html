@@ -3,10 +3,9 @@
 {% block content %}
 <h1>Civic Enrollment Summary</h1>
 <p class="subtitle">
-    Per-jurisdiction × status counts of individuals in each enrollment state
-    (R11-4 / M2-9). The PDF §9 population-coverage requirement: civic queries
-    answer "is this person known" without requiring an active token.
-    <strong>Counts only</strong> — per-individual enumeration of NOT_ENROLLED
+    Per-jurisdiction counts of individuals in each enrollment state. Civic
+    queries answer "is this person known" without requiring an active token.
+    <strong>Counts only</strong>: per-individual enumeration of NOT_ENROLLED
     is deliberately not a first-class query.
 </p>
 
@@ -14,7 +13,7 @@
     <form method="get" class="inline-form">
         <label for="jurisdiction">Jurisdiction</label>
         <select id="jurisdiction" name="jurisdiction" data-submit-on-change>
-            <option value="">— all —</option>
+            <option value="">All</option>
             {% for j in jurisdictions %}
                 <option value="{{ j.jurisdiction }}"
                         {% if j.jurisdiction == jurisdiction_filter %}selected{% endif %}>
@@ -65,7 +64,7 @@
         <dt><code>ENROLLED</code></dt>
         <dd>Holds at least one non-terminal IdentityToken (RESERVE or ACTIVE). Recorded as a policy event, not auto-derived from token state.</dd>
         <dt><code>EXEMPT</code></dt>
-        <dd>Civic policy recognition of non-token participation (biometric incompatibility, religious exemption, conscientious objection). The PDF §9 "accepted path without tokens" vocabulary.</dd>
+        <dd>Civic policy recognition of non-token participation (biometric incompatibility, religious exemption, conscientious objection). The accepted path without a token.</dd>
         <dt><code>LAPSED</code></dt>
         <dd>Was ENROLLED, now isn't, by policy event. Distinct from NOT_ENROLLED (never enrolled).</dd>
     </dl>

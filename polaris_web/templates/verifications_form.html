@@ -33,9 +33,9 @@
         <div class="form-group">
             <label for="token_id">Token (per disclosure rules)</label>
             <select id="token_id" name="token_id">
-                <option value="">— (none / ZERO_KNOWLEDGE) —</option>
+                <option value="">None (zero-knowledge)</option>
                 {% for t in tokens %}
-                    <option value="{{ t.token_id }}">#{{ t.token_id }} — {{ t.legal_name }} ({{ t.status }})</option>
+                    <option value="{{ t.token_id }}">#{{ t.token_id }}, {{ t.legal_name }} ({{ t.status }})</option>
                 {% endfor %}
             </select>
             <span class="help" id="token-hint">For SELECTIVE, optional. The disclosure-consistency check will reject inconsistent combinations.</span>
@@ -72,17 +72,16 @@
         </div>
     </div>
 
-    {# v9.20 — verification-purpose lineage (Sanctum:
-       a recorded decision
-       Position A). Operator-supplied free-text reason for THIS verification.
-       Anti-coercion-direct: a coerced verification leaves a stated-purpose
-       trail. Max 280 chars (enforced by DB CHECK). #}
+    {# Verification-purpose lineage: an operator-supplied free-text reason for
+       this verification, kept permanently, so a coerced verification leaves
+       the coercer's stated context in the audit chain. Max 280 chars,
+       enforced by a DB CHECK. #}
     <div class="form-row">
         <div class="form-group" style="flex: 1 1 100%;">
             <label for="requesting_purpose_text">Stated Purpose (optional)</label>
             <input type="text" id="requesting_purpose_text"
                    name="requesting_purpose_text" maxlength="280"
-                   placeholder="e.g., border crossing at JFK Terminal 4 — random check"
+                   placeholder="e.g., border crossing at JFK Terminal 4, random check"
                    autocomplete="off">
             <span class="help">
                 Free-text reason for this specific verification. Stored
@@ -93,13 +92,13 @@
         </div>
     </div>
 
-    {# R11-5 / M2-10 (v8.24): optional holder code input. R6 anti-revealing
-       posture — the label and hint are deliberately neutral so a coercer
+    {# Optional holder code input. Anti-revealing posture: the label and
+       hint are deliberately neutral so a coercer
        glancing at the operator's screen sees "secondary code", not "duress".
        The backend in app.py reads request.form.get('duress_code'); on match
        against IdentityToken.duress_code_hash (Werkzeug constant-time
        comparison), a silent DuressEvent is written and the user-visible
-       verification flow proceeds identically (R2 audit refinement). #}
+       verification flow proceeds identically. #}
     <div class="form-row">
         <div class="form-group">
             <label for="duress_code">Holder verification code (optional)</label>
