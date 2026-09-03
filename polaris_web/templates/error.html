@@ -1,45 +1,54 @@
 {% extends "base.html" %}
-{% block title %}{{ code }} · {{ status_word|default('Error') }}{% endblock %}
+{% set headline = {
+    400: 'That request was not understood',
+    403: 'You do not have access to this',
+    404: 'Nothing here',
+    413: 'That request was too large',
+    429: 'Too many requests',
+    500: 'Something failed on the server'
+   }.get(code, 'Something went wrong') %}
+{% block title %}{{ code }} · {{ headline }}{% endblock %}
 {% block body_class %} body-error{% endblock %}
 {% block content %}
 
 <section class="error-page" aria-labelledby="error-title">
     <div class="error-code" aria-hidden="true">{{ code }}</div>
-    <h1 id="error-title" class="error-title">{{ status_word|default('Something went wrong') }}</h1>
+    <h1 id="error-title" class="error-title">{{ headline }}</h1>
     <p class="error-message">{{ message }}</p>
 
     {% if code == 404 %}
         <p class="error-hint">
-            The path you requested isn't part of Polaris's public
-            surface. If you arrived here by following a link in
-            our own documentation, that's a bug: please let an
-            operator know.
+            That path is not part of Polaris. If you followed a link from
+            Polaris's own documentation, the link is wrong: tell an operator,
+            and quote the request id below.
         </p>
     {% elif code == 403 %}
         <p class="error-hint">
-            You're signed in, but this resource needs a different
-            role. Contact an administrator if you need access.
+            You are signed in, but this page needs a different role. An
+            administrator can grant it.
+        </p>
+    {% elif code == 429 %}
+        <p class="error-hint">
+            The rate limit is per address, and it resets on a rolling
+            one-minute window.
         </p>
     {% elif code == 500 %}
         <p class="error-hint">
-            The server hit an unexpected condition. The incident
-            is logged. If the problem persists, page the on-call
-            operator with the timestamp from your browser.
-        </p>
-    {% elif code == 503 %}
-        <p class="error-hint">
-            Polaris is reporting unhealthy on
-            <code>/api/health</code>. The dependency that's failing
-            is in the structured response: typically the database
-            or the rate-limiter backend.
+            The failure is recorded in the log with the request id below. If it
+            happens again, send that id to the on-call operator; the response
+            runbooks are in <code>docs/operator/RUNBOOKS.md</code>.
         </p>
     {% endif %}
 
+    <p class="error-requestid">
+        Request id <code>{{ request_id }}</code>
+    </p>
+
     <div class="error-actions">
         {% if current_user %}
-            <a href="{{ url_for('dashboard') }}" class="btn btn-gold">Return to Dashboard</a>
+            <a href="{{ url_for('dashboard') }}" class="btn btn-gold">Back to the dashboard</a>
         {% else %}
-            <a href="{{ url_for('home') }}" class="btn btn-gold">Return to overview</a>
+            <a href="{{ url_for('home') }}" class="btn btn-gold">Back to the overview</a>
             <a href="{{ url_for('login') }}" class="btn btn-ghost">Sign in</a>
         {% endif %}
     </div>

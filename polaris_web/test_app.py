@@ -476,7 +476,7 @@ class IndividualCRUDTests(PolarisTestCase):
             'jurisdiction': 'US-NJ',
         }, follow_redirects=True)
         self.assertEqual(r.status_code, 200)
-        self.assertHTML(r, 'Test Subject Alpha', 'Created individual')
+        self.assertHTML(r, 'Test Subject Alpha', 'is created')
 
     def test_create_individual_form_renders(self):
         r = self.client.get('/individuals/new')
@@ -490,7 +490,7 @@ class IndividualCRUDTests(PolarisTestCase):
             'jurisdiction': 'US-PA',
         }, follow_redirects=True)
         self.assertEqual(r.status_code, 200)
-        self.assertHTML(r, 'Egor Khaklin (renamed)', 'Updated individual')
+        self.assertHTML(r, 'Egor Khaklin (renamed)', 'is updated')
 
     def test_edit_nonexistent_individual_404s(self):
         r = self.client.get('/individuals/9999/edit')
@@ -529,7 +529,7 @@ class AgencyCRUDTests(PolarisTestCase):
             'authorization_level': '3',
         }, follow_redirects=True)
         self.assertEqual(r.status_code, 200)
-        self.assertHTML(r, 'Test Agency Beta', 'Created agency')
+        self.assertHTML(r, 'Test Agency Beta', 'is created')
 
     def test_create_agency_with_invalid_type_fails(self):
         r = self._post('/agencies/new', data={
@@ -552,7 +552,7 @@ class AgencyCRUDTests(PolarisTestCase):
             'authorization_level': '2',
         }, follow_redirects=True)
         self.assertEqual(r.status_code, 200)
-        self.assertHTML(r, 'First National Bank (revised)', 'Updated agency')
+        self.assertHTML(r, 'First National Bank (revised)', 'is updated')
 
 
 # ============================================================================
@@ -598,7 +598,7 @@ class TokenTests(PolarisTestCase):
                              data={'new_status': 'DORMANT'},
                              follow_redirects=True)
         self.assertEqual(r.status_code, 200)
-        self.assertHTML(r, 'Transitioned token #2 to DORMANT')
+        self.assertHTML(r, 'Token #2 is now DORMANT')
 
     def test_token_state_transition_illegal_blocked_by_trigger(self):
         """REVOKED → ACTIVE is illegal (T5 is REVOKED)."""
@@ -688,7 +688,7 @@ class UC1Tests(PolarisTestCase):
             'contexts': ['1', '2'],
         }, follow_redirects=True)
         self.assertEqual(r.status_code, 200)
-        self.assertHTML(r, 'Issued and activated token', 'Test UC1 Holder')
+        self.assertHTML(r, 'is issued and active', 'Test UC1 Holder')
 
     def test_issuance_signature_comes_from_signing_module(self):
         """v9.58: the issuance route stores the signing module's output in
@@ -712,7 +712,7 @@ class UC1Tests(PolarisTestCase):
             'contexts': ['1'],
         }, follow_redirects=True)
         self.assertEqual(r.status_code, 200)
-        self.assertHTML(r, 'Issued and activated token')
+        self.assertHTML(r, 'is issued and active')
 
         conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
         try:
@@ -868,7 +868,7 @@ class UC4Tests(PolarisTestCase):
             'published_location': 'https://crl.idtoken.gov/2026/05/UC4-TEST.crl',
         }, follow_redirects=True)
         self.assertEqual(r.status_code, 200)
-        self.assertHTML(r, 'Activated reserve token')
+        self.assertHTML(r, 'is now active')
 
         # Verify the swap: previously-ACTIVE is now LOST; previously-RESERVE is now ACTIVE
         conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
@@ -916,7 +916,7 @@ class UC5Tests(PolarisTestCase):
             'validity_months': '24',
         }, follow_redirects=True)
         self.assertEqual(r.status_code, 200)
-        self.assertHTML(r, 'Created device binding')
+        self.assertHTML(r, 'Device binding', 'is created')
 
     def test_bind_to_revoked_token_rejected(self):
         """T5 is REVOKED; UC-5 must reject."""
@@ -3110,7 +3110,7 @@ class DuressCodeTests(PolarisTestCase):
             'duress_code': self.DEMO_DURESS_CODE,
         }, follow_redirects=True)
         self.assertEqual(r.status_code, 200)
-        self.assertHTML(r, 'Recorded verification event')
+        self.assertHTML(r, 'Verification event', 'is recorded')
 
         with self._db() as conn, conn.cursor() as cur:
             cur.execute("SELECT count(*) AS n FROM DuressEvent")
@@ -3393,7 +3393,7 @@ class VerificationTests(PolarisTestCase):
             'disclosure_level': 'SELECTIVE',
         }, follow_redirects=True)
         self.assertEqual(r.status_code, 200)
-        self.assertHTML(r, 'Recorded verification event')
+        self.assertHTML(r, 'Verification event', 'is recorded')
 
     def test_zero_knowledge_with_token_rejected(self):
         """ZERO_KNOWLEDGE events MUST have token_id NULL — the form coerces this,
@@ -3408,7 +3408,7 @@ class VerificationTests(PolarisTestCase):
         }, follow_redirects=True)
         self.assertEqual(r.status_code, 200)
         # Form sets token_id to NULL for ZK; should succeed
-        self.assertHTML(r, 'Recorded verification event')
+        self.assertHTML(r, 'Verification event', 'is recorded')
 
     def test_full_without_token_rejected(self):
         """FULL events MUST have token_id; the constraint should reject."""
@@ -3526,7 +3526,7 @@ class ErrorHandlingTests(PolarisTestCase):
     def test_404_renders_error_page(self):
         r = self.client.get('/nonexistent-route')
         self.assertEqual(r.status_code, 404)
-        self.assertHTML(r, '404', 'Page not found')
+        self.assertHTML(r, '404', 'Nothing here')
 
 
 class GunicornConfigTests(unittest.TestCase):
@@ -8713,5 +8713,5 @@ class FlashBoundTests(PolarisTestCase):
         # The most recent messages survive, so a browser rendering next still sees them.
         r = self.client.get('/verifications')
         self.assertEqual(r.status_code, 200)
-        self.assertHTML(r, 'Recorded verification event')
+        self.assertHTML(r, 'Verification event', 'is recorded')
 

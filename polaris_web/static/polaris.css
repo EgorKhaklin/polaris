@@ -1067,6 +1067,8 @@ td.actions form + form { margin-left: 6px; }
 /* ----- 10 Flash messages --------------------------------------------------- */
 
 .flash-region { margin: 0 0 18px; }
+.error-requestid { margin: 14px 0 0; font-size: 12px; color: var(--steel-light); }
+.error-requestid code { font-size: 12px; }
 
 .flash {
     display: flex;
@@ -1096,6 +1098,42 @@ td.actions form + form { margin-left: 6px; }
 .flash-error   .flash-icon { color: var(--red); }
 .flash-info    { border-color: rgba(93,214,255,0.45);  background: rgba(9, 26, 38, 0.85);  color: #cfeefb; }
 .flash-info    .flash-icon { color: var(--cyan); }
+/* A warning is not a neutral notice: the WebAuthn lockout countdown renders
+   here, and it has to read as something the operator must act on. */
+.flash-warning { border-color: rgba(240,180,74,0.5);  background: rgba(38, 28, 8, 0.85);  color: #f7e2b6; }
+.flash-warning .flash-icon { color: var(--gold); }
+/* Error and warning flashes never auto-dismiss (they are the only report of a
+   failed write), so they carry a dismiss control instead. */
+.flash-dismiss {
+    margin-left: auto;
+    background: none;
+    border: 0;
+    color: inherit;
+    opacity: 0.6;
+    cursor: pointer;
+    font-size: 13px;
+    line-height: 1;
+    padding: 2px 4px;
+}
+.flash-dismiss:hover, .flash-dismiss:focus-visible { opacity: 1; }
+/* A warning is not a neutral notice: the WebAuthn lockout countdown renders
+   here, and it has to read as something the operator must act on. */
+.flash-warning { border-color: rgba(240,180,74,0.5);  background: rgba(38, 28, 8, 0.85);  color: #f7e2b6; }
+.flash-warning .flash-icon { color: var(--gold); }
+/* Error and warning flashes never auto-dismiss (they are the only report of a
+   failed write), so they carry a dismiss control instead. */
+.flash-dismiss {
+    margin-left: auto;
+    background: none;
+    border: 0;
+    color: inherit;
+    opacity: 0.6;
+    cursor: pointer;
+    font-size: 13px;
+    line-height: 1;
+    padding: 2px 4px;
+}
+.flash-dismiss:hover, .flash-dismiss:focus-visible { opacity: 1; }
 
 /* ----- 11 Dashboard data-viz ----------------------------------------------- */
 

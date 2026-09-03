@@ -5,6 +5,38 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.208 — 2026-09-03 (P1.17 ship 3: one voice for every message the operator reads)
+
+- **One flash rule, applied to all 44 call sites:** a complete declarative
+  sentence with terminal punctuation, the object named before the outcome,
+  and no colon-prefixed status word. "Created individual #7" becomes
+  "Individual #7 is created."; "Transitioned token #2 to DORMANT" becomes
+  "Token #2 is now DORMANT."; "Issuance blocked: ..." and "Migration blocked:
+  ..." become "The token could not be issued." and "The migration could not
+  be completed.", each carrying the database's own sentence after it;
+  "Federation trust missing: ..." states what is missing and what to do about
+  it. The WebAuthn countdown pluralizes its days instead of writing "day(s)".
+- **A warning now looks like a warning.** `.flash-warning` has its own style
+  and glyph; before this, the enrollment-deadline countdown rendered as a
+  neutral notice because no rule matched its category.
+- **Errors and warnings stay until dismissed.** The 4.5-second timer erased
+  the only report an operator got of a failed write. Success flashes still
+  fade; error and warning flashes carry a dismiss control.
+- **The error page tells the operator what happened and gives them the one
+  string to quote.** The headline is derived from the status code in the
+  template (nothing ever passed the `status_word` it used to read, so every
+  error page said "Something went wrong"), the request id is rendered and
+  matches the `X-Request-ID` header and the log line, the hints address the
+  operator directly and point at the runbooks, and the 503 branch is deleted:
+  no handler could ever have reached it.
+- **The SQL console describes this deployment**, not the development
+  database: the hardcoded `polaris_test` and `polaris_app` names are gone,
+  and the read-only connection is stated alongside the keyword rule and the
+  caps.
+- **The login form speaks in sentences**: "Enter your username." rather than
+  "OPERATOR ID REQUIRED", and the format rule is spelled out.
+- Ten flash assertions repinned in the same commit. Suite 467 passed.
+
 ## v9.207 — 2026-09-03 (P1.17 ship 2: the application names things for the operator, not for the backlog)
 
 Every internal identifier is gone from what an operator reads, and the

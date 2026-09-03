@@ -718,6 +718,9 @@ def _inject_security_context():
         'demo_mode': DEMO_MODE,
         'launcher_watch': LAUNCHER_WATCH,
         'atlas_provenance': atlas_provenance(),
+        # The error page shows this so an operator can quote one string that
+        # matches the log line and the X-Request-ID response header.
+        'request_id': observability.get_request_id(),
     })
     return ctx
 
@@ -853,9 +856,10 @@ def login():
 
         if status == 'grace_period' and deadline_days is not None:
             flash(
-                f'WebAuthn enrollment required within {deadline_days} day(s). '
-                f'Enroll at /settings/webauthn before the deadline to avoid '
-                f'being locked out.',
+                f'You have {deadline_days} '
+                f'{"day" if deadline_days == 1 else "days"} left to enroll a '
+                f'security key. Enroll one at /settings/webauthn before the '
+                f'deadline, or you will be locked out of this account.',
                 'warning')
 
         # Honor ?next= but only if it's a same-origin path (CWE-601 open redirect).
@@ -874,7 +878,7 @@ def login():
 def logout():
     """Logout requires POST + CSRF — prevents drive-by logout via image tags."""
     security.logout_user(get_db)
-    flash("You have been logged out.", 'success')
+    flash('You are signed out.', 'success')
     return redirect(url_for('login'))
 
 
@@ -1083,9 +1087,9 @@ def webauthn_delete_credential(credential_id):
         security._audit(get_db, 'WEBAUTHN_DEREGISTERED',
             username=user['username'], user_id=user['user_id'],
             detail=f'cred_id={credential_id[:16]}')
-        flash('WebAuthn credential removed.', 'success')
+        flash('That WebAuthn credential is removed.', 'success')
     else:
-        flash('Credential not found.', 'error')
+        flash('That credential no longer exists.', 'error')
     return redirect(url_for('webauthn_settings'))
 
 
@@ -1094,22 +1098,22 @@ def bad_request(e):
     return render_template('error.html',
                            code=400,
                            message=getattr(e, 'description', None)
-                                   or 'Bad request.'), 400
+                                   or 'The request was not understood.'), 400
 
 
 @app.errorhandler(403)
 def forbidden(e):
     return render_template('error.html',
                            code=403,
-                           message='Forbidden — your account does not have '
-                                   'permission for this action.'), 403
+                           message='Your account does not have permission for '
+                                   'this action.'), 403
 
 
 @app.errorhandler(413)
 def request_entity_too_large(e):
     return render_template('error.html',
                            code=413,
-                           message='Request body too large. The maximum is '
+                           message='That request body is too large. The maximum is '
                                    f'{security.MAX_REQUEST_BODY_BYTES // 1024} KB.'), 413
 
 
@@ -1117,8 +1121,8 @@ def request_entity_too_large(e):
 def too_many_requests(e):
     return render_template('error.html',
                            code=429,
-                           message='Too many requests. Please slow down and '
-                                   'try again in a minute.'), 429
+                           message='Too many requests from this address. Wait a '
+                                   'minute and try again.'), 429
 
 
 # ============================================================================
@@ -3180,7 +3184,7 @@ def individuals_new():
                   request.form['date_of_birth'],
                   request.form['jurisdiction']),
                 fetch='returning')['individual_id']
-            flash(f'Created individual #{new_id}', 'success')
+            flash(f'Individual #{new_id} is created.', 'success')
             return redirect(url_for('individuals_list'))
         except psycopg2.Error as e:
             flash(db_error_to_message(e), 'error')
@@ -3203,7 +3207,7 @@ def individuals_edit(ind_id):
                   request.form['jurisdiction'],
                   ind_id),
                 fetch='none')
-            flash(f'Updated individual #{ind_id}', 'success')
+            flash(f'Individual #{ind_id} is updated.', 'success')
             return redirect(url_for('individuals_list'))
         except psycopg2.Error as e:
             flash(db_error_to_message(e), 'error')
@@ -3223,9 +3227,9 @@ def individuals_delete(ind_id):
         n = query('DELETE FROM Individual WHERE individual_id=%s',
                   (ind_id,), fetch='none')
         if n:
-            flash(f'Deleted individual #{ind_id}', 'success')
+            flash(f'Individual #{ind_id} is deleted.', 'success')
         else:
-            flash(f'Individual #{ind_id} not found', 'error')
+            flash(f'Individual #{ind_id} does not exist.', 'error')
     except psycopg2.Error as e:
         flash(db_error_to_message(e), 'error')
     return redirect(url_for('individuals_list'))
@@ -3299,7 +3303,7 @@ def agencies_new():
                   request.form['jurisdiction'],
                   int(request.form['authorization_level'])),
                 fetch='returning')['agency_id']
-            flash(f'Created agency #{new_id}', 'success')
+            flash(f'Agency #{new_id} is created.', 'success')
             return redirect(url_for('agencies_list'))
         except (psycopg2.Error, ValueError) as e:
             flash(db_error_to_message(e), 'error')
@@ -3323,7 +3327,7 @@ def agencies_edit(ag_id):
                   int(request.form['authorization_level']),
                   ag_id),
                 fetch='none')
-            flash(f'Updated agency #{ag_id}', 'success')
+            flash(f'Agency #{ag_id} is updated.', 'success')
             return redirect(url_for('agencies_list'))
         except (psycopg2.Error, ValueError) as e:
             flash(db_error_to_message(e), 'error')
@@ -3341,9 +3345,9 @@ def agencies_delete(ag_id):
     try:
         n = query('DELETE FROM Agency WHERE agency_id=%s', (ag_id,), fetch='none')
         if n:
-            flash(f'Deleted agency #{ag_id}', 'success')
+            flash(f'Agency #{ag_id} is deleted.', 'success')
         else:
-            flash(f'Agency #{ag_id} not found', 'error')
+            flash(f'Agency #{ag_id} does not exist.', 'error')
     except psycopg2.Error as e:
         flash(db_error_to_message(e), 'error')
     return redirect(url_for('agencies_list'))
@@ -3879,7 +3883,7 @@ def tokens_transition(tok_id):
                             (new_status, tok_id))
 
             conn.commit()
-        flash(f'Transitioned token #{tok_id} to {new_status}', 'success')
+        flash(f'Token #{tok_id} is now {new_status}.', 'success')
     except psycopg2.Error as e:
         conn.rollback()
         flash(db_error_to_message(e), 'error')
@@ -3900,9 +3904,9 @@ def tokens_delete(tok_id):
     try:
         n = query('DELETE FROM IdentityToken WHERE token_id=%s', (tok_id,), fetch='none')
         if n:
-            flash(f'Deleted token #{tok_id}', 'success')
+            flash(f'Token #{tok_id} is deleted.', 'success')
         else:
-            flash(f'Token #{tok_id} not found', 'error')
+            flash(f'Token #{tok_id} does not exist.', 'error')
     except psycopg2.Error as e:
         flash(db_error_to_message(e), 'error')
     return redirect(url_for('tokens_list'))
@@ -3952,10 +3956,10 @@ def uc1_issue():
                 sig_pubkey,
             ), fetch='returning')['token_id']  # 'returning' commits the transaction
             _record_agency_event('issue', request.form['issuing_agency_id'])
-            flash(f'Issued and activated token #{new_token_id}', 'success')
+            flash(f'Token #{new_token_id} is issued and active.', 'success')
             return redirect(url_for('tokens_detail', tok_id=new_token_id))
         except (pqc_signing.PQCUnavailableError, pqc_signing.SigningError) as e:
-            flash(f'Issuance blocked: {e}', 'error')
+            flash(f'The token could not be issued. {e}', 'error')
         except (psycopg2.Error, ValueError, KeyError) as e:
             flash(db_error_to_message(e), 'error')
             if _quota_refused(e, 'issue', request.form.get('issuing_agency_id')):
@@ -3991,7 +3995,7 @@ def uc4_activate_reserve():
                 int(request.form['reserve_token_id']),
                 request.form['published_location'],
             ), fetch='returning')['token_id']  # 'returning' commits
-            flash(f'Activated reserve token #{promoted}', 'success')
+            flash(f'Reserve token #{promoted} is now active.', 'success')
             return redirect(url_for('tokens_detail', tok_id=promoted))
         except (psycopg2.Error, ValueError) as e:
             flash(db_error_to_message(e), 'error')
@@ -4036,7 +4040,7 @@ def uc5_bind_device():
                 request.form['binding_method'],
                 int(request.form.get('validity_months', 12)),
             ), fetch='returning')['binding_id']  # 'returning' commits
-            flash(f'Created device binding #{binding_id}', 'success')
+            flash(f'Device binding #{binding_id} is created.', 'success')
             return redirect(url_for('tokens_detail', tok_id=int(request.form['token_id'])))
         except (psycopg2.Error, ValueError) as e:
             flash(db_error_to_message(e), 'error')
@@ -4127,8 +4131,8 @@ def uc8_revoke():
             # agency (the bound applies to it, as in R11-6), not the actor.
             _record_agency_event('revoke', _issuing_agency_of(token_id))
             flash(
-                f'Revoked token #{token_id}'
-                + (' with co-signer' if cosigner_agency_id else ''),
+                f'Token #{token_id} is revoked'
+                + (' with a co-signer.' if cosigner_agency_id else '.'),
                 'success')
             return redirect(url_for('tokens_detail', tok_id=token_id))
         except (psycopg2.Error, ValueError) as e:
@@ -4187,8 +4191,8 @@ def uc9_initiate():
             finally:
                 conn.close()
             flash(
-                f'Recovery request opened for individual #{individual_id}. '
-                'Cool-down: 48 hours.',
+                f'A recovery request is open for individual #{individual_id}. '
+                'The cool-down period is 48 hours.',
                 'success')
             return redirect(url_for('uc9_queue'))
         except (psycopg2.Error, ValueError) as e:
@@ -4279,7 +4283,7 @@ def uc9_decide(recovery_id):
             finally:
                 conn.close()
 
-            flash(f'Recovery #{recovery_id} marked {decision}.', 'success')
+            flash(f'Recovery request #{recovery_id} is {decision}.', 'success')
             return redirect(url_for('uc9_queue'))
         except (psycopg2.Error, ValueError) as e:
             flash(db_error_to_message(e), 'error')
@@ -4301,7 +4305,7 @@ def uc9_decide(recovery_id):
         WHERE  r.recovery_id = %s
     """, (recovery_id,), fetch='one')
     if not req:
-        flash(f'Recovery #{recovery_id} not found', 'error')
+        flash(f'Recovery request #{recovery_id} does not exist.', 'error')
         return redirect(url_for('uc9_queue'))
 
     algorithms = query("""
@@ -4360,12 +4364,12 @@ def uc6_migrate():
                 conn.close()
 
             flash(
-                f'Migrated token #{token_id} to algorithm #{new_algorithm}'
-                + (' (old deprecated)' if deprecate_old else ''),
+                f'Token #{token_id} is migrated to algorithm #{new_algorithm}'
+                + (', and the previous signature is deprecated.' if deprecate_old else '.'),
                 'success')
             return redirect(url_for('tokens_detail', tok_id=token_id))
         except (pqc_signing.PQCUnavailableError, pqc_signing.SigningError) as e:
-            flash(f'Migration blocked: {e}', 'error')
+            flash(f'The migration could not be completed. {e}', 'error')
         except (psycopg2.Error, ValueError) as e:
             flash(db_error_to_message(e), 'error')
 
@@ -4731,10 +4735,10 @@ def verifications_new():
             if outcome == 'SUCCESS' and not _federation_trust_holds(
                     verifier_id, token_id_val, context_id):
                 flash(
-                    'Federation trust missing: verifier agency has no active '
-                    'attestation toward the token\'s issuing agency for this '
-                    'context. Either record outcome=UNAUTHORIZED, or create '
-                    'the attestation via /api/federation/attest first.',
+                    'The verifying agency holds no active attestation toward '
+                    'this token\'s issuing agency for this context. Record '
+                    'the outcome as UNAUTHORIZED, or create the attestation '
+                    'first.',
                     'error')
                 return redirect(url_for('verifications_new'))
 
@@ -4793,7 +4797,7 @@ def verifications_new():
                 except Exception:
                     pass
             _record_agency_event('verify', verifier_id)
-            flash(f'Recorded verification event #{event_id}', 'success')
+            flash(f'Verification event #{event_id} is recorded.', 'success')
             return redirect(url_for('verifications_list'))
         except (psycopg2.Error, ValueError) as e:
             flash(db_error_to_message(e), 'error')
@@ -4960,14 +4964,16 @@ def sql_query():
 def page_not_found(e):
     return render_template('error.html',
                            code=404,
-                           message='Page not found'), 404
+                           message='No page exists at that address.'), 404
 
 
 @app.errorhandler(500)
 def server_error(e):
     return render_template('error.html',
                            code=500,
-                           message='Internal server error'), 500
+                           message='The request could not be completed. The '
+                                   'failure is recorded in the log with the '
+                                   'request id below.'), 500
 
 
 # ============================================================================

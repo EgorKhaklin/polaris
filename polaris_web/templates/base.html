@@ -121,8 +121,11 @@
                 <div class="flash-region">
                     {% for category, message in messages %}
                         <div class="flash flash-{{ category }}">
-                            <span class="flash-icon">{% if category == 'success' %}✓{% elif category == 'error' %}✕{% else %}ⓘ{% endif %}</span>
+                            <span class="flash-icon">{% if category == 'success' %}✓{% elif category == 'error' %}✕{% elif category == 'warning' %}⚠{% else %}ⓘ{% endif %}</span>
                             <span class="flash-text">{{ message }}</span>
+                            {% if category != 'success' %}
+                            <button type="button" class="flash-dismiss" aria-label="Dismiss this message">✕</button>
+                            {% endif %}
                         </div>
                     {% endfor %}
                 </div>

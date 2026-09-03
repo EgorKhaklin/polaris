@@ -1,9 +1,7 @@
-/* v8.14 — Custom login validation (CSP-compliant external script).
-   Replaces the browser's default "Please fill out this field" popup
-   (white box + orange !) with an inline sci-fi error line.
-
-   Required: <form class="login-form" novalidate> with two inputs
-   (#username, #password) and a <div id="loginError" class="login-error">. */
+/* Client-side login validation, in place of the browser's own popup.
+   Required markup: <form class="login-form" novalidate> with #username and
+   #password inputs and a <div id="loginError" class="login-error">. The server
+   validates the same fields again; this only saves a round trip. */
 
 (function () {
     'use strict';
@@ -40,17 +38,17 @@
         var pv = p.value;
         if (!uv) {
             e.preventDefault();
-            setError('OPERATOR ID REQUIRED', u);
+            setError('Enter your username.', u);
             return;
         }
         if (!/^[a-z0-9._-]{3,50}$/.test(uv)) {
             e.preventDefault();
-            setError('OPERATOR ID FORMAT INVALID — 3-50 chars (a-z, 0-9, . _ -)', u);
+            setError('A username is 3 to 50 characters: lower-case letters, digits, dot, underscore or hyphen.', u);
             return;
         }
         if (!pv) {
             e.preventDefault();
-            setError('CREDENTIAL REQUIRED', p);
+            setError('Enter your password.', p);
             return;
         }
     });

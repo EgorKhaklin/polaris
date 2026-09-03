@@ -3,9 +3,12 @@
 {% block content %}
 <h1>SQL Console</h1>
 <p class="subtitle">
-    Read-only query interface against the polaris_test database. Only <code>SELECT</code> and
-    <code>WITH</code> queries are accepted; the <code>polaris_app</code> role has no DDL privileges.
-    Queries are capped at <code>{{ max_length }}</code> characters and <code>{{ (timeout_ms/1000)|int }}s</code> execution time.
+    A read-only query interface against this deployment's database. Only
+    <code>SELECT</code> and <code>WITH</code> queries are accepted, the
+    connection is opened read-only so the engine refuses a write smuggled
+    through a CTE, and the application's database role holds no DDL privileges.
+    A query is capped at <code>{{ max_length }}</code> characters and
+    <code>{{ (timeout_ms/1000)|int }}s</code> of execution time.
 </p>
 
 <form method="post" class="standard wide">
