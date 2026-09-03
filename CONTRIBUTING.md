@@ -1,186 +1,105 @@
 # Contributing to Polaris
 
-Polaris is a national identity token system reference implementation. It is
-maintained as a coherent single-author codebase by Egor Khaklin / VANTA,
-with the assistance of Claude (the agent), working session by session
-against `MISSION.md`. Contributions are welcome, but this is not
-a typical open-source project; the bar is unusual, and the process
-documented here reflects that.
+**Reader:** anyone about to open an issue or a pull request. **Job:** what a
+change needs before it can merge, and what will not be accepted at all.
 
-Participation is governed by the [Code of Conduct](CODE_OF_CONDUCT.md).
+Polaris is a reference implementation of a national identity-token system,
+maintained by a single author with AI assistance (the working sessions are
+recorded in the CHANGELOG). Contributions are welcome. The bar is high because
+the guarantees are constitutional: the ten constraints in
+[MISSION.md](MISSION.md) are enforced in the database schema, and a change
+that weakens one is refused regardless of how it is submitted. Participation
+is governed by the [Code of Conduct](CODE_OF_CONDUCT.md).
 
-If you're here from the GitHub navigation chrome looking for the "how do I
-file a PR" page: read the **Quick path** below. If you're considering a
-substantive change to architecture or constitutional constraints, read the
-whole document.
+## Small fixes
 
----
+A typo, a broken link, a missed test case, a documentation gap, an isolated
+bug: open an issue or go straight to a pull request. The
+[pull-request template](.github/PULL_REQUEST_TEMPLATE.md) asks for the
+motivation, the change and the blast radius; that is all a small fix needs.
 
-## Quick path (small fixes)
+## Substantive changes
 
-- Typo, link rot, bare reference fix, missed test case, documentation gap.
-- Open an issue first; submit a PR with a clear before/after.
-- PR description must include: motivation, change, blast radius.
-- Small fixes do not need a design discussion first.
+New behaviour, or anything touching the schema, the security boundary or the
+constraints: open a [change proposal](.github/ISSUE_TEMPLATE/change_proposal.yml)
+first. It asks which of C1 to C10 the change touches and how each stays
+enforced at the database level, and how the change relates to the vocation
+(anti-coercion). The maintainer reviews the approach before you build it,
+and the change then ships in one pass: implementation, tests and documentation
+together. A proposal that adds a check to `polaris_checks` is fast-tracked.
 
----
+## What merges
 
-## Constitutional constraints
+A pull request is ready when all of these hold:
 
-Polaris has ten hard constraints (C1–C10) documented in `MISSION.md`.
-**These are not policies. They are triggers, CHECK constraints, partial
-unique indexes, and append-only audit trails enforced at the database
-level.** A PR that violates any of C1–C10 will be refused without
-discussion. A PR that adds a new check to `polaris_checks` gets fast-tracked.
-
-The vocation `MISSION.md §"Vocation"` (anti-coercion) sits above C1–C10.
-Changes that strengthen anti-coercion are welcomed. Changes that move
-the system toward becoming a coercion vector (centralized surveillance,
-unbounded data retention, cross-individual aggregation primitives) will
-be refused on sight.
-
----
-
-## Change review
-
-Changes are sized by blast radius:
-
-- **Small**: docs, tests, a dev-script tweak, an isolated bug fix. Follow the
-  Quick path above: open an issue, submit a focused PR with a clear before/after.
-- **Substantive**: multi-surface work, new behavior, or anything touching the
-  schema, the security boundary, or the C1-C10 constraints. Open an issue first
-  describing the change and its constraint/vocation alignment; the maintainer
-  reviews the approach before you build it.
-
----
-
-## Test discipline
-
-```bash
-./scripts/ai-test.sh              # full suite
-./scripts/ai-test.sh quick        # skip slow concurrency/property tests
-./scripts/ai-done.sh              # pre-ship gate
-```
-
-A PR is not ready to merge if any of the following hold:
-
-- Any test in `polaris_web/test_app.py` fails.
-- Any Hypothesis property test in `test_invariants_property.py` fails.
-- Any check in `polaris_checks` fails (`python3 -m polaris_checks.run`).
-- Any SQL self-test in `polaris_sql/08_tests.sql` fails.
-- `./scripts/ai-link-check.sh --ci` finds broken links.
-- `./scripts/ai-done.sh` returns a non-zero exit code.
-
-For new features, add at least one new test that would fail in the
-absence of your change. For a new constitutional invariant: a property
-that must hold across the system: add a `check_*` to
-`polaris_checks/checks.py` with a detection test in
-`polaris_checks/test_checks.py`.
-
----
+- `python3 -m polaris_checks.run` reports READY (the invariant layer; no
+  database needed).
+- `./scripts/ai-test.sh` passes: the DB-backed suites in `polaris_web/` and
+  `polaris_cli/` against a local PostgreSQL (`quick` skips the slow
+  concurrency and property tests while iterating).
+- The SQL self-tests in `polaris_sql/08_tests.sql` pass; they run when the
+  database container initializes.
+- `./scripts/ai-link-check.sh --ci` resolves every reference.
+- `./scripts/ai-done.sh` reports READY; it runs the checks and the link
+  checker as the pre-ship gate.
+- New behaviour carries a test that fails without it. A new invariant carries
+  a `check_*` in `polaris_checks/checks.py` with a detection test in
+  `polaris_checks/test_checks.py` proving it fails on a broken fixture.
+- `polaris_web/__version__.py`, the chart's `appVersion`, `CITATION.cff` and
+  CHANGELOG.md are bumped in the same change (see the ship discipline in
+  [CLAUDE.md](CLAUDE.md)).
 
 ## Pre-commit hooks
 
-`.pre-commit-config.yaml` at the repo root wires a fast local safety net.
-CI (`.github/workflows/ci.yml`) runs the full suite on every push and PR;
-the hooks catch the common regressions before a commit leaves the clone.
-Every hook is a `repo: local` entry (no network) and is also runnable by
-hand from `scripts/`.
-
-Install once per clone:
+`.pre-commit-config.yaml` wires a local safety net; CI runs the full suite on
+every push. Install once per clone:
 
 ```bash
-pip install pre-commit        # in the dev venv
-pre-commit install            # writes .git/hooks/pre-commit
+pip install pre-commit
+pre-commit install
 ```
-
-What runs on every commit:
 
 | Hook | What it does |
 |---|---|
-| `polaris-checks` | `python3 -m polaris_checks.run`, the flat C1-C10 invariant layer; non-zero on any FAIL |
-| `ai-link-check` | `bash scripts/ai-link-check.sh --ci`, every Markdown link and code path must resolve |
-| `no-secret-in-prod-compose` | refuses a literal `POLARIS_SECRET_KEY:` value in `polaris_web/docker-compose.prod.yml` |
-| `em-dash-block-new` | refuses a new em-dash on a staged line of `CLAUDE.md`, `MISSION.md`, `ROADMAP.md`, `README.md`, or `CONTRIBUTING.md` (`DEVNOTES/style.md`); `CHANGELOG.md` is exempt as audit-of-record |
+| `polaris-checks` | Runs the invariant layer; non-zero on any FAIL |
+| `ai-link-check` | Every Markdown link and code path must resolve |
+| `no-secret-in-prod-compose` | Refuses a literal secret value in the production compose file |
+| `em-dash-block-new` | Refuses a new em-dash on any human-facing surface ([docs/CONVENTIONS.md](docs/CONVENTIONS.md), section 11) |
 
-Run the whole set by hand:
-
-```bash
-pre-commit run --all-files
-```
-
-Upstream `repos:` entries (ruff, black, and the like) are a contributor's
-local choice; the committed configuration stays local-only so it works in a
-clone with no network.
-
----
+Every hook is local (no network) and runnable by hand with
+`pre-commit run --all-files`.
 
 ## Style
 
-VANTA's standing instructions: read `DEVNOTES/style.md`. Summary:
+Declarative prose, present tense, no em-dashes, no filler. Every statement in
+documentation is traceable to the code or schema it describes; numbers carry
+the version they were measured at. JavaScript lives in `static/*.js`, never
+inline: the content security policy is `script-src 'self'` and a check
+enforces it. Index names follow the two existing conventions (`uq_*`,
+`idx_*`). The full conventions are in [docs/CONVENTIONS.md](docs/CONVENTIONS.md).
 
-- Declarative style, no filler.
-- "Holy shit, that's done": no workarounds, no tabling.
-- When something feels like cosmic-significance framing instead of
-  concrete building, name the pattern and back off.
-- Audit-of-record by construction (every shipped instance documented in
-  `DEVNOTES/audit-of-record.md`).
-- See `DEVNOTES/known-gotchas.md` before debugging anything that feels
-  weird; many things that look like new bugs are documented gotchas.
+## What will not be accepted
 
----
+- Banking, payments, transactions, balances, merchant codes. C10, identity
+  is not money, is constitutional; build that as a separate consumer over
+  the HTTP boundary.
+- Cross-individual aggregation, link analysis, predictive scoring, or any
+  other surveillance primitive; the application refuses these patterns with
+  a regression guard.
+- Anything that weakens C1 to C10, or moves the system toward centralized
+  surveillance, unbounded retention or a coercion vector.
+- Documentation written without reading the code it describes.
 
-## What we will NOT accept
+## Security issues
 
-- Banking, payments, transactions, balances, merchant codes. C10
-  ("Identity is not money") is constitutional. Build that on top of
-  Polaris as a separate consumer over the HTTP boundary; do not merge it
-  in.
-- Cross-individual aggregation, link analysis, predictive scoring, or
-  any surveillance primitive. v9.19 ontology refused these patterns
-  explicitly with a regression guard.
-- Inline JavaScript in templates. CSP enforces `script-src 'self'`
-  with no `'unsafe-inline'`; external `static/*.js` files are the
-  pattern. See gotcha #5 in `CLAUDE.md`.
-- A third index-naming convention (we have `uq_*` and `idx_*`; match the
-  surrounding one).
-- Documentation prose generated without reading the codebase. Every doc
-  claim must be traceable to the code or schema it describes.
-
----
-
-## Reporting security issues
-
-Do NOT file a public issue for security vulnerabilities. See
-`SECURITY.md` (top-level) for the disclosure policy.
-
----
-
-## Communication
-
-Polaris is maintained by a single author with AI assistance. For a
-substantive change, the typical flow is:
-
-1. Open an issue describing the need in concrete terms, including its
-   constraint or vocation alignment.
-2. The maintainer surfaces options and tradeoffs and picks a direction.
-3. The change ships in one pass: implementation, tests, and documentation
-   together.
-
----
+Do not file a public issue for a vulnerability. [SECURITY.md](SECURITY.md)
+has the private reporting path, the scope and the response times.
 
 ## License
 
-See `LICENSE` (top-level). Polaris is a reference implementation; using
-it as the basis for a production identity system is encouraged provided
-the constitutional constraints (C1–C10) are not weakened in derivative
-deployments.
+[Apache 2.0](LICENSE). Using Polaris as the basis for a production identity
+system is encouraged, provided the constitutional constraints are not weakened
+in the derivative; documenting a derivative to the same audit-of-record
+standard is asked for, not required by the license.
 
-VANTA's preference is that derivative deployments document themselves
-to the same audit-of-record standard. This is a preference, not a
-license condition.
-
----
-
-*Maintainer: Egor Khaklin (VANTA), with Claude as the working agent.*
-*Last updated: 2026-09-02 (v9.200)*
+*Maintainer: Egor Khaklin. Last updated: 2026-09-03 (v9.204).*

@@ -56,7 +56,7 @@ ship; the row is done when every ship under it is `[x]`.
 | P1.14 | 1. Repository settings and the security policy | [x] v9.201 (settings flipped by the owner 2026-09-03: alerts, security updates, private reporting, secret scanning, push protection; Projects off) |
 | P1.14 | 2. About, topics, the four-surface self-description | [x] v9.202 |
 | P1.14 | 3. Community health files | [x] v9.203 (FUNDING.yml kept; see the ruling above) |
-| P1.14 | 4. CONTRIBUTING in public voice; README above the fold | [ ] |
+| P1.14 | 4. CONTRIBUTING in public voice; README above the fold | [x] v9.204 |
 | P1.14 | 5. Release-note shape; `check_presentation_surface` | [ ] |
 | P1.15 | 1. The site truth pass | [ ] (counts and the SLH-DSA and WebAuthn claims corrected v9.194; the launcher tile, the warrant-grade and globe captions and the notional-data statements remain) |
 | P1.15 | 2. The site structure pass | [ ] |

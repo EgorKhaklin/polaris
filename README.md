@@ -6,11 +6,14 @@
 
 **A working reference implementation of a post-quantum, zero-knowledge,<br>compulsion-resistant national identity-token system.**
 
-Educational project; notional data only. It is not a slide deck: CI boots the full production stack on every push.
+Educational project; notional data only. CI builds and boots the full production stack on every push, proves the post-quantum handshake and the backup round trip, and runs the disaster-recovery drill.
 
 [![CI](https://img.shields.io/github/actions/workflow/status/EgorKhaklin/polaris-id/ci.yml?branch=main&label=CI&logo=githubactions&logoColor=white&style=flat-square)](https://github.com/EgorKhaklin/polaris-id/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/EgorKhaklin/polaris-id?label=release&color=2b5797&style=flat-square)](https://github.com/EgorKhaklin/polaris-id/releases/latest)
 [![License](https://img.shields.io/badge/license-Apache--2.0-3b6e48?style=flat-square)](LICENSE)
+[![Status](https://img.shields.io/badge/status-reference%20implementation%2C%20not%20production-b8860b?style=flat-square)](docs/PRODUCTION-READINESS.md)
+
+<sub>Every release ships SBOMs with signed SLSA provenance; verify one with `gh attestation verify` ([SECURITY.md](SECURITY.md)).</sub>
 
 [**Project site**](https://egorkhaklin.github.io/polaris-id/) · [What it is](#what-polaris-is) · [The ten guarantees](#the-ten-guarantees) · [The hard parts](#the-hard-parts) · [Architecture](#architecture) · [Run it](#run-it) · [Documentation](#documentation)
 
@@ -53,7 +56,7 @@ Above the ten sits the project's vocation: **no person can be compelled to renou
 | **C9** | Concurrency claims are tested with real threads, not mocks. | Threaded test suites against a live database |
 | **C10** | Identity is not money. The schema carries no monetary claim. | Structural absence, pinned by a check |
 
-Each guarantee is machine-checked by [`polaris_checks`](polaris_checks/): 110 plain `check_*` functions (v9.200), each paired with a detection test proving it fails on a broken fixture. A check that cannot detect its own violation is treated as broken. The reasoning for why these ten, and why they interlock, is in [MISSION.md](MISSION.md) and [meta/constraint-lattice.md](meta/constraint-lattice.md).
+Each guarantee is machine-checked by [`polaris_checks`](polaris_checks/): 110 plain `check_*` functions (v9.204), each paired with a detection test proving it fails on a broken fixture. A check that cannot detect its own violation is treated as broken. The reasoning for why these ten, and why they interlock, is in [MISSION.md](MISSION.md) and [meta/constraint-lattice.md](meta/constraint-lattice.md).
 
 ---
 
@@ -78,20 +81,20 @@ Four layers. The schema is the core; everything else is a client of it.
 
 ```
       ┌───────────────────────────────────────────────────────────┐
-      │  CHECK LAYER          polaris_checks: 110 flat invariant  │
+      │  CHECK LAYER          polaris_checks: flat invariant      │
       │                       checks; gates CI; reads everything, │
       │                       writes nothing                      │
       └────────────────────────────┬──────────────────────────────┘
                                    │
       ┌────────────────────────────▼──────────────────────────────┐
-      │  APPLICATION          Flask, 73 routes: every use case,   │
+      │  APPLICATION          Flask routes: every use case,       │
       │                       the Atlas, WebAuthn MFA, /metrics   │
       │                       polaris_cli: the same over a shell  │
       └──────────┬──────────────────────────────┬─────────────────┘
                  │                              │ subprocess
       ┌──────────▼─────────────┐   ┌────────────▼─────────────────┐
       │  SCHEMA  PostgreSQL 16 │   │  ZK PROVER  Rust + Plonky2   │
-      │  29 tables, 15 stored  │   │  Merkle-inclusion SNARK,     │
+      │  tables, stored        │   │  Merkle-inclusion SNARK,     │
       │  procedures, append-   │   │  re-verified bit-for-bit by  │
       │  only audit triggers   │   │  an independent Python       │
       │  (the security         │   │  second witness              │

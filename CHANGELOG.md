@@ -5,6 +5,26 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.204 — 2026-09-03 (P1.14 ship 4: CONTRIBUTING in public voice; the README above the fold)
+
+- **CONTRIBUTING.md rewritten for a stranger.** The persona, the slogans,
+  the "standing instructions" framing, the gotcha-ordinal pointers and the
+  agent credit line are gone; the AI-assistance disclosure, the constitutional
+  refusal (stated once), the merge-readiness list (now including the version,
+  chart, citation and CHANGELOG bump), the check-plus-detection-test rule,
+  the will-not-accept list and the SECURITY.md pointer stay. It links the
+  proposal form and the pull-request template, says in one line what
+  `ai-test.sh` and `ai-done.sh` do, inlines the CSP rule, and is restamped.
+- **The README above the fold.** "It is not a slide deck" becomes the plain
+  capability statement (CI builds and boots the stack, proves the handshake
+  and the backup round trip, runs the DR drill). A fourth badge reads
+  "reference implementation, not production" and links the readiness ledger;
+  one line under the badges points at the SBOMs, the SLSA provenance and the
+  verification command. The architecture diagram no longer carries counts;
+  the single stamped evidence table owns them (`check_stated_counts` still
+  requires the README to state the check and CI-job counts, which the table
+  does).
+
 ## v9.203 — 2026-09-03 (P1.14 ship 3: the community files a reader expects)
 
 - **CODE_OF_CONDUCT.md** (Contributor Covenant 2.1, enforcement through the
