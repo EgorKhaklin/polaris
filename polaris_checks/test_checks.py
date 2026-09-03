@@ -3773,3 +3773,25 @@ def test_version_check_pins_the_citation_file(tmp_path):
     assert checks.check_helm_chart_version_current(tmp_path)[0].level == "OK", "must PASS when the citation matches"
     (tmp_path / "CITATION.cff").write_text('cff-version: 1.2.0\nversion: "9.200"\n')
     assert checks.check_helm_chart_version_current(tmp_path)[0].level == "FAIL", "must FAIL when CITATION.cff lags the version"
+
+
+def test_presentation_surface_check_fails_on_a_missing_file_or_stale_policy(tmp_path):
+    def write(files):
+        for rel, body in files.items():
+            p = tmp_path / rel; p.parent.mkdir(parents=True, exist_ok=True); p.write_text(body)
+    good = {
+        "CODE_OF_CONDUCT.md": "x\n", "CITATION.cff": "version: \"9.205\"\n",
+        "SECURITY.md": "Report a vulnerability through GitHub, which creates a private advisory.\n`gh attestation verify`\n*Last updated: 2026-09-03 (v9.205)*\n",
+        "CONTRIBUTING.md": "*Last updated: 2026-09-03 (v9.205)*\n",
+        ".github/ISSUE_TEMPLATE/config.yml": "blank_issues_enabled: false\ncontact_links:\n  - url: https://github.com/x/y/security/advisories/new\n",
+        ".github/PULL_REQUEST_TEMPLATE.md": "## Motivation\n", "scripts/ai-release-notes.sh": "#!/bin/bash\n",
+        "polaris_web/__version__.py": "__version__ = \"9.205\"\n",
+    }
+    write(good)
+    assert checks.check_presentation_surface(tmp_path)[0].level == "OK", "must PASS on the complete surface"
+    (tmp_path / "CODE_OF_CONDUCT.md").unlink()
+    assert checks.check_presentation_surface(tmp_path)[0].level == "FAIL", "must FAIL when a community file is missing"
+    write({"CODE_OF_CONDUCT.md": "x\n", "CONTRIBUTING.md": "*Last updated: 2026-06-03 (v9.56)*\n"})
+    assert checks.check_presentation_surface(tmp_path)[0].level == "FAIL", "must FAIL when a policy stamp is stale"
+    write({"CONTRIBUTING.md": "*Last updated: 2026-09-03 (v9.205)*\n", ".github/ISSUE_TEMPLATE/config.yml": "blank_issues_enabled: true\n"})
+    assert checks.check_presentation_surface(tmp_path)[0].level == "FAIL", "must FAIL when blank issues are allowed"

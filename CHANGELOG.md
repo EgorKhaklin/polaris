@@ -5,6 +5,40 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.205 — 2026-09-03 (P1.14 ship 5: the release shape, and a check on the front door)
+
+The last ship of row P1.14. Every release now has the same body; the
+community surface is pinned by a check; and two corrections the owner asked
+for land with it.
+
+- **A fixed release shape.** `scripts/ai-release-notes.sh MAJOR.MINOR`
+  renders the release body from the CHANGELOG entry: the title and summary,
+  Breaking changes (or None), Upgrade (the compose roll and the systemd
+  restart, with the roadmap row named), Verify this release (the SBOM
+  artifact names and the `gh attestation verify` command), Details (the
+  entry's items and a link to the CHANGELOG). Releases v9.188 to v9.192 are
+  retitled by what changed for the reader and their bodies regenerated in the
+  shape; the "next opener" and check-count tallies are gone from the public
+  bodies.
+- **`check_presentation_surface`** (111 checks) pins the front door from
+  inside the tree: CODE_OF_CONDUCT.md, CITATION.cff, the issue-form config
+  with blank issues disabled and the private-advisory route, the pull-request
+  template and the release-notes script exist; SECURITY.md names the private
+  advisory and keeps the verification command; SECURITY.md and CONTRIBUTING.md
+  carry a stamp within twenty minors of the version. Repository settings are
+  not probed (the default token cannot see them) and FUNDING.yml is pinned
+  neither way.
+- **Code of Conduct 3.0.** The Contributor Covenant 3.0 text replaces 2.1,
+  with the reporting path filled in (the project mailbox, read only by the
+  maintainer, acknowledged within five business days).
+- **The README's Atlas capture is current.** The image was three versions of
+  the Atlas old (the D3 globe). It is re-taken from the running application
+  at v9.205 against a two-million-event synthetic log, at 2400 by 1470 through
+  a scripted browser at device scale 2, and installed for the README and the
+  site with a truthful alt text and caption. The chrome it shows changes in
+  P1.17; that ship re-captures.
+
+
 ## v9.204 — 2026-09-03 (P1.14 ship 4: CONTRIBUTING in public voice; the README above the fold)
 
 - **CONTRIBUTING.md rewritten for a stranger.** The persona, the slogans,

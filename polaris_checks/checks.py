@@ -2282,6 +2282,46 @@ def check_docs_index_coverage(root: pathlib.Path) -> list[Finding]:
 
 
 # ---------------------------------------------------------------------------
+# Presentation surface — the files a reader arriving on GitHub expects, and the
+# two root policies kept current. File-based only: repository settings (private
+# reporting, secret scanning) cannot be observed from inside the tree and are
+# never asserted as standing claims. FUNDING.yml is deliberately not pinned
+# either way (the owner's Sponsors decision).
+# ---------------------------------------------------------------------------
+def check_presentation_surface(root: pathlib.Path) -> list[Finding]:
+    required = ("CODE_OF_CONDUCT.md", "CITATION.cff", "SECURITY.md", "CONTRIBUTING.md",
+                ".github/ISSUE_TEMPLATE/config.yml", ".github/PULL_REQUEST_TEMPLATE.md",
+                "scripts/ai-release-notes.sh")
+    missing = [r for r in required if not (root / r).is_file()]
+    if missing:
+        return _fail("presentation_surface", f"missing: {', '.join(missing)}")
+    cfg = _read(root, ".github/ISSUE_TEMPLATE/config.yml")
+    if not re.search(r"blank_issues_enabled:\s*false", cfg) or "security/advisories" not in cfg:
+        return _fail("presentation_surface",
+                     "ISSUE_TEMPLATE/config.yml must disable blank issues and route security reports "
+                     "to the private advisory")
+    sec = _read(root, "SECURITY.md")
+    if "Report a vulnerability" not in sec or "private advisory" not in sec.lower():
+        return _fail("presentation_surface", "SECURITY.md must name GitHub's private advisory as the reporting path")
+    if "gh attestation verify" not in sec:
+        return _fail("presentation_surface", "SECURITY.md must keep the release verification command")
+    ver = re.search(r'^__version__(?:\s*:\s*str)?\s*=\s*["\']([^"\']+)["\']', _read(root, "polaris_web/__version__.py"), re.M)
+    if not ver:
+        return _fail("presentation_surface", "cannot read __version__")
+    major, minor = (int(x) for x in ver.group(1).split(".")[:2])
+    for rel in ("SECURITY.md", "CONTRIBUTING.md"):
+        m = re.search(r"Last updated: \d{4}-\d{2}-\d{2} \(v(\d+)\.(\d+)\)", _read(root, rel))
+        if not m:
+            return _fail("presentation_surface", f"{rel} carries no 'Last updated: DATE (vX.Y)' stamp")
+        smajor, sminor = int(m.group(1)), int(m.group(2))
+        if smajor != major or minor - sminor > 20:
+            return _fail("presentation_surface",
+                         f"{rel} is stamped v{smajor}.{sminor} but the tree is v{major}.{minor}; "
+                         "re-read and restamp it within twenty minors")
+    return _ok("presentation_surface", "community files present, security routing set, policies stamped current")
+
+
+# ---------------------------------------------------------------------------
 # Launcher currency — the macOS launcher (the SCS-230 deliverable surface) must
 # track the real stack, not drift. Pin the three properties that went stale: it
 # installs native deps from requirements.txt (not a hardcoded list that misses
@@ -4220,6 +4260,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_api_routes_documented,
     check_prod_compose_trusts_edge,
     check_docs_index_coverage,
+    check_presentation_surface,
 ]
 
 
