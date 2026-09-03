@@ -1,8 +1,9 @@
-# Install Guide
+# INSTALL.md: the laptop evaluation install
 
-This is the long-form companion to `README.md`. If you got Polaris
-running on the first try, you don't need to read this. If something
-went wrong, the answer is here.
+**Reader:** someone evaluating Polaris on a Mac with the double-click
+launcher. **Job:** the long-form companion to the README's quickstart:
+what the launcher does, what it needs, and what to do when a step fails.
+A server deployment is [DEPLOYMENT.md](DEPLOYMENT.md), not this page.
 
 
 ## Prerequisites
@@ -32,7 +33,7 @@ Polaris does **not** require:
    download a release zip from the GitHub Releases page and double-
    click to extract. macOS will produce a `polaris/` folder.
 
-2. Drag the `polaris/` folder somewhere persistent — `~/Desktop`,
+2. Drag the `polaris/` folder somewhere persistent: `~/Desktop`,
    `~/Documents`, `~/Code`, anywhere. Don't leave it inside the
    `Downloads` folder; macOS sometimes treats Downloads specially.
 
@@ -92,7 +93,7 @@ Three ways, all equivalent:
 - **Press `Ctrl+C` in the Terminal window.** Same effect, immediate.
 - **Run `./polaris_mac_launch.sh stop` from another Terminal window.**
 
-If you closed Terminal without stopping the stack first, that's fine —
+If you closed Terminal without stopping the stack first, that is fine;
 the Docker stack stays running in the background. Reopen Terminal in
 the polaris folder and run `./polaris_mac_launch.sh stop`.
 
@@ -143,7 +144,7 @@ the Postgres container initializes; their results are visible in
 You double-clicked `Polaris.command` instead of right-click → Open →
 Open. Close the warning. Right-click `Polaris.command` and choose Open
 from the context menu. macOS will then offer an `Open` button that
-isn't there on a normal double-click. Click it. Done — you only need
+isn't there on a normal double-click. Click it. Done; you only need
 to do this once.
 
 ### `ERR_EMPTY_RESPONSE` in browser

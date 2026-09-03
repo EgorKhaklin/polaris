@@ -59,8 +59,9 @@ write_secret_if_missing() {
     # unreadable" and the stack never comes up (found v9.140 by booting the real
     # prod compose). The 0700 SECRETS_DIR is the host boundary; a 0644 file inside
     # an owner-only directory is still reachable only by the owner host-side, the
-    # same model v9.131 established for the pgbouncer key. Secrets only ROOT reads
-    # (postgres reads the root + replicator passwords as root during init) stay 0600.
+    # same model v9.131 established for the pgbouncer key. The root password,
+    # which only root reads during init, stays 0600; the replicator password is
+    # 0644 because docker-init.sh reads it as the non-root postgres user.
     local mode="${3:-0600}"
     local target="${SECRETS_DIR}/${name}"
 

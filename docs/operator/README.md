@@ -1,83 +1,50 @@
-# docs/operator/ — runbooks for operators
+# docs/operator/: the runbooks
 
-Polaris's deployment + day-2 operations + compliance documentation.
-For developers contributing to Polaris, see
-[`DEVNOTES/`](../../DEVNOTES/).
+**Reader:** the operator who installs, runs, secures and recovers a Polaris
+deployment, and the assessor checking how. **Job:** one row per runbook,
+saying when you need it, and the reading order for the three situations that
+bring people here. Every document in this directory is listed; the build
+fails otherwise.
 
----
-
-## What's here
-
-| Doc | When you need it |
+| Runbook | When you need it |
 |---|---|
-| [`LINUX-SERVER.md`](LINUX-SERVER.md) | **A fresh Linux server to a healthy production stack** under systemd, one script; day-2 commands, upgrades, uninstall |
-| [`KUBERNETES.md`](KUBERNETES.md) | The Helm reference profile: the production topology on a cluster with enforced NetworkPolicies and the restricted Pod Security Standard; compose stays the single-node path |
-| [`HARDENING.md`](HARDENING.md) | The operating system around Polaris: SSH, updates, firewall (and Docker), time, daemon, permissions, auditing |
-| [`INSTALL.md`](INSTALL.md) | Laptop / evaluation install (macOS launcher); troubleshooting |
-| [`DEPLOYMENT.md`](DEPLOYMENT.md) | Three deployment paths (dev / staging / prod) |
-| [`OPERATIONS.md`](OPERATIONS.md) | **Day-2 runbook (~1700 lines)** — backup, restore, scaling, monitoring, archive, purge, pre-commit, certificate transparency |
-| [`SECRETS.md`](SECRETS.md) | Env-var matrix + rotation cadence + KMS paved paths |
-| [`KEY-CEREMONY.md`](KEY-CEREMONY.md) | The issuer signing key: custody drivers (file / PKCS#11 HSM / AWS KMS), the witnessed key ceremony, rotation with trust anchors |
-| [`SECURITY.md`](SECURITY.md) | Cybersecurity posture + audit + controls |
-| [`PRIVACY.md`](PRIVACY.md) | Data minimization + operational privacy posture |
-| [`DR.md`](DR.md) | Disaster recovery procedures; targets RPO 300 s and RTO 4 h |
-| [`DR-DRILLS.md`](DR-DRILLS.md) | The drill ledger: every measured RPO and RTO, local and the monthly CI run |
-| [`FAILOVER.md`](FAILOVER.md) | Streaming replication + hot standby + promotion runbook; the HA complement to DR.md (standby host operator-supplied) |
-| [`ENCRYPTION-AT-REST.md`](ENCRYPTION-AT-REST.md) | At-rest posture: what is plaintext on disk, what is already encrypted, and the operator-gated host volume encryption path |
-| [`SLOS.md`](SLOS.md) | Reference SLO targets (availability / request-latency / DB-latency) + error budget, grounded in exposed metrics; backend operator-gated |
-| [`WEBAUTHN-ROLLOUT.md`](WEBAUTHN-ROLLOUT.md) | Rolling WebAuthn MFA out to operators in phases, with the attestation policy |
-| [`RUNBOOKS.md`](RUNBOOKS.md) | One alert-response runbook per shipped Prometheus alert (Trigger / Diagnosis / Remediation) |
-
----
+| [`DEPLOYMENT.md`](DEPLOYMENT.md) | Choosing a deployment path (laptop, single host, Linux under systemd, Kubernetes), the single-host compose procedure, and the environment-variable table |
+| [`LINUX-SERVER.md`](LINUX-SERVER.md) | A fresh Linux server to a healthy production stack under systemd with one script; day-2 commands, upgrades, uninstall |
+| [`KUBERNETES.md`](KUBERNETES.md) | The Helm reference profile: the production topology on a cluster with enforced network policies and the restricted Pod Security Standard |
+| [`INSTALL.md`](INSTALL.md) | The laptop evaluation install (the macOS launcher) and its troubleshooting |
+| [`HARDENING.md`](HARDENING.md) | The operating system around Polaris: SSH, updates, firewall and Docker, time, daemon, permissions, auditing |
+| [`OPERATIONS.md`](OPERATIONS.md) | Day 2: backup and restore, the running stack, scaling, monitoring, archive and purge, certificate transparency, incidents, common errors, upgrades, decommissioning |
+| [`SECRETS.md`](SECRETS.md) | Every secret the stack uses, how each is generated, read and rotated, and the sealed store |
+| [`KEY-CEREMONY.md`](KEY-CEREMONY.md) | The issuer signing key: custody drivers (file, PKCS#11, AWS KMS), the witnessed ceremony, rotation with trust anchors |
+| [`WEBAUTHN-ROLLOUT.md`](WEBAUTHN-ROLLOUT.md) | Rolling WebAuthn MFA out to operators in phases, the attestation policy, enrollment and recovery |
+| [`SECURITY.md`](SECURITY.md) | The security posture: every control, where it is enforced, which check pins it, and the dated hardening engagement |
+| [`PRIVACY.md`](PRIVACY.md) | Data minimization and the operational privacy posture |
+| [`ENCRYPTION-AT-REST.md`](ENCRYPTION-AT-REST.md) | What is plaintext on disk, what is already encrypted, and the host volume encryption path |
+| [`DR.md`](DR.md) | Disaster recovery: the targets (RPO 300 s, RTO 4 h), the procedures by failure class, WAL archiving and the off-site repository |
+| [`DR-DRILLS.md`](DR-DRILLS.md) | The drill ledger, machine-appended: every measured RPO and RTO, locally and from the monthly CI run |
+| [`FAILOVER.md`](FAILOVER.md) | Streaming replication, the hot standby and its promotion; the high-availability complement to DR.md |
+| [`SLOS.md`](SLOS.md) | The reference service objectives (availability, request latency, database latency) and the error budget, grounded in exposed metrics |
+| [`RUNBOOKS.md`](RUNBOOKS.md) | One response runbook per shipped alert: trigger, diagnosis, remediation; and the pager wiring |
 
 ## Reading order
 
-**First-time deploy (a server):**
-0. [LINUX-SERVER.md](LINUX-SERVER.md) — the one-script install, then [HARDENING.md](HARDENING.md)
-1. [INSTALL.md](INSTALL.md) — laptop evaluation only
-2. [DEPLOYMENT.md](DEPLOYMENT.md) — pick a path
-3. [SECRETS.md](SECRETS.md) — generate + rotate
-4. [OPERATIONS.md](OPERATIONS.md) §"Quick start (5 min)" — actual deploy
-5. [OPERATIONS.md](OPERATIONS.md) §"Verify" — confirm
+**Deploying for the first time.** [DEPLOYMENT.md](DEPLOYMENT.md) to choose
+the path, then the path's own page ([LINUX-SERVER.md](LINUX-SERVER.md) with
+[HARDENING.md](HARDENING.md), or [KUBERNETES.md](KUBERNETES.md)), then
+[SECRETS.md](SECRETS.md) and [KEY-CEREMONY.md](KEY-CEREMONY.md), then the
+pre-deploy checklist in [OPERATIONS.md](OPERATIONS.md#pre-deploy-checklist).
+What a deployment still needs from your organization is the decision table
+in [PRODUCTION-READINESS.md](../PRODUCTION-READINESS.md).
 
-**Compliance audit:**
-1. [SECURITY.md](SECURITY.md) — STRIDE + controls
-2. [PRIVACY.md](PRIVACY.md) — data minimization posture
-3. [DR.md](DR.md) — RPO/RTO targets + drills
+**Assessing a deployment.** [SECURITY.md](SECURITY.md), [PRIVACY.md](PRIVACY.md),
+[ENCRYPTION-AT-REST.md](ENCRYPTION-AT-REST.md), [DR.md](DR.md) with the
+measured rows in [DR-DRILLS.md](DR-DRILLS.md), and
+[PQC-POSTURE.md](../reference/PQC-POSTURE.md).
 
-**Production incident:**
-1. [OPERATIONS.md](OPERATIONS.md) §"Incident response"
-2. [OPERATIONS.md](OPERATIONS.md) §"Common errors"
-3. [DR.md](DR.md) §"Failure-class procedures" (8 named classes)
+**During an incident.** [OPERATIONS.md](OPERATIONS.md#incident-response) for the
+first steps, [RUNBOOKS.md](RUNBOOKS.md) for the alert that fired,
+[DR.md](DR.md#4-procedures-by-failure-class) for the failure class.
 
-**Day-to-day:**
-- Cron rows: [OPERATIONS.md](OPERATIONS.md) §"Day-2 operations"
-- Health: `curl /api/health` (structured JSON)
-- Metrics: `curl /metrics` (Prometheus; v8.93)
-
----
-
-## Conventions
-
-- Each doc opens with a one-paragraph purpose statement
-- Tables prefer "When you need it" framing over "What it covers"
-- Code blocks prefer copy-pasteable shell over prose recipes
-- Cron schedules + retention windows are explicit
-- Exit codes are named (`EXIT_OK=0`, `EXIT_SHA_MISMATCH=4`, etc.)
-
-See [`docs/CONVENTIONS.md`](../CONVENTIONS.md) for project-wide
-naming + structural conventions.
-
----
-
-## What this directory is NOT
-
-- Not technical reference (that's in [`../reference/`](../reference/))
-- Not narrative (that's in [`../story/`](../story/))
-- Not the academic write-up (that's in [`../paper/`](../paper/))
-- Not informal developer notes (that's in [`../../DEVNOTES/`](../../DEVNOTES/))
-- Not strategic decision records
-
-`docs/operator/` is **what an operator needs to deploy and run
-Polaris in production**, written so the operator never has to
-read the source code to do their job.
+**Day to day.** The cron and timer rows in
+[OPERATIONS.md](OPERATIONS.md#day-2-operations); `/api/health` for structured
+health; `/metrics` for Prometheus.

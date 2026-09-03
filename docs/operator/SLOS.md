@@ -1,18 +1,19 @@
 # SLOS.md: Polaris service-level objectives (reference targets)
 
-This document states the service-level objectives (SLOs) Polaris is designed
-to meet, the service-level indicators (SLIs) that measure them, and the error
-budget each implies.
+**Reader:** the operator or SRE writing the error-budget policy for a Polaris
+deployment. **Job:** state the service-level objectives (SLOs) Polaris is
+designed to meet, the service-level indicators (SLIs) that measure them, and
+the error budget each implies.
 
-> **Honest status (v9.123).** These are **reference targets for a notional
-> deployment**, not a measured guarantee. Polaris ships the metrics and the
-> alerting rules that make these objectives observable, but it does not ship
-> the measurement backend: the Prometheus + Alertmanager stack is
-> **operator-gated** (see [`../../deploy/observability/README.md`](../../deploy/observability/README.md)).
-> No SLO here is enforced by Polaris at runtime. An operator who wires the
-> stack and runs at scale will measure their own numbers; the targets below
-> are the design intent and a starting point for a real error-budget policy,
-> not a claim about an SLO Polaris itself meets.
+These are reference targets for a notional deployment, not a measured
+guarantee. Polaris ships the metrics and the alerting rules that make these
+objectives observable, but it does not ship the measurement backend: the
+Prometheus and Alertmanager stack is operator-gated (see
+[`../../deploy/observability/README.md`](../../deploy/observability/README.md)).
+No SLO here is enforced by Polaris at runtime. An operator who wires the stack
+and runs at scale measures their own numbers; the targets below are the design
+intent and a starting point for a real error-budget policy, not a claim about
+an SLO Polaris itself meets.
 
 Every SLI below is grounded in a metric Polaris **actually exposes** on
 `/metrics` (Prometheus text exposition) or `/api/metrics` (JSON). Nothing here

@@ -1,21 +1,22 @@
 # FAILOVER.md: streaming replication, hot standby, and failover
 
-This is the runbook for running a Postgres hot standby and promoting it when the
-primary fails. It is the high-availability counterpart to [`DR.md`](DR.md)
-(which restores from a backup); replication keeps a second copy continuously
-current so a primary loss costs seconds, not the backup interval.
+**Reader:** the operator who runs a Postgres hot standby for Polaris, or who
+must promote one now. **Job:** bring up the standby, keep it streaming, and
+promote it when the primary fails. This is the high-availability counterpart
+to [`DR.md`](DR.md) (which restores from a backup); replication keeps a second
+copy continuously current so a primary loss costs seconds, not the backup
+interval.
 
-> **Honest status (v9.126).** Polaris ships replication **readiness**, not a
-> running standby. The primary is made replication-ready at init
-> (`wal_level=replica`, a least-privilege `polaris_replicator` role, the `pg_hba`
-> entry) when the operator provides the `polaris_replicator_password` secret, and
-> the bootstrap below is proven in CI (a write on the primary appears on a
-> `pg_basebackup`-cloned standby). What is **operator-gated**: the **standby
-> host** (a second machine; co-locating a standby on the primary's host gives no
-> availability benefit) and the **failover decision** (promotion is a documented
-> manual procedure, not an automated controller like Patroni or repmgr, which
-> stay operator choices). No data is replicated until the operator stands up a
-> standby on their own second host.
+Polaris ships replication readiness, not a running standby. The primary is
+made replication-ready at init (`wal_level=replica`, a least-privilege
+`polaris_replicator` role, the `pg_hba` entry) when the operator provides the
+`polaris_replicator_password` secret, and the bootstrap below is proven in CI
+(a write on the primary appears on a `pg_basebackup`-cloned standby). Two
+things are operator-gated: the standby host (a second machine; co-locating a
+standby on the primary's host gives no availability benefit) and the failover
+decision (promotion is a documented manual procedure, not an automated
+controller; Patroni or repmgr stay operator choices). No data is replicated
+until the operator stands up a standby on their own second host.
 
 ---
 
@@ -78,10 +79,10 @@ pg_ctl -D "$PGDATA" start
 Verify the standby is streaming:
 
 ```bash
-# On the standby — must report 't' (it is in recovery, read-only):
+# On the standby: must report 't' (it is in recovery, read-only):
 psql -tAc 'SELECT pg_is_in_recovery();'
 
-# On the primary — must list the standby's connection:
+# On the primary: must list the standby's connection:
 psql -tAc "SELECT application_name, state, sync_state FROM pg_stat_replication;"
 ```
 
@@ -128,7 +129,7 @@ while the old primary is merely partitioned risks split-brain).
 
 A promoted standby is a single point of failure until a new standby backs it up.
 
-1. Treat the old primary as **destroyed** (do not bring it back as a primary —
+1. Treat the old primary as **destroyed** (do not bring it back as a primary;
    it may have diverged). When convenient, rebuild it as a fresh standby of the
    new primary using §2 (`pg_basebackup -R` from the new primary).
 2. Re-run a backup (`scripts/polaris-backup.sh`) against the new primary so the
@@ -142,9 +143,9 @@ A promoted standby is a single point of failure until a new standby backs it up.
 
 - **Asynchronous streaming (the default here)** keeps the standby within
   seconds of the primary, so an unplanned failover loses at most the last
-  in-flight transactions, not the [`DR.md`](DR.md) backup interval. The headline
-  ≤1-minute RPO target in `DR.md` is met by replication far more tightly than by
-  the periodic `pg_dump`, for the failure class where the standby survives.
+  in-flight transactions, not the [`DR.md`](DR.md) backup interval. The 300 s RPO
+  target in [`DR.md`](DR.md) is met by replication more tightly than by the 60 s
+  WAL archive interval, for the failure class where the standby survives.
 - **Synchronous replication** (`synchronous_standby_names`, an operator choice)
   makes RPO zero for committed transactions, at the cost of commit latency and a
   liveness coupling (a commit waits for the standby). Polaris does not enable it

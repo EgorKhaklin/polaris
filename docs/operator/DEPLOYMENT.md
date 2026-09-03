@@ -1,149 +1,248 @@
-# Polaris — Deployment Guide
+# Deployment paths
 
-**One page. Three deployment paths. Security defaults documented.**
+**Reader:** the operator or platform engineer choosing how to run Polaris.
+**Job:** pick one of the four deployment paths, run the single-host Docker
+Compose path from this page, and set the environment variables the app,
+the init script, and the compose stack read.
 
----
+## Choose a path
 
-## Path 1: Docker Compose (fastest)
+| Path | Use it when | Runbook |
+|---|---|---|
+| macOS evaluation launcher | A laptop, a demo, a first look. Docker Desktop only; seeded demo accounts; port 2222. | [`INSTALL.md`](INSTALL.md) |
+| Single-host Docker Compose | One host you administer by hand: Caddy TLS edge, gunicorn, PgBouncer, PostgreSQL 16 with pgBackRest, Redis. The reference production path. | This page, below |
+| Scripted Linux server under systemd | A fresh Debian, Ubuntu, or RHEL-family host. One script installs Docker, secrets, `polaris.env`, the compose stack as `polaris.service`, and the backup timers. Upgrades on that host use the compose path below. | [`LINUX-SERVER.md`](LINUX-SERVER.md), then [`HARDENING.md`](HARDENING.md) |
+| Helm reference profile | An authority whose platform is a Kubernetes cluster with an enforcing CNI. | [`KUBERNETES.md`](KUBERNETES.md) |
+
+Day-2 operation of any production path (backup, restore, scaling, audit
+review, migrations, certificate monitoring) is
+[`OPERATIONS.md`](OPERATIONS.md). Secrets generation and rotation is
+[`SECRETS.md`](SECRETS.md).
+
+## Single-host Docker Compose
+
+### Prerequisites
+
+- A Linux x86_64 host. 2 vCPU, 4 GB RAM and a 40 GB SSD is an unmeasured
+  starting point for one authority; the disk grows with the verification log
+  (the per-row estimate is in [OPERATIONS.md](OPERATIONS.md#storage-growth)),
+  and the measured throughput of a reference host is in
+  [PERFORMANCE-BASELINE.md](../reference/PERFORMANCE-BASELINE.md).
+- Docker Engine with the compose v2 plugin (`docker compose version` must work).
+- Nothing but TCP/443 (and TCP/80 for the certificate challenge and the
+  redirect) is exposed; app, pgbouncer, postgres and redis are reachable only
+  inside the compose network. Outbound, the host reaches Let's Encrypt
+  (`acme-v02.api.letsencrypt.org`) and, if the certificate transparency
+  monitor runs here, crt.sh.
+- `POLARIS_DOMAIN` exported in the shell (or in `/etc/polaris/polaris.env` on a
+  systemd host). Its DNS A/AAAA record points at this host and TCP 80/443 plus
+  UDP 443 are reachable before the first start: Caddy provisions the Let's
+  Encrypt certificate on boot.
+- Secrets in `polaris_web/secrets/` (or the directory `POLARIS_SECRETS_DIR`
+  names). `scripts/polaris-deploy.sh` refuses to start unless
+  `polaris_secret_key`, `polaris_db_password`, `polaris_db_root_password`, and
+  `pgbackrest_repo_creds.conf` are present and non-empty; all of them come from
+  [`scripts/polaris-generate-secrets.sh`](../../scripts/polaris-generate-secrets.sh).
+
+### Deploy
+
+```bash
+git clone https://github.com/EgorKhaklin/polaris-id.git && cd polaris-id
+./scripts/polaris-generate-secrets.sh          # once
+export POLARIS_DOMAIN=polaris.example.org
+./scripts/polaris-deploy.sh prod               # or: prod --no-pull
+curl -fsS https://${POLARIS_DOMAIN}/api/health | jq .
+```
+
+[`scripts/polaris-deploy.sh`](../../scripts/polaris-deploy.sh) is idempotent
+and runs every compose command against
+[`polaris_web/docker-compose.prod.yml`](../../polaris_web/docker-compose.prod.yml)
+plus whatever overlays `POLARIS_COMPOSE_EXTRA` names. In order:
+
+1. Pre-flight: docker and the compose plugin present, the four secrets above
+   present, `POLARIS_DOMAIN` set. With `POLARIS_SECRETS_BACKEND=age` or
+   `awskms` the sealed store is unsealed into `POLARIS_SECRETS_DIR` first.
+2. `git pull --ff-only` (skipped with `--no-pull` or outside a git checkout).
+3. The running app image id is recorded for rollback.
+4. `docker compose pull` for postgres, redis, and caddy; `docker compose build
+   app` (multi-stage `Dockerfile.prod`).
+5. Infrastructure up (`postgres`, `pgbouncer`, `redis`, `caddy`) without
+   touching the app containers, so the running app keeps serving.
+6. Migrations applied and database objects synced against the running server
+   (`polaris-migrate.sh --up` and `--sync-objects`, both piped over stdin into
+   the postgres container). When `POLARIS_PGBACKREST_ENABLED=1`, the pgBackRest
+   stanza is created and checked; a failure there warns and does not block.
+7. The app rolled: with the blue-green profile, `app-green` is recreated and
+   waited on until its healthcheck passes, then `app`; without it, the single
+   `app` is recreated.
+8. Smoke test from inside the network: `/api/health` must report `healthy`
+   (`degraded` is accepted). On failure the previous app image is re-tagged
+   and every app colour recreated from it; the script exits non-zero.
+
+`staging` runs the identical flow; point `POLARIS_DOMAIN` at the staging
+hostname yourself, the script does not derive it; `dev` delegates
+to the macOS launcher.
+
+### Zero-downtime deploys (blue-green profile)
+
+```bash
+export POLARIS_COMPOSE_EXTRA="-f docker-compose.bluegreen.yml"   # polaris.env on a systemd host
+./scripts/polaris-deploy.sh prod                                 # once; every later deploy rolls
+```
+
+[`polaris_web/docker-compose.bluegreen.yml`](../../polaris_web/docker-compose.bluegreen.yml)
+adds `app-green` (an `extends` of `app`) and sets Caddy's `POLARIS_UPSTREAMS`
+to `app:8000 app-green:8000`. Caddy retries onto the other colour while one is
+being recreated, gunicorn drains in-flight requests on SIGTERM
+(`stop_grace_period` 35s), and sessions are signed cookies validated against
+the `OperatorSession` registry in Postgres with the rate limiter's state in
+Redis, so no container holds session state and either colour serves
+any request. `polaris-deploy.sh` and `polaris-rotate-secret.sh` both roll the
+colours one at a time. Edge (`caddy`) and database (`postgres`) recreation
+still interrupt service; plan those in a window.
+the `rolling-deploy` job in [`ci.yml`](../../.github/workflows/ci.yml) and
+[`scripts/polaris-rolling-drill.sh`](../../scripts/polaris-rolling-drill.sh)
+has the CI proof and the local drill.
+
+### Manual compose invocation
 
 ```bash
 cd polaris_web
-docker compose up
+docker compose -f docker-compose.prod.yml build app
+docker compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml logs -f app
+docker compose -f docker-compose.prod.yml exec app curl -fsS http://localhost:8000/api/health
 ```
 
-Postgres 16 + schema + sample data + Flask app on port 5000 in ~30 seconds.
-Reset with `docker compose down -v`. CLI via `docker compose exec app python3 ../polaris_cli/polaris.py health`. Default seed accounts: `admin / Admin@123!`, `operator / Operator@123!`, `auditor / Auditor@123!` (rotate immediately).
+This skips migrations, the stanza bootstrap, the smoke test, and rollback;
+use it to inspect a stack, not to upgrade one.
 
-> **For development on macOS, prefer the launcher:** the bundled
-> `polaris_mac_launch.sh` (or double-clickable `Polaris.command`)
-> wraps `docker compose` with self-healing for stale-volume drift,
-> auto-start of Docker Desktop, port preflight, watch mode that tears
-> the stack down on browser close, a `doctor` diagnostic, and a `nuke`
-> reset. Default port is `2222` (avoiding macOS AirPlay Receiver on 5000).
-> Run `./polaris_mac_launch.sh --help` for the full subcommand list.
+### The first operator account
 
-## Path 2: Local Python (development)
+With `POLARIS_ENV=production` (set by the prod compose file)
+[`polaris_web/docker-init.sh`](../../polaris_web/docker-init.sh) disables the
+three seeded demo accounts at first boot (`is_active = FALSE`, the password
+hash scrambled, `locked_until = 'infinity'`) and clears the demo duress
+enrollment, so no default credential ships and `/login` refuses everyone until
+a real admin exists. Create it with
+[`scripts/polaris-create-operator.sh`](../../scripts/polaris-create-operator.sh):
 
 ```bash
-sudo apt install postgresql-16
-sudo -u postgres createdb polaris_test
-cd polaris_sql && psql -d polaris_test -f 00_load_all.sql      # loads schema + auth
-cd ../polaris_web && bash setup.sh                              # creates polaris_app
-pip3 install --break-system-packages flask psycopg2-binary gunicorn
-python3 app.py                                                  # http://localhost:5000
+./scripts/polaris-create-operator.sh --username <name> --role admin --password-file <path> --target=docker-stack
 ```
 
-## Path 3: Production (a Linux server under systemd)
+The seeded credentials themselves live in the SQL seed
+([`polaris_sql/10_auth.sql`](../../polaris_sql/10_auth.sql)) and in
+[`INSTALL.md`](INSTALL.md), where they belong: the evaluation launcher.
 
-The production path is the compose stack behind the Caddy TLS edge, owned by
-systemd, installed by one script on a fresh Debian, Ubuntu, or RHEL-family host:
+## Environment variables
+
+Every row is read by [`polaris_web/app.py`](../../polaris_web/app.py),
+[`polaris_web/security.py`](../../polaris_web/security.py),
+[`polaris_web/webauthn_auth.py`](../../polaris_web/webauthn_auth.py),
+[`polaris_web/gunicorn.conf.py`](../../polaris_web/gunicorn.conf.py), or
+[`polaris_web/docker-init.sh`](../../polaris_web/docker-init.sh). "Prod
+compose" means the value
+[`docker-compose.prod.yml`](../../polaris_web/docker-compose.prod.yml) sets;
+the remaining variables come from the shell or `polaris.env`.
+
+| Variable | Purpose | Default |
+|---|---|---|
+| `POLARIS_ENV` | `production` refuses to start on the default secret key, on a `POLARIS_DB_SSLMODE` other than `require`, `verify-ca`, or `verify-full`, on a `verify-*` mode without a readable `POLARIS_DB_SSLROOTCERT`, and on `POLARIS_DURESS_SYNC=1`; forces the Secure cookie flag; `docker-init.sh` neutralizes the demo accounts at first boot. | unset; prod compose sets `production` |
+| `POLARIS_SECRET_KEY` / `POLARIS_SECRET_KEY_FILE` | Session signing key (32-byte hex). The file form wins when both are set. | dev fallback; prod compose mounts `/run/secrets/polaris_secret_key` |
+| `POLARIS_COOKIE_SECURE` | `1` sends the session cookie only over HTTPS. Implied by `POLARIS_ENV=production`. | unset |
+| `POLARIS_HSTS` | `1` makes the app send `Strict-Transport-Security` and add `upgrade-insecure-requests` to its CSP. In the compose stack Caddy sends HSTS itself (`max-age=63072000; includeSubDomains; preload`). | unset |
+| `POLARIS_TRUST_PROXY` | `1` honours `X-Forwarded-For` for the client address the rate limiter, `AuthAuditLog`, and the network policies see, and `X-Request-ID` for correlation. Set to `1` by the prod compose file and by the Helm chart, because Caddy rewrites the header to the real peer; set it yourself only on a hand-rolled deployment behind a proxy that does the same. | unset (compose and Helm set `1`) |
+| `POLARIS_DB_PASSWORD` / `POLARIS_DB_PASSWORD_FILE` | `polaris_app` role password. The file form wins. | dev fallback; prod compose mounts `/run/secrets/polaris_db_password` |
+| `POLARIS_APP_PASSWORD` / `POLARIS_APP_PASSWORD_FILE` | `docker-init.sh` only, first boot: rotates the `polaris_app` role to this value. Refused under 16 characters; under 24 it must also carry a digit, a letter, and a symbol. | unset; prod compose points the file form at the same DB-password secret |
+| `POLARIS_RATE_LIMIT_BACKEND` | `auto` / `memory` / `redis`. `auto` picks Redis when `POLARIS_REDIS_URL` is set, otherwise in-memory. | `auto` |
+| `POLARIS_REDIS_URL` | Redis URL, e.g. `redis://127.0.0.1:6379/0`. Required for accurate per-IP limits when more than one worker runs. | unset; prod compose sets `redis://redis:6379/0` |
+| `POLARIS_WORKERS` / `WEB_CONCURRENCY` | gunicorn worker count; `POLARIS_WORKERS` wins over `WEB_CONCURRENCY`. `gunicorn.conf.py` re-exports the resolved value as `POLARIS_WORKERS` so `security.py` can warn on a multi-worker in-memory limiter. | 4 |
+| `POLARIS_RATE_LIMIT_WRITE_MAX` / `POLARIS_RATE_LIMIT_WRITE_WINDOW` / `POLARIS_RATE_LIMIT_LOGIN_MAX` | Override the per-IP limits (60 writes per 60 s; 10 logins per 60 s). Exists for the performance baseline's scratch server; raising them in production lowers brute-force and flood resistance and belongs justified in `polaris.env`. | 60 / 60 / 10 |
+| `POLARIS_NETWORK_POLICY_<ROLE>` | Comma-separated CIDRs or addresses the role (`ADMIN` / `OPERATOR` / `AUDITOR`) may log in from and keep a session on, evaluated on the proxy-aware client address. Denials are audited as `NETWORK_POLICY_DENIED`. A malformed value refuses the boot. | unset (any address) |
+| `POLARIS_SESSION_MAX_<ROLE>` | Concurrent live sessions per account; `0` = unlimited. The least-recently-seen seat is evicted (audited `SESSION_EVICTED`). | `ADMIN` 3, others 0 |
+| `POLARIS_SESSION_IDLE_MINUTES_<ROLE>` | Idle timeout for the role's sessions enforced by the registry; `0` = none. The cookie's own 8-hour lifetime, refreshed on every request, always applies. | `ADMIN` 30, others 0 |
+| `POLARIS_WEBAUTHN_ATTESTATION` | Attestation conveyance asked of the browser at enrollment: `none` / `indirect` / `direct` / `enterprise`. | `none` |
+| `POLARIS_WEBAUTHN_USER_VERIFICATION` | `preferred` / `required` / `discouraged`; `required` demands PIN or biometric at enrollment and on every assertion. | `preferred` |
+| `POLARIS_WEBAUTHN_REQUIRE_ATTESTATION` | `1` refuses an enrollment whose attestation format is `none` (audited `WEBAUTHN_REGISTRATION_REFUSED`). | unset |
+| `POLARIS_WEBAUTHN_ALLOWED_AAGUIDS` | Comma-separated authenticator model AAGUIDs; any other model is refused at enrollment (meaningful with `direct` attestation). | unset (any) |
+| `POLARIS_WEBAUTHN_HARDWARE_ONLY` | `1` refuses platform authenticators at enrollment. | unset |
+
+The database, custody, pgBackRest, tracing, and sealed-secrets variables the
+compose stack and `polaris.env` carry are documented where they are used:
+[`SECRETS.md`](SECRETS.md), [`KEY-CEREMONY.md`](KEY-CEREMONY.md),
+[`DR.md`](DR.md), and
+[`deploy/linux/polaris.env.example`](../../deploy/linux/polaris.env.example).
+
+## Rate-limiter backend
+
+The login and write rate limiter in `security.py` has two backends:
+
+- **`memory`**: a per-process sliding window. Correct for a single worker
+  (`POLARIS_WORKERS=1`, `python3 app.py`, development). With several gunicorn
+  workers each holds its own buckets, so the effective per-IP cap becomes
+  `workers x configured`; `security.py` writes a warning to stderr at startup
+  when it detects this.
+- **`redis`**: an atomic sliding window on a Redis sorted set driven by a Lua
+  script, shared by every worker. `RedisRateLimiter` fails closed: a Redis
+  error denies the request (HTTP 429) rather than bypassing the limit.
+
+`/api/health` reports the limiter under `checks.redis`:
 
 ```bash
-git clone https://github.com/EgorKhaklin/polaris-id.git /opt/polaris
-sudo POLARIS_DOMAIN=polaris.example.org /opt/polaris/deploy/linux/install.sh
+curl -fsS https://${POLARIS_DOMAIN}/api/health | jq .checks.redis
+# {"status": "healthy", "backend": "redis", "latency_ms": 1.2}
+# {"status": "healthy", "backend": "memory", "latency_ms": 0.0}   single-worker development
 ```
 
-Everything about it, including what is installed, day-2 commands, upgrades, and
-uninstall, is in [`LINUX-SERVER.md`](LINUX-SERVER.md); the operating system
-around it is [`HARDENING.md`](HARDENING.md). The earlier native path on this page
-(a host Postgres, gunicorn under systemd, nginx with certbot) was retired in
-v9.176: it bypassed the container hardening, the pgbouncer and postgres TLS
-hops, pgBackRest, and the secrets layout that the rest of these docs assume.
-The seeded accounts still apply and must be rotated on first login (below).
-
----
-
-## Security Environment Variables
-
-| Variable                       | Purpose                                                                                                          | Default      |
-|--------------------------------|------------------------------------------------------------------------------------------------------------------|--------------|
-| `POLARIS_ENV`                  | When `production`, refuses to start with default secret key                                                      | unset        |
-| `POLARIS_SECRET_KEY`           | Session signing key (32-byte hex). MUST be rotated before prod                                                   | dev fallback |
-| `POLARIS_COOKIE_SECURE`        | When `1`, session cookie sent only over HTTPS                                                                    | unset        |
-| `POLARIS_HSTS`                 | When `1`, sends Strict-Transport-Security header                                                                 | unset        |
-| `POLARIS_TRUST_PROXY`          | When `1`, honors X-Forwarded-For for client IP                                                                   | unset        |
-| `POLARIS_DB_PASSWORD`          | polaris_app role password — rotate from dev default                                                              | dev fallback |
-| `POLARIS_APP_PASSWORD`         | (Docker init only) New polaris_app password — must be ≥16 chars w/ digit+letter+symbol                           | unset        |
-| `POLARIS_RATE_LIMIT_BACKEND`   | `auto` / `memory` / `redis`. `auto` picks Redis when `POLARIS_REDIS_URL` is set, otherwise in-memory             | `auto`       |
-| `POLARIS_REDIS_URL`            | Redis URL (e.g. `redis://127.0.0.1:6379/0`). REQUIRED for accurate per-IP rate limiting when `POLARIS_WORKERS>1` | unset        |
-| `POLARIS_WORKERS`              | Gunicorn worker count. `gunicorn.conf.py` re-exports the resolved value so security.py sees it                   | 4 (gunicorn) |
-| `POLARIS_NETWORK_POLICY_<ROLE>` | v9.189. Comma-separated CIDRs/addresses the role (ADMIN/OPERATOR/AUDITOR) may log in from and keep a session on; evaluated on the proxy-aware client address. A malformed value refuses the boot | unset (any) |
-| `POLARIS_SESSION_MAX_<ROLE>`   | v9.189. Concurrent live sessions per account; 0 = unlimited. The least-recently-seen seat is evicted (audited `SESSION_EVICTED`) | ADMIN 3, others 0 |
-| `POLARIS_SESSION_IDLE_MINUTES_<ROLE>` | v9.189. Idle timeout for the role's sessions; 0 = none. The 8h absolute lifetime always applies | ADMIN 30, others 0 |
-| `POLARIS_RATE_LIMIT_WRITE_MAX` / `POLARIS_RATE_LIMIT_WRITE_WINDOW` / `POLARIS_RATE_LIMIT_LOGIN_MAX` | v9.191. Override the F-03 per-IP limits (60 writes per 60 s; 10 logins per 60 s). Exists for the performance baseline's scratch server; raising them in production lowers brute-force and flood resistance and should be justified in `polaris.env` | 60 / 60 / 10 |
-| `POLARIS_WEBAUTHN_ATTESTATION` | v9.189. Attestation conveyance asked of the browser at enrollment: `none` / `indirect` / `direct` / `enterprise` | `none` |
-| `POLARIS_WEBAUTHN_USER_VERIFICATION` | v9.189. `preferred` / `required` / `discouraged`; `required` demands PIN or biometric on enrollment AND every assertion | `preferred` |
-| `POLARIS_WEBAUTHN_REQUIRE_ATTESTATION` | v9.189. When `1`, an enrollment whose attestation format is `none` is refused (audited `WEBAUTHN_REGISTRATION_REFUSED`) | unset |
-| `POLARIS_WEBAUTHN_ALLOWED_AAGUIDS` | v9.189. Comma-separated authenticator model AAGUIDs; any other model is refused at enrollment (meaningful with `direct` attestation) | unset (any) |
-
-### Rate-limiter backend (R8-2 / v7.5)
-
-The login + write rate limiter (CWE-307 / CWE-770 mitigation) has two backends:
-
-- **`memory`** — per-process sliding window. Correct for single-worker
-  deployments (`POLARIS_WORKERS=1`, `flask run`, dev). With multiple gunicorn
-  workers each holds its own bucket, so the *effective* per-IP cap becomes
-  `workers × configured`. The app logs a startup warning to stderr when this
-  configuration is detected.
-
-- **`redis`** — atomic sliding window backed by a Redis sorted set and a
-  Lua script. All workers share the same per-key counter. `RedisRateLimiter`
-  fails closed (denies on Redis error) per OWASP "fail securely" — so a
-  Redis hiccup will return 429s rather than silently bypass the limiter.
-  Operators must monitor `/api/health` (the `rate_limiter` block) and treat
-  sustained `ok: false` as a paging condition.
-
-**Production checklist:**
-
-1. Set `POLARIS_REDIS_URL` to your Redis endpoint.
-2. Verify backend selection: `curl -s http://localhost:5000/api/health | jq .checks.rate_limiter` should show `{"backend": "redis", "ok": true}`.
-3. If Redis becomes unreachable mid-flight, `/api/health` returns `degraded`. Page on `degraded` for over 60 s.
-4. For development without Redis, leave `POLARIS_REDIS_URL` unset and run a single worker (`POLARIS_WORKERS=1` or `python3 app.py`); the in-memory backend is correct.
-
-## Default Application Accounts (DEV ONLY — ROTATE IN PROD)
-
-| Username   | Password         | Role     | Capability                                         |
-|------------|------------------|----------|----------------------------------------------------|
-| `admin`    | `Admin@123!`     | admin    | Full CRUD, all use cases, SQL console, transitions |
-| `operator` | `Operator@123!`  | operator | Issue/activate/bind tokens, record verifications   |
-| `auditor`  | `Auditor@123!`   | auditor  | Read-only + UC-7 warrant audits + SQL console      |
-
-After successful rotation, log in once with each new password to confirm; the `LOGIN_SUCCESS` events will appear in `AuthAuditLog`.
-
----
+An unreachable Redis reports `"status": "degraded"` there and rolls the
+overall status up to `degraded`. Page on sustained `degraded`: every login and
+write is being refused. `polaris-deploy.sh` accepts `degraded` in its smoke
+test, so a deploy does not mask this.
 
 ## Verification
 
+Against the running stack:
+
 ```bash
-curl -fsS https://polaris.example.gov/login | grep -q POLARIS && echo OK   # Web reachable
-curl -fsS https://polaris.example.gov/                                    # → 302 /login (auth gate)
-sudo -u postgres psql -d polaris_test -f polaris_sql/08_tests.sql          # SQL self-tests: 78/78 (v9.194)
-cd polaris_web && python3 -m pytest test_app.py -q                         # Web: 462 passed, 12 skipped (v9.194)
-cd polaris_cli && python3 -m pytest test_cli.py -q                         # CLI: 71 passed (v9.194)
-sudo -u polaris polaris health                                             # CLI smoke
+curl -fsS https://${POLARIS_DOMAIN}/login | grep -q POLARIS && echo OK   # web reachable
+curl -sSI https://${POLARIS_DOMAIN}/dashboard | head -1                  # 302 FOUND: /dashboard is login-gated; / is the public landing page
+curl -fsS https://${POLARIS_DOMAIN}/api/health | jq .status               # "healthy"
 ```
 
-## Operational
+From a development checkout (the suites need the `polaris_test` development
+database, and `08_tests.sql` rewrites sample rows; never point them at a
+production database):
 
-| Concern              | Action                                                              |
-|----------------------|---------------------------------------------------------------------|
-| Logs                 | `journalctl -u polaris.service -f`                                   |
-| Health monitoring    | HTTP 302 on `/` (redirect to /login) means app is up; HTTP 200 on `/login` confirms |
-| Database backups     | `pg_dump polaris_test | gzip > polaris_$(date +%F).sql.gz` nightly  |
-| Secret rotation      | Update `POLARIS_SECRET_KEY` and restart; sessions invalidate cleanly |
-| Auth audit review    | `SELECT event_type, COUNT(*) FROM AuthAuditLog WHERE event_timestamp > NOW() - INTERVAL '24 hours' GROUP BY 1` |
-| Suspicious login activity | `SELECT username, ip_address, COUNT(*) FROM AuthAuditLog WHERE event_type='LOGIN_FAILED' AND event_timestamp > NOW() - INTERVAL '1 hour' GROUP BY 1, 2 HAVING COUNT(*) > 3` |
+```bash
+psql -d polaris_test -f polaris_sql/08_tests.sql                # SQL self-tests: 78/78 (v9.194)
+cd polaris_web && python3 -m pytest test_app.py -q              # Web: 462 passed, 12 skipped (v9.194)
+cd polaris_cli && python3 -m pytest test_cli.py -q              # CLI: 71 passed (v9.194)
+python3 -m polaris_checks.run                                   # C1-C10 invariant layer, must end "0 fail"
+```
+
+The production image does not ship `polaris_cli/`; run the CLI from a checkout
+with the `POLARIS_DB_*` variables pointed at the database.
 
 ## Troubleshooting
 
-- **`permission denied for table ...`** → polaris_app role missing grants. Run `09_grants.sql`.
-- **Login always fails with correct password** → Account may be locked; check `SELECT failed_login_count, locked_until FROM AppUser WHERE username = ?`.
-- **CSRF rejections in audit log** → Either a real CSRF attack, OR a session that expired between form render and submit (8-hour lifetime).
-- **`Too many requests`** → Rate limiter triggered; default 60 writes/min/IP. Adjust in `security.py` or wait 60s. With multiple workers, confirm via `/api/health` that you are running the Redis backend; the in-memory backend silently multiplies the cap by worker count.
-- **Sustained `degraded` from /api/health (rate_limiter)** → Redis unreachable. The limiter is failing closed (every login/write returns 429). Restore Redis or set `POLARIS_RATE_LIMIT_BACKEND=memory` as an emergency stopgap; remember the cap multiplication when you do.
-- **Atlas page slow** → Run `ANALYZE` or check that the indexes from `02_indexes.sql` were created.
-- **SQL console "timed out"** → 5s `statement_timeout` fired. Add `LIMIT`, narrow the WHERE clause.
-
----
-
-*Polaris Identity Token System · Schema v1.0 · Fixus inter mutabilia*
+- **`permission denied for table ...`**: the `polaris_app` role is missing
+  grants. Run [`polaris_sql/09_grants.sql`](../../polaris_sql/09_grants.sql).
+- **Login always fails with the correct password**: the account may be locked;
+  `SELECT failed_login_count, locked_until FROM AppUser WHERE username = ?`.
+  In production the seeded `admin`, `operator`, and `auditor` are disabled by
+  design (see "The first operator account" above).
+- **CSRF rejections in the audit log**: a real CSRF attempt, or a session that
+  expired between form render and submit (the cookie lapses after 8 hours without a request).
+- **HTTP 429**: the rate limiter; 60 writes and 10 logins per IP per 60 s.
+  With several workers confirm via `/api/health` `checks.redis` that the
+  backend is `redis`; the in-memory backend multiplies the cap by the worker
+  count. The limits are the `POLARIS_RATE_LIMIT_*` variables above.
+- **Sustained `degraded` from `/api/health` on `checks.redis`**: Redis is
+  unreachable and the limiter is failing closed. Restore Redis, or set
+  `POLARIS_RATE_LIMIT_BACKEND=memory` as an emergency stopgap and remember
+  the cap multiplication.
+- **Atlas page slow**: run `ANALYZE`, and confirm the indexes from
+  [`polaris_sql/02_indexes.sql`](../../polaris_sql/02_indexes.sql) exist.
+- **SQL console "timed out"**: the 5 s `statement_timeout` fired. Add a
+  `LIMIT` or narrow the `WHERE` clause.

@@ -81,6 +81,42 @@ that must hold across the system — add a `check_*` to
 
 ---
 
+## Pre-commit hooks
+
+`.pre-commit-config.yaml` at the repo root wires a fast local safety net.
+CI (`.github/workflows/ci.yml`) runs the full suite on every push and PR;
+the hooks catch the common regressions before a commit leaves the clone.
+Every hook is a `repo: local` entry (no network) and is also runnable by
+hand from `scripts/`.
+
+Install once per clone:
+
+```bash
+pip install pre-commit        # in the dev venv
+pre-commit install            # writes .git/hooks/pre-commit
+```
+
+What runs on every commit:
+
+| Hook | What it does |
+|---|---|
+| `polaris-checks` | `python3 -m polaris_checks.run`, the flat C1-C10 invariant layer; non-zero on any FAIL |
+| `ai-link-check` | `bash scripts/ai-link-check.sh --ci`, every Markdown link and code path must resolve |
+| `no-secret-in-prod-compose` | refuses a literal `POLARIS_SECRET_KEY:` value in `polaris_web/docker-compose.prod.yml` |
+| `em-dash-block-new` | refuses a new em-dash on a staged line of `CLAUDE.md`, `MISSION.md`, `ROADMAP.md`, `README.md`, or `CONTRIBUTING.md` (`DEVNOTES/style.md`); `CHANGELOG.md` is exempt as audit-of-record |
+
+Run the whole set by hand:
+
+```bash
+pre-commit run --all-files
+```
+
+Upstream `repos:` entries (ruff, black, and the like) are a contributor's
+local choice; the committed configuration stays local-only so it works in a
+clone with no network.
+
+---
+
 ## Style
 
 VANTA's standing instructions: read `DEVNOTES/style.md`. Summary:

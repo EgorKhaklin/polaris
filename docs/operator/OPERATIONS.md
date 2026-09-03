@@ -1,277 +1,101 @@
-# OPERATIONS.md — Polaris production runbook (Arc B)
+# OPERATIONS.md: the Polaris day-2 runbook
 
-This is the runbook for operating Polaris in production.
+**Reader:** the operator who runs a deployed Polaris instance day to day.
+**Job:** the routine work (backups, audit review, rotations, migrations, the
+certificate watch), the signals to watch, the first steps of an incident, and
+the upgrade and retirement paths.
 
-For development setup: `README.md`. For threat model and security
-posture: `SECURITY.md` and `DEVNOTES/threat-model.md`. For secrets:
-`docs/operator/SECRETS.md`. For installation: `docs/operator/INSTALL.md`.
-
-This document was rewritten under Arc B (the production-deployment
-arc). The pre-v8.77 version is preserved verbatim in git history.
+Everything else lives in its own document and is linked from here:
+installation in [INSTALL.md](INSTALL.md), [LINUX-SERVER.md](LINUX-SERVER.md),
+[DEPLOYMENT.md](DEPLOYMENT.md) and [KUBERNETES.md](KUBERNETES.md); the host in
+[HARDENING.md](HARDENING.md); secrets in [SECRETS.md](SECRETS.md); recovery in
+[DR.md](DR.md) and the drill ledger [DR-DRILLS.md](DR-DRILLS.md); high
+availability in [FAILOVER.md](FAILOVER.md); per-alert runbooks in
+[RUNBOOKS.md](RUNBOOKS.md); service objectives in [SLOS.md](SLOS.md); the
+threat model in [../../DEVNOTES/threat-model.md](../../DEVNOTES/threat-model.md)
+and [../../SECURITY.md](../../SECURITY.md); the API in
+[../reference/API.md](../reference/API.md).
 
 ---
 
 ## Table of contents
 
-1. [Quick start (5 min)](#quick-start-5-min)
-2. [System requirements](#system-requirements)
-3. [Pre-deploy checklist](#pre-deploy-checklist)
-4. [Deploy](#deploy)
-5. [Verify](#verify)
-6. [Day-2 operations](#day-2-operations)
-7. [Backup & restore](#backup--restore)
-8. [Scaling](#scaling)
-9. [Monitoring & alerting](#monitoring--alerting)
-10. [Incident response](#incident-response)
-11. [Common errors](#common-errors)
-12. [Upgrades](#upgrades)
-13. [Decommissioning](#decommissioning)
-14. [What this document does NOT cover](#what-this-document-does-not-cover)
+1. [Before day 2](#before-day-2)
+2. [The running stack](#the-running-stack)
+3. [Day-2 operations](#day-2-operations)
+4. [Backup & restore](#backup--restore)
+5. [Scaling](#scaling)
+6. [Monitoring & alerting](#monitoring--alerting)
+7. [Encryption at rest](#encryption-at-rest)
+8. [Incident response](#incident-response)
+9. [Common errors](#common-errors)
+10. [Upgrades](#upgrades)
+11. [Decommissioning](#decommissioning)
+12. [What this document does NOT cover](#what-this-document-does-not-cover)
 
 ---
 
-## Quick start (5 min)
+## Before day 2
 
-Production-ready Polaris on a single Linux host, behind TLS, with
-backups, on commodity hardware:
+Deploying is [DEPLOYMENT.md](DEPLOYMENT.md)'s job: the path, the
+procedure, the first operator account and the verification block live there.
+This checklist is what to have in hand before the first production start.
 
-```bash
-# 1. Clone + enter
-git clone https://github.com/<your-fork>/polaris.git
-cd polaris
-
-# 2. Generate all secrets (see docs/operator/SECRETS.md for what is generated)
-./scripts/polaris-generate-secrets.sh
-
-# 3. Set the public domain (must resolve to this host's public IP)
-export POLARIS_DOMAIN=polaris.example.com
-
-# 4. Deploy
-./scripts/polaris-deploy.sh prod
-
-# 5. Verify
-curl -fsS https://${POLARIS_DOMAIN}/api/health | jq .
-```
-
-Within ~90 seconds Caddy will provision a Let's Encrypt certificate
-and `/api/health` returns structured JSON with overall status
-`healthy` and per-component checks (db / redis / zk-binary / disk).
-
-If anything failed, jump to [Common errors](#common-errors). For the
-expected health-check shape, see `docs/operator/SECRETS.md` →
-"Health-check contract".
-
----
-
-## System requirements
-
-### Hardware (minimum)
-
-- 2 vCPU
-- 4 GB RAM
-- 40 GB SSD (database growth budget: ~120 GB/year at 1M
-  verifications/day; see [Storage growth](#storage-growth))
-- 1 Gbps NIC
-
-### Software
-
-- Linux x86_64 (Debian 12+ / Ubuntu 22.04+ / RHEL 9+ tested)
-- Docker Engine 24+ with Compose v2
-- A public DNS A record pointing at this host (for TLS)
-- TCP/443 reachable from the internet (for Let's Encrypt challenge
-  and operator traffic)
-- TCP/80 reachable from the internet (for the HTTP-01 challenge;
-  Caddy redirects 80 → 443 in steady state)
-
-### Network
-
-The production stack listens on TCP/443 (Caddy) and exposes nothing
-else externally. Internal services (app:8000, postgres:5432,
-redis:6379) are reachable only inside the Compose network.
-
-Out-bound: the host must reach Let's Encrypt
-(`acme-v02.api.letsencrypt.org`) for certificate issuance.
-
----
-
-## Pre-deploy checklist
+### Pre-deploy checklist
 
 - [ ] DNS A record for `${POLARIS_DOMAIN}` resolves to this host
 - [ ] TCP/80 + TCP/443 reachable from the public internet
-- [ ] All secrets generated via `scripts/polaris-generate-secrets.sh`
-      and `ls -la secrets/` shows mode `0600`
+- [ ] All secrets generated via `scripts/polaris-generate-secrets.sh`;
+      `ls -la secrets/` shows the directory `0700` and each file with the
+      mode the generator set (`0600`, or `0644` for the files a non-root
+      container user must read; [SECRETS.md](SECRETS.md#1-the-secrets-matrix))
 - [ ] `secrets/` is in `.gitignore` (verify: `git check-ignore -v
       secrets/polaris_secret_key`)
-- [ ] Backup destination configured (S3 bucket, local volume, or
-      remote tarball drop)
+- [ ] Backup destination configured (a local directory for
+      `polaris-backup.sh --dest` with an off-host copy, or the pgBackRest S3
+      repository), and the backup key file set
+      (`POLARIS_BACKUP_KEY_FILE`; see [DR.md](DR.md))
 - [ ] Pager wired: the on-call product's webhook URL written to a file
       mounted at `/etc/alertmanager/secrets/pager_webhook_url` (see
-      `docs/operator/RUNBOOKS.md`, Paging), and a synthetic
-      `PolarisDuressEvent` sent through it with `amtool alert add`
-- [ ] Admin operator email known (for the initial seeded account)
-- [ ] Production invariants (TLS, no secrets in env, structured
-      /api/health) verified by `python3 -m polaris_checks.run`
-- [ ] Read `SECURITY.md` once
+      [RUNBOOKS.md, Paging](RUNBOOKS.md#paging-wiring-the-receiver)), and a
+      synthetic `PolarisDuressEvent` sent through it with `amtool alert add`
+- [ ] Admin operator username and password file ready for the first
+      `polaris-create-operator.sh` run (see [the first operator account](DEPLOYMENT.md#the-first-operator-account))
+- [ ] Production invariants verified by `python3 -m polaris_checks.run`:
+      app-to-DB TLS (`check_app_db_tls`), fail-closed `sslmode`
+      (`check_prod_fail_closed`), self-built Caddy (`check_caddy_self_built`),
+      the liveness/readiness split of `/api/health`
+      (`check_health_liveness_readiness_split`), the prod compose hardening
+      set (`check_prod_hardening`), and the edge trust boundary
+      (`check_prod_compose_trusts_edge`)
+- [ ] Read [SECURITY.md](../../SECURITY.md) once
 
 ---
 
-## Deploy
+## The running stack
 
-### A fresh Linux server (systemd)
+What is up once a deploy succeeds; the reference for every day-2 command
+below.
 
-```bash
-git clone https://github.com/EgorKhaklin/polaris-id.git /opt/polaris
-sudo POLARIS_DOMAIN=polaris.example.org /opt/polaris/deploy/linux/install.sh
-```
-
-One script: Docker from Docker's repository (key verified), images, secrets,
-`/etc/polaris/polaris.env`, `polaris.service` plus daily backup and weekly
-verify timers, the stack started and `/api/health` asserted healthy. Details,
-day-2 commands, and uninstall in [`LINUX-SERVER.md`](LINUX-SERVER.md); the host
-itself in [`HARDENING.md`](HARDENING.md). Upgrades on such a host are the
-standard path below.
-
-### Standard path (Docker Compose, single host)
-
-```bash
-./scripts/polaris-deploy.sh prod
-```
-
-This script is idempotent. It performs:
-
-1. `git pull` (skipped if `--no-pull`)
-2. `docker compose pull` to refresh upstream images and `docker compose
-   build app` (multi-stage Dockerfile.prod)
-3. Infrastructure up (`postgres`, `pgbouncer`, `redis`, `caddy`) WITHOUT
-   touching the app containers, so the running app keeps serving
-4. Migrations applied and DB objects synced (`polaris-migrate.sh --up` and
-   `--sync-objects`): the EXPAND phase, safe for the code still running
-   (the policy is enforced; see `polaris_sql/migrations/README.md`)
-5. The app rolled: with the blue-green profile, `app-green` is recreated and
-   health-waited, then `app`; without it, the single `app` is recreated
-6. Smoke test: `/api/health` from inside the network must be `healthy`
-7. Rollback on failure: the previous app image is re-tagged and every colour
-   recreated from it
-
-`POLARIS_COMPOSE_EXTRA` (the same variable `polaris.service` uses) selects
-overlays for every compose call the script makes.
-
-### Zero-downtime deploys (blue-green profile, v9.183)
-
-Add the overlay to `polaris.env` and re-deploy once:
-
-```bash
-POLARIS_COMPOSE_EXTRA="-f docker-compose.bluegreen.yml"
-```
-
-Two app containers (`app`, `app-green`) then sit behind Caddy, whose upstream
-list comes from `POLARIS_UPSTREAMS`. Caddy polls `/api/health/live` every 2s,
-retries a request onto the other colour for up to 15s (`lb_try_duration`) when
-one is being recreated, and skips a failed upstream for 10s. gunicorn drains
-in-flight requests on SIGTERM (`stop_grace_period` 35s). `polaris-deploy.sh`
-rolls green, waits for its healthcheck, then blue; `polaris-rotate-secret.sh`
-recreates the colours the same way. Sessions live in Redis, so either colour
-serves any request.
-
-What this covers: app deploys and secret rotations, the routine operations.
-What it does not: recreating `caddy` (edge config changes) or `postgres`
-(the database itself) still interrupts service; plan those in a window.
-
-Proven in CI on every push (`rolling-deploy`): under continuous traffic at the
-TLS edge, a full deploy replaces both containers with zero non-200 responses
-and zero transport errors, and a negative control (both colours stopped for
-20s) shows drops, so the zero is a measurement.
-`scripts/polaris-rolling-drill.sh` runs the same locally.
-
-### Manual path (advanced)
-
-```bash
-cd polaris_web
-
-# Build the app image
-docker compose -f docker-compose.prod.yml build app
-
-# Bring up the stack
-docker compose -f docker-compose.prod.yml up -d
-
-# Tail logs until you see "Listening at: http://0.0.0.0:8000"
-docker compose -f docker-compose.prod.yml logs -f app
-
-# Smoke test from inside the network
-docker compose -f docker-compose.prod.yml exec app curl -fsS http://localhost:8000/api/health
-```
-
-### Production stack components
+### Services
 
 | Service | Image | Role | Port (internal) |
 |---|---|---|---|
-| `caddy` | `caddy:2-alpine` | TLS termination, security headers, rate limit | 80 + 443 (host) |
-| `app` | `polaris-app:prod` (built locally) | Flask + gunicorn (4 workers) | 8000 |
-| `postgres` | `postgres:16-alpine` | Database | 5432 |
-| `redis` | `redis:7-alpine` | Rate limiter backend + atlas cache | 6379 |
+| `caddy` | `polaris-caddy:prod` (built from `Dockerfile.caddy`, Caddy 2.11.4 with the rate-limit module) | TLS termination, security headers, rate limit | 80 + 443 (host) |
+| `app` | `polaris-app:prod` (built from `Dockerfile.prod`) | Flask + gunicorn (`WEB_CONCURRENCY`, default 4) | 8000 |
+| `pgbouncer` | `polaris-pgbouncer:prod` (built from `Dockerfile.pgbouncer`) | Transaction-mode connection pool in front of Postgres | 6432 |
+| `postgres` | `polaris-postgres:prod` (built from `Dockerfile.postgres`: `postgres:16-alpine` plus pgBackRest) | Database | 5432 |
+| `redis` | `redis:7-alpine` (digest-pinned) | Rate-limiter backend | 6379 |
 
 Volumes:
-- `pg_data` (named) — Postgres data
-- `redis_data` (named) — Redis AOF/RDB
-- `caddy_data` (named) — Caddy's Let's Encrypt certs + state
-- `caddy_config` (named) — Caddy's config-time state
-- `./secrets/` (bind mount, read-only) — file-mounted secrets
-- `./logs/` (bind mount) — gunicorn access + error logs
-
----
-
-## Verify
-
-After deploy, run through this checklist:
-
-```bash
-# 1. Stack is up
-docker compose -f polaris_web/docker-compose.prod.yml ps
-# Every service should show "running" or "running (healthy)"
-
-# 2. Public TLS endpoint
-curl -fsS https://${POLARIS_DOMAIN}/api/health | jq .
-# Should return: {"status": "healthy", "version": "8.77", ...}
-
-# 3. Per-component health
-curl -fsS https://${POLARIS_DOMAIN}/api/health | jq '.checks'
-# Each of db / redis / zk_binary / disk should report "healthy"
-
-# 4. TLS certificate chain
-openssl s_client -connect ${POLARIS_DOMAIN}:443 -servername ${POLARIS_DOMAIN} </dev/null 2>/dev/null | openssl x509 -noout -issuer -subject -dates
-# Issuer should be Let's Encrypt; notAfter should be ~90 days out
-
-# 5. Security headers
-curl -fsSI https://${POLARIS_DOMAIN}/ | grep -iE "strict-transport-security|x-frame-options|x-content-type-options|content-security-policy"
-# All four headers should be present
-
-# 6. HTTP → HTTPS redirect
-curl -fsSI http://${POLARIS_DOMAIN}/ | head -1
-# Should be: HTTP/1.1 308 Permanent Redirect (or 301)
-
-# 7. Rate limiter is alive
-for i in $(seq 1 5); do
-  curl -fsS https://${POLARIS_DOMAIN}/api/health -o /dev/null -w "%{http_code}\n"
-done
-# All should return 200; the limiter only kicks in at 200 req/min/IP
-```
-
-### Initial admin login
-
-The first operator account is seeded by `10_auth.sql`:
-
-```
-username: admin
-password: (printed once during ./scripts/polaris-deploy.sh prod)
-```
-
-**Rotate immediately:**
-
-1. Browse to `https://${POLARIS_DOMAIN}/`
-2. Sign in
-3. `/admin/users` → edit `admin` → set a new password (argon2id-hashed
-   server-side)
-4. Sign out + sign back in to confirm
+- `pg_data` (named): Postgres data
+- `pgbackrest_repo` (named): the local pgBackRest repository when WAL archiving is enabled
+- `redis_data` (named): Redis AOF/RDB
+- `caddy_data` (named): Caddy's Let's Encrypt certs + state
+- `caddy_config` (named): Caddy's config-time state
+- `polaris_state` (named): script state
+- `./secrets/`: file-mounted secrets, read-only at `/run/secrets/*`
+- `./logs/` (bind mount): gunicorn logs at `/var/log/polaris`, Caddy logs at `/var/log/caddy`
 
 ---
 
@@ -281,54 +105,64 @@ password: (printed once during ./scripts/polaris-deploy.sh prod)
 
 | Task | Frequency | Command |
 |---|---|---|
-| Backup | Daily (automated) | `./scripts/polaris-backup.sh` (cron) |
+| Backup | Daily (automated) | `./scripts/polaris-backup.sh` (cron or the `polaris-backup.timer` unit) |
 | Verify backup integrity | Weekly | `./scripts/polaris-backup.sh --verify-latest` |
 | Restore drill | Quarterly | `./scripts/polaris-restore.sh <latest> --target=polaris_drill` |
 | Restore dry-run | Monthly | `./scripts/polaris-restore.sh <latest> --dry-run` (manifest-verify only) |
+| RPO/RTO drill | Monthly (automated) | `./scripts/polaris-dr-drill.sh --record`; ledger in [DR-DRILLS.md](DR-DRILLS.md) |
 | Audit-log archive | Yearly | `./scripts/polaris-archive.sh --cutoff-days=1825` (C1-preserving export at the 5y retention floor) |
 | Verify archive integrity | Quarterly | `./scripts/polaris-archive.sh --verify-latest --dest=DIR` |
-| Audit-log purge (Phase 2b) | Operator-driven, after archive verify | `./scripts/polaris-purge.sh --archive=TARBALL --actor-user-id=N` |
-| **Certificate transparency check** | **Daily (cron)** | `./scripts/polaris-ct-monitor.sh` — alerts on unexpected cert issuance for ${POLARIS_DOMAIN}; see [Certificate transparency monitoring](#certificate-transparency-monitoring-v901) below |
-| Audit-log rotation | Yearly (cron) | `./scripts/polaris-rotate-logs.sh --actor-user-id=N` — wraps archive + verify + purge in one cron-ready pipeline |
-| Operator onboarding | As needed | `./scripts/polaris-create-operator.sh --username NAME --role admin\|operator\|auditor --password-file PATH` — argon2id-hashed AppUser + AuthAuditLog entry |
-| Scrape `/metrics` | Continuous (Prometheus) | `curl https://${POLARIS_DOMAIN}/metrics` — Prometheus text-format exposition |
+| Audit-log purge | Operator-driven, after archive verify | `./scripts/polaris-purge.sh --archive=TARBALL --actor-user-id=N` |
+| Certificate transparency check | Daily (cron) | `./scripts/polaris-ct-monitor.sh`: alerts on unexpected cert issuance for `${POLARIS_DOMAIN}`; see [Certificate transparency monitoring](#certificate-transparency-monitoring) |
+| Audit-log rotation | Yearly (cron) | `./scripts/polaris-rotate-logs.sh --actor-user-id=N`: wraps archive + verify + purge in one cron-ready pipeline |
+| Operator onboarding | As needed | `./scripts/polaris-create-operator.sh --username NAME --role admin\|operator\|auditor --password-file PATH`: scrypt-hashed AppUser + AuthAuditLog entry |
+| Scrape `/metrics` | Continuous (Prometheus) | `curl http://app:8000/metrics` from the stack network: Prometheus text-format exposition; see [Prometheus metrics](#prometheus-metrics-metrics) for the required edge ACL |
 | Rotate `POLARIS_SECRET_KEY` | 180 days | `./scripts/polaris-rotate-secret.sh polaris_secret_key` |
 | Rotate DB password | 180 days | `./scripts/polaris-rotate-secret.sh polaris_db_password` |
-| OS security updates | Monthly | distro-specific (`apt upgrade` / `dnf update`) |
+| OS security updates | Monthly | distro-specific (`apt upgrade` / `dnf update`); see [HARDENING.md](HARDENING.md) |
 | Docker image refresh | Monthly | `./scripts/polaris-deploy.sh prod` |
 | Review AuthAuditLog for anomalies | Weekly | see [Audit review](#audit-review) |
 
 ### Audit review
 
-Polaris's audit-of-record discipline (v8.20) records every
-state-changing event in append-only schema tables. Review cadence:
+Every state-changing event lands in an append-only audit table. Weekly
+review queries (run through `psql` inside the stack, as below, or tail the
+auth events with `polaris audit-log`):
 
 ```bash
 # Weekly: failed-login surface
 docker compose -f polaris_web/docker-compose.prod.yml exec postgres \
   psql -U polaris_app -d polaris -c "
     SELECT username, count(*) AS attempts,
-           min(occurred_at) AS first, max(occurred_at) AS last
+           min(event_timestamp) AS first, max(event_timestamp) AS last
     FROM AuthAuditLog
-    WHERE outcome = 'FAILURE' AND occurred_at > now() - interval '7 days'
+    WHERE event_type IN ('LOGIN_FAILED', 'LOGIN_LOCKED')
+      AND event_timestamp > now() - interval '7 days'
     GROUP BY username
     ORDER BY attempts DESC LIMIT 20;"
 
-# Weekly: token lifecycle anomalies
+# Weekly: token lifecycle mix
 docker compose -f polaris_web/docker-compose.prod.yml exec postgres \
   psql -U polaris_app -d polaris -c "
-    SELECT new_state, count(*) FROM TokenLifecycleEvent
-    WHERE event_at > now() - interval '7 days'
-    GROUP BY new_state ORDER BY count(*) DESC;"
+    SELECT event_type, count(*) FROM TokenLifecycleEvent
+    WHERE event_timestamp > now() - interval '7 days'
+    GROUP BY event_type ORDER BY count(*) DESC;"
 
-# Weekly: revocation velocity (R11-6)
+# Weekly: revocations per issuing agency
 docker compose -f polaris_web/docker-compose.prod.yml exec postgres \
   psql -U polaris_app -d polaris -c "
-    SELECT issuing_agency_id, count(*) AS revocations_7d
-    FROM TokenLifecycleEvent
-    WHERE new_state = 'REVOKED' AND event_at > now() - interval '7 days'
-    GROUP BY issuing_agency_id ORDER BY revocations_7d DESC LIMIT 5;"
+    SELECT t.issuing_agency_id, count(*) AS revocations_7d
+    FROM TokenLifecycleEvent e
+    JOIN IdentityToken t USING (token_id)
+    WHERE e.event_type = 'REVOKED'
+      AND e.event_timestamp > now() - interval '7 days'
+    GROUP BY t.issuing_agency_id ORDER BY revocations_7d DESC LIMIT 5;"
 ```
+
+The per-agency velocity alerts in
+[polaris-alerts.yml](../../deploy/observability/polaris-alerts.yml) watch the
+same signal continuously; see
+[Per-agency quotas and velocity alerts](#per-agency-quotas-and-velocity-alerts).
 
 ### Reading container logs
 
@@ -346,21 +180,26 @@ docker compose -f polaris_web/docker-compose.prod.yml logs --tail=100 caddy
 docker compose -f polaris_web/docker-compose.prod.yml logs --tail=100 postgres
 ```
 
-Persistent log files are written to `./logs/` (mounted into the app
-container as `/var/log/polaris/`).
+Persistent log files are written to `./logs/` (mounted into the app container
+as `/var/log/polaris/` and into Caddy as `/var/log/caddy/`). Container stdout
+is capped by the json-file driver (`max-size` x `max-file`), so logs cannot
+fill the disk.
 
-### Operator authentication (WebAuthn-MFA, v8.97)
+### Operator authentication (WebAuthn-MFA)
 
 Operator login for admin accounts is two-factor: password + WebAuthn
-assertion.
+assertion. The rollout, phase by phase, is
+[WEBAUTHN-ROLLOUT.md](WEBAUTHN-ROLLOUT.md); the enrollment and recovery
+procedures are [SECRETS.md, WebAuthn operator MFA](SECRETS.md#9-webauthn-operator-mfa).
 
 **Enrollment cadence:**
 - New admin accounts via `polaris-create-operator.sh --role admin` get
   `webauthn_required_after = now() + 30 days`
-- During grace period: password-only login completes; user sees a
-  warning banner with day count
-- After deadline + no credential: login REFUSED with operator guidance
-- After deadline + credential enrolled: password + WebAuthn assertion required
+- During the grace period: password-only login completes; the user sees a
+  warning banner with the day count
+- After the deadline with no credential: login refused with operator guidance
+- After the deadline with a credential enrolled: password + WebAuthn assertion
+  required
 
 **Enroll a credential:**
 1. Log in via `/login`
@@ -368,13 +207,10 @@ assertion.
 3. Press *Enroll WebAuthn credential* and follow the browser prompt
 4. Optionally enroll a second credential as backup
 
-See `docs/operator/SECRETS.md` § 7 for the full enrollment + recovery
-runbook.
-
 **Operator emergency recovery (locked-out admin):**
 
-If an admin loses their authenticator AND the deadline has passed,
-a second admin runs:
+If an admin loses their authenticator AND the deadline has passed, a second
+admin runs:
 
 ```bash
 ./scripts/polaris-recover-admin.sh \
@@ -383,13 +219,15 @@ a second admin runs:
     --window-minutes 15
 ```
 
-The grant is audited as `EMERGENCY_PASSWORD_LOGIN_AUTHORIZED`. The
-target must enroll a new credential at `/settings/webauthn` before
-the window closes, otherwise the refusal returns.
+The grant is audited as `EMERGENCY_PASSWORD_LOGIN_AUTHORIZED`. The target
+must enroll a new credential at `/settings/webauthn` before the window closes,
+otherwise the refusal returns.
 
-For solo-admin deployments (no second admin available), generate a
-printed mnemonic at enrollment time via
-`./scripts/polaris-generate-recovery-code.sh` and store it offline.
+For solo-admin deployments (no second admin available), generate a printed
+mnemonic at enrollment time via `./scripts/polaris-generate-recovery-code.sh`
+and store it offline; `polaris-recover-admin.sh --recovery-code` then stands in
+for the second admin. The incident-time procedure is
+[DR.md, section 4.6](DR.md).
 
 **Audit the WebAuthn surface:**
 
@@ -419,27 +257,28 @@ SELECT username, webauthn_required_after
  ORDER BY webauthn_required_after;
 ```
 
-### Rotate cryptographic algorithm
+### Retire a cryptographic algorithm
 
-Marking an algorithm as `is_active = FALSE` prevents new tokens
-under that algorithm without affecting existing tokens:
+An algorithm is retired by its `deprecation_date`. Once the date has passed,
+`uc1_issue_token` refuses to mint a new token under it and
+`uc6_migrate_algorithm` refuses to migrate a token onto it; existing tokens
+keep verifying until they are migrated:
 
 ```sql
 UPDATE CryptographicAlgorithm
-SET is_active = FALSE
+SET deprecation_date = CURRENT_DATE
 WHERE name = 'ECDSA-P256';
 ```
 
-To migrate a holder to a new algorithm: issue a successor token
-(`uc7_succeed_token`) referencing the new `algorithm_id`. UC-1
-also supports specifying the multi-sig migration mode (R11-1 /
-v8.18).
+To move a holder onto a new algorithm, run UC-6 (`polaris migrate-algorithm`
+on the CLI, or `POST /uc6/migrate`; see [API.md](../reference/API.md)). The
+algorithm inventory and the post-quantum posture are in
+[PQC-POSTURE.md](../reference/PQC-POSTURE.md).
 
-### Schema migrations (v8.95)
+### Schema migrations
 
-Polaris ships a custom polaris-native migration framework
-(DECIDED 2026-05-14). State lives in the `schema_version` table
-(an append-only audit-of-record table) and migration files are
+Polaris ships its own migration runner. State lives in the `schema_version`
+table (an append-only audit-of-record table) and migration files are
 hand-written SQL pairs under `polaris_sql/migrations/`.
 
 **What it is:**
@@ -451,28 +290,16 @@ hand-written SQL pairs under `polaris_sql/migrations/`.
 - The `schema_version` registry is append-only (UPDATE/DELETE forbidden);
   reverts append a new `event_type='reverted'` row rather than mutating
 
-**Authoring a new migration** (development workflow lives in
-`polaris_sql/migrations/README.md`; the file pair is committed
-together).
+Authoring a new migration is a development task; the workflow and the
+expand-contract policy are in the
+[migrations README](../../polaris_sql/migrations/README.md). The file pair
+is committed together.
 
 **Inspect state on the production stack:**
 
 ```bash
 # What's on disk and what's currently applied
 ./scripts/polaris-migrate.sh --target=docker-stack --status
-```
-
-Sample output:
-
-```
-  Polaris schema migration status
-  ────────────────────────────────
-
-  Migrations on disk:
-    ✓ 2026-05-14-001-idx-checkpoint-recent  (applied)
-
-  schema_version events (lifetime, append-only):  3
-  Currently applied (last event = applied):       1
 ```
 
 **Apply pending migrations:**
@@ -490,9 +317,8 @@ Sample output:
 ./scripts/polaris-migrate.sh --target=docker-stack --dry-run --up
 ```
 
-The `--actor-user-id` flag records WHO authorized the change. Use
-your own `AppUser.user_id`; do not share accounts. Find your id
-with:
+The `--actor-user-id` flag records WHO authorized the change. Use your own
+`AppUser.user_id`; do not share accounts. Find your id with:
 
 ```bash
 docker compose -f polaris_web/docker-compose.prod.yml exec postgres \
@@ -507,11 +333,10 @@ docker compose -f polaris_web/docker-compose.prod.yml exec postgres \
     --actor-user-id <your-user-id> --down 1
 ```
 
-The runner refuses to revert if the `.up.sql` file has been edited
-since the recorded SHA-256 was taken (exit code 6 — tamper
-detection). If you legitimately need to change an already-applied
-migration, write a new one that fixes the problem; do not edit
-history.
+The runner refuses to revert if the `.up.sql` file has been edited since the
+recorded SHA-256 was taken (exit code 6, tamper detection). If you legitimately
+need to change an already-applied migration, write a new one that fixes the
+problem; do not edit history.
 
 **Exit codes** (greppable for incident response and CI):
 
@@ -522,39 +347,34 @@ history.
 | 3    | migrations directory missing/empty (only an issue for `--up`/`--down`) |
 | 4    | filename validation error (must match `YYYY-MM-DD-NNN-slug`) |
 | 5    | database call failed (migration content or psql error) |
-| 6    | SHA-256 mismatch on revert — file edited post-apply, refusing |
+| 6    | SHA-256 mismatch on revert: file edited post-apply, refusing |
 | 7    | invalid argument (e.g., `--down 0`) |
 
-**Backups + migrations.** Take a backup BEFORE applying a
-migration on production. Polaris does not pause writes during
-the migration's transaction; PostgreSQL transactional DDL handles
-isolation correctly, but if anything goes wrong at the
-applicaton-state level (a constraint that fails halfway through
-a batched UPDATE, e.g.), restoring from the most recent
-pre-migration backup is the recovery path. See § Backup &
-restore below.
+**Backups + migrations.** Take a backup BEFORE applying a migration on
+production. Polaris does not pause writes during the migration's transaction;
+PostgreSQL transactional DDL handles isolation correctly, but if anything goes
+wrong at the application-state level (a constraint that fails halfway through
+a batched UPDATE, for example), restoring from the most recent pre-migration
+backup is the recovery path. See [Backup & restore](#backup--restore).
 
-**The registry itself is the audit-of-record.** Querying it shows
-exactly which migrations have run, when, by whom, and against
-which file content (the recorded SHA-256). It is append-only at
-the database level, so even a compromised admin role cannot
-silently rewrite migration history without leaving evidence in
-the audit trail of WHO tried to DELETE/UPDATE (the trigger logs
-the rejection).
+**The registry itself is the audit-of-record.** Querying it shows exactly
+which migrations have run, when, by whom, and against which file content (the
+recorded SHA-256). It is append-only at the database level, so even a
+compromised admin role cannot silently rewrite migration history.
 
-### Certificate transparency monitoring (v9.01)
+### Certificate transparency monitoring
 
-Polaris's TLS certs are issued by Let's Encrypt via Caddy's
-ACME client. Any cert for `${POLARIS_DOMAIN}` issued by a
-DIFFERENT issuer is a sign of:
+Polaris's TLS certs are issued by Let's Encrypt via Caddy's ACME client. Any
+cert for `${POLARIS_DOMAIN}` issued by a DIFFERENT issuer is a sign of:
 
 - A misconfigured Caddy that re-issued instead of renewed
 - Compromised DNS allowing rogue ACME validation by a third party
 - A CA mis-issuance attack (rare but real)
 
 The CT monitor polls the public crt.sh log, compares against an
-operator-maintained allowlist (`$STATE_DIR/ct-monitor/known.txt`),
-and alerts on anything unexpected.
+operator-maintained allowlist (`$STATE_DIR/ct-monitor/known.txt`, where
+`STATE_DIR` is `POLARIS_STATE_DIR`, default `/tmp/polaris-state`), and alerts
+on anything unexpected.
 
 **Initial setup:**
 
@@ -577,7 +397,7 @@ echo | openssl s_client -connect ${POLARIS_DOMAIN}:443 \
 ```cron
 # /etc/cron.d/polaris-ct-monitor
 # Run at 06:00 UTC daily; CT logs have ~2h propagation latency,
-# so once a day catches every unexpected issuance within ≤24h.
+# so once a day catches every unexpected issuance within 24h.
 0 6 * * * polaris cd /opt/polaris && ./scripts/polaris-ct-monitor.sh \
               --window-days 1 \
               --check ${POLARIS_DOMAIN} \
@@ -587,17 +407,16 @@ echo | openssl s_client -connect ${POLARIS_DOMAIN}:443 \
 **On alert** (exit code 5):
 
 The script logs anomalies to `$STATE_DIR/ct-monitor/anomalies.log`.
-Investigate via [DR.md](DR.md) § 4.5 procedure. If the new cert is
-a legitimate renewal (Caddy auto-renews ~30 days before expiry,
+Investigate via the TLS procedure in [DR.md, section 4.5](DR.md). If the new
+cert is a legitimate renewal (Caddy auto-renews about 30 days before expiry,
 which produces a fresh fingerprint), add it to the allowlist:
 
 ```bash
 ./scripts/polaris-ct-monitor.sh --add-known <new-fingerprint>
 ```
 
-If unfamiliar, treat as a SEV-2 incident; the cert may have been
-issued to an attacker who controls a different CA path or the
-operator's DNS.
+If unfamiliar, treat as a SEV-2 incident; the cert may have been issued to an
+attacker who controls a different CA path or the operator's DNS.
 
 **Exit codes:**
 
@@ -606,35 +425,48 @@ operator's DNS.
 | 0    | No anomalies (all certs in window are in the allowlist OR no certs in window) |
 | 2    | Usage error |
 | 3    | `POLARIS_DOMAIN` not set + no `--check` argument |
-| 4    | Network error (crt.sh unreachable; treat as inconclusive — retry next cycle) |
-| 5    | **Anomaly** — UNKNOWN cert detected; investigate immediately |
+| 4    | Network error (crt.sh unreachable; treat as inconclusive and retry next cycle) |
+| 5    | Anomaly: UNKNOWN cert detected; investigate immediately |
 | 6    | Malformed allowlist file |
 
 ---
 
 ## Backup & restore
 
+This section is the routine: take, verify, and restore a backup. Recovery
+targets, the WAL-archiving path, and the incident procedures are
+[DR.md](DR.md); the measured numbers are [DR-DRILLS.md](DR-DRILLS.md).
+
 ### Backup
 
-`scripts/polaris-backup.sh` produces a single timestamped tarball
-containing every durable component:
+`scripts/polaris-backup.sh` produces a single timestamped tarball containing
+every durable component:
 
-- `pg_dump` of the Polaris database (custom format, gzipped)
+- `pg_dump` of the Polaris database (custom format), encrypted with the key
+  in `POLARIS_BACKUP_KEY_FILE` (the script warns loudly when the key is unset
+  and the dump goes out in plaintext)
 - `MANIFEST.json` with timestamps + SHA-256 hashes of each component
 
 ```bash
-./scripts/polaris-backup.sh                    # writes /var/backups/polaris-YYYYMMDD-HHMMSS.tar.gz
-./scripts/polaris-backup.sh --dest s3://...    # uploads to S3 (requires awscli)
+./scripts/polaris-backup.sh                    # writes /var/backups/polaris-<timestamp>.tar.gz
+./scripts/polaris-backup.sh --dest /path/to/dir   # a different local directory
 ./scripts/polaris-backup.sh --verify-latest    # extracts + verifies most recent backup
 ```
 
 ### Backup schedule
 
+The Linux installer wires `polaris-backup.timer` (daily 03:00 UTC) and
+`polaris-backup-verify.timer` (Sunday 04:00 UTC). The cron equivalent:
+
 ```bash
 # /etc/cron.d/polaris-backup
 0 3 * * * polaris /opt/polaris/scripts/polaris-backup.sh --dest /var/backups/polaris
-0 4 * * 0 polaris /opt/polaris/scripts/polaris-backup.sh --verify-latest
+0 4 * * 0 polaris /opt/polaris/scripts/polaris-backup.sh --dest /var/backups/polaris --verify-latest
 ```
+
+`/var/backups/polaris` is on the same disk as the database; copy the tarballs
+off-host or enable the pgBackRest S3 repository
+([HARDENING.md, section 11](HARDENING.md)).
 
 Retention policy:
 
@@ -647,13 +479,14 @@ Retention policy:
 
 ### Restore
 
-`scripts/polaris-restore.sh` (v8.81) is the scripted counterpart to
-`polaris-backup.sh`. It verifies every component's SHA-256 hash
-against the in-band `MANIFEST.json`, then restores PostgreSQL. It
-refuses to clobber a non-empty target database without `--force`.
+`scripts/polaris-restore.sh` is the scripted counterpart to
+`polaris-backup.sh`. It verifies every component's SHA-256 hash against the
+in-band `MANIFEST.json`, then restores PostgreSQL. It fails closed without the
+backup key and refuses to clobber a non-empty target database without
+`--force`.
 
 ```bash
-# Standard path — restore into a fresh database
+# Standard path: restore into a fresh database
 createdb polaris_restored
 ./scripts/polaris-restore.sh \
     /var/backups/polaris-20260514T030000Z.tar.gz \
@@ -664,10 +497,15 @@ createdb polaris_restored
     /var/backups/polaris-20260514T030000Z.tar.gz \
     --dry-run
 
-# Restore into the running production stack
+# Restore into the running production stack. --force is required: the
+# pre-flight refuses a non-empty target (exit 6) and the live DB always
+# has tables.
 ./scripts/polaris-restore.sh \
     /var/backups/polaris-20260514T030000Z.tar.gz \
-    --target=docker-stack
+    --target=docker-stack --force
+
+# Also cross-check the restored schema_version table against migrations/
+./scripts/polaris-restore.sh <backup> --target=docker-stack --verify-schema-version
 ```
 
 Exit codes (greppable for incident response):
@@ -681,19 +519,21 @@ Exit codes (greppable for incident response):
 | 5 | Manifest hash verification failed |
 | 6 | Target DB not empty; `--force` required |
 | 7 | `pg_restore` failed (state may be partial) |
+| 8 | Filesystem audit-of-record restore failed |
 | 9 | `docker` not available (when `--target=docker-stack`) |
+| 10 | `schema_version` diverges from `migrations/` (`--verify-schema-version`) |
 
 After restore:
 
 ```bash
 # Run integrity checks
 psql -d polaris_restored -c "SELECT count(*) FROM IdentityToken;"
-psql -d polaris_restored -f polaris_sql/08_tests.sql        # 170 SQL self-tests; expect 0 failures
-psql -d polaris_restored -f polaris_sql/12_v7_constraints.sql
+psql -d polaris_restored -f polaris_sql/08_tests.sql
+# The summary line "Total: N tests, N passed, 0 failed" must report 0 failed
 ```
 
-If this was a real recovery (not a drill), **rotate every secret
-next** — assume the prior secrets are also compromised:
+If this was a real recovery (not a drill), **rotate every secret next**;
+assume the prior secrets are also compromised:
 
 ```bash
 ./scripts/polaris-rotate-secret.sh polaris_secret_key
@@ -701,41 +541,36 @@ next** — assume the prior secrets are also compromised:
 ./scripts/polaris-rotate-secret.sh polaris_db_root_password
 ```
 
-Recovery point objective (RPO): up to 24 hours with daily backups.
-Recovery time objective (RTO): ~15 minutes for a clean restore on
-matched hardware (drill-verified against a 256KB backup of the
-seed database).
-
-For tighter RPO, configure WAL archiving (PostgreSQL streaming
-replication or `pgbackrest`) — Arc B Phase 2 will ship a paved-path
-recipe.
+Recovery objectives (RPO, RTO), the continuous WAL-archiving path that
+tightens them (pgBackRest, offsite by env alone), point-in-time restore, and
+the drill that measures them are owned by [DR.md, section 1](DR.md); do not
+quote a number that is not in [DR-DRILLS.md](DR-DRILLS.md).
 
 ### What NOT to back up
 
-- The codebase itself — that's in git
-- `./logs/` — captured by your log aggregator
-- Docker images — rebuilt from the Dockerfile
-- `secrets/` — sealed outside the backup tarball; generate fresh
-  via `scripts/polaris-generate-secrets.sh` and use the same DB
-  password as the restore source, OR rotate everything after
-  restore (preferred)
+- The codebase itself: that is in git
+- `./logs/`: captured by your log aggregator
+- Docker images: rebuilt from the Dockerfiles
+- `secrets/`: sealed outside the backup tarball; generate fresh via
+  `scripts/polaris-generate-secrets.sh` and use the same DB password as the
+  restore source, OR rotate everything after restore (preferred)
 
-### Audit-log archive + purge (Phase 2b / v8.87)
+### Audit-log archive + purge
 
-**Constitutional carve-out** — the audit-log retention decision
-selected archive-then-delete via a dedicated procedure. C1's
-append-only invariant is preserved at the
-*constitutional* level by the archive + checkpoint chain; the
-table-level invariant is loosened for four high-volume audit
-tables (`TokenLifecycleEvent`, `VerificationEvent`,
-`EnrollmentStatusEvent`, `AuthAuditLog`) when and only when
-`uc_archive_purge()` is running.
+The audit-log retention decision selected archive-then-delete via a dedicated
+procedure. C1's append-only invariant is preserved at the constitutional level
+by the archive + checkpoint chain; the table-level invariant is loosened for
+DELETE on every table whose trigger runs `reject_audit_modification()` when
+and only when `uc_archive_purge()` is running, and the procedure itself
+deletes from four high-volume audit tables (`TokenLifecycleEvent`,
+`VerificationEvent`, `EnrollmentStatusEvent`, `AuthAuditLog`).
 
 **Two-step retention workflow:**
 
 ```bash
 # Step 1: produce a manifest-hashed archive of rows older than the
-#         retention floor (default 1825 days / 5y).
+#         retention floor (5y = 1825 days; polaris-archive.sh's own default
+#         is 365, polaris-rotate-logs.sh's is 1825).
 ./scripts/polaris-archive.sh --cutoff-days=1825 --dest=/var/backups
 
 # Step 2: verify the archive (re-hashes every component against MANIFEST.json).
@@ -757,22 +592,21 @@ psql -d polaris -c "
     ORDER BY purged_at DESC LIMIT 5"
 ```
 
-**Non-repudiation chain** — operators who need to answer "did
-event X happen?":
+**Non-repudiation chain.** Operators who need to answer "did event X
+happen?":
 
 1. Query the hot tables. If found, done.
-2. If not, query `LifecycleArchiveCheckpoint` for cutoffs that
-   would have covered when X was expected.
-3. Retrieve the archive tarball at `archive_uri`; verify its
-   SHA-256 matches `archive_sha256` in the checkpoint.
+2. If not, query `LifecycleArchiveCheckpoint` for cutoffs that would have
+   covered when X was expected.
+3. Retrieve the archive tarball at `archive_uri`; verify its SHA-256 matches
+   `archive_sha256` in the checkpoint.
 4. Extract; read the matching CSV file in the tarball; locate X.
 
-**Archive custody is operator-discretion.** The procedure stores
-the URI verbatim in `archive_uri`; the operator is responsible
-for keeping the archive accessible at that URI for the chain
-to remain whole. If the archive moves, append a new checkpoint
-row recording the move (the table is append-only — the move
-itself is audit-of-record).
+**Archive custody is operator-discretion.** The procedure stores the URI
+verbatim in `archive_uri`; the operator is responsible for keeping the archive
+accessible at that URI for the chain to remain whole. If the archive moves,
+append a new checkpoint row recording the move (the table is append-only; the
+move itself is audit-of-record).
 
 **What the GUC carve-out does and does not allow:**
 
@@ -783,17 +617,20 @@ itself is audit-of-record).
 | DELETE on LifecycleArchiveCheckpoint | rejected | rejected (no carve-out at this layer) |
 | UPDATE on LifecycleArchiveCheckpoint | rejected | rejected |
 
-`SET LOCAL polaris.purge_in_progress` is transaction-scoped; if
-the procedure rolls back, the deletes and the checkpoint roll
-back together, atomically.
+`SET LOCAL polaris.purge_in_progress` is transaction-scoped; if the procedure
+rolls back, the deletes and the checkpoint roll back together, atomically.
 
-**Phase 2b coverage** — the four reject_audit_modification-protected
-tables: `TokenLifecycleEvent`, `VerificationEvent`,
-`EnrollmentStatusEvent`, `AuthAuditLog`. **Not covered** in
-v8.87 (deferred to Phase 2c if storage pressure justifies):
-`AnchorBatch` (FK from BlockchainAnchor); `AgencyTrustAttestation`
-+ `DuressEvent` (separate immutability triggers; pattern can be
-extended to those when needed).
+**Coverage.** `uc_archive_purge()` deletes from four tables:
+`TokenLifecycleEvent`, `VerificationEvent`, `EnrollmentStatusEvent`,
+`AuthAuditLog`. The GUC carve-out lives in `reject_audit_modification()`
+itself and keys only on `polaris.purge_in_progress`, so while the transaction
+is inside the procedure DELETE is open on all nine tables that share the
+function: those four plus `IndividualErasureEvent`, `AnchorBatch`,
+`TokenStateEpochLeaf`, `DuressEvent`, and `AuditAccessLog`. The procedure
+simply does not delete from the other five. Only `AgencyTrustAttestation`
+(`trg_attestation_immutable`, `enforce_attestation_immutability()`) and
+`LifecycleArchiveCheckpoint` (`reject_checkpoint_modification()`) have
+separate, carve-out-free triggers.
 
 ---
 
@@ -801,131 +638,113 @@ extended to those when needed).
 
 ### When to scale
 
-Single-host Polaris (4 vCPU / 8 GB / SSD) handles:
+The measured single-host numbers are in
+[PERFORMANCE-BASELINE.md](../reference/PERFORMANCE-BASELINE.md) (the
+end-to-end baseline CI re-runs) and [SCALING.md](../reference/SCALING.md)
+(the atlas at 10 million events). Past those, the architecture supports the
+moves below. Each subsection names the inflection point at which it pays off
+and the concrete recipe to apply.
 
-- ~200 verifications/sec sustained
-- ~5M `VerificationEvent` rows in the active dataset (with the v6
-  spatial index)
-- ~50 concurrent operators
-- ~10 anchor-batch closes / hour
-- ~5 ZK-epoch closes / hour (the Plonky2 prover is single-threaded;
-  see `polaris_zk/`)
+### Connection pooling (pgbouncer): the default
 
-Past those numbers, the architecture supports the following
-horizontal-scaling moves. Each subsection below names the
-inflection point at which it pays off and the concrete recipe to
-apply.
+**Inflection:** roughly 30-50 concurrent operators, 100 concurrent sessions,
+or sustained 100+ verifications/sec. Without pgbouncer, Polaris's per-request
+connection pattern saturates Postgres's `max_connections` ceiling (default
+100). With pgbouncer in transaction-pooling mode, thousands of short-lived app
+connections multiplex onto a small handful of long-lived backend connections.
 
-### Connection pooling (pgbouncer) — DEFAULT in v8.83+
-
-**Inflection:** ~30-50 concurrent operators / ~100 concurrent
-sessions / sustained 100+ verifications/sec. Without pgbouncer,
-Polaris's per-request connection pattern saturates Postgres's
-`max_connections` ceiling (default 100). With pgbouncer in
-transaction-pooling mode, thousands of short-lived app
-connections multiplex onto a small handful of long-lived backend
-connections.
-
-**Already shipped:** the production stack
-(`docker-compose.prod.yml`) places **pgbouncer between the app
-and Postgres** by default since v8.83. The app reads
-`POLARIS_DB_HOST=pgbouncer` and `POLARIS_DB_PORT=6432`; pgbouncer
-forwards to `postgres:5432`. No operator action needed for
-standard deployments.
+**Already shipped:** the production stack (`docker-compose.prod.yml`) places
+pgbouncer between the app and Postgres by default. The app reads
+`POLARIS_DB_HOST=pgbouncer` and `POLARIS_DB_PORT=6432`; pgbouncer forwards to
+`postgres:5432` over TLS (`verify-ca`). No operator action needed for standard
+deployments.
 
 **Tuning knobs** (defaults in `docker-compose.prod.yml`):
 
 | Setting | Default | Raise when |
 |---|---|---|
-| `PGBOUNCER_DEFAULT_POOL_SIZE` | 20 | App workers × 1.5 above this (so 30+ for 20 gunicorn workers) |
-| `PGBOUNCER_MIN_POOL_SIZE`     | 5  | Cold-start latency matters; pre-warming pool reduces first-request P99 |
-| `PGBOUNCER_RESERVE_POOL_SIZE` | 5  | Bursty traffic; reserve absorbs spikes |
-| `PGBOUNCER_MAX_CLIENT_CONN`   | 500 | If you see "no more connections allowed" from clients |
-| `PGBOUNCER_MAX_DB_CONNECTIONS` | 50 | Must be ≤ Postgres `max_connections` minus admin headroom (~10) |
+| `PGBOUNCER_DEFAULT_POOL_SIZE` | 20 | App workers x 1.5 above this (so 30+ for 20 gunicorn workers) |
+| `PGBOUNCER_MIN_POOL_SIZE`     | 5  | Cold-start latency matters; a pre-warmed pool reduces first-request P99 |
+| `PGBOUNCER_RESERVE_POOL_SIZE` | 5  | Bursty traffic; the reserve absorbs spikes |
+| `PGBOUNCER_MAX_CLIENT_CONN`   | 500 | Clients see "no more connections allowed" |
+| `PGBOUNCER_MAX_DB_CONNECTIONS` | 50 | Must stay below Postgres `max_connections` minus admin headroom (~10) |
 
 **Operator commands:**
 
+The pgbouncer admin console (`SHOW POOLS`, `SHOW CLIENTS`, `SHOW STATS`) is
+intentionally disabled: the runtime `pgbouncer.ini` written by
+[polaris_web/pgbouncer-entrypoint.sh](../../polaris_web/pgbouncer-entrypoint.sh)
+sets no `admin_users` or `stats_users`, so the application role cannot issue
+`PAUSE`/`RELOAD`/`SHUTDOWN` (least privilege), and the alpine pgbouncer image
+ships no `psql`. Observe the pool from the outside instead:
+
 ```bash
-# Connection-pool live view (admin pseudo-db)
-docker compose -f polaris_web/docker-compose.prod.yml exec pgbouncer \
-    psql -h 127.0.0.1 -p 6432 -U polaris_app pgbouncer -c "SHOW POOLS;"
+# pgbouncer's own log (pool open/close, waits, auth failures)
+docker compose -f polaris_web/docker-compose.prod.yml logs pgbouncer | tail -50
 
-# All active client connections
-docker compose -f polaris_web/docker-compose.prod.yml exec pgbouncer \
-    psql -h 127.0.0.1 -p 6432 -U polaris_app pgbouncer -c "SHOW CLIENTS;"
-
-# Stats summary (queries/sec, avg wait, etc.)
-docker compose -f polaris_web/docker-compose.prod.yml exec pgbouncer \
-    psql -h 127.0.0.1 -p 6432 -U polaris_app pgbouncer -c "SHOW STATS;"
+# Server-side view of the pooled connections
+docker compose -f polaris_web/docker-compose.prod.yml exec -u postgres postgres \
+    psql -d polaris -c "SELECT usename, state, count(*) FROM pg_stat_activity
+                        WHERE usename = 'polaris_app' GROUP BY 1, 2;"
 ```
 
 **When pgbouncer transaction-pooling is wrong:**
 
-- If you start using prepared statements cached client-side
-  (Polaris doesn't), you'll need session-pooling or to disable
-  cached prepared statements.
-- If you start using `LISTEN`/`NOTIFY` (Polaris doesn't),
-  transaction-pooling discards the listening session at txn end.
-- `SET SESSION` calls (Polaris uses only short-lived
-  `polaris.actor_username` GUCs inside the transaction) are
-  fine.
+- Client-side cached prepared statements (Polaris uses none) need
+  session-pooling, or the cache disabled.
+- `LISTEN`/`NOTIFY` (Polaris uses neither): transaction-pooling discards the
+  listening session at transaction end.
+- `SET SESSION` calls: Polaris uses only transaction-scoped GUCs
+  (`polaris.actor_agency_id` and `polaris.reason_code` via `set_config(...,
+  true)`, `polaris.purge_in_progress` via `SET LOCAL`), which are fine.
 
-### gunicorn worker tuning — `WEB_CONCURRENCY`
+### gunicorn worker tuning: `WEB_CONCURRENCY`
 
-**Inflection:** sustained CPU utilization above ~70% on the app
-container, OR p95 latency creeping above the request budget.
+**Inflection:** sustained CPU utilization above ~70% on the app container, OR
+p95 latency creeping above the request budget.
 
 **Recipe:**
 
 ```bash
-# In your shell or systemd unit file:
+# In polaris.env (or the shell that runs the deploy):
 export WEB_CONCURRENCY=8
 
 # Then deploy as usual:
 ./scripts/polaris-deploy.sh prod
 ```
 
-Rule of thumb: `WEB_CONCURRENCY = (2 × vCPU) + 1` for the
-gunicorn default sync worker class. The default is 4 (suitable
-for 2-vCPU hosts). On an 8-vCPU host raise to 17. Above 16
-workers, also raise `PGBOUNCER_DEFAULT_POOL_SIZE` proportionally.
+Rule of thumb: `WEB_CONCURRENCY = (2 x vCPU) + 1` for the gunicorn default
+sync worker class. The default is 4 (suitable for 2-vCPU hosts). On an
+8-vCPU host raise to 17. Above 16 workers, also raise
+`PGBOUNCER_DEFAULT_POOL_SIZE` proportionally.
 
-### Read replica — for atlas-dominated read load
+### Read replica: for atlas-dominated read load
 
-**Inflection:** atlas API (`/api/atlas/*`) dominates request
-volume AND p99 latency above 200ms.
+**Inflection:** the atlas API (`/api/atlas/*`) dominates request volume AND
+p99 latency is above 200ms.
 
-**Recipe (deferred to Phase 2.5):** add a PostgreSQL streaming
-replica; Caddy or HAProxy routes `/api/atlas/*` to the replica
-endpoint. The app's read paths are read-only by construction
-(SELECT-only); the routing layer is upstream of any auth.
-
-Until shipped, the workaround is to scale Postgres vertically
+**Status:** a streaming standby ships ([FAILOVER.md](FAILOVER.md)); routing
+`/api/atlas/*` reads to it does not. Until it does, scale Postgres vertically
 (more vCPU + SSD IO).
 
-### Redis cluster — for high-QPS rate limiting + atlas cache
+### Redis cluster: for high-QPS rate limiting
 
-**Inflection:** sustained 500+ req/min/IP across distinct
-clients, OR rate-limiter Redis latency p95 > 5ms.
+**Inflection:** sustained 500+ req/min/IP across distinct clients, OR
+rate-limiter Redis latency p95 above 5ms.
 
-**Recipe (deferred to Phase 2.5):** Redis Sentinel or Redis
-Cluster (operator's choice) replaces the single Redis instance.
-The app's `security.py` rate-limiter selection logic
-auto-discovers Redis via `POLARIS_REDIS_URL`; point it at the
-cluster's read-write endpoint.
+**Status:** not shipped. The app's rate-limiter selection in `security.py`
+discovers Redis via `POLARIS_REDIS_URL`; a Sentinel or Cluster endpoint can be
+pointed at the same way. The shipped single instance runs with
+`maxmemory 256mb` and `allkeys-lru`.
 
-Until shipped: a single Redis instance with `maxmemory 256mb`
-and `allkeys-lru` (the current default) handles ~50k ops/sec
-which is well above Polaris's expected QPS.
+### PostGIS: for atlas spatial queries at very high cardinality
 
-### PostGIS — for atlas spatial queries at very high cardinality (R8-4 Phase 1 ✅ v8.88)
+**Inflection:** atlas API p95 above 500ms at 5M+ events with the default
+B-tree spatial indexes; B-tree breaks down past ~10M events because it does
+not model 2D proximity natively.
 
-**Inflection:** atlas API p95 > 500ms at 5M+ events with the
-default B-tree spatial indexes; B-tree breaks down past ~10M
-events because it doesn't model 2D proximity natively.
-
-**Recipe (v8.88+):** the `polaris_sql/13_postgis.sql` script is
-optional-by-design — schema works with and without the extension.
+**Recipe:** the `polaris_sql/13_postgis.sql` script is optional by design; the
+schema works with and without the extension.
 
 ```bash
 # 1. As a Postgres superuser, install the extension once:
@@ -949,40 +768,37 @@ After step 3 both should return `t`. The schema gains:
 - `VerificationEvent.geo` (generated, stored) + `gix_verification_geo` (GiST)
 - `TokenLifecycleEvent.geo` (generated, stored) + `gix_lifecycle_geo` (GiST)
 
-The application-layer atlas functions still use the B-tree path
-in v8.88 — the function rewrite (Phase 2 of R8-4) is gated on a
-PostGIS-enabled benchmark environment where the ≥3× acceptance
-criterion can be measured. Until Phase 2 ships, operators with
-PostGIS active can run hand-queries against the GiST index
-directly (see `DEVNOTES/atlas-scaling.md` § "PostGIS-optional
-scaling path" for a sample `ST_DWithin` query).
+The atlas functions still use the B-tree path; operators with PostGIS active
+can query the GiST index directly (a sample `ST_DWithin` query is in
+[DEVNOTES/atlas-scaling.md](../../DEVNOTES/atlas-scaling.md), section
+"PostGIS-optional scaling path").
 
-**When NOT to enable PostGIS:** managed Postgres tiers that gate
-it behind paid plans (RDS free tier, some Aiven plans). The
-B-tree fallback is operationally complete below ~5M events.
+**When NOT to enable PostGIS:** managed Postgres tiers that gate it behind
+paid plans. The B-tree fallback is operationally complete below ~5M events.
 
 ### Vertical alternative
 
-For most deployments the cheaper move is **vertical scaling
-first, horizontal second**:
+For most deployments the cheaper move is vertical scaling first, horizontal
+second:
 
-- 2 vCPU → 4 vCPU: doubles app throughput, gunicorn worker bump
-- 4 GB → 16 GB: enables larger `shared_buffers` for Postgres
-- SSD → NVMe: cuts atlas p99 by ~3x at large cardinality
+- 2 vCPU to 4 vCPU: doubles app throughput with a gunicorn worker bump
+- 4 GB to 16 GB: enables larger `shared_buffers` for Postgres
+- SSD to NVMe: cuts atlas p99 at large cardinality
 
-These changes are operator-driven and don't require app code
-changes.
+These changes are operator-driven and do not require app code changes.
 
 ### Storage growth
 
-`VerificationEvent` grows fastest. Sizing rule:
+`VerificationEvent` grows fastest. Planning rule (an estimate carried from the
+v8.77 runbook, not a measurement; measure your own instance with
+`pg_total_relation_size('verificationevent')`):
 
 - ~300 bytes per VerificationEvent row (including indexes)
-- 1M verifications/day → ~330 MB/day → ~120 GB/year
+- 1M verifications/day gives ~330 MB/day, ~120 GB/year
 
-Plan 5-year retention; archive older to cold storage if needed.
-Phase 2 ships an automated archive policy (audit-log-archive: S3
-+ Glacier rotation).
+Plan 5-year retention; the
+[archive + purge pipeline](#audit-log-archive--purge) moves older rows to
+cold storage with the non-repudiation chain intact.
 
 ---
 
@@ -990,76 +806,76 @@ Phase 2 ships an automated archive policy (audit-log-archive: S3
 
 ### Health check
 
-`GET /api/health` (no auth) returns structured JSON:
+`GET /api/health` (no auth) returns structured JSON; the full payload and the
+per-component semantics are specified in
+[API.md](../reference/API.md#get-apihealth). The fields the thresholds hang
+on:
 
-```json
-{
-  "status": "healthy",
-  "version": "8.77",
-  "uptime_seconds": 3600,
-  "checks": {
-    "database": {"status": "healthy", "latency_ms": 4, "table_count": 25},
-    "redis":    {"status": "healthy", "latency_ms": 1},
-    "zk_binary": {"status": "healthy", "path": "/opt/polaris/zk", "version": "0.2.0"},
-    "disk":     {"status": "healthy", "free_gb": 42.7, "used_pct": 23.1}
-  },
-  "timestamp": "2026-05-14T12:34:56.789Z"
+- `status`: the worst per-component status; `healthy` or `degraded` answer
+  HTTP 200, `unhealthy` answers HTTP 503
+- `checks.database.latency_ms`: above 500 ms the component is `degraded`
+- `checks.database.table_count`: below 20 is `degraded`, zero is `unhealthy`
+- `checks.disk.free_gb` and `checks.disk.used_pct`: below 5 GB free or above
+  85% used is `degraded`; below 0.5 GB free is `unhealthy`
+- `checks.redis.status`: an unreachable Redis backend is `degraded` (the
+  limiter fails closed)
+- `checks.zk_binary.status`: the prover binary present and executable
+
+`/api/health/live` and `/api/health/ready` are the cheap probes Caddy, Compose
+and Kubernetes use. The contract is enforced by `HealthEndpointTests` in
+`polaris_web/test_app.py`.
+
+### Alerts and thresholds
+
+The alert rules are a shipped, promtool-validated artifact:
+[polaris-alerts.yml](../../deploy/observability/polaris-alerts.yml) (10
+rules, severity-labelled to the SEV ladder in [DR.md](DR.md)). Every rule has
+a runbook in [RUNBOOKS.md](RUNBOOKS.md), and the availability, latency, and
+database-latency objectives the thresholds derive from are in
+[SLOS.md](SLOS.md). Do not maintain a second threshold table here.
+
+### Prometheus metrics (`/metrics`)
+
+A Prometheus-compatible `/metrics` endpoint exposes time-series data
+complementing `/api/health`'s point-in-time view. No authentication; it
+carries the duress signal, so it must be reachable only by the operator's
+monitoring, never the public internet ([HARDENING.md, section 10](HARDENING.md)).
+
+**Edge exposure (operator-supplied until the software ship lands).** The
+shipped [polaris_web/Caddyfile](../../polaris_web/Caddyfile) reverse-proxies
+every path of the public site to the app, including `/metrics` and
+`/api/metrics`, with no source-IP ACL; the app applies none either. A
+production operator must add a Caddy matcher restricting both paths to the
+monitoring network before the site goes public:
+
+```caddyfile
+{$POLARIS_DOMAIN} {
+    @metrics {
+        path /metrics /api/metrics
+        not remote_ip 10.0.0.0/8      # your monitoring CIDR
+    }
+    respond @metrics 404
+
+    reverse_proxy {$POLARIS_UPSTREAMS:app:8000} {
+        # ... shipped block unchanged ...
+    }
 }
 ```
 
-Overall status:
-- `healthy` — every check is healthy; HTTP 200
-- `degraded` — some non-fatal check is degraded (e.g., redis
-  slow); HTTP 200
-- `unhealthy` — at least one critical check is unhealthy (db
-  unreachable, disk full); HTTP 503
-
-This contract is enforced by the `/api/health` behavior test in
-`polaris_web/test_app.py`.
-
-### Recommended alerts
-
-| Condition | Severity | Action |
-|---|---|---|
-| `/api/health` returns 503 sustained >2 min | Page | Investigate immediately |
-| `/api/health` returns degraded sustained >10 min | Notify | Investigate within business hours |
-| `disk.free_gb` < 5 | Page | Free space or expand volume |
-| `disk.used_pct` > 85 | Notify | Plan capacity expansion |
-| `database.latency_ms` > 500 sustained | Notify | Investigate slow queries |
-| Failed logins >50/min sustained | Page | Suspected brute-force |
-| 5xx rate > 0.1% sustained | Notify | Bug or capacity issue |
-| Caddy ACME failure | Page | TLS will expire in <90 days |
-
-### Metrics worth watching
-
-| Metric | Source | Threshold |
-|---|---|---|
-| `/api/health` overall status | endpoint | 503 = page |
-| DB latency | `/api/health` `checks.database.latency_ms` | >500ms = degraded |
-| 4xx rate | gunicorn log | >5% sustained = investigate |
-| 5xx rate | gunicorn log | >0.1% sustained = investigate |
-| `failed_login_count` delta | `AuthAuditLog` | spike = brute force |
-| `pg_stat_activity` rows | DB | >100 connections = leak |
-| Anchor-batch close latency | `AnchorBatch.closed_at - opened_at` | >1h = backed up |
-| ZK epoch close latency | `TokenStateEpoch` | >1h = prover overload |
-
-### Prometheus metrics (`/metrics` — v8.93)
-
-A Prometheus-compatible `/metrics` endpoint exposes time-series
-data complementing `/api/health`'s point-in-time view. No
-authentication; consumed by a scraper in the cluster network or
-behind operator-internal ACL.
-
-**Scrape config example** (Prometheus `prometheus.yml`):
+**Scrape config example** (Prometheus `prometheus.yml`; the shipped one is
+[deploy/observability/prometheus.yml](../../deploy/observability/prometheus.yml)).
+Scrape the app directly on the stack network, as
+[polaris_web/docker-compose.observability.yml](../../polaris_web/docker-compose.observability.yml)
+does, rather than through the public domain:
 
 ```yaml
 scrape_configs:
   - job_name: polaris
     metrics_path: /metrics
-    scheme: https
+    scheme: http
     scrape_interval: 30s
     static_configs:
-      - targets: ['polaris.example.com:443']
+      - targets: ['app:8000']
 ```
 
 **Exposed metrics:**
@@ -1068,44 +884,25 @@ scrape_configs:
 |---|---|---|---|
 | `polaris_requests_total` | counter | route, method, status | HTTP requests served |
 | `polaris_request_latency_seconds` | histogram | route | Per-route request latency |
-| `polaris_verifications_total` | counter | disclosure_level | VerificationEvent rows recorded through the app (counted since v9.190; the counter had been defined but never incremented) |
-| `polaris_agency_events_total` | counter | kind, agency_id | v9.190. Issuances, revocations (by the token's issuing agency), and verifications (by the requesting agency): the per-agency velocity signal the `Polaris*Velocity` alerts compare against each agency's own trailing week |
-| `polaris_quota_refusals_total` | counter | kind, agency_id | v9.190. Writes refused by an `AgencyQuota` cap (`PolarisQuotaRefusals` pages on any increase) |
-| `polaris_db_query_latency_seconds` | histogram | — | DB round-trip (sampled on `/api/health` probes) |
+| `polaris_verifications_total` | counter | disclosure_level | VerificationEvent rows recorded through the app |
+| `polaris_duress_events_total` | counter | | Duress-code matches recorded; `PolarisDuressEvent` pages on any increase |
+| `polaris_agency_events_total` | counter | kind, agency_id | Issuances, revocations (by the token's issuing agency), and verifications (by the requesting agency): the per-agency velocity signal the `Polaris*Velocity` alerts compare against each agency's own trailing week |
+| `polaris_quota_refusals_total` | counter | kind, agency_id | Writes refused by an `AgencyQuota` cap (`PolarisQuotaRefusals` pages on any increase) |
+| `polaris_db_query_latency_seconds` | histogram | | DB round-trip (sampled on `/api/health` probes) |
 | `polaris_app_info` | gauge | version | App metadata; value always 1; the label carries the data |
 
-**Alerting rules:** a ready-to-deploy rules file ships at
-[`deploy/observability/polaris-alerts.yml`](../../deploy/observability/polaris-alerts.yml)
-(six rules, severity-labelled to the SEV ladder), alongside a
-[`prometheus.yml`](../../deploy/observability/prometheus.yml) scrape config wired
-to the shipped
-[`alertmanager.yml`](../../deploy/observability/alertmanager.yml) routing and
-pager receiver, and a [README](../../deploy/observability/README.md). CI runs
-`promtool` and `amtool` on all three and drills the duress page path end to end
-(`scripts/polaris-page-drill.sh`); the pager URL itself is yours (mounted file).
-Example of one rule (`PolarisHigh5xx`):
+`/metrics` aggregates across all gunicorn workers (Prometheus multiprocess
+mode), so an absolute counter is whole-app.
 
-```yaml
-groups:
-  - name: polaris
-    rules:
-      - alert: PolarisHigh5xx
-        expr: |
-          sum(rate(polaris_requests_total{status=~"5.."}[5m]))
-            / sum(rate(polaris_requests_total[5m]))
-            > 0.01
-        for: 10m
-        labels:
-          severity: sev2
-        annotations:
-          summary: "5xx rate > 1% sustained"
-```
+**Alerting stack:** the rules file ships alongside a
+[prometheus.yml](../../deploy/observability/prometheus.yml) scrape config
+wired to the shipped [alertmanager.yml](../../deploy/observability/alertmanager.yml)
+routing and pager receiver, and a [README](../../deploy/observability/README.md).
+CI runs `promtool` and `amtool` on all three and drills the duress page path
+end to end (`scripts/polaris-page-drill.sh`); the pager URL itself is yours
+(a mounted file; [RUNBOOKS.md, Paging](RUNBOOKS.md#paging-wiring-the-receiver)).
 
-**Graceful fallback:** if `prometheus_client` is not installed
-(ad-hoc dev environment without the prod image), `/metrics`
-returns HTTP 503 with a plain-text message rather than crashing.
-
-### Per-agency quotas and velocity alerts (v9.190 / roadmap P1.8)
+### Per-agency quotas and velocity alerts
 
 Quotas are the database's bound on what an AGENCY may do; the alerts are the
 early sight of an agency changing behaviour before a quota exists or engages.
@@ -1126,10 +923,11 @@ polaris quota-show
 The `enforce_agency_quota` trigger binds every write path (the stored
 procedures, the SQL console, a bulk loader) and is exact under concurrent
 writers; a refused write is an HTTP 429 with the trigger's own sentence
-(`quota exceeded: agency 5 has reached its verify quota of 500 per hour`),
+(`quota exceeded: agency 5 has reached its verify quota of 500 per hour (AgencyQuota)`),
 a `quota_refused` structured log line, and a `polaris_quota_refusals_total`
-increment. The R11-6 percentage bound on revocation still applies; whichever
-trips first refuses. An uncapped agency pays one primary-key lookup per write.
+increment. The percentage bound on revocation velocity
+(`trg_enforce_revocation_velocity`) still applies; whichever trips first
+refuses. An uncapped agency pays one primary-key lookup per write.
 
 **Velocity alerts.** `PolarisIssuanceVelocity`, `PolarisRevocationVelocity`,
 and `PolarisVerificationVelocity` fire when one agency's last hour exceeds an
@@ -1140,10 +938,10 @@ under real traffic from the load generator, the database, `/metrics`, and the
 log agreeing) is `scripts/polaris-abuse-drill.sh`. Runbooks:
 [RUNBOOKS.md](RUNBOOKS.md).
 
-### Distributed tracing (v9.187 / roadmap P1.6)
+### Distributed tracing
 
 Opt-in OpenTelemetry traces across the app and the database, joined to the
-structured logs by the v9.122 correlation id. OFF by default; one knob:
+structured logs by the correlation id. OFF by default; one knob:
 
 ```bash
 POLARIS_OTEL=1                                   # the switch (announced in the log stream)
@@ -1153,26 +951,26 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo:4318    # your collector (this is the o
 With it on, every request gets a server span (name = the route template;
 `http.target` is the query-stripped path; `polaris.request_id` carries the
 correlation id) and every psycopg2 call a client span inside it carrying the
-parameterized statement template only — never values, never identity. An
+parameterized statement template only: never values, never identity. An
 inbound `traceparent` is honoured only behind `POLARIS_TRUST_PROXY`,
 symmetric with `X-Request-ID`. Health probes are excluded by default
 (`POLARIS_OTEL_EXCLUDE=/api/health/live,/api/health/ready`). Sampling uses
 the standard `OTEL_TRACES_SAMPLER[_ARG]` knobs.
 
-**The join, in practice:** a caller quotes an `X-Request-ID` → TraceQL
+**The join, in practice:** a caller quotes an `X-Request-ID`; TraceQL
 `{span.polaris.request_id="<id>"}` finds the trace; a log line's `trace_id`
 field finds the same trace; `docker logs polaris-app | jq
 'select(.trace_id=="<id>")'` goes the other way. `tracing.py` documents the
 vocation constraints (ephemeral ids, nothing persisted to the DB, exception
 class names only).
 
-### Grafana dashboards-as-code (v9.187)
+### Grafana dashboards-as-code
 
 The dashboards are committed JSON, not UI state:
-[`deploy/observability/grafana/`](../../deploy/observability/grafana/)
-provisions two dashboards (`polaris-overview` — the /metrics headliners with
-the alert thresholds drawn in; `polaris-traces` — TraceQL panels keyed on
-the correlation id) plus the Prometheus and Tempo datasources. Run the whole
+[deploy/observability/grafana/](../../deploy/observability/grafana/)
+provisions two dashboards (`polaris-overview`, the /metrics headliners with
+the alert thresholds drawn in; `polaris-traces`, TraceQL panels keyed on the
+correlation id) plus the Prometheus and Tempo datasources. Run the whole
 stack as an overlay:
 
 ```bash
@@ -1180,173 +978,41 @@ docker compose -f docker-compose.prod.yml -f docker-compose.observability.yml up
 ```
 
 (Prometheus, Alertmanager, Tempo, Grafana on the stack network; Grafana on
-`127.0.0.1:3000` only — it can display the duress signal, so it never faces
-the public internet. See
-[`deploy/observability/README.md`](../../deploy/observability/README.md).)
+`127.0.0.1:3000` only, because it can display the duress signal and so never
+faces the public internet. See
+[deploy/observability/README.md](../../deploy/observability/README.md).)
 CI validates the dashboards and drills the OTLP wire path on every push
 (`scripts/polaris-trace-drill.sh`).
 
 ---
 
-## Encryption at rest (v8.93)
+## Encryption at rest
 
-The production stack's `pg_data` volume is **not** encrypted by
-default. PostgreSQL's data files sit on the host filesystem in
-plaintext. For deployments handling holder PII this is a real
-gap — the schema enforces application-layer privacy (C2 / C9 /
-audit-log discipline) but a host-filesystem read bypasses that.
-
-**Recommended recipes** (operator picks one based on deployment):
-
-### Option A — LUKS on the host (bare-metal / VM)
-
-```bash
-# One-time setup on a fresh host BEFORE running polaris-deploy.sh prod
-sudo cryptsetup luksFormat /dev/sdb
-sudo cryptsetup open /dev/sdb polaris_pg_crypt
-sudo mkfs.ext4 /dev/mapper/polaris_pg_crypt
-sudo mkdir -p /opt/polaris/pg_data
-sudo mount /dev/mapper/polaris_pg_crypt /opt/polaris/pg_data
-
-# Add to /etc/crypttab + /etc/fstab for boot-time mount with key file
-echo "polaris_pg_crypt UUID=$(sudo blkid -s UUID -o value /dev/sdb) /etc/polaris/luks.key luks" | sudo tee -a /etc/crypttab
-echo "/dev/mapper/polaris_pg_crypt /opt/polaris/pg_data ext4 defaults 0 2" | sudo tee -a /etc/fstab
-
-# Then override the pg_data volume mount in docker-compose.prod.yml:
-#   - /opt/polaris/pg_data:/var/lib/postgresql/data
-```
-
-The LUKS key file (`/etc/polaris/luks.key`) is mode 0400, owned
-by root, and **never enters a backup tarball**. If the host
-disk is removed, ransacked, or imaged, the data is inert.
-
-### Option B — Managed Postgres with TDE
-
-AWS RDS, Google Cloud SQL, Azure Postgres Flexible Server all
-support transparent disk encryption (TDE) at the storage layer.
-Enable it at provisioning time; rotate the KMS key per the
-provider's recommendation; verify via the provider's console
-that the database instance reports `storage_encrypted: true`.
-
-The Polaris stack doesn't change; only the Postgres backend
-moves from the docker compose service to the managed instance.
-
-### Option C — Filesystem-level encryption (eCryptfs, fscrypt)
-
-Per-directory encryption for the `pg_data` mount only.
-Lighter-weight than full-disk; same key-management
-considerations.
-
-**Verification step** (operator should run after any of the
-above):
-
-```bash
-# Sanity: is the pg_data mount on an encrypted device?
-docker compose -f polaris_web/docker-compose.prod.yml exec postgres \
-  df -T /var/lib/postgresql/data | tail -1
-# LUKS shows "crypt" in the filesystem-type column
-# Managed TDE shows ext4/xfs but the storage-layer attestation is in the cloud console
-```
-
-Cross-reference: `docs/operator/PRIVACY.md` § Append-only audit
-documents the application-layer privacy posture; encryption at
-rest closes the host-filesystem-read attack vector below it.
-
----
-
-## Point-in-time recovery (PITR) with WAL archiving (v8.93)
-
-The default backup cadence (daily `polaris-backup.sh`) gives an
-RPO of 24 hours — anything between backups is lost on a hard
-crash. **For deployments that need minute-grade RPO**, configure
-WAL archiving via `pgbackrest`.
-
-### Why pgbackrest
-
-- Multi-repository support (local + S3 + Azure + GCS)
-- Differential + incremental backups against full-PITR base
-- Cryptographic checksums on every WAL segment
-- Parallel restore (multiple workers)
-- Compatible with the existing `polaris-backup.sh` schedule
-
-### Setup recipe
-
-```bash
-# 1. Install pgbackrest on the host (or in a sidecar container)
-sudo apt-get install -y pgbackrest
-
-# 2. Configure /etc/pgbackrest/pgbackrest.conf
-sudo tee /etc/pgbackrest/pgbackrest.conf <<EOF
-[global]
-repo1-path=/var/lib/pgbackrest
-repo1-retention-full=2
-repo1-retention-archive=14    # 14-day WAL retention
-process-max=2
-log-level-console=info
-log-level-file=detail
-
-[polaris]
-pg1-path=/var/lib/postgresql/data
-pg1-port=5432
-pg1-user=postgres
-pg1-host=postgres
-EOF
-
-# 3. Stanza-create (one-time)
-sudo -u postgres pgbackrest --stanza=polaris stanza-create
-
-# 4. Postgres-side configuration (adds to docker-compose.prod.yml
-#    postgres environment):
-#      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --wal-level=replica"
-#    AND in the postgres command:
-#      archive_mode = on
-#      archive_command = 'pgbackrest --stanza=polaris archive-push %p'
-#      max_wal_senders = 3
-
-# 5. Cron schedule
-cat | sudo tee /etc/cron.d/pgbackrest-polaris <<EOF
-# Full backup weekly, differential daily, archive-check hourly
-0 2 * * 0 postgres pgbackrest --stanza=polaris --type=full backup
-0 3 * * 1-6 postgres pgbackrest --stanza=polaris --type=diff backup
-30 * * * * postgres pgbackrest --stanza=polaris check
-EOF
-```
-
-### Point-in-time restore
-
-```bash
-# Restore to a specific timestamp
-sudo systemctl stop polaris-app
-sudo -u postgres pgbackrest --stanza=polaris \
-    --type=time \
-    --target="2026-05-14 14:30:00 UTC" \
-    --target-action=promote \
-    restore
-
-sudo systemctl start polaris-app
-```
-
-**RPO with WAL archiving:** ~1 minute (last `archive_command`).
-**RTO:** ~15-30 minutes (restore from base + WAL replay).
-
-### When NOT to bother
-
-- Below ~5M events at low operator volume, the daily
-  `polaris-backup.sh` cadence is sufficient and pgbackrest
-  adds operational complexity that doesn't pay off.
-- Managed Postgres (RDS / Cloud SQL) already does WAL
-  archiving at the storage layer; pgbackrest would duplicate.
+The production stack's `pg_data` volume is not encrypted by Polaris; at-rest
+protection of the live database is host-level and operator-gated. What is
+sensitive on disk, what is already protected (backups, transit), why the
+control is the volume rather than the column, and the LUKS / managed-TDE /
+fscrypt recipes with their verification step are all in
+[ENCRYPTION-AT-REST.md](ENCRYPTION-AT-REST.md).
 
 ---
 
 ## Incident response
 
+The severity ladder, the decision tree, and the recovery procedures by
+failure class are [DR.md](DR.md); every alert has a runbook in
+[RUNBOOKS.md](RUNBOOKS.md). The three triage paths below are the ones that
+start from a symptom rather than an alert.
+
 ### Database unreachable
 
-`/api/health` returns 503; Caddy returns 502 to clients.
+`/api/health` returns 503 (`database: unhealthy`) and application pages fail
+with the app's own error responses. Caddy keeps proxying, because its upstream
+probe is `/api/health/live` (process liveness, no DB touch); a Caddy 502 means
+the app itself is down (see [DR.md](DR.md), section 4.1).
 
-1. `docker compose -f polaris_web/docker-compose.prod.yml ps`
-   — is the postgres container up?
+1. `docker compose -f polaris_web/docker-compose.prod.yml ps`:
+   is the postgres container up?
 2. `docker compose -f polaris_web/docker-compose.prod.yml logs
    postgres | tail -50`
 3. Check disk space: `df -h` (most common cause)
@@ -1355,7 +1021,7 @@ sudo systemctl start polaris-app
    pid, state, query_start, query FROM pg_stat_activity WHERE state
    != 'idle';"`
 5. If recoverable, `docker compose ... restart postgres`. If not,
-   restore from the latest backup.
+   restore from the latest backup ([DR.md, section 4.3](DR.md)).
 
 ### Suspected operator-credential compromise
 
@@ -1369,33 +1035,38 @@ sudo systemctl start polaris-app
 2. **Audit:** review `AuthAuditLog` for the suspected window:
 
    ```sql
-   SELECT * FROM AuthAuditLog
+   SELECT event_timestamp, event_type, ip_address, user_agent, detail
+   FROM AuthAuditLog
    WHERE username = '<x>'
-     AND occurred_at > now() - interval '7 days'
-   ORDER BY occurred_at DESC;
+     AND event_timestamp > now() - interval '7 days'
+   ORDER BY event_timestamp DESC;
    ```
 
    Look for unusual IPs, unusual times.
 
-3. **Review token actions:**
+3. **Review token actions** in the window (operators are not bound to an
+   agency; review every lifecycle event and match the actor from the audit
+   trail):
 
    ```sql
-   SELECT * FROM TokenLifecycleEvent
-   WHERE actor_agency_id = (SELECT agency_id FROM AppUser
-                            WHERE username = '<x>')
-     AND event_at > '<compromise window start>'
-   ORDER BY event_at DESC;
+   SELECT event_id, token_id, actor_agency_id, event_type, event_timestamp, reason_code
+   FROM TokenLifecycleEvent
+   WHERE event_timestamp > '<compromise window start>'
+   ORDER BY event_timestamp DESC;
    ```
 
-   Any tokens issued / revoked / lost during the window need
-   re-validation by an uncompromised operator.
+   Any tokens issued / revoked / lost during the window need re-validation
+   by an uncompromised operator.
 
-4. **Rotate:** new password (via UI), new session secret if
-   widespread compromise (`./scripts/polaris-rotate-secret.sh
-   polaris_secret_key` — this invalidates ALL sessions).
+4. **Rotate:** new password (`polaris user-passwd <username>`), new session
+   secret if the compromise is widespread
+   (`./scripts/polaris-rotate-secret.sh polaris_secret_key` invalidates ALL
+   sessions).
 
-5. **Document:** record a dated post-mortem. If a new attack
-   class was used, also update `DEVNOTES/known-gotchas.md`.
+5. **Document:** record a dated post-mortem
+   ([DR.md, section 9, Post-incident review](DR.md); the internal summary
+   template is section 8.4). If a new attack class was used, also update
+   [DEVNOTES/known-gotchas.md](../../DEVNOTES/known-gotchas.md).
 
 ### Suspected schema tampering (DBA-level compromise)
 
@@ -1404,26 +1075,42 @@ sudo systemctl start polaris-app
 
 2. **Verify constraints intact:**
 
+   The production image ships no `test_*.py` (see
+   `check_prod_image_no_test_deps`), so run the suite from a repo checkout
+   with the Python 3.12 venv, pointing the `POLARIS_DB_*` environment at the
+   stack's database. The postgres container publishes no host port, so give
+   the checkout reach into `polaris-net` first (a temporary forward such as
+   `docker run --rm --network polaris_web_polaris-net -p 127.0.0.1:5432:5432
+   alpine/socat TCP-LISTEN:5432,fork TCP:postgres:5432`, torn down afterwards):
+
    ```bash
-   docker compose -f polaris_web/docker-compose.prod.yml run --rm \
-     app python3 -m unittest test_check_constraints
+   cd polaris_web && \
+   POLARIS_DB_HOST=127.0.0.1 POLARIS_DB_PORT=5432 POLARIS_DB_NAME=polaris \
+   POLARIS_DB_USER=postgres \
+   POLARIS_DB_PASSWORD="$(cat secrets/polaris_db_root_password)" \
+     python3 -m unittest test_check_constraints
    ```
 
-   Each C1-C10 invariant should pass. Any failure ⇒ schema has
-   been modified.
+   Each C1-C10 invariant should pass. Any failure means the schema has been
+   modified.
 
 3. **Check append-only triggers:**
 
    ```sql
-   SELECT trigger_name, event_object_table, action_statement
+   SELECT DISTINCT trigger_name, event_object_table
    FROM information_schema.triggers
    WHERE trigger_name LIKE '%append_only%'
    ORDER BY trigger_name;
    ```
 
-   Expected: 4 append-only triggers (lifecycle, verification,
-   enrollment-event, anchor-batch). All should match the committed
-   `06_triggers.sql`.
+   Expected: 11 distinct `trg_*_append_only` triggers (`DISTINCT` matters:
+   each is `BEFORE UPDATE OR DELETE`, and `information_schema.triggers` emits
+   one row per event): lifecycle, verification, enrollment event, erasure,
+   anchor batch, checkpoint, epoch leaf, duress event, auth audit (from
+   `polaris_sql/06_triggers.sql`), schema version (from
+   `polaris_sql/00_migrations_table.sql`), and audit access (from
+   `polaris_sql/migrations/2026-05-15-003-audit-access-log.up.sql`). All
+   should match those committed files.
 
 4. **Check audit-table row counts:**
 
@@ -1436,29 +1123,28 @@ sudo systemctl start polaris-app
    UNION ALL SELECT 'duress', count(*) FROM DuressEvent;
    ```
 
-   Compare against the latest backup. Any unexplained decrement
-   indicates tampering.
+   Compare against the latest backup. Any unexplained decrement indicates
+   tampering.
 
-5. **If tampering confirmed:** restore from backup. The audit log
-   is the source of truth; if it has been tampered with, the
-   system has lost its non-repudiation guarantee and a public
-   disclosure may be required.
+5. **If tampering confirmed:** restore from backup. The audit log is the
+   source of truth; if it has been tampered with, the system has lost its
+   non-repudiation guarantee and a public disclosure may be required.
 
 ### Unbounded resource consumption
 
 Symptom: gunicorn workers hung; CPU 100%; atlas API slow.
 
-1. **Check the cache:** `GET /api/atlas/cache-stats` — high miss
-   rate suggests a query pattern not benefiting from the cache.
-2. **Check for an attacker:** `docker compose logs caddy | grep
-   429` — Caddy rate-limiter rejections indicate brute-force.
+1. **Check the cache:** `GET /api/atlas/cache-stats`; a high miss rate
+   suggests a query pattern not benefiting from the cache.
+2. **Check for an attacker:** `docker compose logs caddy | grep 429`;
+   Caddy rate-limiter rejections indicate brute-force.
 3. **Check connection count:** `SELECT count(*) FROM
-   pg_stat_activity WHERE usename = 'polaris_app';` If >100, a
+   pg_stat_activity WHERE usename = 'polaris_app';` If above 100, a
    connection leak; restart gunicorn:
    `docker compose ... restart app`.
-4. **Check the ZK queue:** Plonky2 prover is single-threaded; a
-   backed-up epoch close queue can starve other requests. Defer
-   non-urgent epoch closes.
+4. **Check the ZK queue:** the Plonky2 prover is CPU-bound; a backed-up
+   epoch close queue can starve other requests. Defer non-urgent epoch
+   closes.
 
 ---
 
@@ -1466,8 +1152,8 @@ Symptom: gunicorn workers hung; CPU 100%; atlas API slow.
 
 ### "Caddy could not get certificate"
 
-Cause: Let's Encrypt HTTP-01 challenge failed. Most often DNS
-hasn't propagated, or TCP/80 is firewalled.
+Cause: Let's Encrypt HTTP-01 challenge failed. Most often DNS has not
+propagated, or TCP/80 is firewalled.
 
 ```bash
 # Verify DNS
@@ -1482,10 +1168,12 @@ curl -fsS http://${POLARIS_DOMAIN}/
 docker compose -f polaris_web/docker-compose.prod.yml logs caddy | tail -50
 ```
 
-### "/api/health returns unhealthy: zk_binary not found"
+### "/api/health reports zk_binary degraded (zk binary not present)"
 
-Cause: the production image was built without Rust toolchain, or
-the prover binary wasn't bundled.
+`_health_check_zk_binary` reports `degraded`, not `unhealthy`, when the prover
+is missing or not executable, so HTTP stays 200 and the overall status is
+`degraded`. Cause: the production image was built without the Rust toolchain,
+or the prover binary was not bundled.
 
 ```bash
 # Verify binary exists in the running container
@@ -1497,17 +1185,16 @@ docker compose -f polaris_web/docker-compose.prod.yml build --no-cache app
 docker compose -f polaris_web/docker-compose.prod.yml up -d --force-recreate app
 ```
 
-The Dockerfile.prod has a `--build-arg POLARIS_ZK_BUILD=1` (default
-on) that includes a `cargo +nightly build --release` of the Plonky2
-prover in the builder stage. Set `--build-arg POLARIS_ZK_BUILD=0`
-to skip if you don't need ZK epochs (e.g., for a development
-restore).
+`Dockerfile.prod` has a `--build-arg POLARIS_ZK_BUILD=1` (default on) that
+includes a release build of the Plonky2 prover in the builder stage. Set
+`--build-arg POLARIS_ZK_BUILD=0` to skip if you do not need ZK epochs (for a
+development restore, for example).
 
 ### "Postgres docker volume drift"
 
-Cause: the password in `secrets/polaris_db_password` doesn't match
-what the `pg_data` volume was initialized with. Common after
-restore-from-backup if backups were taken under different secrets.
+Cause: the password in `secrets/polaris_db_password` does not match what the
+`pg_data` volume was initialized with. Common after restore-from-backup if
+backups were taken under different secrets.
 
 ```bash
 # OPTION A: rotate the secret to match the volume's expected password
@@ -1522,28 +1209,21 @@ docker compose -f polaris_web/docker-compose.prod.yml down -v
 
 ### "Login redirects to /login again"
 
-Cause: `POLARIS_SECRET_KEY` was rotated. All session cookies
-signed under the old key now fail validation. Expected behavior;
-operators must sign in again.
+Cause: `POLARIS_SECRET_KEY` was rotated. All session cookies signed under the
+old key now fail validation. Expected behavior; operators must sign in again.
 
 ### "Localhost refused to connect" (dev launcher only)
 
-Two root causes (resolved across v8.51 + v8.55):
-1. Browser-background-throttling > stale-heartbeat threshold
-2. Page-hide / before-unload firing the quit beacon on navigation
-
-Both fixed. Affects only the dev launcher
-(`polaris_mac_launch.sh`), not the production stack. See
-`CLAUDE.md` gotcha #11.
+Affects only the dev launcher (`polaris_mac_launch.sh`), not the production
+stack; the two root causes and their fixes are in
+[DEVNOTES/known-gotchas.md](../../DEVNOTES/known-gotchas.md).
 
 ### "ZK prove takes >30 seconds"
 
-The Plonky2 prover is single-threaded and CPU-bound. On a 2 vCPU
-host, expect ~10-15s per epoch close at 100 leaves. To improve:
+The Plonky2 prover is CPU-bound. To improve:
 
-1. Pin more CPUs to the app container (Compose `cpus: 4`)
+1. Pin more CPUs to the app container (Compose `cpus:` on the `app` service)
 2. Reduce leaves per epoch (close more often)
-3. Phase 2 will introduce a dedicated prover sidecar
 
 ---
 
@@ -1556,53 +1236,67 @@ host, expect ~10-15s per epoch close at 100 leaves. To improve:
 ./scripts/polaris-deploy.sh prod
 ```
 
-This pulls the latest commit, rebuilds the app image, runs schema
-migrations idempotently, and recreates the app container with the
-new code. The DB volume is preserved; downtime is ~30 seconds.
+This pulls the latest commit, rebuilds the app image, applies schema
+migrations idempotently, and recreates the app container(s) with the new
+code. The DB volume is preserved. With the
+[blue-green profile](DEPLOYMENT.md#zero-downtime-deploys-blue-green-profile)
+(`polaris_web/docker-compose.bluegreen.yml`, proven by
+`scripts/polaris-rolling-drill.sh`) the roll is measured at zero dropped
+requests; without it, service pauses while the single `app` container is
+recreated.
 
-Always read `CHANGELOG.md` for the version you're upgrading to —
-any v8.X with "breaking change" in the notes requires extra steps.
+Always read [CHANGELOG.md](../../CHANGELOG.md) for the version you are
+upgrading to; an entry with "breaking change" in the notes requires extra
+steps.
 
 ### Postgres version upgrade
 
-Postgres major-version upgrades (e.g., 16 → 17) require an explicit
-`pg_upgrade` step. Backup first, then:
+The `postgres` service is a built image (`Dockerfile.postgres`, pinned to a
+`postgres:16-alpine` digest). A major-version move (16 to 17) is a
+dump-and-restore with the shipped scripts. Plan a window; the database is
+down for the duration.
 
 ```bash
-# 1. Backup
-./scripts/polaris-backup.sh
+# 1. Backup, and keep the tarball's path
+./scripts/polaris-backup.sh --dest /var/backups/polaris
 
 # 2. Stop the stack
 docker compose -f polaris_web/docker-compose.prod.yml down
 
-# 3. Edit docker-compose.prod.yml: change postgres image tag
+# 3. Change the FROM line in polaris_web/Dockerfile.postgres to the new major
 
-# 4. Migrate the volume
-docker run --rm -v polaris_pg_data:/var/lib/postgresql/data \
-  -v polaris_pg_data_new:/var/lib/postgresql/data_new \
-  postgres:17-alpine pg_upgrade --old-datadir=/var/lib/postgresql/data \
-                                --new-datadir=/var/lib/postgresql/data_new
+# 4. Retire the old data volume (the backup from step 1 is the only copy now).
+#    The compose project prefixes the volume name, so look it up.
+docker volume rm "$(docker volume ls -q | grep pg_data)"
 
-# 5. Swap volumes + bring stack back up
-./scripts/polaris-deploy.sh prod
+# 5. Rebuild and bring the stack up on an empty cluster, then restore into it
+./scripts/polaris-deploy.sh prod --no-pull
+./scripts/polaris-restore.sh /var/backups/polaris/<step-1 tarball> \
+    --target=docker-stack --force --verify-schema-version
+```
+
+If continuous WAL archiving is enabled, run the stanza upgrade before the
+first new-major backup:
+
+```bash
+docker compose -f polaris_web/docker-compose.prod.yml exec -u postgres postgres \
+    pgbackrest --stanza=polaris stanza-upgrade
 ```
 
 ### TLS certificate renewal
 
-Caddy auto-renews ~30 days before expiry. No manual action needed.
-Confirm:
+Caddy auto-renews about 30 days before expiry. No manual action is needed.
+Confirm the live certificate's dates:
 
 ```bash
-docker compose -f polaris_web/docker-compose.prod.yml exec caddy \
-  caddy list-certs
+openssl s_client -connect ${POLARIS_DOMAIN}:443 -servername ${POLARIS_DOMAIN} </dev/null 2>/dev/null \
+  | openssl x509 -noout -issuer -dates
 ```
 
-If you ever need to force renewal:
-
-```bash
-docker compose -f polaris_web/docker-compose.prod.yml exec caddy \
-  caddy reload --config /etc/caddy/Caddyfile
-```
+If `notAfter` is under 30 days out, renewal is failing: read the Caddy logs
+(the "Caddy could not get certificate" entry above) and follow
+[DR.md, section 4.5](DR.md). A renewal produces a new fingerprint for the
+[CT monitor](#certificate-transparency-monitoring) allowlist.
 
 ---
 
@@ -1610,14 +1304,14 @@ docker compose -f polaris_web/docker-compose.prod.yml exec caddy \
 
 If you ever need to retire a Polaris instance:
 
-1. **Final backup**
+1. **Final backup**, then copy the tarball off the host
 
    ```bash
-   ./scripts/polaris-backup.sh --dest s3://archive-bucket
+   ./scripts/polaris-backup.sh --dest /var/backups/polaris
    ```
 
-2. **Notify dependent verifiers** — anyone consuming
-   `/api/federation/*` or `/api/zk/*` needs the migration window.
+2. **Notify dependent verifiers.** Anyone consuming `/api/federation/*` or
+   `/api/zk/*` needs the migration window.
 
 3. **Set all operators to read-only**
 
@@ -1625,14 +1319,17 @@ If you ever need to retire a Polaris instance:
    UPDATE AppUser SET role = 'auditor' WHERE role != 'auditor';
    ```
 
-4. **Stop accepting new tokens** by deactivating issuer agencies:
+4. **Stop accepting new tokens** by deprecating every algorithm;
+   `uc1_issue_token` refuses issuance under a deprecated algorithm while
+   verification of existing tokens continues:
 
    ```sql
-   UPDATE Agency SET is_active = FALSE;
+   UPDATE CryptographicAlgorithm SET deprecation_date = CURRENT_DATE
+   WHERE deprecation_date IS NULL OR deprecation_date > CURRENT_DATE;
    ```
 
-5. **Cool-down window** (recommended 30 days) — verifications
-   continue working; no new issuance.
+5. **Cool-down window** (recommended 30 days): verifications continue
+   working; no new issuance.
 
 6. **Final audit export**
 
@@ -1648,75 +1345,28 @@ If you ever need to retire a Polaris instance:
    docker compose -f polaris_web/docker-compose.prod.yml down -v
    ```
 
-8. **Preserve audit volumes** — `pg_data` should be archived per
-   your retention policy. The audit-of-record discipline (v8.20)
-   requires that these never be destroyed without a documented
-   sunset decision.
-
----
-
-## Pre-commit hooks (v9.06)
-
-**Source:** `.pre-commit-config.yaml` at the repo root.
-
-A local-hooks pre-commit configuration runs a fast subset of the
-invariant checks before every push, catching the highest-impact
-drifts (broken links, secrets in the prod compose, stale version
-strings) before code leaves the local clone.
-
-### Install (one-time per clone)
-
-```bash
-# Install pre-commit in the dev venv
-pip install pre-commit
-
-# Wire the hooks into .git/hooks/pre-commit
-pre-commit install
-```
-
-### What runs on every commit
-
-| Hook | Speed | What it catches |
-|------|-------|-----------------|
-| ai-link-check | ~2s | Broken Markdown / cross-ref links |
-| polaris-checks | ~5s | C1-C10 invariant layer (`python3 -m polaris_checks.run`) |
-| g28-no-sensitive-env-in-prod-compose | <1s | POLARIS_SECRET_KEY: literal in production compose |
-| em-dash-warn | <1s | Em-dash in own-prose docs (informational) |
-
-### Manual run
-
-```bash
-pre-commit run --all-files
-```
-
-### CI is the safety net
-
-Pre-commit hooks are the operator's local safety net. CI
-(`.github/workflows/ci.yml`) runs the FULL suite on every push +
-PR; pre-commit hooks are a fast subset that catches the highest-
-impact drifts before code leaves the local clone.
-
-### Why local-hooks (not third-party repos)
-
-Local hooks work whether or not the repo is git-initialized. The
-configuration may add upstream `repos:` entries (ruff, black, etc.)
-at operator discretion.
+8. **Preserve audit volumes.** `pg_data` should be archived per your
+   retention policy. The audit-of-record discipline requires that these never
+   be destroyed without a documented sunset decision.
 
 ---
 
 ## What this document does NOT cover
 
-- Application code internals — `CLAUDE.md`, `DEVNOTES/`
-- Cryptographic algorithm choice — `docs/operator/SECURITY.md`
-- Schema design — `docs/reference/DATA-MODEL.md`
-- Threat model — `DEVNOTES/threat-model.md`
-- API reference — `docs/reference/API.md`
-- Privacy posture — `docs/operator/PRIVACY.md`
-- Multi-region deployment — Arc B Phase 3 (deferred)
-- Disaster recovery RPO/RTO targets — Arc B Phase 3 (deferred)
-- SOC 2 readiness checklist — Arc B Phase 3 (deferred)
-- WebAuthn + hardware-token operator auth — Arc B Phase 2 (deferred)
+- Application code internals: [CLAUDE.md](../../CLAUDE.md), [DEVNOTES/](../../DEVNOTES/README.md)
+- Cryptographic algorithm choice: [PQC-POSTURE.md](../reference/PQC-POSTURE.md), [SECURITY.md](SECURITY.md)
+- Schema design: [DATA-MODEL.md](../reference/DATA-MODEL.md)
+- Threat model: [DEVNOTES/threat-model.md](../../DEVNOTES/threat-model.md)
+- API reference: [API.md](../reference/API.md)
+- Privacy posture: [PRIVACY.md](PRIVACY.md)
+- WebAuthn and hardware-token operator auth: [WEBAUTHN-ROLLOUT.md](WEBAUTHN-ROLLOUT.md)
+- Disaster recovery targets and the drill ledger: [DR.md](DR.md), [DR-DRILLS.md](DR-DRILLS.md)
+- Restore procedures by failure class: [DR.md](DR.md)
+- High availability (streaming standby, failover): [FAILOVER.md](FAILOVER.md)
+- Developer tooling (pre-commit hooks, test discipline): [CONTRIBUTING.md](../../CONTRIBUTING.md)
+- Multi-region deployment: not covered by any Polaris document
+- SOC 2 readiness checklist: not covered by any Polaris document
 
 ---
 
-*Last updated under v8.77 / Arc B Phase 1.*
+*Last verified against the code: 2026-09-02 (v9.199).*

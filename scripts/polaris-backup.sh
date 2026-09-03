@@ -50,7 +50,12 @@ sha256_of() {
 # Verify mode
 # ---------------------------------------------------------------------------
 if [[ "${VERIFY_LATEST}" -eq 1 ]]; then
-    LATEST=$(ls -1t "${DEST}"/polaris-*.tar.gz 2>/dev/null | head -1 || true)
+    # Newest backup, plaintext or encrypted: when POLARIS_BACKUP_KEY_FILE is set
+    # the plaintext tarball is deleted after encryption, so only the .enc
+    # remains and the glob must see it. Verified before v9.199, this glob
+    # matched *.tar.gz only and reported "no backups found" on every
+    # encrypted deployment.
+    LATEST=$(ls -1t "${DEST}"/polaris-*.tar.gz "${DEST}"/polaris-*.tar.gz.enc 2>/dev/null | head -1 || true)
     if [[ -z "${LATEST}" ]]; then
         echo "  ✗ no backups found under ${DEST}" >&2
         exit 1
@@ -58,8 +63,23 @@ if [[ "${VERIFY_LATEST}" -eq 1 ]]; then
     echo "  → verifying: ${LATEST}"
     TMP=$(mktemp -d)
     trap 'rm -rf "${TMP}"' EXIT
-    tar -tzf "${LATEST}" >/dev/null
-    tar -xzf "${LATEST}" -C "${TMP}"
+    VERIFY_SRC="${LATEST}"
+    if [[ "${LATEST}" == *.enc ]]; then
+        VKEY="${POLARIS_BACKUP_KEY_FILE:-}"
+        if [[ -z "${VKEY}" || ! -r "${VKEY}" ]]; then
+            echo "  ✗ ${LATEST} is encrypted but POLARIS_BACKUP_KEY_FILE is unset/unreadable" >&2
+            exit 1
+        fi
+        VERIFY_SRC="${TMP}/decrypted.tar.gz"
+        if ! openssl enc -d -aes-256-cbc -pbkdf2 \
+                -in "${LATEST}" -out "${VERIFY_SRC}" -pass "file:${VKEY}"; then
+            echo "  ✗ decryption failed: wrong key, or the backup is corrupt or tampered" >&2
+            exit 1
+        fi
+        echo "  ✓ decrypted encrypted backup"
+    fi
+    tar -tzf "${VERIFY_SRC}" >/dev/null
+    tar -xzf "${VERIFY_SRC}" -C "${TMP}"
 
     # The backup-side staging path is ${WORK}/polaris-${TS}/<files>, so
     # the tarball extracts into ${TMP}/polaris-<ts>/<files>. Descend one

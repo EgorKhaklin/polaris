@@ -1,9 +1,10 @@
 # HARDENING.md: the host under Polaris
 
-[`deploy/linux/install.sh`](../../deploy/linux/install.sh) configures Polaris.
-This page is the operating system around it: what to do on a fresh Debian,
-Ubuntu, or RHEL-family server before it carries real identity data, as
-copy-paste commands. Polaris's own container hardening (capabilities dropped,
+**Reader:** the operator who owns the Linux host Polaris runs on. **Job:**
+harden the operating system around the stack, as copy-paste commands, before
+it carries real identity data. [`deploy/linux/install.sh`](../../deploy/linux/install.sh)
+configures Polaris itself; this page is what to do on a fresh Debian, Ubuntu,
+or RHEL-family server around it. Polaris's own container hardening (capabilities dropped,
 `no-new-privileges`, digest-pinned images, TLS on every hop, secrets as mounted
 files) is already in the compose file; nothing here duplicates it.
 
@@ -181,7 +182,7 @@ is configured by env alone and drilled in CI ([`DR.md`](DR.md)).
 - `firewalld` and Docker cooperate better than ufw does, but the same rule
   applies: publish nothing beyond 80/443.
 
-## 13. Application-level origin and session limits (v9.189)
+## 13. Application-level origin and session limits
 
 The firewall in section 3 decides which addresses reach the edge. These
 controls decide which addresses may hold WHICH ROLE, and how long a session
@@ -218,8 +219,8 @@ What each control does:
   never the new login, so an operator's own stale tabs cannot lock them out.
   The cap is exact under concurrent logins.
 - **Idle timeout.** A session with no request for the configured minutes ends
-  on its next request (`SESSION_EXPIRED`). The 8-hour absolute lifetime of the
-  cookie still applies on top.
+  on its next request (`SESSION_EXPIRED`). The cookie's own 8-hour lifetime,
+  refreshed on every request, still applies on top.
 - **Revocation.** A deactivated account's live sessions end on their next
   request (`SESSION_REVOKED`); `polaris user-passwd` and
   `polaris user-deactivate` revoke them immediately; logout revokes its own row;

@@ -1,9 +1,9 @@
 # LINUX-SERVER.md: a fresh Linux server to a healthy Polaris stack
 
-The production path for a real host (roadmap P1.1). One script takes a fresh
-Debian, Ubuntu, or RHEL-family server to the full production stack under
-systemd; this page is everything an operator needs around it. If you are
-evaluating on a laptop, use [`INSTALL.md`](INSTALL.md) instead.
+**Reader:** the operator installing Polaris on a real Linux host. **Job:** take
+a fresh Debian, Ubuntu, or RHEL-family server to the full production stack
+under systemd with one script, and know everything around that script. If you
+are evaluating on a laptop, use [`INSTALL.md`](INSTALL.md) instead.
 
 ## What you need
 
@@ -53,7 +53,7 @@ It ends with:
 ```
 
 Then log in and rotate the seeded accounts immediately
-([`OPERATIONS.md`](OPERATIONS.md) "Initial admin login").
+([`DEPLOYMENT.md`](DEPLOYMENT.md#the-first-operator-account)).
 
 ## What is installed
 
@@ -98,7 +98,7 @@ requests ([`OPERATIONS.md`](OPERATIONS.md), "Zero-downtime deploys").
 **Sealed secrets**: set `POLARIS_SECRETS_BACKEND=age` (or `awskms`) plus the
 identity/recipients (or key id) lines in `polaris.env`; `polaris.service`
 unseals into a tmpfs at `/run/polaris/secrets` before every start and the
-plaintext directory can be shredded ([`SECRETS.md`](SECRETS.md) section 8).
+plaintext directory can be shredded ([SECRETS.md, section 5](SECRETS.md#5-the-sealed-secret-store)).
 
 **Paging**: mount your pager URL into Alertmanager per
 [`RUNBOOKS.md`](RUNBOOKS.md) "Paging". The Prometheus and Alertmanager

@@ -1,18 +1,18 @@
 # RUNBOOKS.md: alert response runbooks
 
-One runbook per shipped Prometheus alert. When an alert in
-[`../../deploy/observability/polaris-alerts.yml`](../../deploy/observability/polaris-alerts.yml)
-fires, find its section here by the exact alert name and work the
-Trigger / Likely cause / Diagnosis / Remediation steps.
+**Reader:** the on-call operator who has just been paged. **Job:** find the
+alert by its exact name and work its Trigger / Likely cause / Diagnosis /
+Remediation steps. There is one runbook per shipped Prometheus alert in
+[`../../deploy/observability/polaris-alerts.yml`](../../deploy/observability/polaris-alerts.yml).
 
-> **Status (v9.175).** Polaris ships the alert rules, the metrics they read,
-> and the Alertmanager routing + receiver template
-> ([`../../deploy/observability/alertmanager.yml`](../../deploy/observability/alertmanager.yml)),
-> and CI proves that a duress increment reaches the pager webhook
-> (`scripts/polaris-page-drill.sh`). What Polaris does not ship is the pager
-> itself: the on-call product and its URL are yours, wired as described in
-> [Paging](#paging-wiring-the-receiver). Until that file is mounted, these are
-> reference procedures, not a claim that Polaris is paging anyone.
+Polaris ships the alert rules, the metrics they read, and the Alertmanager
+routing and receiver template
+([`../../deploy/observability/alertmanager.yml`](../../deploy/observability/alertmanager.yml)),
+and CI proves that a duress increment reaches the pager webhook
+(`scripts/polaris-page-drill.sh`). Polaris does not ship the pager itself: the
+on-call product and its URL are yours, wired as described in
+[Paging](#paging-wiring-the-receiver). Until that file is mounted, these are
+reference procedures, not a claim that Polaris is paging anyone.
 
 The severity labels (`sev1`/`sev2`/`sev3`) map to the SEV ladder in
 [`DR.md`](DR.md) §2. The SLO thresholds these alerts
@@ -151,14 +151,14 @@ the situation (see [Paging](#paging-wiring-the-receiver)).
    NOT take any visible action that could reveal the alarm to a coercer.
 
 **Remediation.** The response is a HUMAN safety/legal procedure, not a system
-change — and the procedure itself is **operator-defined** (who is notified, how
+change, and the procedure itself is **operator-defined** (who is notified, how
 the subject's safety is confirmed, what law-enforcement or welfare path applies).
 Polaris's job ends at recording + paging; do not script an automated action
 against the holder or the token. Do NOT revoke, lock, or alter the holder's
 record in reaction (that could endanger them and corrupts the evidentiary
 trail). Preserve the `DuressEvent` and the surrounding audit (they are
 append-only). The alert clears on its own once no new event arrives in the
-window; clearing is not "resolved" — the human response is.
+window; clearing is not "resolved"; the human response is.
 
 ---
 
@@ -314,7 +314,7 @@ refusing the excess with HTTP 429 and `PolarisQuotaRefusals`), and rotate or
 deactivate the operator account if it is the source (`polaris user-passwd` /
 `user-deactivate` end its sessions). Issued tokens are not undone by the
 alert; a wrongful batch is revoked through `uc8_revoke_token`, which is itself
-bounded (R11-6). If expected: raise or clear the cap and note the drive in the
+bounded by the per-agency revocation rate limit. If expected: raise or clear the cap and note the drive in the
 journal; the alert clears when the hour rolls off.
 
 ---
@@ -324,8 +324,8 @@ journal; the alert clears when the hour rolls off.
 **Severity:** SEV-2 · **Expression:** last-hour revocations of one agency's tokens `> 5` AND `> 4x` its trailing 7-day hourly mean (offset 1h) · **For:** 5m
 
 Tokens issued by one agency are being revoked far faster than that agency's
-norm. Mass revocation is the denaturalization shape the constitution names
-(R11-6); the percentage bound in `uc8_revoke_token` may already be refusing,
+norm. Mass revocation is the denaturalization shape the constitution names;
+the percentage bound in `uc8_revoke_token` may already be refusing,
 and this alert is the operator's early sight of the run-up.
 
 **Trigger.** More than 5 revocations in the last hour of one issuing agency's
@@ -338,7 +338,7 @@ tokens, and more than four times its weekly hourly mean.
 
 **Diagnosis.**
 1. `SELECT e.reason_code, count(*) FROM TokenLifecycleEvent e JOIN IdentityToken t USING (token_id) WHERE e.event_type='REVOKED' AND e.event_timestamp > now() - interval '1 hour' AND t.issuing_agency_id=<id> GROUP BY 1;` shows whether the reasons cluster (a recall) or scatter (an operator).
-2. `[COSIGN:<id>]` tags in `reason_code` show whether the R11-6 bound already demanded a co-signer.
+2. `[COSIGN:<id>]` tags in `reason_code` show whether the `uc8_revoke_token` bound already demanded a co-signer.
 3. `polaris audit-log --since-minutes 60` for the operator sessions involved.
 
 **Remediation.** If unexpected: `polaris quota-set <agency_id>
@@ -375,8 +375,8 @@ requesting agency, and more than four times its weekly hourly mean.
 **Remediation.** `polaris quota-set <agency_id> --verify-per-hour N
 --justification "..."` caps the verifier at the database on its next write.
 For a verifier outside its attested purpose, revoke the federation attestation
-(`/api/federation/revoke`); later SUCCESS outcomes then fail the R11-3 trust
-check. The recorded verifications are audit-of-record and stay.
+(`/api/federation/revoke`); later SUCCESS outcomes then fail the federation
+trust check (`_federation_trust_holds` in `app.py`). The recorded verifications are audit-of-record and stay.
 
 ---
 

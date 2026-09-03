@@ -1,11 +1,15 @@
 # KEY-CEREMONY.md: the issuer signing key, its custody, and its rotation
 
+**Reader:** the operator who holds the issuer's signing key, and the
+witnesses to its ceremony. **Job:** how the key is created under each
+custody driver, where it lives, who may touch it, and how it is rotated.
+
 Polaris has one long-lived private key: the issuer's ML-DSA-65 (FIPS 204)
 token-signing key. Every token's `TokenSignature` is produced by it, and the
 public key is stored WITH each signature, so verification is self-contained and
 survives rotation. Epoch anchors are hash-chained, not signed; no other private
 key exists today. This page is how that key is created, where it lives, and how
-it is replaced. Roadmap P1.2.
+it is replaced.
 
 ## Custody drivers
 

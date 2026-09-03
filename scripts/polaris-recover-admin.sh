@@ -24,9 +24,10 @@
 # (security.py:authenticate + webauthn_auth.webauthn_status_for_user)
 # checking now() against webauthn_required_after on every login.
 #
-# This script DOES NOT change the target's password, bypass lockout,
-# or insert a WebAuthn credential. It only relaxes the MFA-overdue
-# refusal for the configured window.
+# This script DOES NOT change the target's password or insert a WebAuthn
+# credential. It relaxes the MFA-overdue refusal for the configured window
+# and, as part of that, clears the failed-login counter and any lockout so
+# the recovered admin can log in at once.
 #
 # Usage:
 #   ./scripts/polaris-recover-admin.sh \

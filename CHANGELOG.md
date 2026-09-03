@@ -5,6 +5,115 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.199 — 2026-09-02 (P1.13 ship 5: the operator surface has one owner per subject)
+
+Seventeen runbooks, one owner per subject, every claim re-verified against
+the code, and no em-dash, arc, wave, Sanctum, ticket or version token left in
+any of them. Rewritten in parallel, one agent per document, then reconciled.
+
+- **DR.md owns recovery.** It leads with the targets table (RPO 300 s, RTO
+  14400 s) and names the measurement: `polaris-dr-drill.sh` on every push
+  and monthly, with the machine-appended ledger in DR-DRILLS.md. The S3 and
+  pgBackRest configuration is its own section, every command verified against
+  docker-init, the drills and CI. Gone: the "honest status" blockquote, every
+  "≤1-min RPO" phrase (FAILOVER.md's copy too), the unmeasured MTTR row, and a
+  set of procedures that named flags and files that do not exist
+  (`--force-rotate-all`, `--restart-secrets`, `--rebuild`,
+  `POLARIS_BACKUP_BUCKET`, `polaris-LATEST.tarball`, a logrotate file, an
+  `occurred_at` column). The restore invocation is now the one the drill runs.
+- **SECRETS.md is renumbered and re-measured.** Monotonic sections; the
+  matrix regenerated from the generator and the production compose (adds the
+  replicator password, the signing key, both TLS pairs and the pgBackRest
+  credentials file; drops two secrets nothing reads); rotation described as
+  `polaris-rotate-secret.sh` performs it. The WebAuthn enrollment and
+  recovery runbook, the disabling-MFA procedure and the relying-party knobs
+  moved to WEBAUTHN-ROLLOUT.md, which also loses its reference to a
+  `/auth/recovery` route that does not exist. Every inbound "SECRETS.md
+  section N" reference (OPERATIONS, LINUX-SERVER, DR, PRIVACY, RED-TEAM-SCOPE,
+  the Linux env example) now links a named anchor.
+- **DEPLOYMENT.md is the router.** Four paths (laptop, single host, Linux
+  under systemd, Kubernetes), then the single-host compose procedure exactly
+  as `polaris-deploy.sh` runs it, the blue-green overlay, the first operator
+  account, the environment-variable table with every row re-verified, and the
+  stamped verification block. The retirement paragraph, the duplicated demo
+  credentials and the contradictory "Operational" table are gone. The sizing
+  and network requirements moved here from OPERATIONS.md.
+- **OPERATIONS.md is day 2 only.** Its install-shaped opening (quick start,
+  system requirements, deploy, verify, initial admin login) collapsed to a
+  pre-deploy checklist and a description of the running stack, with links to
+  DEPLOYMENT.md for the rest; the PITR recipe, the stale RPO/RTO paragraph,
+  the duplicated health payload and the two alert tables are pointers to
+  DR.md, API.md, the alert rules and RUNBOOKS.md; the LUKS/TDE/fscrypt
+  recipes merged into ENCRYPTION-AT-REST.md section 6 (rewritten against the
+  named volume, with a real verification step instead of a wrong `df -T`
+  claim); the pre-commit section moved to CONTRIBUTING.md; four false claims
+  corrected (`polaris-backup.sh` has no S3 destination, the compose volume is
+  project-prefixed, the prover is not "single-threaded", the archive default
+  is 365 days). The table of contents is regenerated.
+- **SECURITY.md is present-tense posture** for an assessor: every control,
+  its enforcement point and its pinning check (all 27 check names and 24 test
+  classes verified to exist, with counts), with the F-01 to F-14 engagement
+  as a dated appendix. **RED-TEAM-SCOPE.md** is written for the firm to be
+  commissioned: engagement type, three threat actors with success criteria,
+  in-scope surfaces regenerated against the current tree (the PQ edge,
+  PKCS#11 and KMS custody, the session registry and network policy, quotas,
+  pgBackRest and DR, the Helm profile), the DoS carve-out, deliverables,
+  disclosure timeline, and the five maintainer commitments.
+- **The rest of the set:** FAILOVER, RUNBOOKS and SLOS lose their status
+  blockquotes; PRIVACY's rotation table now agrees with SECRETS.md and no
+  longer cites two tests that do not exist; HARDENING, LINUX-SERVER, INSTALL,
+  KUBERNETES and KEY-CEREMONY carry the reader-and-job opening; the operator
+  index is rewritten with one row per runbook and three reading orders.
+- **Four defects found on the way, fixed and pinned.** The deploy script
+  created the pgBackRest repository as root, which the server (archiving as
+  `postgres`) could not write to; it now runs as the postgres user like the
+  drills and CI. The production compose never set `POLARIS_TRUST_PROXY`, so
+  behind Caddy every client shared the edge's address: one rate-limit bucket,
+  one `AuthAuditLog` ip, a per-role network policy that could never match
+  (the Helm profile had it right); the compose sets it, and
+  `check_prod_compose_trusts_edge` (109 checks) pins the variable together
+  with the Caddyfile's `X-Forwarded-For` rewrite. The recovery-code script's
+  header described a `--recovery-code` invocation the recover script rejects;
+  the recover script's header claimed it does not clear a lockout when it
+  does. Both headers now say what the scripts do.
+- **Reviewed before it shipped.** A read-only factual lens per rewritten
+  runbook (eight in all) re-verified every command, flag, path, variable,
+  default, role rule and check name against the source after the writing
+  agents' own verification, and found 74 claims that were wrong or
+  unsupported: a `caddy reload` the edge's `admin off` makes impossible, a
+  bare `polaris-rotate-logs.sh` that exits 4, an `age-keygen` pipeline that
+  produced an empty recipients file, a `--target=docker-stack` restore that
+  exits 6 without `--force`, pgbouncer `SHOW` commands the least-privilege
+  entrypoint disables, "sessions live in Redis" (they are signed cookies
+  checked against the Postgres registry), an "8-hour absolute" lifetime that
+  is an inactivity lifetime, a `/sql` console described as admin-only that
+  auditors may use, a LUKS recipe whose key file was never created, and the
+  rest of that kind. Every one is corrected in the shipped text.
+- **Two more defects from the review lenses, fixed and exercised.**
+  `polaris-backup.sh --verify-latest` and the quarterly cron dry-run globbed
+  `polaris-*.tar.gz` only, so on any deployment that sets
+  `POLARIS_BACKUP_KEY_FILE` (which deletes the plaintext after encrypting)
+  they reported "no backups found" or verified a stale plaintext; both now
+  see `.tar.gz.enc`, and verify decrypts with the key before re-hashing the
+  manifest (exercised: good key passes, wrong key and missing key exit 1).
+  `POLARIS_WEBAUTHN_RP_NAME` was documented as a compose knob but the compose
+  never passed it; it does now, and the Linux env example lists it.
+- **The sub-roadmap.** `DEVNOTES/presentation-plan.md` holds the plan inside
+  the plan for rows P1.13 to P1.17: every ship the audit decomposed them
+  into, its status, the ordered changes, deletions and risks per row, the
+  critic's findings, and the rulings that reconcile them. The five roadmap
+  rows are marked in progress and point at it; later sessions take one ship
+  at a time from its status table.
+- **Open, recorded for the next rows:** the shipped Caddyfile proxies
+  `/metrics` and `/api/metrics` to the public internet with no ACL, and
+  neither route authenticates; OPERATIONS.md now says so and gives the
+  operator the edge matcher to add, and the software fix with its CI proof
+  is the first item of P1.17's observability ship. Documentation invokes the
+  CLI as `polaris` while the package installs it as `polaris-id` (P1.17, the
+  CLI ship); `Dockerfile.prod` and `Dockerfile.pgbouncer` base images are tag-
+  pinned, not digest-pinned (RED-TEAM-SCOPE states the split).
+
+
 ## v9.198 — 2026-09-02 (P1.13 ship 6: the reference set describes the running code)
 
 - **API.md is complete in both directions, and a check keeps it so.**

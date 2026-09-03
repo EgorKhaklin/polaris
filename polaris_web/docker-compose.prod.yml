@@ -162,6 +162,11 @@ services:
       # fragment 4x (a real brute-force weakening). Point it at the redis service
       # so the atomic cross-worker Redis limiter is actually used.
       POLARIS_REDIS_URL: redis://redis:6379/0
+      # Caddy is the only ingress and rewrites X-Forwarded-For to the real peer
+      # (header_up ... {remote_host}), so the app may trust it. Without this every
+      # client shared Caddy's container address: one rate-limit bucket, one
+      # AuthAuditLog ip, and a per-role network policy that could never match.
+      POLARIS_TRUST_PROXY: "1"
       POLARIS_PORT: '8000'
       POLARIS_STATE_DIR: /var/lib/polaris/state
       POLARIS_ENV: production
@@ -197,6 +202,7 @@ services:
       POLARIS_WEBAUTHN_REQUIRE_ATTESTATION: "${POLARIS_WEBAUTHN_REQUIRE_ATTESTATION:-}"
       POLARIS_WEBAUTHN_ALLOWED_AAGUIDS: "${POLARIS_WEBAUTHN_ALLOWED_AAGUIDS:-}"
       POLARIS_WEBAUTHN_HARDWARE_ONLY: "${POLARIS_WEBAUTHN_HARDWARE_ONLY:-}"
+      POLARIS_WEBAUTHN_RP_NAME: "${POLARIS_WEBAUTHN_RP_NAME:-Polaris}"
       POLARIS_ZK_BINARY: /opt/polaris/zk
       WEB_CONCURRENCY: ${WEB_CONCURRENCY:-4}
       # v9.116: real ML-DSA-65 signing is the production default (liboqs ships in

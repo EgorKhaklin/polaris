@@ -109,7 +109,7 @@ ${MARKER_BEGIN}
 0 2 1 1 *   ${SCRIPTS_DIR}/polaris-rotate-logs.sh 2>&1 | logger -t polaris-rotate-logs
 
 # Quarterly DR drill at 03:00 1st of Jan/Apr/Jul/Oct — verifies restore path
-0 3 1 1,4,7,10 *   ${SCRIPTS_DIR}/polaris-restore.sh --dry-run \$(ls -t ${BACKUP_DEST}/polaris-*.tar.gz 2>/dev/null | head -1) 2>&1 | logger -t polaris-dr-drill
+0 3 1 1,4,7,10 *   ${SCRIPTS_DIR}/polaris-restore.sh --dry-run \$(ls -t ${BACKUP_DEST}/polaris-*.tar.gz ${BACKUP_DEST}/polaris-*.tar.gz.enc 2>/dev/null | head -1) 2>&1 | logger -t polaris-dr-drill
 
 ${MARKER_END}
 EOF

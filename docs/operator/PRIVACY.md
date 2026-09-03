@@ -1,10 +1,11 @@
 # PRIVACY.md
 
-How Polaris handles personal information. This is distinct from
-`SECURITY.md` (which covers attacks) and `DEVNOTES/threat-model.md`
-(which covers the architectural defenses). PRIVACY focuses on what
-data is collected, what's retained, how the architecture enforces
-minimization, and what users (or holders) can expect.
+**Reader:** the privacy officer or data-protection reviewer assessing a
+Polaris deployment. **Job:** state what personal data Polaris collects, what
+it retains, how the architecture enforces minimization, and what holders can
+expect. This is distinct from [SECURITY.md](SECURITY.md) (which covers
+attacks) and [DEVNOTES/threat-model.md](../../DEVNOTES/threat-model.md)
+(which covers the architectural defenses).
 
 ---
 
@@ -21,7 +22,7 @@ minimization, and what users (or holders) can expect.
 
 These are the irreducible minimum to issue an identity token. No
 biometric data is stored in the schema (only the type of binding,
-e.g. "FINGERPRINT" — the template lives on the device, not in
+e.g. "FINGERPRINT"; the template lives on the device, not in
 Polaris).
 
 ### About operators (AppUsers)
@@ -45,7 +46,7 @@ events stay (the action is permanent, even when the actor is gone).
 | `TokenLifecycleEvent` | token_id, agency, type, timestamp, reason, geo (optional) | Permanent (C1) |
 | `VerificationEvent` (FULL) | token_id, requesting agency, context, timestamp, geo | Permanent (C1) |
 | `VerificationEvent` (SELECTIVE) | token_id, requesting agency, context, timestamp, geo, attribute set | Permanent (C1) |
-| `VerificationEvent` (ZERO_KNOWLEDGE) | requesting agency, context, timestamp, geo | Permanent (C1) — note `token_id IS NULL` (C2) |
+| `VerificationEvent` (ZERO_KNOWLEDGE) | requesting agency, context, timestamp, geo | Permanent (C1); note `token_id IS NULL` (C2) |
 | `AuthAuditLog` | username, event_type, ip_address, timestamp | Permanent for non-repudiation |
 
 The audit invariant (C1) means events are permanent. This is a
@@ -98,36 +99,36 @@ token_id; the constraint rejects the row before commit.
 ### Append-only audit
 
 Constraint C1 makes lifecycle and verification events immutable.
-This is the basis for non-repudiation — but it's also the basis for
+This is the basis for non-repudiation, but it's also the basis for
 a privacy claim: an operator cannot "tidy up" a holder's history
 without leaving a permanent record of the attempted tidying.
 
-**Encryption at rest (v8.93):** the production stack supports
-encryption at rest at the storage layer via LUKS on bare-metal,
-TDE on managed Postgres, or filesystem-level encryption
-(eCryptfs / fscrypt). See `docs/operator/OPERATIONS.md` §
-"Encryption at rest" for the three concrete recipes. The
-application-layer privacy posture documented in this file
-(append-only audit, C2 ZK-NULL coupling, the new constitutional
+**Encryption at rest:** the production stack supports encryption
+at rest at the storage layer via LUKS on bare metal, storage-layer
+encryption on managed Postgres, or filesystem-level encryption
+(fscrypt). [ENCRYPTION-AT-REST.md](ENCRYPTION-AT-REST.md) carries
+the three concrete recipes and the verification step;
+[OPERATIONS.md](OPERATIONS.md#encryption-at-rest) points at them.
+The application-layer privacy posture documented in this file
+(append-only audit, C2 ZK-NULL coupling, the constitutional
 carve-out for archived rows) is independent of and complementary
-to disk-level encryption — both layers protect different attack
+to disk-level encryption: both layers protect different attack
 surfaces (the application against operator-side mistakes; the
 filesystem against host-side reads).
 
-**Constitutional carve-out (v8.87 / Phase 2b):** for four
-high-volume audit tables (`TokenLifecycleEvent`,
-`VerificationEvent`, `EnrollmentStatusEvent`, `AuthAuditLog`),
-rows older than the retention floor (operator-configured, default
-5 years) can be moved from hot storage to a manifest-hashed
-archive tarball via `uc_archive_purge()`. The hot row is deleted;
-a `LifecycleArchiveCheckpoint` row recording cutoff + SHA-256 +
-operator user_id is written in the same transaction. The
-checkpoint table is strictly append-only (G30); the procedure is
-the only DELETE path (G31). **Non-repudiation is preserved at
-the constitutional level**: every event is reconstructible from
-hot table OR (older than cutoff) from the archive tarball
-referenced by the checkpoint. The privacy claim — "an operator
-cannot disappear a holder's history" — is also preserved: any
+**Constitutional carve-out:** for four high-volume audit tables
+(`TokenLifecycleEvent`, `VerificationEvent`,
+`EnrollmentStatusEvent`, `AuthAuditLog`), rows older than an
+operator-supplied cutoff can be moved from hot storage to a
+manifest-hashed archive tarball via `uc_archive_purge()`. The hot
+row is deleted; a `LifecycleArchiveCheckpoint` row recording
+cutoff, SHA-256, and operator user_id is written in the same
+transaction. The checkpoint table is strictly append-only; the
+procedure is the only DELETE path. **Non-repudiation is preserved
+at the constitutional level**: every event is reconstructible from
+the hot table or (older than the cutoff) from the archive tarball
+referenced by the checkpoint. The privacy claim, "an operator
+cannot disappear a holder's history", is also preserved: any
 purge produces an append-only checkpoint row, so attempted
 tidying still leaves a permanent record.
 
@@ -184,12 +185,12 @@ Polaris does NOT support deleting holder data. The audit invariant
 
 - Mark tokens REVOKED or LOST (the tokens stay; status is recorded)
 - Anonymize `Individual.legal_name` to a pseudonym (the row stays;
-  the name is replaced) — this is operationally supported
+  the name is replaced); this is operationally supported
 
-The pseudonymization is a real, shipped mechanism (v9.125): the stored
+The pseudonymization is a shipped mechanism: the stored
 procedure `uc_pseudonymize_individual(individual_id, actor_user_id, reason)`
 replaces `legal_name` with a `PSEUDONYMIZED-<id>` marker and records the act
-in the append-only `IndividualErasureEvent` (who, when, why — never the prior
+in the append-only `IndividualErasureEvent` (who, when, why; never the prior
 name or a hash of it, which would defeat the erasure). It is admin-gated and
 issues no `DELETE`, so it cannot become a path around C1. Operators invoke it
 via `scripts/polaris-pseudonymize-individual.sh`. The Individual row and every
@@ -221,18 +222,18 @@ agencies.
 Polaris does NOT share data with external systems by default.
 Possible cross-system flows:
 
-- **Verification events** — when an external relying party calls a
+- **Verification events**: when an external relying party calls a
   Polaris verification endpoint, the event is recorded in Polaris.
   The relying party gets back a proof of the result; they do not
   receive holder PII (unless disclosure_level is `FULL`, in which
   case the holder consented to that level for that context).
 
-- **Revocation list** — `RevocationList` rows can be published
+- **Revocation list**: `RevocationList` rows can be published
   externally (CRL distribution). Published data: token_id (an
   opaque integer), revocation reason, effective date. No holder
   PII.
 
-- **Aggregated atlas data** — `/api/atlas/*` endpoints return
+- **Aggregated atlas data**: `/api/atlas/*` endpoints return
   spatially-aggregated counts. They do NOT return holder identifiers
   for clusters; only for individual events at high zoom (`/api/atlas/points`).
 
@@ -257,7 +258,7 @@ The application log does NOT record:
 - Token values
 
 If logging configuration is changed to capture more (e.g. to debug
-an issue), revert immediately after — and document the reversion in
+an issue), revert immediately after, and document the reversion in
 `DEVNOTES/known-gotchas.md` so it doesn't regress.
 
 ---
@@ -266,7 +267,7 @@ an issue), revert immediately after — and document the reversion in
 
 Polaris uses one cookie:
 
-- `session` — Flask session cookie. `HttpOnly`, `Secure`,
+- `session`: Flask session cookie. `HttpOnly`, `Secure`,
   `SameSite=Lax`. Contents are a signed (and optionally encrypted)
   payload representing the authenticated operator. No third-party
   cookies.
@@ -285,132 +286,136 @@ acceptable in production:
 - `Secure` cookie attribute MUST be set (default in Flask when
   HTTPS is detected)
 
-See `OPERATIONS.md` pre-flight checklist.
+See the [OPERATIONS.md](OPERATIONS.md#pre-deploy-checklist) pre-deploy checklist.
 
 ---
 
-## Operational privacy posture in production (Arc B / v8.77)
+## Operational privacy posture in production
 
-Polaris's production deployment (Arc B Phase 1) ships with three
-privacy-relevant architectural choices that go beyond the
-schema-level invariants above. These narrow the attack surface
-through which holder or operator data could leak.
+The production compose stack
+([`docker-compose.prod.yml`](../../polaris_web/docker-compose.prod.yml))
+ships with three privacy-relevant architectural choices that go beyond the
+schema-level invariants above. They narrow the attack surface through which
+holder or operator data could leak.
 
-### File-mounted secrets (G28)
+### File-mounted secrets
 
-Production runs with **Docker secrets** rather than environment
-variables for sensitive credentials. The Flask session signing
-key (`POLARIS_SECRET_KEY`), the database password
-(`POLARIS_DB_PASSWORD`), and the Postgres superuser password are
-all mounted at `/run/secrets/<name>` from
-`polaris_web/secrets/<name>` on the host (mode 0600). The app
-reads them via the `*_FILE` env-var convention.
+Production runs with Docker secrets rather than environment variables for
+sensitive credentials. Every credential in the secrets matrix (the Flask
+session signing key, the application and superuser database passwords, the
+ML-DSA-65 signing key) is mounted at `/run/secrets/<name>` from the host
+secrets directory (mode 0700; the per-file modes are in
+[SECRETS.md, section 1](SECRETS.md#1-the-secrets-matrix)). The app, pgbouncer,
+and postgres read them through the `*_FILE` environment convention
+(`POLARIS_SECRET_KEY_FILE`, `POLARIS_DB_PASSWORD_FILE`,
+`POSTGRES_PASSWORD_FILE`, `POLARIS_PQC_SIGNING_KEY_FILE`).
 
 Practical implications for privacy:
 
-- **`docker inspect` does not show secret values.** A bystander
-  with `docker` group membership but no filesystem read access
-  cannot read the secrets via container introspection.
-- **Process listings (`ps -ef`) do not show secret values.**
-  Environment variables can leak via `/proc/<pid>/environ`;
-  file-mounted secrets do not.
-- **Container logs cannot accidentally include secrets**
-  because the app never accepts the secret through stdin or
-  argv.
-- **Backups skip the secrets directory** by default. The
-  `polaris-backup.sh` tarball never includes `secrets/` — keys
-  are rotated separately and would need to be re-generated on
-  restore-to-new-host.
+- **`docker inspect` does not show secret values.** A bystander with
+  `docker` group membership but no filesystem read access cannot read the
+  secrets through container introspection.
+- **Process listings (`ps -ef`) do not show secret values.** Environment
+  variables can leak through `/proc/<pid>/environ`; file-mounted secrets do
+  not.
+- **Container logs cannot accidentally include secrets** because the app
+  never accepts a secret through stdin or argv.
+- **Backups do not carry the secrets directory.** The `polaris-backup.sh`
+  tarball holds the `pg_dump` and a SHA-256 manifest and nothing else; on a
+  restore to a new host the secrets are regenerated or restored separately
+  ([DR.md](DR.md)).
 
-This is enforced structurally by G28
-(`test_g28_no_sensitive_env_in_prod_compose`): the production
-compose file cannot declare a literal value for
-`POLARIS_SECRET_KEY`, `POLARIS_DB_PASSWORD`, or
-`POLARIS_DB_ROOT_PASSWORD`.
+The invariant layer pins this: `check_secrets_lifecycle_sealed` requires the
+compose file to read every secret through `${POLARIS_SECRETS_DIR:-./secrets}`,
+and `check_pgbouncer_self_built` requires pgbouncer to read the database
+password from `POLARIS_DB_PASSWORD_FILE` rather than the environment
+([SECRETS.md, section 7](SECRETS.md#7-structural-guarantees)).
 
-### TLS at the edge (G27)
+### TLS at the edge
 
-All operator and holder-facing traffic is terminated by Caddy
-(`caddy:2-alpine`) using Let's Encrypt-issued certificates for
-the configured `POLARIS_DOMAIN`. Caddy auto-renews ~30 days
-before expiry. The Caddyfile sets the canonical security-header
-set:
+All operator and holder-facing traffic is terminated by Caddy, built from
+`caddy:2.11.4-alpine` with the rate-limit plugin compiled in
+([`Dockerfile.caddy`](../../polaris_web/Dockerfile.caddy)), using Let's
+Encrypt certificates for the configured `POLARIS_DOMAIN`. Caddy renews them
+automatically. The [`Caddyfile`](../../polaris_web/Caddyfile) sets the
+canonical security-header set:
 
 | Header | Value | Privacy effect |
 |---|---|---|
 | `Strict-Transport-Security` | `max-age=63072000; includeSubDomains; preload` | Browsers refuse to downgrade to HTTP for 2 years |
-| `Referrer-Policy` | `strict-origin-when-cross-origin` | Outbound links don't leak the path the operator was on |
-| `Permissions-Policy` | `geolocation=(), microphone=(), camera=(), payment=(), usb=()` | Polaris doesn't ask for any sensitive browser API |
-| `X-Frame-Options` | `DENY` | Polaris pages can't be iframed (clickjacking + UI redress) |
+| `Referrer-Policy` | `strict-origin-when-cross-origin` | Outbound links do not leak the path the operator was on |
+| `Permissions-Policy` | `geolocation=(), microphone=(), camera=(), payment=(), usb=()` | Polaris does not ask for any sensitive browser API |
+| `X-Frame-Options` | `DENY` | Polaris pages cannot be iframed (clickjacking and UI redress) |
 | `Cross-Origin-Opener-Policy` | `same-origin` | Window-handle isolation |
 | `Cross-Origin-Resource-Policy` | `same-origin` | Resource loading isolated |
 
-Internal traffic (Caddy → app → Postgres/Redis) is plaintext
-over the isolated Docker network. The privacy claim is that
-nothing leaves the host without TLS termination first.
+Internal hops run on the isolated compose network. The app-to-pgbouncer and
+pgbouncer-to-postgres hops use the self-signed pairs from the secrets matrix
+with `sslmode=verify-ca`; Redis runs without AUTH on the private network
+([SECRETS.md, section 1](SECRETS.md#1-the-secrets-matrix)). The privacy claim
+is that nothing leaves the host without TLS termination first.
 
-This is enforced structurally by G27
-(`test_g27_caddyfile_declares_tls`).
+`check_caddy_self_built` in `polaris_checks` pins the self-built edge, and CI
+validates the Caddyfile against the built image.
 
 ### What gets logged in production
 
 The production stack writes three log streams:
 
-1. **`./logs/caddy/access.log`** — Caddy access log (JSON
-   format). Records: timestamp, client IP, host, method, path,
-   status code, bytes, request duration. **Does NOT record:**
-   request bodies, response bodies, cookies, headers other than
-   user-agent.
+1. **`polaris_web/logs/access.log`**: Caddy access log (JSON), mounted from
+   `/var/log/caddy` in the container. Records timestamp, client IP, host,
+   method, path, status code, bytes, request duration, and request headers.
+   Caddy omits the values of credential headers (`Cookie`, `Authorization`,
+   `Set-Cookie`) from its access log unless `log_credentials` is enabled in
+   the Caddyfile's global options, and the shipped Caddyfile does not enable it. **Does not record:** request bodies or response bodies.
 
-2. **`./logs/caddy/caddy.log`** — Caddy system log (JSON).
-   Records ACME / TLS / config events. **Does NOT record:**
-   client requests.
+2. **`polaris_web/logs/caddy.log`**: Caddy system log (JSON). Records ACME,
+   TLS, and config events. **Does not record:** client requests.
 
-3. **App logs** — gunicorn access + error log (configurable via
-   `gunicorn.conf.py`). Records HTTP method + path + status +
-   timing. **Does NOT record:** form bodies, cookie values, or
-   token values (see "Logs and PII" above).
+3. **App logs**: gunicorn access and error logs on container stdout and
+   stderr ([`gunicorn.conf.py`](../../polaris_web/gunicorn.conf.py)). Records
+   HTTP method, path, status, timing, referer, and user agent. **Does not
+   record:** form bodies, cookie values, or token values (see "Logs and PII"
+   above).
 
-Postgres + Redis logs are container-stdout by default; the
-operator routes them to their log aggregator. The schema's audit
-tables (`TokenLifecycleEvent`, `VerificationEvent`,
-`AuthAuditLog`, `EnrollmentStatusEvent`, `DuressEvent`,
-`AnchorBatch`, `AgencyTrustAttestation`, `TokenStateEpoch`) are
-the system's *durable* privacy-relevant record; the log streams
-above are *operational* and may be aggressively rotated.
+Postgres and Redis logs are container stdout by default; the operator routes
+them to their log aggregator. The schema's audit tables
+(`TokenLifecycleEvent`, `VerificationEvent`, `AuthAuditLog`,
+`EnrollmentStatusEvent`, `DuressEvent`, `AnchorBatch`,
+`AgencyTrustAttestation`, `TokenStateEpoch`) are the system's *durable*
+privacy-relevant record; the log streams above are *operational* and may be
+aggressively rotated.
 
 ### Rotation cadence (privacy half-life)
 
-Per `docs/operator/SECRETS.md`:
+The recommended cadence from [SECRETS.md, section 1](SECRETS.md#1-the-secrets-matrix):
 
 | Secret | Rotation cadence | Privacy rationale |
 |---|---|---|
-| `POLARIS_SECRET_KEY` | 180 days | Bounds the session-cookie-replay window |
-| `POLARIS_DB_PASSWORD` | 180 days | Bounds the database-credential blast radius |
-| `POLARIS_DB_ROOT_PASSWORD` | 180 days | Bounds the superuser blast radius |
-| TLS certificate | ~60 days (Caddy auto-renews) | Standard Web PKI rotation |
-| Admin operator password | 90 days | Operator-account compromise bound |
+| `polaris_secret_key` | 90 days | Bounds the session-cookie-replay window |
+| `polaris_db_password` | 90 days | Bounds the database-credential blast radius |
+| `polaris_db_root_password` | 180 days | Bounds the superuser blast radius |
+| TLS certificate | automatic (Caddy renews from Let's Encrypt) | Standard Web PKI rotation |
 
-Rotation is operator-driven via
-`./scripts/polaris-rotate-secret.sh <name>`. The prior value is
-archived under `polaris_web/secrets/.archive/<name>.<timestamp>`
-(mode 0600) so an operator can investigate if a rotation breaks
-production.
+Any secret rotates immediately on a suspected compromise or when an operator
+with prior access leaves. Rotation is operator-driven through
+`./scripts/polaris-rotate-secret.sh <name>`
+([SECRETS.md, section 4](SECRETS.md#4-rotation)). The prior value is archived
+under `polaris_web/secrets/.archive/<name>.<timestamp>` (mode 0600) so an
+operator can investigate if a rotation breaks production.
 
-### What Arc B does NOT change
+### What the production stack does not change
 
-- **Schema invariants C1-C10 are untouched.** Append-only audit,
-  ZK-NULL coupling, identity ≠ money — all preserved verbatim.
-- **No new data is collected.** Arc B is operational, not
-  schema. Holder data, operator data, and event data are
-  exactly as before.
-- **No new third-party data flows.** Caddy talks to Let's
-  Encrypt for TLS issuance only. No analytics, no telemetry, no
-  vendor-bound data egress.
+- **Schema invariants C1-C10 are untouched.** Append-only audit, ZK-NULL
+  coupling, identity ≠ money: all preserved verbatim.
+- **No new data is collected.** The production stack is operational, not
+  schema. Holder data, operator data, and event data are exactly as before.
+- **No new third-party data flows.** Caddy talks to Let's Encrypt for TLS
+  issuance only. No analytics, no telemetry, no vendor-bound data egress.
 
 ---
 
-## Population coverage (R11-4 / M2-9)
+## Population coverage
 
 The PDF §9 names a sociotechnical risk: a national identity system
 that assumes universal enrollment can become a coercion gradient.
@@ -419,7 +424,7 @@ reliable access to reissuance infrastructure, and those whose
 biometrics don't register reliably with available hardware would
 all be outside the system. The schema must be honest about this.
 
-R11-4 (v8.16) adds a five-status enrollment vocabulary
+The schema records a five-status enrollment vocabulary
 (`NOT_ENROLLED`, `PENDING_ENROLLMENT`, `ENROLLED`, `EXEMPT`,
 `LAPSED`) recorded in the append-only `EnrollmentStatusEvent` table.
 Three things matter for privacy:
@@ -433,7 +438,7 @@ Three things matter for privacy:
 2. **`civic_enrollment_summary` returns counts only.** The
    per-jurisdiction × status rollup is a first-class query.
    Per-individual enumeration of `NOT_ENROLLED` is *not* exposed
-   as a function — an admin who needs it writes the join against
+   as a function; an admin who needs it writes the join against
    `IndividualCurrentEnrollment` directly, which leaves a trace in
    `AuthAuditLog`.
 
@@ -442,8 +447,8 @@ Three things matter for privacy:
    frictionless: a single INSERT. The PDF §9 second-clause "accepted
    path without tokens" gets first-class affordance.
 
-The asymmetric design — EXEMPT frictionless, mass-NOT_ENROLLED
-enumeration deliberate — is the privacy stance. The schema cannot
+The asymmetric design (EXEMPT frictionless, mass-NOT_ENROLLED
+enumeration deliberate) is the privacy stance. The schema cannot
 prevent misuse, but it can make the misuse named. Naming is the
 precondition for governance catching it.
 
@@ -454,10 +459,10 @@ mechanism-design rationale.
 
 ## What this document does NOT cover
 
-- Compliance frameworks (GDPR, CCPA, etc.) — those are deployment-
+- Compliance frameworks (GDPR, CCPA, etc.): those are deployment-
   specific and depend on your jurisdiction
-- Subprocessors / hosting providers — depends on your deployment
-- Children's data — Polaris has no special handling for minors;
+- Subprocessors / hosting providers: depends on your deployment
+- Children's data: Polaris has no special handling for minors;
   the deployment is responsible for any age-related restrictions
 
 This file describes Polaris's architectural posture, not a legal

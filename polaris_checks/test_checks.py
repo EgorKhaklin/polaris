@@ -3735,3 +3735,17 @@ def test_api_routes_documented_check_fails_in_both_directions(tmp_path):
     (tmp_path / "polaris_web/app.py").write_text(app)
     (tmp_path / "docs/reference/API.md").write_text(doc + "\n### `POST /api/tokens/new`\n")
     assert checks.check_api_routes_documented(tmp_path)[0].level == "FAIL", "must FAIL when the doc names a route that does not exist"
+
+
+def test_compose_trusts_edge_check_fails_without_trust_proxy(tmp_path):
+    (tmp_path / "polaris_web").mkdir()
+    caddy = "reverse_proxy app:8000 {\n        header_up X-Forwarded-For {remote_host}\n}\n"
+    compose = "services:\n  caddy:\n    image: x\n  app:\n    environment:\n      POLARIS_ENV: production\n      POLARIS_TRUST_PROXY: \"1\"\n  redis:\n    image: y\n"
+    (tmp_path / "polaris_web/Caddyfile").write_text(caddy)
+    (tmp_path / "polaris_web/docker-compose.prod.yml").write_text(compose)
+    assert checks.check_prod_compose_trusts_edge(tmp_path)[0].level == "OK", "must PASS with the edge trusted"
+    (tmp_path / "polaris_web/docker-compose.prod.yml").write_text(compose.replace('      POLARIS_TRUST_PROXY: "1"\n', ""))
+    assert checks.check_prod_compose_trusts_edge(tmp_path)[0].level == "FAIL", "must FAIL when the app service does not trust the edge"
+    (tmp_path / "polaris_web/docker-compose.prod.yml").write_text(compose)
+    (tmp_path / "polaris_web/Caddyfile").write_text("reverse_proxy app:8000\n")
+    assert checks.check_prod_compose_trusts_edge(tmp_path)[0].level == "FAIL", "must FAIL when the edge does not rewrite X-Forwarded-For"

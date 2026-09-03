@@ -1350,7 +1350,7 @@ def check_replication_scaffolding(root: pathlib.Path) -> list[Finding]:
 
 
 # ---------------------------------------------------------------------------
-# Continuous WAL archiving (pgBackRest, v9.126+). DR.md's ≤1-min-RPO path. The
+# Continuous WAL archiving (pgBackRest, v9.126+). DR.md's 300 s RPO path. The
 # scaffolding: a pgbackrest-enabled postgres image, a stanza config, the
 # docker-init archive wiring (opt-in), the restore runbook, and a CI round-trip
 # that archives + backs up + RESTORES with WAL replay. The offsite S3 repo is
@@ -2215,6 +2215,31 @@ def check_api_routes_documented(root: pathlib.Path) -> list[Finding]:
         return _fail("api_routes_documented",
                      f"docs/reference/API.md documents route(s) that do not exist: {', '.join(phantom)}")
     return _ok("api_routes_documented", f"all {len(real)} /api routes are documented and no phantom route is")
+
+
+# ---------------------------------------------------------------------------
+# The compose stack must trust its own edge for the client address. Caddy
+# rewrites X-Forwarded-For to the real peer, and security.client_ip() honours
+# it only under POLARIS_TRUST_PROXY. v9.198 shipped the prod compose without
+# that variable: every client shared Caddy's container address, so the per-IP
+# rate limits, the AuthAuditLog ip column and the per-role network policy all
+# keyed on one address. The Helm profile already set it.
+# ---------------------------------------------------------------------------
+def check_prod_compose_trusts_edge(root: pathlib.Path) -> list[Finding]:
+    compose = _read(root, "polaris_web/docker-compose.prod.yml")
+    caddy = _read(root, "polaris_web/Caddyfile")
+    if not compose or not caddy:
+        return _fail("compose_trusts_edge", "docker-compose.prod.yml or Caddyfile is missing")
+    if not re.search(r"header_up X-Forwarded-For \{remote_host\}", caddy):
+        return _fail("compose_trusts_edge",
+                     "Caddyfile must rewrite X-Forwarded-For to {remote_host} (replace, not append) "
+                     "so the leftmost address is the edge's, not the client's")
+    app = re.search(r"^  app:\n(.*?)(?=^  \w[\w-]*:$)", compose, re.M | re.S)
+    if not app or not re.search(r"POLARIS_TRUST_PROXY:\s*[\"']?(1|true|yes)", app.group(1)):
+        return _fail("compose_trusts_edge",
+                     "docker-compose.prod.yml app service must set POLARIS_TRUST_PROXY so client_ip() "
+                     "sees the real peer behind Caddy")
+    return _ok("compose_trusts_edge", "the prod compose trusts Caddy's rewritten X-Forwarded-For")
 
 
 # ---------------------------------------------------------------------------
@@ -4154,6 +4179,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_c1c10_objects_resolve,
     check_helm_chart_version_current,
     check_api_routes_documented,
+    check_prod_compose_trusts_edge,
 ]
 
 

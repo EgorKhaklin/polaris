@@ -1,6 +1,9 @@
 # KUBERNETES.md: the Helm reference profile
 
-The production topology on a Kubernetes cluster (roadmap P1.5):
+**Reader:** a platform team deploying Polaris on a cluster. **Job:** the
+chart, what it enforces, how CI proves it boots, and its stated limits.
+
+The production topology on a Kubernetes cluster:
 [`deploy/helm/polaris`](../../deploy/helm/polaris). Docker Compose on one Linux
 host ([`LINUX-SERVER.md`](LINUX-SERVER.md)) remains the single-node path; this
 profile is for an authority whose platform is a cluster. It is a reference

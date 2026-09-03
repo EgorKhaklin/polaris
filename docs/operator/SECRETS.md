@@ -1,600 +1,254 @@
-# SECRETS.md — Polaris production secrets reference
+# Secrets
 
-This document is the secrets-management primer for Polaris in
-production. It defines:
+**Reader:** the SRE or security engineer who generates, custodies, and
+rotates the production secrets of a Polaris deployment. **Job:** know every
+secret the stack reads, where each one is read from, how to generate and
+rotate it, and what the sealed store adds on top of the plaintext directory.
 
-1. Every secret Polaris needs
-2. How to generate each
-3. How to rotate each
-4. How NOT to leak them
-5. The structural guarantees Polaris provides about secret handling
-
-**Audience:** SREs, security engineers, operators. **Not** for
-end users.
-
-For dev / local secrets (the launcher's `polaris_dev_password`
-default, etc.), see `polaris_mac_launch.sh` directly. This doc
-is for production.
+This document covers production. The dev launcher
+([`polaris_mac_launch.sh`](../../polaris_mac_launch.sh)) uses fixed dev
+credentials (`polaris_dev_password` for the database role) and generates the
+session key once, persisting it in `$POLARIS_STATE_DIR/secret_key` (default
+`/tmp/polaris-state`); `POLARIS_SECRET_KEY` set in the shell overrides it.
+The production runbook that calls into this document is
+[OPERATIONS.md](OPERATIONS.md); installation is [INSTALL.md](INSTALL.md) and
+[LINUX-SERVER.md](LINUX-SERVER.md).
 
 ---
 
 ## 1. The secrets matrix
 
-| Secret | Type | Required | Where used | Rotation cadence |
-|---|---|---|---|---|
-| `polaris_secret_key` | 256-bit hex | YES | Flask session signing | Every 90 days OR on suspected compromise |
-| `polaris_db_password` | 32-char alnum | YES | Postgres `polaris_app` user | Every 90 days |
-| `polaris_db_root_password` | 32-char alnum | YES (initial) | Postgres superuser; only for migrations | Every 180 days |
-| `redis_password` | 32-char alnum | NO (optional) | Redis AUTH | Every 90 days when used |
-| `polaris_operator_email` | RFC 5321 | YES | Let's Encrypt expiration alerts | When operator changes |
-| Caddy ACME private key | auto | YES | TLS automation | Caddy auto-rotates |
-| Postgres TLS cert | PEM | NO (optional, recommended) | Encrypted Postgres connections | Annual |
+Every file below lives in the secrets directory: `polaris_web/secrets/` with
+the `file` backend, or the tmpfs named by `POLARIS_SECRETS_DIR` when a sealed
+store is in use ([section 5](#5-the-sealed-secret-store)). The directory is
+mode 0700 and is the host-side boundary; the per-file mode is whatever the
+consuming container needs. [`docker-compose.prod.yml`](../../polaris_web/docker-compose.prod.yml)
+mounts each file through `${POLARIS_SECRETS_DIR:-./secrets}/<name>`.
 
-All secrets except the Caddy ACME key + the optional Postgres
-TLS cert are **operator-managed**. Caddy + Polaris handle their
-own rotation logic; the operator handles the rest.
+| File | Contents | Mode | Read by | Rotated by |
+|---|---|---|---|---|
+| `polaris_secret_key` | 32 random bytes as 64 hex chars | 0644 | the app, via `POLARIS_SECRET_KEY_FILE=/run/secrets/polaris_secret_key` (Flask session signing) | `polaris-rotate-secret.sh` |
+| `polaris_db_password` | random hex (24 bytes at generation, 32 at rotation) | 0644 | the app and pgbouncer as the `polaris_app` role; `docker-init.sh` syncs the role to it | `polaris-rotate-secret.sh` |
+| `polaris_db_root_password` | random hex | 0600 | the postgres entrypoint as root, before it drops privileges | `polaris-rotate-secret.sh` |
+| `polaris_replicator_password` | random hex | 0644 | `docker-init.sh` as the postgres user; creates the `polaris_replicator` role for a standby ([FAILOVER.md](FAILOVER.md)) | by hand; not covered by the rotation script |
+| `polaris_signing_key` | ML-DSA-65 keypair JSON | 0644 | the app, via `POLARIS_PQC_SIGNING_KEY_FILE` (the issuer trust anchor) | the key ceremony ([KEY-CEREMONY.md](KEY-CEREMONY.md)) |
+| `postgres_server.crt` / `.key` | self-signed TLS cert, CN=postgres, 825 days | 0644 | the postgres container copies them into its data dir at init | regenerate with `polaris-generate-secrets.sh` after deleting the pair, or supply a CA-issued pair |
+| `pgbouncer_server.crt` / `.key` | self-signed TLS cert, 825 days; the app pins it with `sslmode=verify-ca` | 0644 | pgbouncer and the app | same as the postgres pair |
+| `pgbackrest_repo_creds.conf` | S3 key pair for the offsite backup repo; ships as an empty template | 0644 | pgBackRest as the postgres user | at the object-store provider, then rewrite the file |
+| Caddy ACME account key and certificates | managed by Caddy | n/a | Caddy | automatic (Let's Encrypt renewal) |
+
+Redis runs without AUTH on the private compose network; there is no Redis
+secret. The Let's Encrypt contact address is `admin@$POLARIS_DOMAIN`
+([`Caddyfile`](../../polaris_web/Caddyfile)); no operator-email variable
+exists.
+
+Recommended cadence: session key and database passwords every 90 days, the
+superuser password every 180 days, and any secret immediately on a suspected
+compromise or when an operator with prior access leaves.
 
 ---
 
-## 2. Generation recipes
+## 2. Generation
 
-### 2.1 The `polaris-generate-secrets.sh` script
-
-The recommended path:
+[`scripts/polaris-generate-secrets.sh`](../../scripts/polaris-generate-secrets.sh)
+is the one-time entry point:
 
 ```bash
 ./scripts/polaris-generate-secrets.sh
-# Generates all required secrets in secrets/
-# Sets directory permissions to 0700 (the host boundary)
-# File modes: 0600 for secrets only ROOT reads (postgres root + replicator
-#   passwords), 0644 for secrets a NON-ROOT container reads directly (the Flask
-#   secret key, the DB password, the signing key — read by the app/pgbouncer at
-#   uid 1000). 0644 is required because docker compose mounts file secrets with
-#   the source file's perms, and on Linux a 0600 host-owned file is unreadable by
-#   the different-uid container user (the stack will not boot). The 0700 directory
-#   keeps a 0644 file reachable only by the owner host-side.
 ```
 
-This script is idempotent: it refuses to overwrite existing
-secrets unless `--force` is passed.
+It creates the 0700 directory, writes every file in the matrix that does not
+already exist, and sets the modes listed above. For the hex secrets a
+zero-byte file counts as missing and the mode is verified after the write; the
+two TLS pairs are skipped whenever both files exist, even empty (delete both
+to regenerate), and the signing key, cert pairs, and credentials template are
+chmodded without verification. It never overwrites a non-empty
+secret; rotation is a separate script. It echoes no secret to stdout. Random
+material comes from `openssl rand -hex`, then `secrets.token_hex`, then
+`/dev/urandom`, in that order of preference.
 
-### 2.2 Manual generation (if you prefer)
+The two TLS pairs are produced with `openssl req -x509`; without `openssl` on
+the host the script skips them and prints a `POLARIS_DB_SSLMODE=prefer` hint.
+That hint applies to non-production runs only: the production compose file
+pins `verify-ca` on both hops and the app refuses to start under
+`POLARIS_ENV=production` with any sslmode other than `require`, `verify-ca`,
+or `verify-full`. A production deploy needs `openssl` on the host or an
+operator-supplied pair.
 
-For Flask session key (256-bit hex):
+### Verify the file modes
 
 ```bash
-openssl rand -hex 32 > secrets/polaris_secret_key
-chmod 0644 secrets/polaris_secret_key
+stat -c '%a %n' polaris_web/secrets/* 2>/dev/null || stat -f '%A %N' polaris_web/secrets/*
 ```
 
-OR via Python:
-
-```bash
-python3 -c "import secrets; print(secrets.token_hex(32))" > secrets/polaris_secret_key
-chmod 0644 secrets/polaris_secret_key
-```
-
-For Postgres passwords (32-char alphanumeric, no special chars
-to avoid shell-quoting issues in connection strings):
-
-```bash
-LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 32 > secrets/polaris_db_password
-chmod 0644 secrets/polaris_db_password
-echo  # add trailing newline if your file expects it
-```
-
-For Redis password (when enabled):
-
-```bash
-LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 32 > secrets/redis_password
-chmod 0600 secrets/redis_password
-```
-
-### 2.3 Verification
-
-After generation:
-
-```bash
-ls -la secrets/
-# Directory should be drwx------ (0700, owner-only) — this is the host boundary.
-# 0644 (-rw-r--r--): polaris_secret_key, polaris_db_password, polaris_signing_key,
-#   polaris_replicator_password, and the TLS certs/keys — read by NON-ROOT
-#   container processes (the app/pgbouncer at uid 1000; postgres's docker-init runs
-#   as the postgres user and reads the replicator password + copies the server key).
-# 0600 (-rw-------): polaris_db_root_password only — read by the postgres entrypoint
-#   as root before it drops privileges.
-
-stat -c '%a %n' secrets/* 2>/dev/null || stat -f '%A %N' secrets/*
-```
-
-If a permission is wrong, fix it (do NOT blanket `chmod 0600 secrets/*` — that
-makes the container-read secrets unreadable by the non-root containers on Linux
-and the stack will not boot):
-
-```bash
-chmod 0700 secrets/
-chmod 0644 secrets/polaris_secret_key secrets/polaris_db_password \
-           secrets/polaris_signing_key secrets/polaris_replicator_password \
-           secrets/postgres_server.crt secrets/postgres_server.key \
-           secrets/pgbouncer_server.crt secrets/pgbouncer_server.key
-chmod 0600 secrets/polaris_db_root_password
-# Or simply re-run ./scripts/polaris-generate-secrets.sh which sets them correctly.
-```
+Expect 0644 on everything except `polaris_db_root_password` (0600), and
+`drwx------` on the directory. Do not blanket `chmod 0600 secrets/*`: docker
+compose mounts a file secret with the source file's mode, and on Linux a
+0600 host-owned file is unreadable by the non-root app (uid 1000) and
+pgbouncer containers, so the stack does not boot. Re-running the generator
+does not touch existing files; restore the modes by hand (`chmod 0644` on
+everything except `polaris_db_root_password`) or, with a sealed backend, by
+re-unsealing (modes come from `MANIFEST.json`).
 
 ---
 
-## 3. Rotation
+## 3. Where secrets are read
 
-### 3.1 Rotation cadence (recommended)
+The app reads secrets from files named by `*_FILE` environment variables
+(`_read_secret_file` in [`polaris_web/app.py`](../../polaris_web/app.py)):
+`POLARIS_SECRET_KEY_FILE`, `POLARIS_DB_PASSWORD_FILE`,
+`POLARIS_PQC_SIGNING_KEY_FILE`. The production compose file points each at
+`/run/secrets/<name>`. The plain-variable fallback (`POLARIS_SECRET_KEY`,
+`POLARIS_DB_PASSWORD`) exists for the dev stack only; the production compose
+file never sets one.
 
-| Secret | Cadence | Trigger conditions for off-cycle rotation |
-|---|---|---|
-| `polaris_secret_key` | 90 days | Suspected breach; departing operator with prior access |
-| `polaris_db_password` | 90 days | Suspected breach; departing operator |
-| `polaris_db_root_password` | 180 days | Same |
-| `redis_password` | 90 days | Same |
-| TLS cert | 60-90 days | Caddy automatic (Let's Encrypt 90-day default) |
+Non-secret configuration is passed as environment variables, from the shell
+or from `/etc/polaris/polaris.env` on a systemd install
+([LINUX-SERVER.md](LINUX-SERVER.md)): `POLARIS_DOMAIN`, `WEB_CONCURRENCY`
+(`POLARIS_WORKERS` wins over it only inside the container; the production
+compose file does not forward it), the
+`POLARIS_WEBAUTHN_*` policy knobs ([WEBAUTHN-ROLLOUT.md](WEBAUTHN-ROLLOUT.md)),
+the `POLARIS_SESSION_*` and `POLARIS_NETWORK_POLICY_*` knobs
+([HARDENING.md](HARDENING.md)), and the `POLARIS_SECRETS_*` settings from
+[section 5](#5-the-sealed-secret-store). `POLARIS_SECRETS_AGE_IDENTITY` names
+a root-only key file; it is a path, not the key. `POLARIS_ZK_BINARY` is fixed
+at `/opt/polaris/zk` in the production compose file and is not operator-settable
+there.
 
-### 3.2 Rotating `polaris_secret_key`
+---
+
+## 4. Rotation
+
+[`scripts/polaris-rotate-secret.sh`](../../scripts/polaris-rotate-secret.sh)
+rotates one secret at a time and accepts exactly three names:
 
 ```bash
 ./scripts/polaris-rotate-secret.sh polaris_secret_key
-```
-
-What this does:
-1. Generates a new 256-bit hex secret
-2. Writes it to `secrets/polaris_secret_key` (mode 0644 in the 0700 dir, so the
-   non-root app container can read it; see Verification above)
-3. Restarts the app container only (Postgres + Redis stay running)
-4. Re-runs the smoke test
-5. Reports success or rollback
-
-**Side effect:** all existing user sessions are invalidated.
-Users will need to re-login. This is intentional (the rotation
-is meaningful) and unavoidable (Flask signs cookies with the
-secret key).
-
-To avoid user-visible disruption, schedule rotations during low-
-traffic windows.
-
-### 3.3 Rotating `polaris_db_password`
-
-```bash
 ./scripts/polaris-rotate-secret.sh polaris_db_password
-```
-
-What this does:
-1. Connects to Postgres as superuser using `polaris_db_root_password`
-2. Generates a new password
-3. Updates the `polaris_app` user's password in Postgres
-4. Writes the new password to `secrets/polaris_db_password`
-5. Restarts the app container (which re-reads the secret on startup)
-6. Smoke test + report
-
-If step 3 fails (Postgres unreachable), the rotation aborts and
-the old password remains in `secrets/`. No state divergence.
-
-> **pgbouncer (v8.83+)** generates its `userlist.txt` from this secret at container
-> start, so the script recreates pgbouncer BEFORE the app; recreating only the
-> app leaves pgbouncer authenticating with the old password and every app
-> connection fails with `SASL authentication failed` (found by the live
-> rotation drill, v9.182). If you rotate by hand, do the same.
-
-### 3.4 Rotating `polaris_db_root_password`
-
-This one is more involved (it changes the superuser, which is
-how every other DB rotation works):
-
-```bash
 ./scripts/polaris-rotate-secret.sh polaris_db_root_password
-# Will prompt for confirmation since this is the bootstrap secret
 ```
 
-What this does:
-1. Connects to Postgres as the current superuser
-2. Generates a new password
-3. `ALTER USER postgres PASSWORD ...`
-4. Writes the new password to `secrets/polaris_db_root_password`
-5. Validates by reconnecting with the new password
-6. Reports success
+Common steps, in order:
 
-If step 5 fails, rolls back the `ALTER USER` (re-sets the old
-password) and aborts.
+1. Copies the current file to `<secrets dir>/.archive/<name>.<UTC timestamp>`
+   (mode 0600) so a broken rotation can be undone by hand.
+2. Generates 32 random bytes as 64 hex chars.
+3. Writes the replacement atomically, preserving the existing file's mode
+   (`check_rotate_secret_preserves_mode` in
+   [`polaris_checks/checks.py`](../../polaris_checks/checks.py) pins this).
+4. With a sealed backend, seals the new value through to the store
+   (`polaris-secrets.sh seal --only <name>`), keeping the previous blob as
+   `.prev`.
+5. Applies the change to the running stack. If docker is absent or the stack
+   is not running, it stops here and the new value takes effect at the next
+   `polaris-deploy.sh prod`.
+6. Prints the health-check command to run; it does not run a smoke test and
+   it does not roll back.
 
-### 3.5 Rotating Caddy TLS cert
+Per-secret step 5:
 
-You don't. Caddy handles this via Let's Encrypt automatic
-renewal (default: renew when ≤30 days remain). Verify Caddy is
-healthy:
+- `polaris_secret_key`: recreates the app container(s) one at a time,
+  waiting for each to report healthy. Every user session is invalidated;
+  schedule the rotation for a low-traffic window.
+- `polaris_db_password`: `ALTER USER polaris_app`, then recreates pgbouncer
+  BEFORE the app. pgbouncer builds its `userlist.txt` from the secret at
+  container start, so recreating only the app leaves every connection
+  failing with `SASL authentication failed`; `check_secrets_lifecycle_sealed`
+  pins the order. If you rotate by hand, do the same.
+- `polaris_db_root_password`: `ALTER USER postgres`, then recreates the
+  postgres container.
+
+The file is rewritten before the database role is altered. If the `ALTER
+USER` fails, the file already holds the new value: restore it from
+`.archive/` (and re-seal with `polaris-secrets.sh seal --only <name>` when a
+sealed backend is in use) before retrying.
+
+Secrets the script does not cover: the signing key follows the ceremony in
+[KEY-CEREMONY.md](KEY-CEREMONY.md#rotation); the replicator password and the
+pgBackRest S3 credentials are rotated by hand (change the credential at its
+source, rewrite the file, recreate the postgres container). Caddy renews its
+certificates itself; check the served certificate's expiry and Caddy's ACME
+log with:
 
 ```bash
+openssl s_client -connect "$POLARIS_DOMAIN:443" -servername "$POLARIS_DOMAIN" </dev/null 2>/dev/null \
+    | openssl x509 -noout -enddate
 docker compose -f polaris_web/docker-compose.prod.yml exec caddy \
-    caddy validate --config /etc/caddy/Caddyfile
+    grep -i -E 'certificate|acme' /var/log/caddy/caddy.log
 ```
 
-If Caddy reports issues, check:
-- Outbound 80/443 reachable (ACME challenge)
-- DNS records still correct
-- `POLARIS_OPERATOR_EMAIL` set (Let's Encrypt sends warnings)
+`caddy validate --config /etc/caddy/Caddyfile` (run the same way through
+`exec caddy`) checks the config syntax only; it says nothing about renewal.
+If renewal fails, confirm outbound 80/443 and that the DNS record still
+points at this host.
 
 ---
 
-## 4. Leak prevention
-
-### 4.1 What goes in version control
-
-**NOTHING.** The `secrets/` directory is gitignored
-(`.gitignore` rule). Verify:
-
-```bash
-git check-ignore secrets/polaris_secret_key
-# Should output: secrets/polaris_secret_key
-```
-
-If a secret was ever committed:
-
-1. Rotate it immediately (the secret IS leaked; assume worst)
-2. Use `git filter-repo` or `git filter-branch` to remove it from history
-3. Force-push (if the repo is private and you control all clones); if public, the secret stays in history forever and rotation is the only safe response
-4. Audit downstream for any consumer caching the old value
-
-### 4.2 What goes in environment variables
-
-**Non-secret config only.** Specifically:
-
-- `POLARIS_DOMAIN` (TLS configuration; not secret)
-- `POLARIS_OPERATOR_EMAIL` (Let's Encrypt; not secret)
-- `POLARIS_WORKERS` (gunicorn worker count; not secret)
-- `POLARIS_BACKUP_DIR` (path; not secret)
-- `POLARIS_ZK_BINARY` (path; not secret)
-
-The Polaris app code reads secrets from `/run/secrets/<name>`
-inside the container (Docker secrets file-mount), NOT from
-environment variables. This is enforced by `polaris_web/security.py`
-and verified by the `polaris_checks/` invariant layer (no secret
-literals in the compose env).
-
-### 4.3 What goes in logs
-
-The Polaris app + Caddy + Postgres should all redact secrets
-from logs:
-
-- **Polaris app:** `polaris_web/security.py` strips `Cookie` +
-  `Authorization` headers from any structured log line
-- **Caddy:** access log includes only request line + status +
-  duration; bodies are not logged
-- **Postgres:** statement log (if enabled) records SQL but
-  parameterized queries hide the parameter values; verify with
-  `log_statement = 'mod'` not `'all'`
-
-If you suspect a log line contains a secret:
-
-1. Stop the affected service immediately
-2. Rotate the leaked secret
-3. Audit log destinations (file, syslog, central aggregator) and purge
-4. Review redaction logic for the gap
-
-### 4.4 What goes in backups
-
-Backups created by `polaris-backup.sh` contain:
-
-- Postgres dump (includes hashed passwords for AppUser, but NOT
-  the `polaris_app` connection password, which is in `secrets/`)
-- The development record (CHANGELOG and decision history; review
-  for any prose that named a secret)
-
-Backups do **NOT** include the `secrets/` directory. Backup
-encryption is the operator's responsibility (use `gpg` or
-`age` on the tarball before off-site sync).
-
-To encrypt a backup:
-
-```bash
-gpg --symmetric --cipher-algo AES256 --output \
-    polaris-20260514.tar.gz.gpg polaris-20260514.tar.gz
-
-# Decrypt for restore:
-gpg --decrypt polaris-20260514.tar.gz.gpg > polaris-20260514.tar.gz
-```
-
-### 4.5 What goes in CI/CD
-
-If Polaris is deployed via CI/CD (GitHub Actions, GitLab CI, etc.):
-
-- Use the platform's secret store (GitHub Encrypted Secrets,
-  GitLab CI/CD Variables, etc.); NEVER inline in workflow YAML
-- Mask secrets in logs (most platforms do this automatically when
-  the secret is in their store)
-- Audit who can read the secret store; principle of least
-  privilege
-- Rotate any secret that may have been exposed via a workflow
-  failure log
-
----
-
-## 5. Structural guarantees
-
-Polaris's security architecture provides several guarantees
-about secret handling. These are tested by the `polaris_checks/`
-invariant layer and the DB-backed suites in `polaris_web/`:
-
-### 5.1 No secrets in production env vars
-
-`docker-compose.prod.yml` uses Docker secrets (file-mounted at
-`/run/secrets/<name>`) for all sensitive values. The compose
-file MUST NOT have `POLARIS_SECRET_KEY:` as an env-var literal.
-
-Enforced by: the `polaris_checks/` invariant layer (no secret
-literals in the compose env).
-
-### 5.2 Session-secret rotation on every relaunch
-
-The dev launcher (`polaris_mac_launch.sh`) regenerates
-`POLARIS_SECRET_KEY` on every launch unless the operator
-explicitly sets `POLARIS_SECRET_KEY` in the shell. This was
-added v8.56 to fix a session-cookie-survives-relaunch bug;
-preserved in production via the rotation script.
-
-In production, rotation is operator-triggered (no auto-rotation
-on container restart, since that would invalidate user sessions
-unpredictably). Schedule rotations explicitly per §3.
-
-### 5.3 No secret references in tests
-
-The `polaris_checks/` invariant layer scans for hardcoded
-secrets (regex: `polaris_secret_key`, `polaris_dev_password`,
-etc.). Tests use ephemeral test-only credentials that never
-match production secret formats.
-
-### 5.4 Log scanning for leaked secrets
-
-Operators should scan recent log lines for patterns that look
-like leaked secrets (high-entropy 64+ character hex strings
-outside of expected fields). If found, treat as an incident:
-rotate, audit, postmortem.
-
-This is detection, not prevention; the prevention is in the
-redaction logic (§4.3). The log scan is the safety net.
-
-### 5.5 Audit-of-record never carries secrets
-
-The audit-of-record tables (`TokenLifecycleEvent`,
-`VerificationEvent`, etc.) do NOT carry password fields,
-session tokens, or signing keys. Schema-level enforcement (no
-columns of those types).
-
-`DuressEvent` (R11-5) carries a hashed duress code (Werkzeug
-scrypt commitment); the plaintext is never stored. Verified by
-`test_duress_code_storage_is_hash_only`.
-
----
-
-## 6. Threat model summary
-
-The full threat model is in `DEVNOTES/threat-model.md`. For
-secrets specifically, the relevant scenarios:
-
-| Threat | Mitigation |
-|---|---|
-| Operator laptop stolen with `secrets/` mounted | Disk encryption (operator responsibility); rotation immediately on incident |
-| Backup tarball intercepted | Encrypt backups (gpg/age) before off-site sync; rotate any secret that might be in older backups |
-| Compromised CI/CD pipeline | Use platform secret store; audit access; rotate on suspicion |
-| Insider with prior secret access | Rotate on departure; track rotation in the operator change log |
-| Postgres logs leak password via misconfig | `log_statement = 'mod'` (not `'all'`); review log redaction quarterly |
-| Compromised dev environment promoting bad secrets to prod | Separate dev secrets from prod (use different generation seed; never reuse) |
-| Caddy compromise → TLS private key leaked | Caddy auto-rotates ACME keys; rotate other secrets that may have been in TLS-terminated traffic |
-| Memory dump of running gunicorn process | Limit access to host (no shared production tenancy); use `madvise(MADV_DONTDUMP)` for memory-resident secrets in future Phase 2 |
-
-For each threat, the response is the same: **rotate, audit,
-postmortem.** Speed of rotation matters more than perfect
-forensics.
-
----
-
-## 7. Generation script reference
-
-`scripts/polaris-generate-secrets.sh` is the canonical entry
-point for first-time setup:
-
-```bash
-#!/usr/bin/env bash
-# Idempotent: refuses to overwrite existing secrets unless --force
-set -euo pipefail
-
-mkdir -p secrets
-chmod 0700 secrets
-
-generate() {
-    local name="$1" cmd="$2"
-    local path="secrets/$name"
-    if [[ -f "$path" && "${1:-}" != "--force" ]]; then
-        echo "  skip: $name (exists)"
-        return
-    fi
-    eval "$cmd" > "$path"
-    chmod 0600 "$path"
-    echo "  wrote: $name ($(wc -c < "$path") bytes)"
-}
-
-generate polaris_secret_key       'openssl rand -hex 32'
-generate polaris_db_password      'LC_ALL=C tr -dc A-Za-z0-9 < /dev/urandom | head -c 32'
-generate polaris_db_root_password 'LC_ALL=C tr -dc A-Za-z0-9 < /dev/urandom | head -c 32'
-# redis_password is OPTIONAL; uncomment if Redis AUTH enabled
-# generate redis_password         'LC_ALL=C tr -dc A-Za-z0-9 < /dev/urandom | head -c 32'
-
-echo "Secrets generated in secrets/"
-echo "Verify: ls -la secrets/"
-```
-
-The actual script ships with additional safety: pre-flight
-disk-space check; refuses if running as root (operator should
-own the secrets, not root); checks for entropy availability
-(`/dev/urandom` is universally available; OpenSSL is preferred).
-
----
-
-## 7. WebAuthn-MFA enrollment & recovery (v8.97 / Position B)
-
-Operator authentication adds a phishing-resistant second factor for
-admin accounts.
-
-### 7.1 First-time enrollment
-
-1. Sign in with password as the admin (still allowed during the
-   30-day grace period after the account was created).
-2. Navigate to `/settings/webauthn`.
-3. Click **Enroll WebAuthn credential**. The browser prompts for
-   either a hardware security key (YubiKey, SoloKey, Nitrokey) or
-   a platform authenticator (Touch ID / Windows Hello / Android
-   biometric). To restrict to hardware-only set the env knob:
-   `POLARIS_WEBAUTHN_HARDWARE_ONLY=1`.
-4. Label the device (e.g. *"YubiKey 5C work-laptop"*); confirm the
-   prompt. The credential is persisted in
-   `OperatorWebauthnCredential`.
-5. Verify the audit row landed:
-   ```sql
-   SELECT event_timestamp, event_type, username
-     FROM AuthAuditLog
-    WHERE event_type='WEBAUTHN_REGISTERED'
-    ORDER BY event_timestamp DESC LIMIT 5;
-   ```
-
-Once enrolled, every subsequent admin login requires:
-1. correct password
-2. successful WebAuthn assertion against an enrolled credential
-
-Enroll a second credential as backup. Two credentials = no single
-point of failure if one is lost.
-
-### 7.2 Recovery — lost device, second-admin pairing
-
-A second admin can open a short emergency-login window:
-
-```bash
-# As the second admin (NOT the locked-out one), SSH to the host:
-./scripts/polaris-recover-admin.sh \
-    --target locked-out-admin \
-    --authorizing-user-id <your_admin_user_id> \
-    --window-minutes 15
-```
-
-The target may then log in with password only for the window
-length. They MUST enroll a new credential at `/settings/webauthn`
-before the window closes, otherwise the `mfa_overdue` refusal
-returns at the next login. The grant is itself audited as
-`EMERGENCY_PASSWORD_LOGIN_AUTHORIZED`.
-
-### 7.3 Recovery — solo-admin deployment, printed mnemonic
-
-For deployments where no second admin exists (single-admin Polaris
-instance), generate a printed recovery mnemonic at enrollment time:
-
-```bash
-./scripts/polaris-generate-recovery-code.sh > /tmp/recovery-code.txt
-# Print /tmp/recovery-code.txt on real paper.
-# Store the print in a physical safe.
-rm /tmp/recovery-code.txt          # do not leave on disk
-```
-
-The page shows the cleartext mnemonic AND a SHA-256 digest. Future
-work will extend `polaris-recover-admin.sh` with a `--recovery-code`
-argument that verifies the mnemonic against an `AppUser.recovery_code_hash`
-column (deferred by decision — the v8.97 ship lands the mnemonic
-generator + threat-model coverage; the in-app verification flow is
-a follow-up gated on operator demand).
-
-### 7.4 Environment knobs
-
-- `POLARIS_WEBAUTHN_HARDWARE_ONLY=1` — refuse platform authenticators,
-  accept hardware tokens only (YubiKey class). Default: both allowed.
-- `POLARIS_WEBAUTHN_RP_NAME` — display name shown to the user during
-  the WebAuthn prompt. Default: `Polaris`.
-- `POLARIS_DOMAIN` — used as the WebAuthn relying-party ID;
-  assertions are origin-bound to this domain.
-- `POLARIS_WEBAUTHN_ATTESTATION` (v9.189) — `none` (default), `indirect`,
-  `direct`, or `enterprise`: the attestation conveyance asked of the
-  browser at enrollment.
-- `POLARIS_WEBAUTHN_USER_VERIFICATION` (v9.189) — `preferred` (default),
-  `required`, or `discouraged`. `required` demands the PIN or biometric on
-  enrollment AND every assertion, so a stolen key without its PIN cannot
-  satisfy the second factor.
-- `POLARIS_WEBAUTHN_REQUIRE_ATTESTATION=1` (v9.189) — refuse an enrollment
-  whose attestation format is `none`; pair with `direct`.
-- `POLARIS_WEBAUTHN_ALLOWED_AAGUIDS` (v9.189) — comma-separated authenticator
-  model AAGUIDs; any other model is refused at enrollment.
-  WEBAUTHN-ROLLOUT.md Phase 6 has the full policy discussion.
-
-### 7.5 Disabling MFA on an account
-
-Set `AppUser.webauthn_required_after = NULL` to lift the requirement
-(e.g., for a legacy account that cannot use WebAuthn). The auditor
-role is exempt by default (§IV.1).
-
-```sql
-UPDATE AppUser
-SET webauthn_required_after = NULL
-WHERE username = 'specific-admin-username';
-```
-
-Do NOT do this routinely — it removes the defense-in-depth layer.
-Document the reason in the operator runbook.
-
----
-
-## 8. The sealed secret store (v9.180, roadmap P1.3)
-
-Production secrets are no longer files in a directory. `polaris_web/secrets/`
-is the MATERIALIZED form, written into a root-only tmpfs at start; the source
-of truth is a sealed store, `polaris_web/secrets.sealed/`, whose contents are
-useless without a key that is not on the disk beside them.
+## 5. The sealed secret store
+
+With a sealed backend, the plaintext directory is the MATERIALIZED form,
+written into a root-only tmpfs at start; the source of truth is
+`polaris_web/secrets.sealed/`, whose contents are useless without a key that
+is not on the disk beside them. The implementation is
+[`polaris_web/secretstore.py`](../../polaris_web/secretstore.py); the operator
+wrapper is [`scripts/polaris-secrets.sh`](../../scripts/polaris-secrets.sh).
 
 | `POLARIS_SECRETS_BACKEND` | Sealed with | Unsealed by | Use when |
 |---|---|---|---|
-| `file` (default) | nothing: the plaintext dir is the store | n/a | development; the pre-P1.3 layout |
+| `file` (default) | nothing: the plaintext dir is the store | n/a | development; the plain layout |
 | `age` | the operator's age recipients (`POLARIS_SECRETS_AGE_RECIPIENTS`) | an age identity file (`POLARIS_SECRETS_AGE_IDENTITY`), root-only, or an age plugin for a hardware token | on-premises; no cloud dependency; the identity can live on a YubiKey |
 | `awskms` | envelope encryption: per file, KMS `GenerateDataKey` (AES-256) + AES-256-GCM with the file name as AAD; the KMS-wrapped data key stored beside the ciphertext | `kms:Decrypt` on `POLARIS_SECRETS_AWSKMS_KEY_ID`, an IAM decision rather than a file | AWS-hosted authorities |
 
-The issuer SIGNING key has its own custody layer with HSM/PKCS#11 and KMS
-drivers ([`KEY-CEREMONY.md`](KEY-CEREMONY.md)); this section is about
-everything else in the matrix in section 1.
+The issuer signing key has its own custody layer with HSM/PKCS#11 and KMS
+drivers ([KEY-CEREMONY.md](KEY-CEREMONY.md)); this section covers everything
+else in the matrix.
 
-### 8.1 Adopting a sealed store
+### 5.1 Adopting a sealed store
 
 ```bash
 # one-time: the plaintext is generated exactly as before, then sealed
 ./scripts/polaris-generate-secrets.sh
 age-keygen -o /root/polaris-age.identity          # keep OUT of the repo; back it up sealed
-grep -i "public key:" <(age-keygen -y /root/polaris-age.identity 2>&1) | sed 's/.*: *//' > /root/polaris-age.recipients
+age-keygen -y /root/polaris-age.identity > /root/polaris-age.recipients   # prints the bare recipient
 export POLARIS_SECRETS_BACKEND=age POLARIS_SECRETS_AGE_RECIPIENTS=/root/polaris-age.recipients \
        POLARIS_SECRETS_AGE_IDENTITY=/root/polaris-age.identity
 ./scripts/polaris-secrets.sh seal                 # -> polaris_web/secrets.sealed/ (+ MANIFEST.json)
 ./scripts/polaris-secrets.sh verify               # every blob decrypts and matches its sha256
-shred -u polaris_web/secrets/* && rmdir polaris_web/secrets   # the plaintext directory goes away
+shred -u polaris_web/secrets/* polaris_web/secrets/.archive/* 2>/dev/null; rm -rf polaris_web/secrets
+# the plaintext directory goes away; .archive/ holds prior plaintext values from
+# rotations and is never sealed, so it must be destroyed too
 ```
 
-Put the four `POLARIS_SECRETS_*` lines in `/etc/polaris/polaris.env`
-([`LINUX-SERVER.md`](LINUX-SERVER.md)). From then on
-`polaris.service` runs `polaris-secrets.sh unseal-if-configured` before
-`docker compose up` and `polaris-deploy.sh` does the same before its preflight:
-the store is unsealed into `POLARIS_SECRETS_DIR` (default
-`/run/polaris/secrets`, a `tmpfs` mounted `mode=0700,nosuid,nodev,noexec`),
-file modes restored from the manifest, and compose reads every secret and
-certificate from there. Nothing plaintext touches the disk.
+Put the `POLARIS_SECRETS_*` lines in `/etc/polaris/polaris.env`
+([LINUX-SERVER.md](LINUX-SERVER.md)) and leave `POLARIS_SECRETS_DIR` empty
+there unless you need a non-default tmpfs path (with the `file` backend a set
+value makes compose read a directory nothing populates). From then on
+[`polaris.service`](../../deploy/linux/polaris.service) runs
+`polaris-secrets.sh unseal-if-configured` as `ExecStartPre` and
+[`polaris-deploy.sh`](../../scripts/polaris-deploy.sh) does the same before
+its preflight: the store is unsealed into `POLARIS_SECRETS_DIR` (default
+`/run/polaris/secrets`, a tmpfs mounted `size=16m,mode=0700,nosuid,nodev,noexec`
+when the caller is root on Linux), file modes are restored from the manifest,
+and compose reads every secret and certificate from there. No plaintext
+touches the disk.
 
 For `awskms`: `POLARIS_SECRETS_BACKEND=awskms POLARIS_SECRETS_AWSKMS_KEY_ID=<key arn>
 POLARIS_SECRETS_AWSKMS_REGION=<region>`, host `python3` with boto3
 (`pip install -r polaris_web/requirements-custody.txt`), and an instance role
 allowed `kms:GenerateDataKey` and `kms:Decrypt` on that key. The store can be
-kept in a PRIVATE ops repository or an object bucket; it is gitignored here.
+kept in a PRIVATE ops repository or an object bucket; `.gitignore` excludes
+`polaris_web/secrets/`, `polaris_web/secrets.sealed/`, and
+`polaris_web/secrets.sealed.prev/` here.
 
-### 8.2 Rotation
+### 5.2 Rotation with a sealed store
 
 **A secret** (the session key, a DB password): `polaris-rotate-secret.sh
-<name>` exactly as in section 3. It rotates the materialized copy, updates the
-database role, recreates the affected container, and WRITES THROUGH to the
-sealed store, keeping the previous blob as `<name>.age.prev` (or `.kms.prev`).
-The store never lags the running stack, so a reboot re-unseals the new value.
-`polaris-secrets.sh verify` asserts that invariant (sealed == materialized).
+<name>` exactly as in [section 4](#4-rotation). It rotates the materialized
+copy, updates the database role, recreates the affected container, and writes
+through to the sealed store, keeping the previous blob as `<name>.age.prev`
+(or `.kms.prev`). The store never lags the running stack, so a reboot
+re-unseals the new value. `polaris-secrets.sh verify` asserts that invariant
+(sealed == materialized).
 
 **The wrapping key** (a new age identity, or a new KMS key), without changing
 any secret's value:
@@ -605,24 +259,30 @@ any secret's value:
 ```
 
 The previous generation is kept as `polaris_web/secrets.sealed.prev/` until you
-remove it; the old identity or key no longer opens the live store (the KMS
+remove it or until the next `rotate-wrapping`, which overwrites it; the old
+identity or key no longer opens the live store (the KMS
 driver pins `KeyId` on `Decrypt`, so a stale key is refused, not silently
 accepted). Then update `polaris.env` to the new identity or key and run
 `polaris-secrets.sh verify`.
 
-### 8.3 What is drilled in CI
+### 5.3 What is drilled in CI
 
-`prod-stack-boot` seals the generated secrets to a throwaway age identity,
-DELETES the plaintext directory, unseals into a tmpfs, boots the full
-production stack from it, asserts health through the TLS edge, then runs
-`polaris-rotate-secret.sh` for `polaris_db_password` and `polaris_secret_key`
-against the live stack, asserts health again, verifies the sealed store
-matches the tmpfs, and proves a fresh unseal returns the rotated password.
-`test_secretstore.py` covers both backends (age through the real CLI, KMS
-through the wire-faithful stand-in), wrapping-key rotation, tamper and drift
-detection, and mode restoration.
+The `prod-stack-boot` job in
+[`.github/workflows/ci.yml`](../../.github/workflows/ci.yml) seals the
+generated secrets to a throwaway age identity, deletes the plaintext
+directory, unseals into a tmpfs, boots the full production stack from it,
+asserts health through the TLS edge, then runs `polaris-rotate-secret.sh` for
+`polaris_db_password` and `polaris_secret_key` against the live stack, asserts
+health again, verifies the sealed store matches the tmpfs, and proves a fresh
+unseal returns the rotated password.
+[`test_secretstore.py`](../../polaris_web/test_secretstore.py) covers both
+backends (age through the real CLI, KMS through the wire-faithful stand-in),
+wrapping-key rotation, tamper and drift detection, and mode restoration.
+`check_secrets_lifecycle_sealed` pins the scripts, the unit, the compose
+paths, the CI drill, and this document's mention of `POLARIS_SECRETS_BACKEND`
+and `rotate-wrapping`.
 
-### 8.4 External alternatives
+### 5.4 External alternatives
 
 HashiCorp Vault, GCP Secret Manager, and Azure Key Vault are not built in.
 They fit the same shape: an `unseal-if-configured` that materializes the
@@ -630,11 +290,131 @@ secrets into `POLARIS_SECRETS_DIR` from your store before the stack starts.
 Write that hook in place of `polaris-secrets.sh` and keep the rest identical;
 the compose file only ever sees the directory.
 
-## 9. Cross-references
+---
 
-- `docs/operator/OPERATIONS.md` — operations runbook (this doc's parent)
-- `polaris_web/docker-compose.prod.yml` — where Docker secrets are referenced
-- `polaris_web/security.py` — runtime secret loading
-- `DEVNOTES/threat-model.md` — STRIDE analysis
-- `MISSION.md` C-constraints — C1 (audit append-only), C5 (CSP), C7 (algorithm metadata) all touch secret-handling discipline
-- `docs/operator/OPERATIONS.md` — production deployment runbook
+## 6. Leak prevention
+
+### 6.1 Version control
+
+Nothing. `.gitignore` excludes `polaris_web/secrets/`, both sealed
+directories, `secrets.json`, and `polaris.env` (`check_secrets_file_ignored`
+fails the invariant suite if the `polaris.env` pattern is missing or carries a
+trailing comment). Verify:
+
+```bash
+git check-ignore polaris_web/secrets/polaris_secret_key
+```
+
+If a secret was ever committed: rotate it first (assume it is leaked), then
+rewrite history with `git filter-repo` if the repository is private and you
+control every clone. A public history keeps the value forever; rotation is
+the only response.
+
+### 6.2 Logs
+
+- Caddy writes a JSON access log to `/var/log/caddy/access.log` (request
+  metadata; no bodies) and its own log to `/var/log/caddy/caddy.log`.
+- The app emits structured log lines through `observability.structured_log`;
+  request bodies and secrets are not fields of those events.
+- Postgres: if statement logging is on, keep `log_statement = 'mod'` rather
+  than `'all'`; parameterized queries keep values out of the statement text.
+
+If a log line does contain a secret: stop the service, rotate the secret,
+purge every log destination (file, syslog, aggregator), then close the gap
+that let it through.
+
+### 6.3 Backups
+
+[`scripts/polaris-backup.sh`](../../scripts/polaris-backup.sh) produces a
+tarball holding a custom-format `pg_dump` and a `MANIFEST.json` of SHA-256
+hashes. The dump carries the scrypt password hashes in `AppUser`, never the
+`polaris_app` connection password. The secrets directory is not in the
+backup.
+
+Set `POLARIS_BACKUP_KEY_FILE` to a 0600 key file and the script encrypts the
+tarball with AES-256-CBC (PBKDF2) and removes the plaintext; without it the
+script prints a warning and leaves the tarball in the clear. Treat an
+unencrypted tarball that left the host as a disclosure of the database. See
+[DR.md](DR.md) for restore.
+
+### 6.4 CI/CD
+
+Use the platform's secret store; never inline a value in workflow YAML. Audit
+who can read that store. Rotate any secret that may have surfaced in a failed
+workflow's log.
+
+---
+
+## 7. Structural guarantees
+
+The invariant layer ([`polaris_checks/`](../../polaris_checks/checks.py))
+pins the following; `python -m polaris_checks.run` must end with `READY`
+(exit 0); the summary line above it shows `0 fail`.
+
+- Compose reads every secret through `${POLARIS_SECRETS_DIR:-./secrets}`, so
+  a sealed store can be materialized anywhere (`check_secrets_lifecycle_sealed`).
+- pgbouncer reads the database password from `POLARIS_DB_PASSWORD_FILE`, not
+  from the environment (`check_pgbouncer_self_built`).
+- The postgres service points `POLARIS_APP_PASSWORD_FILE` at the same secret
+  the app reads and `docker-init.sh` alters the role to it, so the dev
+  default from `09_grants.sql` is never live in production
+  (`check_prod_app_password_synced`).
+- Rotation preserves file modes (`check_rotate_secret_preserves_mode`).
+- `polaris.env` is gitignored (`check_secrets_file_ignored`).
+
+The dev launcher generates `POLARIS_SECRET_KEY` once and persists it in
+`$POLARIS_STATE_DIR/secret_key` (default `/tmp/polaris-state`), so a dev
+session cookie survives a relaunch; delete that file to force a rotation, and
+a value set in the shell overrides it. Production does not auto-rotate on restart; rotation is the
+operator's explicit act ([section 4](#4-rotation)).
+
+The audit-of-record tables (`TokenLifecycleEvent`, `VerificationEvent`,
+`AuthAuditLog`) carry no password, session, or key columns. The duress code
+is stored as a Werkzeug scrypt commitment (`duress_code_hash`), never the
+plaintext (`test_duress_code_hash_length_floor` in `test_app.py`,
+`test_duress_hash_well_formed` in `test_check_constraints.py`).
+
+---
+
+## 8. Threat model summary
+
+The full STRIDE analysis is [DEVNOTES/threat-model.md](../../DEVNOTES/threat-model.md).
+For secrets specifically:
+
+| Threat | Mitigation |
+|---|---|
+| Operator laptop stolen with the secrets directory on it | Full-disk encryption (operator responsibility); a sealed backend so the checkout holds only ciphertext; rotate on incident |
+| Backup tarball intercepted | `POLARIS_BACKUP_KEY_FILE` so the tarball is encrypted before it leaves the host; rotate any secret an older plaintext backup could hold |
+| Compromised CI/CD pipeline | Platform secret store; audit access; rotate on suspicion |
+| Insider with prior secret access | Rotate on departure; record the rotation in the operator change log |
+| Postgres statement log leaks a password | `log_statement = 'mod'`, never `'all'`; review log redaction quarterly |
+| Dev secrets promoted to production | Separate directories and generators; `check_prod_app_password_synced` pins that the prod role is altered to the file-mounted secret. Nothing refuses a dev-valued file (`docker-init.sh` skips the `ALTER` when the file holds `polaris_dev_password`), so never copy dev secrets into the prod directory |
+| Caddy compromise leaks the TLS private key | Caddy re-issues; rotate the secrets that crossed TLS-terminated traffic |
+| Memory dump of a running gunicorn worker | No shared tenancy on the host; the sealed store keeps plaintext in a root-only tmpfs rather than on disk |
+
+For each threat the response is the same: rotate, audit, postmortem. Speed
+of rotation matters more than perfect forensics.
+
+---
+
+## 9. WebAuthn operator MFA
+
+Enrollment, deadlines, the relying-party knobs (`POLARIS_WEBAUTHN_RP_NAME`,
+`POLARIS_DOMAIN` as the relying-party ID, `POLARIS_WEBAUTHN_HARDWARE_ONLY`,
+the attestation policy), recovery of a locked-out admin by second-admin
+pairing or printed mnemonic, and disabling MFA on an account all live in
+[WEBAUTHN-ROLLOUT.md](WEBAUTHN-ROLLOUT.md).
+
+---
+
+## 10. Related documents
+
+- [OPERATIONS.md](OPERATIONS.md): production runbook (this document's parent)
+- [LINUX-SERVER.md](LINUX-SERVER.md): the systemd install, `/etc/polaris/polaris.env`
+- [KEY-CEREMONY.md](KEY-CEREMONY.md): signing-key custody and rotation
+- [FAILOVER.md](FAILOVER.md): the replicator password and standby setup
+- [DR.md](DR.md): backup and restore
+- [ENCRYPTION-AT-REST.md](ENCRYPTION-AT-REST.md): disk encryption on the host
+- [`polaris_web/docker-compose.prod.yml`](../../polaris_web/docker-compose.prod.yml): where each secret is mounted
+- [`polaris_web/secretstore.py`](../../polaris_web/secretstore.py): the sealed-store implementation
+- [DEVNOTES/threat-model.md](../../DEVNOTES/threat-model.md): STRIDE analysis

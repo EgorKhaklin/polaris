@@ -178,15 +178,17 @@ done
 # ---------------------------------------------------------------------------
 if [[ "${POLARIS_PGBACKREST_ENABLED:-0}" == "1" ]]; then
     echo "  [5c]  Bootstrapping pgBackRest stanza (WAL archiving is enabled)…"
-    if compose exec -T postgres pgbackrest --stanza=polaris stanza-create >/dev/null 2>&1 \
-       && compose exec -T postgres pgbackrest --stanza=polaris check >/dev/null 2>&1; then
+    # As the postgres user: the server archives WAL as postgres, so a repo
+    # created by root here would refuse every later archive-push.
+    if compose exec -T -u postgres postgres pgbackrest --stanza=polaris stanza-create >/dev/null 2>&1 \
+       && compose exec -T -u postgres postgres pgbackrest --stanza=polaris check >/dev/null 2>&1; then
         echo "  ✓ pgBackRest stanza ready (archive-push validated)"
     else
         echo "  ⚠  pgBackRest stanza-create/check FAILED. Archiving is enabled but the" >&2
         echo "     repo is not ready — WAL will accumulate on disk until this is fixed." >&2
         echo "     Check POLARIS_PGBACKREST_S3_* on the postgres service and" >&2
         echo "     secrets/pgbackrest_repo_creds.conf (the S3 key pair), then re-run:" >&2
-        echo "       docker compose -f ${COMPOSE_FILE} exec postgres pgbackrest --stanza=polaris check" >&2
+        echo "       docker compose -f ${COMPOSE_FILE} exec -u postgres postgres pgbackrest --stanza=polaris check" >&2
     fi
 fi
 

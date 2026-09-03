@@ -18,13 +18,10 @@
 # the code) so the application can verify it without holding the cleartext.
 #
 # When the operator is locked out, they SSH to the host and run:
-#   ./scripts/polaris-recover-admin.sh \
-#         --target <self> \
-#         --authorizing-user-id <self> \
-#         --recovery-code "<the 16 words from the printed copy>"
-# (polaris-recover-admin.sh accepts --recovery-code as an alternative to
-# requiring a second admin's user_id — that variant uses the recovery_code_hash
-# comparison.)
+#   ./scripts/polaris-recover-admin.sh --target <self> --recovery-code -
+# and type the 16 words from the printed copy on stdin (the mnemonic is never
+# accepted in argv). --recovery-code replaces --authorizing-user-id: the two
+# are mutually exclusive, and an admin cannot authorize their own recovery.
 #
 # v9.02 closes the v8.97 §V deferred item: --bind-to <username>
 # persists the SHA-256 hash into AppUser.recovery_code_hash so that
