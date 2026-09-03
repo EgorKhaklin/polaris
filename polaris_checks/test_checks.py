@@ -3795,3 +3795,26 @@ def test_presentation_surface_check_fails_on_a_missing_file_or_stale_policy(tmp_
     assert checks.check_presentation_surface(tmp_path)[0].level == "FAIL", "must FAIL when a policy stamp is stale"
     write({"CONTRIBUTING.md": "*Last updated: 2026-09-03 (v9.205)*\n", ".github/ISSUE_TEMPLATE/config.yml": "blank_issues_enabled: true\n"})
     assert checks.check_presentation_surface(tmp_path)[0].level == "FAIL", "must FAIL when blank issues are allowed"
+
+
+def test_cli_help_check_fails_when_a_command_is_undocumented(tmp_path):
+    (tmp_path / "polaris_cli").mkdir()
+    cli = tmp_path / "polaris_cli/polaris.py"
+    good = ('#!/usr/bin/env python3\n'
+            '"""polaris-id: the CLI.\n\n'
+            '    health   Schema statistics\n'
+            '    revoke   Revoke a token\n\n"""\n'
+            'p.add_argument("--version")\n'
+            'EPILOG = "exit codes:\\n  0 ok"\n'
+            "HANDLERS = {\n    'health': cmd_health,\n    'revoke': cmd_revoke,\n}\n")
+    cli.write_text(good)
+    assert checks.check_cli_help_lists_every_command(tmp_path)[0].level == "OK", "must PASS when every command is listed"
+
+    cli.write_text(good.replace("    revoke   Revoke a token\n", ""))
+    assert checks.check_cli_help_lists_every_command(tmp_path)[0].level == "FAIL", "must FAIL when a command is missing from the docstring"
+
+    cli.write_text(good.replace("    'revoke': cmd_revoke,\n", ""))
+    assert checks.check_cli_help_lists_every_command(tmp_path)[0].level == "FAIL", "must FAIL when the docstring lists a command that does not exist"
+
+    cli.write_text(good.replace('EPILOG = "exit codes:\\n  0 ok"\n', ""))
+    assert checks.check_cli_help_lists_every_command(tmp_path)[0].level == "FAIL", "must FAIL when the exit codes are undocumented"

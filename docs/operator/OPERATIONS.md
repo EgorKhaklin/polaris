@@ -127,7 +127,7 @@ Volumes:
 
 Every state-changing event lands in an append-only audit table. Weekly
 review queries (run through `psql` inside the stack, as below, or tail the
-auth events with `polaris audit-log`):
+auth events with `polaris-id audit-log`):
 
 ```bash
 # Weekly: failed-login surface
@@ -270,7 +270,7 @@ SET deprecation_date = CURRENT_DATE
 WHERE name = 'ECDSA-P256';
 ```
 
-To move a holder onto a new algorithm, run UC-6 (`polaris migrate-algorithm`
+To move a holder onto a new algorithm, run UC-6 (`polaris-id migrate-algorithm`
 on the CLI, or `POST /uc6/migrate`; see [API.md](../reference/API.md)). The
 algorithm inventory and the post-quantum posture are in
 [PQC-POSTURE.md](../reference/PQC-POSTURE.md).
@@ -914,10 +914,10 @@ verifications per rolling hour (as the requesting agency). NULL = no cap of
 that kind, no row = no caps, so nothing changes until you set one:
 
 ```bash
-polaris quota-set 5 --verify-per-hour 500 --justification "First National Bank: contracted verification volume is ~300/h"
-polaris quota-set 2 --issue-per-day 200 --revoke-per-day 20 --justification "PA bureau: enrollment capacity of two offices"
-polaris quota-set 5 --verify-per-hour 0 --justification "verification cap lifted after the audit"   # 0 clears one cap
-polaris quota-show
+polaris-id quota-set 5 --verify-per-hour 500 --justification "First National Bank: contracted verification volume is ~300/h"
+polaris-id quota-set 2 --issue-per-day 200 --revoke-per-day 20 --justification "PA bureau: enrollment capacity of two offices"
+polaris-id quota-set 5 --verify-per-hour 0 --justification "verification cap lifted after the audit"   # 0 clears one cap
+polaris-id quota-show
 ```
 
 The `enforce_agency_quota` trigger binds every write path (the stored
@@ -1058,7 +1058,7 @@ the app itself is down (see [DR.md](DR.md), section 4.1).
    Any tokens issued / revoked / lost during the window need re-validation
    by an uncompromised operator.
 
-4. **Rotate:** new password (`polaris user-passwd <username>`), new session
+4. **Rotate:** new password (`polaris-id user-passwd <username>`), new session
    secret if the compromise is widespread
    (`./scripts/polaris-rotate-secret.sh polaris_secret_key` invalidates ALL
    sessions).

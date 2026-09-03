@@ -2322,6 +2322,37 @@ def check_presentation_surface(root: pathlib.Path) -> list[Finding]:
 
 
 # ---------------------------------------------------------------------------
+# CLI help currency — the module docstring lists the commands an operator can
+# run, and the epilog documents the exit codes. Both must match the command
+# registry: at v9.208 six of the twenty commands were missing from the list,
+# including revoke and both halves of the recovery ceremony, so an operator
+# reading the help did not know they existed.
+# ---------------------------------------------------------------------------
+def check_cli_help_lists_every_command(root: pathlib.Path) -> list[Finding]:
+    src = _read(root, "polaris_cli/polaris.py")
+    if not src:
+        return _fail("cli_help", "polaris_cli/polaris.py is missing")
+    registry = re.search(r"HANDLERS = \{(.*?)\n\}", src, re.S)
+    if not registry:
+        return _fail("cli_help", "polaris_cli/polaris.py has no HANDLERS registry")
+    commands = set(re.findall(r"'([a-z0-9-]+)':", registry.group(1)))
+    doc = re.match(r'(?s)\A#![^\n]*\n"""(.*?)"""', src)
+    if not doc:
+        return _fail("cli_help", "polaris_cli/polaris.py has no module docstring")
+    listed = set(re.findall(r"^    ([a-z][a-z0-9-]+)\s{2,}\S", doc.group(1), re.M))
+    missing = sorted(commands - listed)
+    phantom = sorted(listed - commands)
+    if missing:
+        return _fail("cli_help", f"the CLI docstring does not list: {', '.join(missing)}")
+    if phantom:
+        return _fail("cli_help", f"the CLI docstring lists commands that do not exist: {', '.join(phantom)}")
+    for needle, what in (("exit codes:", "the exit codes"), ("--version", "a --version flag")):
+        if needle not in src:
+            return _fail("cli_help", f"the CLI help carries no {what}")
+    return _ok("cli_help", f"the CLI docstring lists all {len(commands)} commands, with exit codes and a version")
+
+
+# ---------------------------------------------------------------------------
 # Launcher currency — the macOS launcher (the SCS-230 deliverable surface) must
 # track the real stack, not drift. Pin the three properties that went stale: it
 # installs native deps from requirements.txt (not a hardcoded list that misses
@@ -4261,6 +4292,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_prod_compose_trusts_edge,
     check_docs_index_coverage,
     check_presentation_surface,
+    check_cli_help_lists_every_command,
 ]
 
 

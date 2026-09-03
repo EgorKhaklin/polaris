@@ -305,13 +305,13 @@ than four times what that agency averaged per hour over the previous week.
 
 **Diagnosis.**
 1. `SELECT actor_agency_id, count(*) FROM TokenLifecycleEvent WHERE event_type='ISSUED' AND event_timestamp > now() - interval '1 hour' GROUP BY 1;` confirms the agency and volume.
-2. `polaris audit-log --since-minutes 60` shows which operator sessions were active; a single session issuing everything is the account-compromise shape.
-3. Check whether the agency has an `AgencyQuota` (`polaris quota-show <id>`); if not, the alert is the only brake.
+2. `polaris-id audit-log --since-minutes 60` shows which operator sessions were active; a single session issuing everything is the account-compromise shape.
+3. Check whether the agency has an `AgencyQuota` (`polaris-id quota-show <id>`); if not, the alert is the only brake.
 
-**Remediation.** If unexpected: set a cap with `polaris quota-set <agency_id>
+**Remediation.** If unexpected: set a cap with `polaris-id quota-set <agency_id>
 --issue-per-day N --justification "..."` (it engages on the next write,
 refusing the excess with HTTP 429 and `PolarisQuotaRefusals`), and rotate or
-deactivate the operator account if it is the source (`polaris user-passwd` /
+deactivate the operator account if it is the source (`polaris-id user-passwd` /
 `user-deactivate` end its sessions). Issued tokens are not undone by the
 alert; a wrongful batch is revoked through `uc8_revoke_token`, which is itself
 bounded by the per-agency revocation rate limit. If expected: raise or clear the cap and note the drive in the
@@ -339,9 +339,9 @@ tokens, and more than four times its weekly hourly mean.
 **Diagnosis.**
 1. `SELECT e.reason_code, count(*) FROM TokenLifecycleEvent e JOIN IdentityToken t USING (token_id) WHERE e.event_type='REVOKED' AND e.event_timestamp > now() - interval '1 hour' AND t.issuing_agency_id=<id> GROUP BY 1;` shows whether the reasons cluster (a recall) or scatter (an operator).
 2. `[COSIGN:<id>]` tags in `reason_code` show whether the `uc8_revoke_token` bound already demanded a co-signer.
-3. `polaris audit-log --since-minutes 60` for the operator sessions involved.
+3. `polaris-id audit-log --since-minutes 60` for the operator sessions involved.
 
-**Remediation.** If unexpected: `polaris quota-set <agency_id>
+**Remediation.** If unexpected: `polaris-id quota-set <agency_id>
 --revoke-per-day N --justification "..."` caps further revocations at the
 database (no procedure bypasses it); deactivate the operator if compromised.
 Revocations already recorded are append-only audit and stay; a wrongful
@@ -370,9 +370,9 @@ requesting agency, and more than four times its weekly hourly mean.
 **Diagnosis.**
 1. `SELECT context_id, outcome, count(*) FROM VerificationEvent WHERE requesting_agency_id=<id> AND event_timestamp > now() - interval '1 hour' GROUP BY 1,2;` shows whether one context and outcome dominate (a sweep) or the mix looks like a queue.
 2. `requesting_purpose_text` on those rows is the coercion-evidence trail (kept, never redacted); read it.
-3. `polaris audit-log --since-minutes 60` for the operator sessions.
+3. `polaris-id audit-log --since-minutes 60` for the operator sessions.
 
-**Remediation.** `polaris quota-set <agency_id> --verify-per-hour N
+**Remediation.** `polaris-id quota-set <agency_id> --verify-per-hour N
 --justification "..."` caps the verifier at the database on its next write.
 For a verifier outside its attested purpose, revoke the federation attestation
 (`/api/federation/revoke`); later SUCCESS outcomes then fail the federation
@@ -393,12 +393,12 @@ volume that is now failing real operators with HTTP 429.
 agency and the kind (`issue`, `revoke`, `verify`).
 
 **Diagnosis.**
-1. `polaris quota-show <agency_id>` for the cap and its justification (the row explains why it exists).
+1. `polaris-id quota-show <agency_id>` for the cap and its justification (the row explains why it exists).
 2. The `quota_refused` structured log lines carry the request ids; the
    corresponding velocity alert above says whether the volume is anomalous.
 3. Ask the agency. A legitimate surge has a name and a contact.
 
-**Remediation.** Legitimate volume: raise the cap (`polaris quota-set`, with
+**Remediation.** Legitimate volume: raise the cap (`polaris-id quota-set`, with
 a new justification). Abuse: leave the cap, work the matching velocity runbook,
 and end the operator sessions involved. The alert clears 15 minutes after the
 last refusal; refused writes were never recorded and are not replayed.

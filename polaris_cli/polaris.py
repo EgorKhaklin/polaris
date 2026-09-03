@@ -1,56 +1,45 @@
 #!/usr/bin/env python3
-"""
-============================================================================
-polaris-cli — Command-line interface to the Polaris Identity Token System
-============================================================================
+"""polaris-id: the command-line interface to Polaris.
 
-A scriptable wrapper around the four use-case stored procedures
-(uc1_issue_and_activate, uc4_activate_reserve, uc5_bind_device,
-uc7_warrant_audit) plus the relational-algebra queries from the report.
+Every operation the web application performs on tokens, individuals, agencies
+and operator accounts, without a browser: the use-case stored procedures, the
+read-only queries, the operator-account and quota management, and the
+authentication audit log.
 
-Usage:
-    polaris <command> [options]
+Installed as `polaris-id`; from a checkout, run `python3 polaris_cli/polaris.py`.
 
-Commands:
-    issue              UC-1: issue and activate a new token (atomic procedure)
-    activate-reserve   UC-4: lose an active token, promote a reserve
+Commands (this list is generated from the command registry, so it cannot
+drift from what the program accepts):
+
+    health             Schema-wide statistics (mirrors Atlas health strip)
+    list               Browse principal entities
+    inspect            Detailed token view with full history
+    query              Run a read-only SELECT against the database
+    issue              UC-1: issue and activate a new token
+    activate-reserve   UC-4: activate a reserve after loss
     bind-device        UC-5: bind a device to an active token
     warrant-audit      UC-7: warrant-authorized verification history
-    list               Browse principal entities (individuals/agencies/tokens)
-    inspect            Detail view of a single token (record + history)
-    query              Run any SELECT against the database (read-only)
+    migrate-algorithm  UC-6: migrate a token to a new cryptographic algorithm
+    revoke             UC-8: revoke an ACTIVE token
+    recovery-initiate  UC-9 phase 1: open a catastrophic-loss recovery ceremony
+    recovery-complete  UC-9 phase 2: approve or reject a pending recovery request
     transition         Apply a state-machine transition to a token
-    health             Schema-wide statistics (mirrors the Atlas health strip)
-    user-list          List application users (web-app auth accounts)
+    user-list          List application users (web auth accounts)
     user-create        Create a new application user
-    user-passwd        Change an application user's password
-    user-deactivate    Deactivate an application user (soft-delete)
+    user-passwd        Change a user's password (also clears lockout)
+    user-deactivate    Deactivate (soft-delete) a user account
+    quota-set          Set per-agency caps; 0 clears a cap
+    quota-show         Show per-agency caps (all agencies, or one)
     audit-log          Tail the authentication audit log
-    --help / -h        Show help for any command
 
-Connection is configured via the same environment variables as the web app:
-    POLARIS_DB_HOST, POLARIS_DB_NAME, POLARIS_DB_USER, POLARIS_DB_PASSWORD
-
-Examples:
-    polaris health
-    polaris list tokens --status ACTIVE
-    polaris inspect 2
-    polaris issue --legal-name "A. Holder" --dob 1990-01-15 --jurisdiction US-PA \\
-                  --agency 1 --algorithm 1 --token-value TKN-PA-NEW-001 \\
-                  --serial SN-PA-NEW --biometric IRIS --contexts 1,4
-    polaris warrant-audit --individual 3 --context BANKING
-    polaris query "SELECT context_type, COUNT(*) FROM VerificationEvent GROUP BY context_type"
-
-Exit codes:
-    0  success
-    1  usage / argument error
-    2  database error
-    3  procedure rejected the operation (constraint or business-rule violation)
-============================================================================
+The database connection uses the same environment variables as the web
+application: POLARIS_DB_HOST, POLARIS_DB_NAME, POLARIS_DB_USER,
+POLARIS_DB_PASSWORD. Every command accepts --help.
 """
 
 import argparse
 import os
+import re
 import sys
 from datetime import datetime
 
@@ -975,7 +964,7 @@ def cmd_user_deactivate(args):
 
 
 # ----------------------------------------------------------------------------
-# COMMAND: quota-set / quota-show (v9.190 / roadmap P1.8 per-agency quotas)
+# COMMAND: quota-set / quota-show (per-agency quotas)
 # ----------------------------------------------------------------------------
 
 def _quota_cap(value):
@@ -1194,13 +1183,56 @@ def cmd_transition(args):
 # Argument parser
 # ----------------------------------------------------------------------------
 
+def _polaris_version():
+    """The shipped version, read from the one canonical source."""
+    version_file = os.path.join(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))), 'polaris_web', '__version__.py')
+    try:
+        with open(version_file, encoding='utf-8') as fh:
+            for line in fh:
+                match = re.match(r'^__version__(?:\s*:\s*str)?\s*=\s*["\']([^"\']+)', line)
+                if match:
+                    return match.group(1)
+    except OSError:
+        pass
+    return 'unknown'
+
+
+POLARIS_VERSION = _polaris_version()
+
+EPILOG = """examples:
+  polaris-id health
+  polaris-id list tokens --status ACTIVE
+  polaris-id inspect 2
+  polaris-id issue --legal-name "A. Holder" --dob 1990-01-15 --jurisdiction US-PA \\
+                   --agency 1 --algorithm 1 --token-value TKN-PA-NEW-001 \\
+                   --serial SN-PA-NEW --biometric IRIS --contexts 1,4
+  polaris-id revoke --token 42 --agency 1 --reason COMPROMISED
+  polaris-id warrant-audit --individual 3 --context BANKING
+  polaris-id quota-show --agency 1
+  polaris-id audit-log --since-minutes 60
+
+exit codes:
+  0  the command succeeded
+  1  usage or argument error
+  2  the database refused the connection or the statement
+  3  a procedure rejected the operation (a constraint or a policy bound)
+
+connection:
+  POLARIS_DB_HOST, POLARIS_DB_NAME, POLARIS_DB_USER, POLARIS_DB_PASSWORD,
+  the same variables the web application reads."""
+
+
 def build_parser():
     p = argparse.ArgumentParser(
-        prog='polaris',
-        description='Command-line interface to the Polaris Identity Token System.',
+        prog='polaris-id',
+        description='The command-line interface to Polaris: every operation the '
+                    'web application performs, without a browser.',
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog='Connection via env vars: POLARIS_DB_HOST, POLARIS_DB_NAME, POLARIS_DB_USER, POLARIS_DB_PASSWORD'
+        epilog=EPILOG,
     )
+    p.add_argument('--version', action='version',
+                   version=f'polaris-id {POLARIS_VERSION}')
     sub = p.add_subparsers(dest='command', metavar='COMMAND')
 
     # health
@@ -1352,10 +1384,9 @@ def build_parser():
     p_ud = sub.add_parser('user-deactivate', help='Deactivate (soft-delete) a user account')
     p_ud.add_argument('username')
 
-    # quota-set / quota-show (v9.190 / P1.8)
+    # quota-set / quota-show
     p_qs = sub.add_parser('quota-set',
-                          help='Set per-agency caps (issuances/day, revocations/day, '
-                               'verifications/hour); 0 clears a cap')
+                          help='Set per-agency caps; 0 clears a cap')
     p_qs.add_argument('agency_id', type=int)
     p_qs.add_argument('--issue-per-day', type=int, default=None)
     p_qs.add_argument('--revoke-per-day', type=int, default=None)

@@ -71,7 +71,7 @@ ship; the row is done when every ship under it is `[x]`.
 | P1.17 | 1. The demo and launcher gates | [x] v9.206 |
 | P1.17 | 2. The identifier and jargon sweep in templates | [x] v9.207 (also the template em-dash sweep, which P1.13 ship 7 left to this row) |
 | P1.17 | 3. The messages | [x] v9.208 |
-| P1.17 | 4. The CLI | [ ] |
+| P1.17 | 4. The CLI | [x] v9.209 (the `polaris` versus `polaris-id` name is decided: `polaris-id`, applied everywhere) |
 | P1.17 | 5. Observability | [ ] (first item: the shipped Caddyfile proxies `/metrics` and `/api/metrics` to the public internet with no ACL and both routes are unauthenticated; add an edge matcher restricting them to the monitoring network, prove it in the prod-stack-boot job, then resolve the `/api/metrics` versus `/metrics` docstring contradiction) |
 | P1.17 | 6. The chrome and the seed | [ ] |
 

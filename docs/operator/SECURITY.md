@@ -39,7 +39,7 @@ Residuals the design accepts, each named where it belongs below: a rate limiter 
 - Session fixation: `session.clear()` runs before the session is populated at login. Logout is `POST` plus CSRF, so an image tag cannot end a session.
 - Post-login `?next=` routes through `security.is_safe_next_url`, which rejects off-site targets including the backslash form browsers normalize to `//host`. Pinned by `check_open_redirect_guard`; tested by `NextUrlSafetyTests` and `F01_AuthenticationTests`.
 - WebAuthn: enrollment, assertion, a per-account password deadline, hardware-only escalation, and an attestation policy (`POLARIS_WEBAUTHN_USER_VERIFICATION`, `POLARIS_WEBAUTHN_ATTESTATION`, `POLARIS_WEBAUTHN_REQUIRE_ATTESTATION`, `POLARIS_WEBAUTHN_ALLOWED_AAGUIDS`). Registration offers ML-DSA-65. The rollout is [WEBAUTHN-ROLLOUT.md](WEBAUTHN-ROLLOUT.md); `check_session_origin_hardening` pins the knobs and `WebAuthnCeremonyTests` exercises both ceremonies with a synthetic authenticator.
-- Server-side sessions: every login registers a row in `OperatorSession` ([migration](../../polaris_sql/migrations/2026-09-01-001-operator-session.up.sql)), and `security.validate_session` runs on every request. Per role: a network allow-list (`POLARIS_NETWORK_POLICY_<ROLE>`, evaluated at login and on every live request), a concurrent-session cap (`POLARIS_SESSION_MAX_<ROLE>`, admin default 3), and an idle timeout (`POLARIS_SESSION_IDLE_MINUTES_<ROLE>`, admin default 30). `polaris user-passwd` and `polaris user-deactivate` revoke the account's live sessions. Tested by `NetworkPolicyTests` and `SessionLimitTests`; the operator model is [HARDENING.md](HARDENING.md) section 13.
+- Server-side sessions: every login registers a row in `OperatorSession` ([migration](../../polaris_sql/migrations/2026-09-01-001-operator-session.up.sql)), and `security.validate_session` runs on every request. Per role: a network allow-list (`POLARIS_NETWORK_POLICY_<ROLE>`, evaluated at login and on every live request), a concurrent-session cap (`POLARIS_SESSION_MAX_<ROLE>`, admin default 3), and an idle timeout (`POLARIS_SESSION_IDLE_MINUTES_<ROLE>`, admin default 30). `polaris-id user-passwd` and `polaris-id user-deactivate` revoke the account's live sessions. Tested by `NetworkPolicyTests` and `SessionLimitTests`; the operator model is [HARDENING.md](HARDENING.md) section 13.
 - Demo accounts: [10_auth.sql](../../polaris_sql/10_auth.sql) seeds `admin`, `operator`, and `auditor` with published passwords for development. When `POLARIS_ENV=production`, [docker-init.sh](../../polaris_web/docker-init.sh) disables all three, scrambles their hashes, locks them, and retires the demo duress enrollment; the first real admin is created with `scripts/polaris-create-operator.sh`. Pinned by `check_prod_hardening`.
 
 `F01_AuthenticationTests` (13 tests) covers anonymous redirect on every protected route, login success and failure, the generic error on an unknown user, the audit trail on login events, lockout, logout, GET-logout rejection, open-redirect resistance, and session-fixation resistance.
@@ -217,7 +217,7 @@ SQL self-tests : 78 assertions in 08_tests.sql, plus 12_v7_constraints.sql and 1
 Web            : 462 (test_app.py, 12 skipped without optional backends) + 72 constraint tests + 16 property tests + 19 secret-store tests
 CLI            : 71 (test_cli.py)
 Crypto         : 76 passing of 80 collected across the signing, custody and ZK witness suites (4 need AWS KMS)
-Invariants     : 111 checks, each with a detection test (polaris_checks, v9.205)
+Invariants     : 112 checks, each with a detection test (polaris_checks, v9.209)
 ```
 
 Run with:
@@ -238,7 +238,7 @@ python3 -m polaris_checks.run
    from werkzeug.security import generate_password_hash
    print(generate_password_hash('YourStrongPassword!', method='scrypt'))
    ```
-   then `UPDATE AppUser SET password_hash = '...' WHERE username = '<name>';`, or use `polaris user-passwd`, which also revokes the account's live sessions.
+   then `UPDATE AppUser SET password_hash = '...' WHERE username = '<name>';`, or use `polaris-id user-passwd`, which also revokes the account's live sessions.
 3. **Enable HSTS** with `POLARIS_HSTS=1` once the deployment is HTTPS-only; the edge configuration is [DEPLOYMENT.md](DEPLOYMENT.md).
 4. **Trust `X-Forwarded-For` only behind a known proxy.** Set `POLARIS_TRUST_PROXY=1` after confirming the edge sets and overwrites the header; otherwise every audit row and rate-limit key uses a client-chosen address.
 5. **Run the Redis rate-limit backend** whenever `POLARIS_WORKERS` is above 1: set `POLARIS_REDIS_URL`. The production compose does.
@@ -261,7 +261,7 @@ python3 -m polaris_checks.run
    ```
    [HARDENING.md](HARDENING.md) section 13 has the full model.
 9. **Raise the WebAuthn bar once every operator holds a hardware key:** `POLARIS_WEBAUTHN_USER_VERIFICATION=required`, then `POLARIS_WEBAUTHN_ATTESTATION=direct` with `POLARIS_WEBAUTHN_REQUIRE_ATTESTATION=1` and, for a fixed fleet, `POLARIS_WEBAUTHN_ALLOWED_AAGUIDS`. [WEBAUTHN-ROLLOUT.md](WEBAUTHN-ROLLOUT.md) Phase 6.
-10. **Set `AgencyQuota` caps for every issuing agency** with `polaris quota-set` and keep the velocity alerts routed to a pager; the runbook is [RUNBOOKS.md](RUNBOOKS.md).
+10. **Set `AgencyQuota` caps for every issuing agency** with `polaris-id quota-set` and keep the velocity alerts routed to a pager; the runbook is [RUNBOOKS.md](RUNBOOKS.md).
 11. **Keep the host hardened** per [HARDENING.md](HARDENING.md) and verify the release you deploy per the root [SECURITY.md](../../SECURITY.md).
 
 ---

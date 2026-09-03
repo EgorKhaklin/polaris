@@ -5,6 +5,29 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.209 — 2026-09-03 (P1.17 ship 4: the CLI documents itself, and it has one name)
+
+- **The command list is generated from the registry.** Six of the twenty
+  commands were missing from the module docstring, including `revoke` and
+  both halves of the recovery ceremony: an operator reading `--help` did not
+  know they existed. The docstring now carries all twenty with their help
+  strings, and `check_cli_help_lists_every_command` (112 checks) fails the
+  build in both directions, so the list cannot drift from the registry again.
+- **Examples and exit codes render.** They sat in the docstring, where
+  `--help` never showed them; they are now the parser's epilog, which the
+  raw-description formatter prints: seven worked examples, the four exit
+  codes in the operator's words, and the connection variables.
+- **`--version`** reads `polaris_web/__version__.py`, so the CLI reports the
+  same version as the application and the release.
+- **One name.** The console script has always installed as `polaris-id`
+  (`polaris-cli` belongs to an unrelated project on PyPI), while every
+  runbook told the operator to type `polaris`. The documentation now says
+  `polaris-id`, in 21 places across the operator runbooks, the red-team
+  scope and the data model, and `--help` says it too. From a checkout, the
+  help names `python3 polaris_cli/polaris.py`.
+- The reference to the academic report is gone from the docstring, and the
+  ticket identifiers are gone from the quota-command comments.
+
 ## v9.208 — 2026-09-03 (P1.17 ship 3: one voice for every message the operator reads)
 
 - **One flash rule, applied to all 44 call sites:** a complete declarative

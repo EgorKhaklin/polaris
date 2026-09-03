@@ -416,7 +416,7 @@ under concurrency; the (cap + 1)th write is refused with
 `quota exceeded: ...` (`check_violation`), which the app answers as HTTP
 429. `justification` has a 20-character floor, as for
 `IssuerDiscretionPolicy`, so the row explains itself. Set with
-`polaris quota-set`; migration `2026-09-01-002-agency-quota`. The sibling
+`polaris-id quota-set`; migration `2026-09-01-002-agency-quota`. The sibling
 of `IssuerDiscretionPolicy`: a bound on agency behaviour, never on a person.
 
 ### `EnrollmentStatusEvent`

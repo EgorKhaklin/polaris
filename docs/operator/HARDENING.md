@@ -222,8 +222,8 @@ What each control does:
   on its next request (`SESSION_EXPIRED`). The cookie's own 8-hour lifetime,
   refreshed on every request, still applies on top.
 - **Revocation.** A deactivated account's live sessions end on their next
-  request (`SESSION_REVOKED`); `polaris user-passwd` and
-  `polaris user-deactivate` revoke them immediately; logout revokes its own row;
+  request (`SESSION_REVOKED`); `polaris-id user-passwd` and
+  `polaris-id user-deactivate` revoke them immediately; logout revokes its own row;
   a cookie without a live registry row is anonymous, which is also why every
   operator re-authenticates once after the v9.189 upgrade.
 

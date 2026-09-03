@@ -181,7 +181,7 @@ break.
   `enforce_agency_quota` trigger on `IdentityToken` inserts, status
   updates, and `VerificationEvent` inserts. The trigger reads no GUC and
   serializes per (kind, agency) with a transaction-scoped advisory lock;
-  caps are set with `polaris quota-set` in
+  caps are set with `polaris-id quota-set` in
   [polaris.py](../polaris_cli/polaris.py). Attempt to exceed a cap through
   the procedures, the SQL console, or concurrent writers.
 - **The migration framework**
