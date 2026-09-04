@@ -42,10 +42,10 @@ enabled.
   build and push them yourself:
   ```bash
   V=$(python3 -c 'from polaris_web.__version__ import __version__; print(__version__)')   # tag images with the shipped version
-  docker build -f polaris_web/Dockerfile.prod      -t REGISTRY/polaris-app:$V       .
-  docker build -f polaris_web/Dockerfile.caddy     -t REGISTRY/polaris-caddy:$V     polaris_web
-  docker build -f polaris_web/Dockerfile.pgbouncer -t REGISTRY/polaris-pgbouncer:$V polaris_web
-  docker build -f polaris_web/Dockerfile.postgres  -t REGISTRY/polaris-postgres:$V  .
+  ./scripts/polaris-image-build.sh --stack "$V"        # builds all four, retried, version-stamped
+  for i in app caddy pgbouncer postgres; do
+    docker tag "polaris-$i:$V" "REGISTRY/polaris-$i:$V" && docker push "REGISTRY/polaris-$i:$V"
+  done
   ```
 
 ## Install

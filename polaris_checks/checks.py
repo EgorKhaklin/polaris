@@ -757,18 +757,20 @@ def check_image_cve_scanning(root: pathlib.Path) -> list[Finding]:
                      "(fixable) CVEs, not on base-image CVEs with no upstream patch yet")
     # The fixable CVEs must be PATCHED in what ships, not just reported: the
     # self-built Dockerfiles upgrade their base packages.
+    # The pattern tolerates apt-get options (the mirror-retry flags added at
+    # v9.215 sit between the command and its subcommand).
     patched = {
-        "polaris_web/Dockerfile.prod": "apt-get -y upgrade",
-        "polaris_web/Dockerfile.caddy": "apk upgrade",
-        "polaris_web/Dockerfile.pgbouncer": "apk upgrade",
-        "polaris_web/Dockerfile.postgres": "apk upgrade",
+        "polaris_web/Dockerfile.prod": (r"apt-get\b[^\n]*\s-y upgrade", "apt-get -y upgrade"),
+        "polaris_web/Dockerfile.caddy": (r"apk upgrade", "apk upgrade"),
+        "polaris_web/Dockerfile.pgbouncer": (r"apk upgrade", "apk upgrade"),
+        "polaris_web/Dockerfile.postgres": (r"apk upgrade", "apk upgrade"),
     }
-    for path, token in patched.items():
+    for path, (pattern, shown) in patched.items():
         df = _read(root, path)
-        if not df or token not in df:
+        if not df or not re.search(pattern, df):
             return _fail("image_cve_scan",
                          "%s must `%s` so fixable base-image CVEs are patched in the shipped image, "
-                         "not merely scanned" % (path, token))
+                         "not merely scanned" % (path, shown))
     # Exceptions must be documented, not silently widened.
     if not (root / ".trivyignore").is_file():
         return _fail("image_cve_scan",
@@ -3096,9 +3098,16 @@ def check_sbom_workflow(root: pathlib.Path) -> list[Finding]:
         return _fail("sbom", "sbom.yml is not triggered on release")
     if "spdx-json" not in wf:
         return _fail("sbom", "sbom.yml does not generate SPDX-format SBOMs")
-    # All four images plus the python surface must be covered.
+    # All four images plus the python surface must be covered. The images are
+    # built through scripts/polaris-image-build.sh (which builds the whole set)
+    # and scanned by a loop over the four names, so neither step spells the
+    # tags out any more.
+    builds_all = "polaris-image-build.sh --stack sbom" in wf
     for img in ("app", "caddy", "pgbouncer", "postgres"):
-        if f"polaris-{img}:sbom" not in wf:
+        built = builds_all or f"polaris-{img}:sbom" in wf
+        scanned = f"polaris-{img}:sbom" in wf or re.search(
+            r"for name in[^\n]*\b" + img + r"\b", wf) is not None
+        if not (built and scanned):
             return _fail("sbom", f"sbom.yml does not build/scan the {img} image")
     if "sbom-python" not in wf:
         return _fail("sbom", "sbom.yml does not generate the Python-surface SBOM")
@@ -4212,6 +4221,67 @@ def check_dr_drill_scheduled(root: pathlib.Path) -> list[Finding]:
                "committed to the ledger, on every push in CI, and monthly on a Linux host by timer")
 
 
+# ---------------------------------------------------------------------------
+# Image builds — every container image CI builds goes through
+# scripts/polaris-image-build.sh, which retries a build that failed on someone
+# else's outage and stamps the image with the shipping version. Three releases
+# in a row were marked red by a Docker Hub token reset, a Docker Hub manifest
+# fetch reset, and a Debian mirror mid-sync. A bare `docker build` in a
+# workflow reintroduces both the flake and the unstamped image, silently.
+# ---------------------------------------------------------------------------
+def check_image_builds_are_retried(root: pathlib.Path) -> list[Finding]:
+    helper = root / "scripts/polaris-image-build.sh"
+    if not helper.is_file():
+        return _fail("image_builds", "scripts/polaris-image-build.sh is missing")
+    body = helper.read_text(encoding="utf-8", errors="replace")
+    for needle, why in (("POLARIS_BUILD_ATTEMPTS", "the attempt count must be a knob"),
+                        ("POLARIS_VERSION=", "the build must stamp the shipping version"),
+                        ("__version__.py", "the version must come from the canonical file")):
+        if needle not in body:
+            return _fail("image_builds", f"polaris-image-build.sh: {why} ({needle} absent)")
+
+    workflows = sorted((root / ".github/workflows").glob("*.yml"))
+    if not workflows:
+        return _fail("image_builds", "no workflows found under .github/workflows")
+    for wf in workflows:
+        text = wf.read_text(encoding="utf-8", errors="replace")
+        for lineno, line in enumerate(text.splitlines(), 1):
+            stripped = line.strip()
+            if stripped.startswith("#"):
+                continue
+            if re.search(r"(?<!-)\bdocker build\b", stripped):
+                return _fail("image_builds",
+                             f".github/workflows/{wf.name}:{lineno} builds an image directly; "
+                             "call scripts/polaris-image-build.sh so the build is retried and stamped")
+
+    # The buildx step cannot use the script (it would lose the gha cache), so it
+    # carries its own retry and its own version stamp.
+    ci = _read(root, ".github/workflows/ci.yml")
+    if "docker/build-push-action" in ci:
+        if "second attempt" not in ci:
+            return _fail("image_builds",
+                         "the buildx build has no second attempt; a registry reset fails the run")
+        if ci.count("build-args: POLARIS_VERSION=") < 2:
+            return _fail("image_builds", "both buildx attempts must stamp POLARIS_VERSION")
+
+    dockerfiles = sorted((root / "polaris_web").glob("Dockerfile.*"))
+    for df in dockerfiles:
+        text = df.read_text(encoding="utf-8", errors="replace")
+        if 'LABEL org.opencontainers.image.version="${POLARIS_VERSION}"' not in text:
+            return _fail("image_builds",
+                         f"polaris_web/{df.name} must label its version from the POLARIS_VERSION "
+                         "build arg, not a literal that goes stale")
+        if "github.com/polaris-id/polaris" in text:
+            return _fail("image_builds", f"polaris_web/{df.name} points its source label at a repository "
+                                         "that is not this one")
+        if "apt-get" in text and "Acquire::Retries" not in text:
+            return _fail("image_builds",
+                         f"polaris_web/{df.name} runs apt-get without Acquire::Retries; a mirror "
+                         "mid-sync fails the build")
+    return _ok("image_builds",
+               f"all {len(dockerfiles)} images build through the retrying, version-stamping helper")
+
+
 CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_csp_forbids_unsafe_inline,
     check_one_active_token_index,
@@ -4326,6 +4396,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_presentation_surface,
     check_cli_help_lists_every_command,
     check_metrics_edge_acl,
+    check_image_builds_are_retried,
 ]
 
 

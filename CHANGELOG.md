@@ -5,6 +5,38 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.215 — 2026-09-04 (every image is built one way: retried, and stamped with the version that shipped it)
+
+Three releases in a row were marked red by outages nobody here can fix. A
+Docker Hub token endpoint reset the connection during v9.212. A Docker Hub
+manifest fetch reset during the same run's rebuild. A Debian mirror mid-sync
+served a package of the wrong size during v9.213, which is why that release's
+green run had to be dispatched by hand. None was a defect in Polaris, and each
+one cost a release the run that is supposed to be its evidence.
+
+- **One helper builds every image.** `scripts/polaris-image-build.sh` takes a
+  Dockerfile and a tag, or `--stack <suffix>` for the whole four-image
+  production set, and retries three times with a doubling backoff. Every image
+  build in both workflows goes through it, which also collapsed twelve
+  scattered build lines into five calls.
+- **The buildx build keeps its cache and gains a second attempt.** It cannot
+  move into the script without losing the GitHub Actions layer cache, so the
+  step is marked `continue-on-error` and repeated once on failure.
+- **apt survives a mirror mid-sync.** Both apt stages in the production image
+  now pass `Acquire::Retries=3`, which is the exact failure that stopped the
+  v9.213 run.
+- **Every image says which version it is.** The production image labelled
+  itself `8.77`, a literal frozen 137 versions ago, and pointed its source
+  label at `github.com/polaris-id/polaris`, a repository that is not this one.
+  The version now comes from `polaris_web/__version__.py` through a build
+  argument the helper passes, the source label names this repository, and the
+  three images that carried no provenance labels at all now carry the same
+  set.
+- **A check keeps it that way.** `check_image_builds_are_retried` fails on a
+  bare `docker build` in any workflow, on an image whose version label is a
+  literal, on an `apt-get` without a mirror retry, and on a buildx step with no
+  second attempt. It is check 114, and it has its detection test.
+
 ## v9.214 — 2026-09-04 (the map's colours say what they mean)
 
 The Atlas legend named cyan zero-knowledge, and the map drew every clean

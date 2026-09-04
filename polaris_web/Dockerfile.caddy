@@ -48,6 +48,16 @@ RUN xcaddy build \
 
 FROM caddy:2.11.4-alpine@sha256:5f5c8640aae01df9654968d946d8f1a56c497f1dd5c5cda4cf95ab7c14d58648
 
+# Every Polaris image carries the same provenance labels; the version is
+# passed in by scripts/polaris-image-build.sh from polaris_web/__version__.py.
+LABEL org.opencontainers.image.title="Polaris (TLS edge)"
+LABEL org.opencontainers.image.description="Caddy edge for Polaris, built with the post-quantum key-exchange module"
+LABEL org.opencontainers.image.source="https://github.com/EgorKhaklin/polaris-id"
+LABEL org.opencontainers.image.licenses="Apache-2.0"
+ARG POLARIS_VERSION=0.0-unstamped
+LABEL org.opencontainers.image.version="${POLARIS_VERSION}"
+
+
 # v9.138 — apk upgrade pulls patched packages on top of the pinned base so the
 # built edge image clears fixable apk-package CVEs (Trivy gates on fixable CRITICAL).
 RUN apk upgrade --no-cache

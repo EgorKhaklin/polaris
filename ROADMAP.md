@@ -42,7 +42,7 @@ systemd, or by the Helm reference profile; pgBackRest backup and restore,
 off-site to S3, streaming replication, and a monthly DR drill that measures
 RPO and RTO; a sealed secrets store; opt-in distributed tracing with dashboards
 as code; SBOMs and SLSA provenance on every release; CVE gates on dependencies
-and images; a coverage floor; 113 invariant checks (v9.210) each with a
+and images; a coverage floor; 114 invariant checks (v9.215) each with a
 detection test; seventeen operator runbooks and ledgers; and the bound on
 every claim in [docs/PRODUCTION-READINESS.md](docs/PRODUCTION-READINESS.md).
 

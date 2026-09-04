@@ -47,7 +47,10 @@ RUN if [ "${POLARIS_ZK_BUILD}" = "1" ]; then \
 # ---------------------------------------------------------------------------
 FROM python:3.12-slim-bookworm AS py-builder
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Acquire::Retries survives a Debian mirror serving a partial file mid-sync,
+# which failed a release build once. See scripts/polaris-image-build.sh.
+RUN apt-get -o Acquire::Retries=3 update \
+    && apt-get -o Acquire::Retries=3 install -y --no-install-recommends \
         build-essential \
         libpq-dev \
         curl \
@@ -92,16 +95,21 @@ FROM python:3.12-slim-bookworm AS runtime
 
 LABEL org.opencontainers.image.title="Polaris (production)"
 LABEL org.opencontainers.image.description="National identity token reference implementation"
-LABEL org.opencontainers.image.source="https://github.com/polaris-id/polaris"
+LABEL org.opencontainers.image.source="https://github.com/EgorKhaklin/polaris-id"
 LABEL org.opencontainers.image.licenses="Apache-2.0"
-LABEL org.opencontainers.image.version="8.77"
+
+# The version is passed in by scripts/polaris-image-build.sh, which reads it
+# from polaris_web/__version__.py. It was a frozen literal until v9.215, by
+# which point the image was labelling itself 137 versions behind the app.
+ARG POLARIS_VERSION=0.0-unstamped
+LABEL org.opencontainers.image.version="${POLARIS_VERSION}"
 
 # v9.138 — apt-get upgrade pulls patched OS packages on top of the pinned base,
 # clearing fixable CVEs in the base image (Trivy gates the built image on fixable
 # CRITICAL). Then install the runtime deps.
-RUN apt-get update \
-    && apt-get -y upgrade \
-    && apt-get install -y --no-install-recommends \
+RUN apt-get -o Acquire::Retries=3 update \
+    && apt-get -o Acquire::Retries=3 -y upgrade \
+    && apt-get -o Acquire::Retries=3 install -y --no-install-recommends \
         libpq5 \
         curl \
         ca-certificates \

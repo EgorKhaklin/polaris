@@ -14,6 +14,16 @@
 # ============================================================================
 FROM alpine:3.24
 
+# Every Polaris image carries the same provenance labels; the version is
+# passed in by scripts/polaris-image-build.sh from polaris_web/__version__.py.
+LABEL org.opencontainers.image.title="Polaris (connection pooler)"
+LABEL org.opencontainers.image.description="pgbouncer for Polaris, SCRAM to the database and TLS to the app"
+LABEL org.opencontainers.image.source="https://github.com/EgorKhaklin/polaris-id"
+LABEL org.opencontainers.image.licenses="Apache-2.0"
+ARG POLARIS_VERSION=0.0-unstamped
+LABEL org.opencontainers.image.version="${POLARIS_VERSION}"
+
+
 # pgbouncer + scram support live in the distro package; netcat gives the
 # compose healthcheck a cheap TCP liveness probe on the listen port; openssl
 # mints the self-signed client_tls cert (v9.121) at start.

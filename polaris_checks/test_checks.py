@@ -3846,3 +3846,56 @@ def test_metrics_edge_acl_check_fails_when_an_edge_leaves_metrics_open(tmp_path)
     write({"deploy/helm/polaris/templates/configmap-caddy.yaml": good["deploy/helm/polaris/templates/configmap-caddy.yaml"],
            ".github/workflows/ci.yml": "jobs:\n  caddy-edge:\n    steps: []\n"})
     assert checks.check_metrics_edge_acl(tmp_path)[0].level == "FAIL", "must FAIL when CI does not exercise the ACL"
+
+
+def test_image_builds_are_retried_check_fails_when_a_build_bypasses_the_helper(tmp_path):
+    def write(files):
+        for rel, body in files.items():
+            p = tmp_path / rel; p.parent.mkdir(parents=True, exist_ok=True); p.write_text(body)
+
+    helper = ("POLARIS_BUILD_ATTEMPTS\n"
+              "version() { sed -n 's/x/y/p' polaris_web/__version__.py; }\n"
+              "docker build --build-arg POLARIS_VERSION=$(version) -f \"$1\" -t \"$2\" \"$3\"\n")
+    labels = ('ARG POLARIS_VERSION=0.0-unstamped\n'
+              'LABEL org.opencontainers.image.version="${POLARIS_VERSION}"\n'
+              'LABEL org.opencontainers.image.source="https://github.com/EgorKhaklin/polaris-id"\n')
+    good = {
+        "scripts/polaris-image-build.sh": helper,
+        "polaris_web/Dockerfile.prod": labels + "RUN apt-get -o Acquire::Retries=3 update\n",
+        "polaris_web/Dockerfile.caddy": labels + "RUN apk upgrade\n",
+        ".github/workflows/ci.yml": (
+            "jobs:\n  build:\n    steps:\n"
+            "      - run: bash scripts/polaris-image-build.sh --stack prod\n"
+            "      - uses: docker/build-push-action@v7\n"
+            "        with:\n          build-args: POLARIS_VERSION=1\n"
+            "      - name: Build the prod image, second attempt (registry flake)\n"
+            "        with:\n          build-args: POLARIS_VERSION=1\n"),
+    }
+    write(good)
+    assert checks.check_image_builds_are_retried(tmp_path)[0].level == "OK", \
+        "must PASS when every build goes through the helper and every image is stamped"
+
+    write({".github/workflows/ci.yml": good[".github/workflows/ci.yml"]
+           + "      - run: docker build -f polaris_web/Dockerfile.prod -t polaris-app:x .\n"})
+    assert checks.check_image_builds_are_retried(tmp_path)[0].level == "FAIL", \
+        "must FAIL when a workflow builds an image directly"
+
+    write({".github/workflows/ci.yml": good[".github/workflows/ci.yml"],
+           "polaris_web/Dockerfile.prod": 'LABEL org.opencontainers.image.version="8.77"\n'})
+    assert checks.check_image_builds_are_retried(tmp_path)[0].level == "FAIL", \
+        "must FAIL when an image labels a frozen version literal"
+
+    write({"polaris_web/Dockerfile.prod": labels + "RUN apt-get update\n"})
+    assert checks.check_image_builds_are_retried(tmp_path)[0].level == "FAIL", \
+        "must FAIL when apt-get runs without a mirror retry"
+
+    write({"polaris_web/Dockerfile.prod": labels + "RUN apt-get -o Acquire::Retries=3 update\n",
+           ".github/workflows/ci.yml": good[".github/workflows/ci.yml"].replace(
+               "      - name: Build the prod image, second attempt (registry flake)\n"
+               "        with:\n          build-args: POLARIS_VERSION=1\n", "")})
+    assert checks.check_image_builds_are_retried(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the buildx build has no second attempt"
+
+    (tmp_path / "scripts/polaris-image-build.sh").unlink()
+    assert checks.check_image_builds_are_retried(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the helper is missing"

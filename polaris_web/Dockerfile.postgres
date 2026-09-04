@@ -24,6 +24,16 @@
 # ============================================================================
 FROM postgres:16-alpine@sha256:cf78e76683b9ca8c5733cbbdce6c9262b45b6767934dd0a95e671f9a0fc20685
 
+# Every Polaris image carries the same provenance labels; the version is
+# passed in by scripts/polaris-image-build.sh from polaris_web/__version__.py.
+LABEL org.opencontainers.image.title="Polaris (database)"
+LABEL org.opencontainers.image.description="PostgreSQL for Polaris, with pgBackRest for the archive and restore path"
+LABEL org.opencontainers.image.source="https://github.com/EgorKhaklin/polaris-id"
+LABEL org.opencontainers.image.licenses="Apache-2.0"
+ARG POLARIS_VERSION=0.0-unstamped
+LABEL org.opencontainers.image.version="${POLARIS_VERSION}"
+
+
 # v9.138 — apk upgrade pulls patched apk packages on top of the pinned base
 # (clears fixable apk-package CVEs; the one residual fixable CRITICAL is a Go
 # stdlib CVE inside the base image's gosu binary, which does no TLS, so it is
