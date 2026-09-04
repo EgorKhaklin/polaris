@@ -35,9 +35,9 @@ polaris/
 ├── polaris_sql/        ← schema, procedures, triggers, atlas functions, migrations/
 ├── polaris_zk/         ← Plonky2 ZK-SNARK Rust crate; witness2/ is the independent second witness
 ├── polaris_cli/        ← the operator CLI
-├── polaris_checks/     ← the flat invariant layer that gates CI
+├── polaris_checks/     ← the flat invariant layer that gates CI (README.md indexes it)
 │
-├── deploy/
+├── deploy/             ← the three substrates, with README.md naming each one's limit
 │   ├── helm/polaris/   ← the Kubernetes reference profile (plus kind-config.yaml for CI)
 │   ├── linux/          ← install.sh and the systemd units and timers
 │   └── observability/  ← Prometheus, Alertmanager, alert rules and their tests, Grafana dashboards, Tempo
@@ -94,9 +94,9 @@ publishes `site/`.
 
 | Directory | What |
 |---|---|
-| [`polaris_checks/`](../../polaris_checks/) | The flat invariant layer: plain `check_*(repo_root)` functions with detection tests; `python3 -m polaris_checks.run` gates CI. |
+| [`polaris_checks/`](../../polaris_checks/) | The flat invariant layer: plain `check_*(repo_root)` functions with detection tests; `python3 -m polaris_checks.run` gates CI. [`polaris_checks/README.md`](../../polaris_checks/README.md) maps C1-C10 to the checks that assert them. |
 | [`scripts/`](../../scripts/) | Every shell tool, all `polaris-*`: deploy, backup, restore, the drills, migrations, secrets, recovery, and the contributor gates (preflight, link check, tests, coverage). [`scripts/README.md`](../../scripts/README.md) names the reader and the caller of each. |
-| [`deploy/`](../../deploy/) | The Helm profile, the Linux install and units, the observability configuration. |
+| [`deploy/`](../../deploy/) | The three substrates: the Linux host under systemd (supported), the Kubernetes reference profile (one PostgreSQL replica), and the observability configuration. [`deploy/README.md`](../../deploy/README.md) states each one's limit. |
 | [`meta/`](../../meta/) | Structural records: the redaction proof, the structural-architecture note, the TLA+ model of C3. |
 
 ### Layer 3: documentation

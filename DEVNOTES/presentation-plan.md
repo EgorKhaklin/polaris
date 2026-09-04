@@ -82,7 +82,7 @@ is a format decision the project has not taken.
 | P1.16 | 1. Deletions | [x] v9.221 (atlas-globe.js with its 395 KB of vendored d3/topojson and the four documents that described it; ai-bootstrap.sh, polaris-concurrency-harness.sh, polaris-doctor.sh and polaris-idempotency-test.sh, whose property became a CI assertion; nginx.conf.example; two duplicate LICENSE copies with the rule in NOTICE; .claude/settings.json untracked; the stray coverage artifact. polaris-authz-audit.sh and polaris_authz_audit.py were KEPT: they work and docs/RED-TEAM-SCOPE.md points an assessor at them, so they are renamed in ship 3 instead) |
 | P1.16 | 2. Asset de-duplication | [x] v9.218 (landed with P1.15 ship 3; assets/ deleted, site/README.md replaces assets/README.md and lists every file with its consumer) |
 | P1.16 | 3. Script rename and index | [x] v9.222 (seven renames including polaris-release-notes.sh and the authz pair the plan had marked for deletion; every caller in the same commit; scripts/README.md indexes forty scripts by reader; CONVENTIONS.md §3 rewritten to one rule) |
-| P1.16 | 4. Missing READMEs (deploy/, polaris_checks/, site/) | [ ] |
+| P1.16 | 4. Missing READMEs (deploy/, polaris_checks/, site/) | [x] v9.223 (site/ at v9.218, scripts/ at v9.222, deploy/ and polaris_checks/ here; all eight registered in SYSTEM-MAP.md and docs/README.md) |
 | P1.16 | 5. DEVNOTES split and merges | [ ] |
 | P1.16 | 6. The map's coverage check and housekeeping | [ ] |
 | P1.17 | 1. The demo and launcher gates | [x] v9.206 |

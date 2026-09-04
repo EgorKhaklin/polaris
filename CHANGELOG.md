@@ -5,6 +5,34 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.223 — 2026-09-04 (P1.16 ship 4: every top-level directory says who it is for)
+
+Three directories held load-bearing material with no way in: the invariant
+layer that gates every push, the three deployment substrates, and the
+published page. A reader had to open files and infer.
+
+- **`polaris_checks/README.md`** states what a check is, why every check is
+  paired with a detection test that proves it can fail, and maps each of the
+  ten constraints to the function that asserts it. Every check name in the
+  table was verified against the source, and the procedure for adding one ends
+  where it should: the stated-count check tells you which documents to
+  restamp.
+- **`deploy/README.md`** names the three substrates with their status in the
+  first table: the Linux host under systemd is supported and exercised on
+  Debian and Rocky in CI; the Kubernetes profile is a reference that runs one
+  PostgreSQL replica, so high availability is roadmap work rather than a
+  shipped feature; the observability directory is a configuration, not a
+  deployment, because the pager and the rotation belong to the operator. It
+  also says where the compose stack actually lives, which is beside the
+  application it composes.
+- **`site/README.md`** landed with P1.15 ship 3, and **`scripts/README.md`**
+  with the rename ship. With those, every package and top-level directory in
+  the tree carries a README that names its reader in the first sentence.
+- **The map and the hub point at them**: the system map's tree and rows, and a
+  new closing paragraph in the documentation hub listing all eight package
+  READMEs, since they are the one part of the documentation set that does not
+  live under `docs/`.
+
 ## v9.222 — 2026-09-04 (P1.16 ship 3: the scripts are named for their job, and indexed by their reader)
 
 Seven scripts carried an `ai-` prefix that said who wrote them rather than who

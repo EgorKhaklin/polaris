@@ -33,3 +33,13 @@ root.
 Design notes that explain why things are built the way they are live in
 [DEVNOTES/](../DEVNOTES/README.md); structural records (the redaction proof,
 the TLA+ model) live in [meta/](../meta/README.md).
+
+Each package and directory outside `docs/` carries its own README naming its
+reader: [`polaris_sql/`](../polaris_sql/README.md),
+[`polaris_web/`](../polaris_web/README.md),
+[`polaris_cli/`](../polaris_cli/README.md),
+[`polaris_zk/`](../polaris_zk/README.md),
+[`polaris_checks/`](../polaris_checks/README.md),
+[`scripts/`](../scripts/README.md),
+[`deploy/`](../deploy/README.md) and
+[`site/`](../site/README.md).
