@@ -21,7 +21,7 @@ Educational project; notional data only. CI builds and boots the full production
 
 <img src="assets/atlas-globe.png" alt="The Polaris Atlas: a dark operational map of North America with verification clusters, the event feed, and the post-quantum and zero-knowledge coverage figures" width="900">
 
-<sub>**The Atlas**, the operational surface: a map that zooms from the continent to the street, plotting every verification and lifecycle event where it happened (notional data; captured at v9.205 against a two-million-event synthetic log). Zero-knowledge verifications never appear. They carry no location, by construction.</sub>
+<sub>**The Atlas**, the operational surface: a map that zooms from the continent to the street, plotting every verification and lifecycle event where it happened (notional data; captured at v9.213 against a two-million-event synthetic log). Zero-knowledge verifications never appear. They carry no location, by construction.</sub>
 
 </div>
 

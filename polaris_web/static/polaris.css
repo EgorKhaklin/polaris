@@ -2478,6 +2478,30 @@ textarea.sql {
     user-select: none;
 }
 
+/* The corner readouts float directly on the basemap, which carries its own
+   place labels in a similar weight. Without a scrim the two collide and the
+   numbers stop being readable over a light tile (v9.213). The halo is soft on
+   purpose: it restores contrast without drawing a panel around the readout. */
+.globe-hud::before {
+    content: '';
+    position: absolute;
+    inset: -16px -20px;
+    z-index: -1;
+    border-radius: 14px;
+    background: radial-gradient(ellipse at center,
+        rgba(3, 9, 18, 0.92) 0%,
+        rgba(3, 9, 18, 0.82) 48%,
+        rgba(3, 9, 18, 0.45) 78%,
+        rgba(3, 9, 18, 0) 100%);
+    pointer-events: none;
+}
+
+.globe-hud .hud-value,
+.globe-hud .hud-value-small,
+.globe-hud .hud-label {
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+}
+
 .globe-hud-tl { top: 14px; left: 14px; }
 .globe-hud-tr { top: 14px; right: 14px; text-align: right; }
 .globe-hud-bl { bottom: 32px; left: 14px; }

@@ -5,6 +5,40 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.213 — 2026-09-04 (the Atlas screenshots show the Atlas that ships, and the corner readouts stay readable)
+
+The three Atlas images in the README and on the project site were captured at
+v9.205. Six ships later the surface they show no longer exists: the menu, the
+dock tab names and the marker vocabulary all changed at v9.211, and the
+subject-focus frame carried a caption the picture did not support. A
+screenshot that misrepresents the running software is a claim the repository
+cannot back, so all three are re-taken against this version.
+
+- **The corner readouts get a contrast scrim.** They float directly on the
+  basemap, which draws its own place labels in a similar weight, so over a
+  populated metro the active-token and anomaly figures were competing with
+  town names for the same pixels. A soft radial halo behind each readout,
+  plus a text shadow on the values, restores the contrast without drawing a
+  panel around the numbers. This is a fix to the product; the new captures
+  simply show it.
+- **The subject-focus capture now shows what its caption claims.** The
+  previous frame was taken against the two-million-event synthetic log, where
+  every holder carries a quarter-million events scattered worldwide, so the
+  view fitted to a whole hemisphere and drew no path at all. It is re-taken
+  against the ordinary seed: one holder, four disclosed events, the gold path
+  from the issuance in Manhattan to a travel check at the airport and back,
+  with the selected event's disclosure level, agency and coordinate open in
+  the detail panel beside it.
+- **Two site captions stop claiming a feature that does not exist.** The
+  street-level pair said the map "flattens into a 3D street map" with "3D
+  buildings"; there is no extrusion layer in the Atlas and never has been.
+  The caption now says what the image shows, which is clusters resolving into
+  single events on their own coordinates. The hero caption drops "globe" and
+  "orbit" for the flat map it is, and says marker rather than reticle, the
+  word the interface itself stopped using at v9.211.
+- **The README caption carries the new capture stamp**, so the version that
+  produced the picture is still on the page next to it.
+
 ## v9.212 — 2026-09-04 (the freeze line is recorded closed, on the owner's direction)
 
 The constitution's freeze line was written as a definition of done with an
