@@ -5,6 +5,41 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.217 — 2026-09-04 (P1.15 ship 2: the site becomes a front door instead of a poster)
+
+The page opened on a hero and went straight to screenshots. A reader who did
+not already know what an identity token is had to infer the premise, an
+assessor had no path from the page to the documents that bound its claims, and
+the one paragraph admitting what this is not sat at twelve pixels above the
+footer.
+
+- **It states its premise first.** A What Polaris is section carries the
+  credential-consolidation argument the rest of the page assumed: six to eight
+  credentials that do not talk to each other, one token per person, disclosure
+  scoped by context, and the rule that the guarantees live in the database.
+- **What this is not is a section, at heading weight.** The readiness ledger's
+  own status line, the eight decisions that belong to the deploying
+  organization named one by one, and the first link from this page to the
+  ledger. The Seton Hill scope note folds into it, where a reader will see it.
+- **Run it names the four paths that actually ship**: evaluate locally,
+  the single-host compose profile, a Linux server under systemd, and the
+  Kubernetes reference profile, each carrying its own limit. The compose
+  subhead stops saying Production, in the README too, since a profile name is
+  not a readiness claim.
+- **An Evaluate it row** puts ten assessor documents one click away: the
+  ledger, the constitution, the post-quantum posture, the security and privacy
+  postures, the system map, the API and data-model references, the operator
+  runbooks and the roadmap.
+- **The page is navigable and announced.** A skip link, a `main` landmark, a
+  sticky masthead styled like the application's own, ids on all nine sections
+  and an `aria-labelledby` on each.
+- **Three duplications are gone**: the internal use-case numbers on the threat
+  cards, a second duress claim in the cryptography grid, and the motto printed
+  twice.
+- **The head is complete**: canonical URL, theme colour, colour scheme, site
+  name, image alt and dimensions, and a Twitter card. The site gains a
+  `robots.txt` and a `404.html` in its own styling.
+
 ## v9.216 — 2026-09-04 (P1.15 ship 1: the project site says only what the repository can support)
 
 The Pages site is one of the two front doors, and it had drifted since v9.194:

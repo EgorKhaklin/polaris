@@ -1,0 +1,3 @@
+# The Polaris project site. One page, no private paths.
+User-agent: *
+Allow: /

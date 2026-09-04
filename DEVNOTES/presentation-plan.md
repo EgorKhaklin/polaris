@@ -59,7 +59,7 @@ ship; the row is done when every ship under it is `[x]`.
 | P1.14 | 4. CONTRIBUTING in public voice; README above the fold | [x] v9.204 |
 | P1.14 | 5. Release-note shape; `check_presentation_surface` | [x] v9.205 (also: Code of Conduct 3.0; the README Atlas capture re-taken from the running app; P1.15 ship 3 and P1.17 ship 6 re-capture after the chrome changes) |
 | P1.15 | 1. The site truth pass | [x] v9.216 (SLH-DSA and WebAuthn v9.194; the globe and street captions v9.213 and v9.214; the launcher tile, the warrant-grade caption, the notional-data badges, the re-measured test counts and the narrowed gating lede v9.216) |
-| P1.15 | 2. The site structure pass | [ ] |
+| P1.15 | 2. The site structure pass | [x] v9.217 (What Polaris is, What this is not with the ledger link, the four run paths, the Evaluate it row, masthead and skip link and landmarks, the UC-kicker and duplicate removals, the head, robots.txt and 404.html) |
 | P1.15 | 3. Assets and tokens | [ ] |
 | P1.15 | 4. The site gate | [ ] |
 | P1.16 | 1. Deletions | [ ] |

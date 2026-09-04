@@ -185,7 +185,7 @@ operator  Operator@123!   issue, activate, bind tokens
 auditor   Auditor@123!    read-only, warrant audits, duress dashboard
 ```
 
-**Production (any Docker host).**
+**Single-host compose profile (any Docker host).**
 
 ```bash
 ./scripts/polaris-generate-secrets.sh
