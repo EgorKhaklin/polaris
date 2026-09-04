@@ -4282,6 +4282,54 @@ def check_image_builds_are_retried(root: pathlib.Path) -> list[Finding]:
                f"all {len(dockerfiles)} images build through the retrying, version-stamping helper")
 
 
+# ---------------------------------------------------------------------------
+# Design tokens — site/tokens.css carries the palette the published page shares
+# with the application. Before v9.218 the page forked it under different names
+# (--dim for --ink-dim, --gold-b for --gold-bright), so a change to the
+# application's colours could not be seen to have skipped the site. Same names,
+# same values, and this check is the pair that makes a drift visible.
+# ---------------------------------------------------------------------------
+def _css_root_tokens(text: str) -> dict[str, str]:
+    """Every custom property declared in the first :root block, normalised."""
+    start = text.find(":root")
+    if start < 0:
+        return {}
+    block = text[text.index("{", start) + 1:]
+    block = block[:block.index("}")]
+    block = re.sub(r"/\*.*?\*/", "", block, flags=re.S)
+    out: dict[str, str] = {}
+    for decl in block.split(";"):
+        if ":" not in decl:
+            continue
+        name, _, value = decl.partition(":")
+        name = name.strip()
+        if name.startswith("--"):
+            out[name] = " ".join(value.split()).lower()
+    return out
+
+
+def check_site_tokens_match_app(root: pathlib.Path) -> list[Finding]:
+    site = _css_root_tokens(_read(root, "site/tokens.css"))
+    app = _css_root_tokens(_read(root, "polaris_web/static/polaris.css"))
+    if not site:
+        return _fail("design_tokens", "site/tokens.css declares no tokens")
+    if not app:
+        return _fail("design_tokens", "polaris_web/static/polaris.css declares no :root tokens")
+    for name, value in sorted(site.items()):
+        if name not in app:
+            return _fail("design_tokens",
+                         f"site/tokens.css declares {name}, which the application does not: "
+                         "the page must use the application's token names, not its own")
+        if app[name] != value:
+            return _fail("design_tokens",
+                         f"{name} is {value} on the site and {app[name]} in the application")
+    page = _read(root, "site/index.html")
+    if page and ":root" in page.split("<style>")[-1][:400]:
+        return _fail("design_tokens", "site/index.html redeclares the palette; tokens.css owns it")
+    return _ok("design_tokens",
+               f"the site and the application share all {len(site)} design tokens by name and value")
+
+
 CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_csp_forbids_unsafe_inline,
     check_one_active_token_index,
@@ -4397,6 +4445,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_cli_help_lists_every_command,
     check_metrics_edge_acl,
     check_image_builds_are_retried,
+    check_site_tokens_match_app,
 ]
 
 

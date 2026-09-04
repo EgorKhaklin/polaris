@@ -42,6 +42,23 @@ ship; the row is done when every ship under it is `[x]`.
   findings. `check_presentation_surface` (P1.14 ship 5) must not require its
   absence.
 
+## Ruling: the images live in site/, not assets/ (v9.218)
+
+The plan called for `assets/` to stay canonical with `.github/workflows/pages.yml`
+copying the binaries into the Pages artifact. Rejected on use. That arrangement
+leaves `site/index.html` with four broken images when it is opened from a clone,
+which is the moment someone is editing the page and needs to see it. Keeping the
+one copy in `site/` costs a slightly unusual path in the repository README and
+removes a build step, a staging directory and a class of drift. `site/README.md`
+states the rule so the next editor does not re-split them.
+
+Measured while re-exporting, and not applied: at 1600 pixels the two paired
+captures lose about a tenth of their bytes, because the encoder that produced
+them is already efficient; quantised to 256 colours they lose half their bytes
+but also the legend's purple and amber, which are the colours the image exists
+to explain. WebP at quality 92 would cut them by three and a half times, which
+is a format decision the project has not taken.
+
 ## Status
 
 | Row | Ship | Status |
@@ -60,10 +77,10 @@ ship; the row is done when every ship under it is `[x]`.
 | P1.14 | 5. Release-note shape; `check_presentation_surface` | [x] v9.205 (also: Code of Conduct 3.0; the README Atlas capture re-taken from the running app; P1.15 ship 3 and P1.17 ship 6 re-capture after the chrome changes) |
 | P1.15 | 1. The site truth pass | [x] v9.216 (SLH-DSA and WebAuthn v9.194; the globe and street captions v9.213 and v9.214; the launcher tile, the warrant-grade caption, the notional-data badges, the re-measured test counts and the narrowed gating lede v9.216) |
 | P1.15 | 2. The site structure pass | [x] v9.217 (What Polaris is, What this is not with the ledger link, the four run paths, the Evaluate it row, masthead and skip link and landmarks, the UC-kicker and duplicate removals, the head, robots.txt and 404.html) |
-| P1.15 | 3. Assets and tokens | [ ] |
+| P1.15 | 3. Assets and tokens | [x] v9.218 (one copy in site/ rather than assets/ with a Pages copy step, see the ruling below; the logo re-exported 942 KB to 44 KB; explicit dimensions and fetch priority; site/tokens.css under the application's token names, pinned by check_site_tokens_match_app) |
 | P1.15 | 4. The site gate | [ ] |
 | P1.16 | 1. Deletions | [ ] |
-| P1.16 | 2. Asset de-duplication | [ ] |
+| P1.16 | 2. Asset de-duplication | [x] v9.218 (landed with P1.15 ship 3; assets/ deleted, site/README.md replaces assets/README.md and lists every file with its consumer) |
 | P1.16 | 3. Script rename and index | [ ] |
 | P1.16 | 4. Missing READMEs (deploy/, polaris_checks/, site/) | [ ] |
 | P1.16 | 5. DEVNOTES split and merges | [ ] |

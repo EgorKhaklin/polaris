@@ -1,0 +1,38 @@
+/* ============================================================================
+   site/tokens.css — the design tokens this page shares with the application.
+
+   Every name and value here matches the :root block of
+   polaris_web/static/polaris.css. The page used to fork the palette under
+   different names (--dim for --ink-dim, --gold-b for --gold-bright), so a
+   change to the application's colours could not be seen to have skipped the
+   site. Same names, same values, one greppable pair.
+
+   Only the tokens this page actually uses are carried; the application's
+   surface, tint and legacy-alias tokens stay where they are used.
+   ============================================================================ */
+:root {
+    /* Surfaces */
+    --void:        #050a12;
+    --bg0:         #0a1421;
+    --bg1:         #0e1a2b;
+    --line:        rgba(141, 166, 196, 0.16);
+    --line-strong: rgba(141, 166, 196, 0.32);
+
+    /* Ink */
+    --ink:         #dce9f6;
+    --ink-dim:     #9db1c7;
+    --ink-faint:   #6e8299;
+
+    /* Accents */
+    --gold:        #c9a352;
+    --gold-bright: #e8be64;
+    --cyan:        #5dd6ff;
+    --cyan-deep:   #2a8fb8;
+    --red:         #ff7478;
+    --amber:       #ffc861;
+    --green:       #5fd9a2;
+
+    /* Type */
+    --font-mono:   'JetBrains Mono', 'SF Mono', ui-monospace, Menlo, Monaco,
+                   Consolas, monospace;
+}

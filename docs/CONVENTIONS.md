@@ -17,7 +17,7 @@ unprefixed nouns for everything else.
 | Pattern | Example | Why |
 |---|---|---|
 | `polaris_<domain>/` | `polaris_web/`, `polaris_sql/`, `polaris_checks/`, `polaris_zk/`, `polaris_cli/` | Python package convention; namespaced; unambiguous when `pip install`'d |
-| Unprefixed singular | `assets/`, `site/` | One thing: the brand assets, the demo site |
+| Unprefixed singular | `site/` | One thing: the published project page and the images it shares with the README |
 | Unprefixed plural | `docs/`, `scripts/`, `meta/`, `deploy/`, `DEVNOTES/` | Container of similar items |
 | ALL_CAPS | `DEVNOTES/` | Historical (v8.x); preserved per v8.20 AoR |
 

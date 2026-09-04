@@ -49,8 +49,7 @@ polaris/
 ├── DEVNOTES/           ← design notes, the project record, per-ship notes under ships/
 ├── meta/               ← structural records (redaction proof, structural architecture, the TLA+ model)
 ├── scripts/            ← operator tools (polaris-*) and the workflow scripts (ai-*)
-├── assets/             ← the logo and the Atlas captures
-├── site/               ← the demo website (GitHub Pages)
+├── site/               ← the published project page (GitHub Pages), its logo and the Atlas captures
 │
 ├── .github/workflows/  ← ci.yml (14 jobs), dr-drill.yml (monthly), sbom.yml (per release), pages.yml (the site)
 ├── .github/dependabot.yml, .pre-commit-config.yaml, .gitignore, .coveragerc, .trivyignore

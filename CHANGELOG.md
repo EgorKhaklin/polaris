@@ -5,6 +5,37 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.218 — 2026-09-04 (P1.15 ship 3: one copy of every image, a logo that is not a megabyte, and one palette)
+
+The repository carried each published image twice, byte for byte, in `assets/`
+and in `site/`, with nothing to keep the pair in step. The emblem was a
+1024-pixel, 942 KB PNG drawn at 180 to 220 pixels. And the page forked the
+application's palette under its own token names, so a colour change in the
+product could not be seen to have skipped the site.
+
+- **One copy of every binary, in `site/`.** The published page, the images and
+  the logo now live in one directory, and the README links into it. The
+  alternative the plan recorded, keeping `assets/` canonical and copying it
+  into the Pages artifact at build time, was rejected on use: it leaves the
+  page broken when opened from a clone, which is exactly when someone is
+  editing it. `assets/` is deleted, and `site/README.md` states the rule.
+- **The emblem is 44 KB.** Re-exported at 440 pixels, the size it is actually
+  drawn at on both surfaces, and quantised to 256 colours with no visible
+  loss at that scale. A 95 percent reduction.
+- **Every image declares its dimensions**, the emblem is fetched at high
+  priority, and the captures decode asynchronously, so the layout no longer
+  shifts as they arrive.
+- **One palette, one set of names.** `site/tokens.css` carries the tokens under
+  the same names `polaris_web/static/polaris.css` uses, the page and the 404
+  page both link it, and `check_site_tokens_match_app` fails if a name or a
+  value diverges or if the page redeclares the palette inline. Check 115, with
+  its detection test.
+- **The capture sizes were measured rather than assumed.** Re-exporting the two
+  paired captures at 1600 pixels saves about a tenth of their bytes, because
+  the source encoder is already efficient; quantising them halves the bytes but
+  drops legend hues the images exist to explain. Both are recorded in the plan
+  and neither is applied.
+
 ## v9.217 — 2026-09-04 (P1.15 ship 2: the site becomes a front door instead of a poster)
 
 The page opened on a hero and went straight to screenshots. A reader who did

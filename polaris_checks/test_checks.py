@@ -3899,3 +3899,37 @@ def test_image_builds_are_retried_check_fails_when_a_build_bypasses_the_helper(t
     (tmp_path / "scripts/polaris-image-build.sh").unlink()
     assert checks.check_image_builds_are_retried(tmp_path)[0].level == "FAIL", \
         "must FAIL when the helper is missing"
+
+
+def test_site_tokens_match_app_check_fails_when_the_palette_forks(tmp_path):
+    def write(files):
+        for rel, body in files.items():
+            p = tmp_path / rel; p.parent.mkdir(parents=True, exist_ok=True); p.write_text(body)
+
+    app = ":root {\n  --ink: #dce9f6;\n  --ink-dim: #9db1c7;\n  --gold: #c9a352;\n}\n"
+    good = {
+        "polaris_web/static/polaris.css": app,
+        "site/tokens.css": ":root {\n  --ink: #DCE9F6;\n  --ink-dim: #9db1c7;\n}\n",
+        "site/index.html": "<style>\nbody{color:var(--ink)}\n</style>\n",
+    }
+    write(good)
+    assert checks.check_site_tokens_match_app(tmp_path)[0].level == "OK", \
+        "must PASS when the site uses the application's names and values"
+
+    write({"site/tokens.css": ":root {\n  --ink: #dce9f6;\n  --dim: #9db1c7;\n}\n"})
+    assert checks.check_site_tokens_match_app(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the site invents a token name the application does not have"
+
+    write({"site/tokens.css": ":root {\n  --ink: #ffffff;\n}\n"})
+    assert checks.check_site_tokens_match_app(tmp_path)[0].level == "FAIL", \
+        "must FAIL when a shared token has drifted in value"
+
+    write({"site/tokens.css": good["site/tokens.css"],
+           "site/index.html": "<style>\n:root{--ink:#000}\nbody{color:var(--ink)}\n</style>\n"})
+    assert checks.check_site_tokens_match_app(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the page redeclares the palette inline"
+
+    write({"site/index.html": good["site/index.html"]})
+    (tmp_path / "site/tokens.css").unlink()
+    assert checks.check_site_tokens_match_app(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the token file is missing"
