@@ -5,6 +5,36 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.214 — 2026-09-04 (the map's colours say what they mean)
+
+The Atlas legend named cyan zero-knowledge, and the map drew every clean
+verification cluster cyan. A zero-knowledge verification is never plotted:
+`polaris_sql/11_atlas.sql` excludes it from the cluster layer and from the
+precise-point layer, so a cyan marker could not have meant what the legend
+said it meant. Cyan meant "an aggregate with no failures in it".
+
+- **Cyan is the colour of a cluster.** The tone is renamed from zk to cluster
+  at its definition and at every use, and a cluster is drawn in it whichever
+  event kind it aggregates. Colouring lifecycle clusters gold said nothing,
+  because the map shows one kind at a time, and it collided with gold meaning
+  full disclosure at the point layer.
+- **The legend states the absence rather than mislabelling it.** Four colours,
+  each named for what it marks: a cluster of events, a selective disclosure, a
+  full disclosure, a failure or revocation. Beside them, in the muted weight,
+  the guarantee itself: zero-knowledge verifications are never plotted.
+- **The point layer says so if it is ever wrong.** A zero-knowledge row cannot
+  reach it through the shipped queries, so one that arrives means the server
+  broke C6. It is drawn in the aggregate colour, never as a disclosure level,
+  and the console carries the warning.
+- **Both front doors state the mechanism.** The README and the site said
+  zero-knowledge verifications "carry no location, by construction", which the
+  schema contradicts: `polaris_sql/01_schema.sql` gives every verification
+  event nullable coordinates and the seed populates them for zero-knowledge
+  rows too. What is true is that the map's queries exclude them and that a
+  zero-knowledge event carries no token id to attribute it by, which is C2.
+- **The three Atlas captures are re-taken** so the shipped images show the
+  corrected legend.
+
 ## v9.213 — 2026-09-04 (the Atlas screenshots show the Atlas that ships, and the corner readouts stay readable)
 
 The three Atlas images in the README and on the project site were captured at

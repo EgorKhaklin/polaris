@@ -3187,11 +3187,11 @@ textarea.sql {
     border-radius: 50%;
     display: inline-block;
 }
-.legend-zk        { background: var(--cyan);  box-shadow: 0 0 6px rgba(93, 214, 255, 0.7); }
+.legend-cluster   { background: var(--cyan);  box-shadow: 0 0 6px rgba(93, 214, 255, 0.7); }
 .legend-selective { background: #b094eb;      box-shadow: 0 0 6px rgba(176, 148, 235, 0.7); }
 .legend-full      { background: var(--amber); box-shadow: 0 0 6px rgba(255, 200, 97, 0.7); }
 .legend-alert     { background: var(--red);   box-shadow: 0 0 6px rgba(255, 116, 120, 0.7); }
-.legend-cluster-note { color: var(--ink-faint); }
+.legend-note      { color: var(--ink-faint); }
 
 .atlas-error-chip {
     position: absolute;

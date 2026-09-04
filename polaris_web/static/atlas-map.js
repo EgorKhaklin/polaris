@@ -26,9 +26,13 @@
     // scoped to the /atlas endpoint only (see security.apply_security_headers).
     var STYLE_URL = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
 
-    // -- Tone palette (shared with the legend + the old globe) ----------------
+    // -- Tone palette (shared with the legend) --------------------------------
+    // Cyan is the colour of an aggregate, not of a disclosure level. A
+    // ZERO_KNOWLEDGE verification is never plotted at all (C6, enforced in
+    // polaris_sql/11_atlas.sql for both the cluster and the point layer), so a
+    // cyan marker cannot mean zero-knowledge: it means "a cluster of events".
     var TONE_COLORS = {
-        zk: '#5dd6ff', selective: '#b094eb', full: '#ffc861', alert: '#ff7478'
+        cluster: '#5dd6ff', selective: '#b094eb', full: '#ffc861', alert: '#ff7478'
     };
 
     // -- Unified filter state (mirrors the v8.3 model the API speaks) ---------
@@ -109,8 +113,8 @@
 
         var toneColor = ['match', ['get', 'tone'],
             'alert', TONE_COLORS.alert, 'full', TONE_COLORS.full,
-            'selective', TONE_COLORS.selective, 'zk', TONE_COLORS.zk,
-            TONE_COLORS.zk];
+            'selective', TONE_COLORS.selective, 'cluster', TONE_COLORS.cluster,
+            TONE_COLORS.cluster];
 
         map.addLayer({
             id: 'atlas-clusters', type: 'circle', source: 'atlas-events',
@@ -295,7 +299,7 @@
 
     function clusterFeature(c, kind) {
         var alert = (c.n_failure || 0) + (c.n_revoked || 0) + (c.n_lost || 0);
-        var tone = alert > 0 ? 'alert' : (kind === 'lifecycle' ? 'full' : 'zk');
+        var tone = alert > 0 ? 'alert' : 'cluster';
         return {
             type: 'Feature',
             geometry: { type: 'Point', coordinates: [c.lon, c.lat] },
@@ -313,9 +317,16 @@
     function pointFeature(p, kind) {
         var tone;
         if (kind === 'verification') {
+            // The precise-point layer receives SELECTIVE and FULL only: the
+            // query drops ZERO_KNOWLEDGE rows (C6). An unexpected one is drawn
+            // in the aggregate colour rather than mislabelled as a disclosure,
+            // and announced, because it would mean the server broke C6.
+            if (p.disclosure_level === 'ZERO_KNOWLEDGE') {
+                console.warn('Atlas: a zero-knowledge verification reached the point layer; C6 expects none.');
+            }
             tone = p.outcome && p.outcome !== 'SUCCESS' ? 'alert'
                  : (p.disclosure_level === 'FULL' ? 'full'
-                 : (p.disclosure_level === 'SELECTIVE' ? 'selective' : 'zk'));
+                 : (p.disclosure_level === 'SELECTIVE' ? 'selective' : 'cluster'));
         } else {
             tone = ['REVOKED', 'LOST', 'EXPIRED', 'DEVICE_REVOKED'].indexOf(p.event_type) >= 0
                  ? 'alert' : 'selective';
@@ -565,7 +576,7 @@
             bar.setAttribute('y', (26 - h).toFixed(2));
             bar.setAttribute('width', Math.max(0.5, w - 1).toFixed(2));
             bar.setAttribute('height', h);
-            bar.setAttribute('fill', (p.n_anomaly || 0) > 0 ? TONE_COLORS.alert : TONE_COLORS.zk);
+            bar.setAttribute('fill', (p.n_anomaly || 0) > 0 ? TONE_COLORS.alert : TONE_COLORS.cluster);
             bar.setAttribute('opacity', '0.7');
             svg.appendChild(bar);
         });
