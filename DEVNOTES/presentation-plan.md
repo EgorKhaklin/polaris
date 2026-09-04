@@ -11,6 +11,39 @@ run by a workflow on 2026-09-02; this file is its synthesized plan, with the
 critic's corrections applied as rulings. Update the status table with every
 ship; the row is done when every ship under it is `[x]`.
 
+## Status: closed (2026-09-04)
+
+All twenty-nine ships are shipped, v9.194 through v9.225, and ROADMAP.md's
+five rows are marked done. This file stays as the record of the pass: the
+audit it synthesized, the rulings that resolved its contradictions, and the
+ship-by-ship status below.
+
+Three things were found during the pass that the audit had not:
+
+- **The System Dashboard rendered blank from v9.211 to v9.220.** Deleting the
+  boot overlay left the stagger rules that faded the panels in, setting them to
+  `opacity: 0` with an animation whose keyframes were gone. Fixed at v9.220,
+  and `check_css_animations_resolve` now fails on the class.
+- **The Atlas legend named cyan zero-knowledge** while the map drew every
+  clean verification cluster cyan, and a zero-knowledge verification is never
+  plotted at all. Fixed at v9.214.
+- **There was no `.dockerignore`**, so every image build shipped the git
+  history, the site captures, the report and any local secret material to the
+  daemon. Added at v9.225.
+
+Deferred deliberately, each with its reason recorded in the ship that raised
+it:
+
+- **A voice pass over the bodies in `docs/design/`.** The twenty-two records
+  moved into the published set at v9.224 with a reader, a job and no internal
+  identifiers, but their bodies still read as working notes.
+- **A second image format for the Atlas captures.** Measured at v9.218: WebP
+  at quality 92 would cut them by three and a half times. Not applied, because
+  the project has not decided to carry two formats for one picture.
+- **The remaining Phase 1 rows**, P1.11 (the retention engine) and P1.12 (the
+  external penetration test), which are engineering and external work rather
+  than presentation.
+
 ## Rulings the critic forced, applied throughout
 
 - QUICKSTART.md is deleted (shipped v9.197); its walkthrough and route table

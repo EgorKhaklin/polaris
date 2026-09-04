@@ -5,6 +5,30 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.226 — 2026-09-04 (the presentation pass is closed: twenty-nine ships, five roadmap rows, three defects nobody had seen)
+
+The rework the owner authorized on 2026-09-02 covered every human-facing
+surface: the documentation, the GitHub presence, the demo site, the
+repository's organization, and the software's own interface. It decomposed
+into twenty-nine ships across five roadmap rows, and all of them have shipped.
+
+- **ROADMAP.md marks P1.13 through P1.17 done**, each with the version range
+  that closed it, and the standing rule that authorized the pass now says it
+  does not expire with those rows: a surface that drifts again is reworked
+  under it rather than re-authorized.
+- **The sub-roadmap records the outcome**, including the three defects the
+  audit had not found and the pass did: the System Dashboard rendering blank
+  from v9.211 to v9.220, the Atlas legend naming a colour for events it never
+  plots, and an image build that shipped the whole repository to the daemon
+  because no `.dockerignore` existed.
+- **What was deferred is named with its reason**: a voice pass over the design
+  records now published under `docs/design/`, a second image format for the
+  Atlas captures (measured, not adopted), and the two Phase 1 rows that are
+  engineering and external work rather than presentation.
+
+The pass added fourteen invariant checks, from 104 at v9.193 to 118 here, each
+with a detection test that proves it fails on a broken fixture.
+
 ## v9.225 — 2026-09-04 (P1.16 ship 6: the map recomputes itself, the build context stops shipping the repository, and the report proves it is current)
 
 The last ship of the repository row, and the last of the presentation pass. Three

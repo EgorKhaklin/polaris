@@ -7,5 +7,5 @@ description: >-
   Docker Compose remains the single-node path.
 type: application
 version: 0.1.0
-appVersion: "9.225"
+appVersion: "9.226"
 kubeVersion: ">=1.29.0-0"
