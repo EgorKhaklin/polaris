@@ -4,6 +4,12 @@
 directory's role, every package's purpose, every CI job, and who reads what.
 Naming and structural conventions are in [../CONVENTIONS.md](../CONVENTIONS.md).
 
+The tree below and the CI job list are recomputed on every push by
+`check_system_map_covers_the_tree`: a tracked top-level path this document
+omits, a path it lists that no longer exists, or a job name that has drifted
+from the workflow all fail the build. The prose descriptions are not
+generated, so they are as current as the last reader who corrected them.
+
 ---
 
 ## At a glance
@@ -17,6 +23,8 @@ polaris/
 ├── CHANGELOG.md                  ← every ship, never edited retroactively
 ├── CLAUDE.md                     ← the developer and agent runbook
 ├── CONTRIBUTING.md / SECURITY.md ← contributor guide; vulnerability disclosure
+├── CODE_OF_CONDUCT.md            ← the community standard, Contributor Covenant 3.0
+├── CITATION.cff                  ← how to cite this work, and the shipped version
 ├── LICENSE / NOTICE              ← Apache 2.0; provenance and third-party notices
 │
 ├── Polaris.command               ← double-click launcher (macOS)
@@ -147,7 +155,7 @@ CHANGELOG.md                       every ship, never edited retroactively
 | Reader | Order |
 |---|---|
 | An operator deploying Polaris | [INSTALL.md](../operator/INSTALL.md) or [LINUX-SERVER.md](../operator/LINUX-SERVER.md) or [KUBERNETES.md](../operator/KUBERNETES.md), then [OPERATIONS.md](../operator/OPERATIONS.md), [SECRETS.md](../operator/SECRETS.md), [DR.md](../operator/DR.md) |
-| An assessor | [PRODUCTION-READINESS.md](../PRODUCTION-READINESS.md), [SECURITY.md](../operator/SECURITY.md), [PRIVACY.md](../operator/PRIVACY.md), [PQC-POSTURE.md](PQC-POSTURE.md), [RED-TEAM-SCOPE.md](../RED-TEAM-SCOPE.md) |
+| An assessor | [PRODUCTION-READINESS.md](../PRODUCTION-READINESS.md), [SECURITY.md](../operator/SECURITY-CONTROLS.md), [PRIVACY.md](../operator/PRIVACY.md), [PQC-POSTURE.md](PQC-POSTURE.md), [RED-TEAM-SCOPE.md](../RED-TEAM-SCOPE.md) |
 | An integrator | [API.md](API.md), then [DATA-MODEL.md](DATA-MODEL.md) |
 | A contributor, human or agent | [CLAUDE.md](../../CLAUDE.md), [MISSION.md](../../MISSION.md), then `python3 -m polaris_checks.run` |
 | An academic reviewer | [the report](../paper/README.md), then [THESIS.md](../THESIS.md) |

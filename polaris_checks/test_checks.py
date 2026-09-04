@@ -3366,7 +3366,7 @@ def test_session_origin_hardening_check_discriminates(tmp_path):
         "polaris_web/test_app.py": "class WebAuthnCeremonyTests: ...\nclass NetworkPolicyTests: ...\nclass SessionLimitTests: ...\n",
         "docs/operator/HARDENING.md": "POLARIS_NETWORK_POLICY_<ROLE> POLARIS_SESSION_MAX_<ROLE>\n",
         "docs/operator/WEBAUTHN-ROLLOUT.md": "POLARIS_WEBAUTHN_ATTESTATION\n",
-        "docs/operator/SECURITY.md": "SESSION_EVICTED\n",
+        "docs/operator/SECURITY-CONTROLS.md": "SESSION_EVICTED\n",
         "polaris_web/docker-compose.prod.yml": COMPOSE,
     }
 
@@ -3470,7 +3470,7 @@ def test_abuse_controls_check_discriminates(tmp_path):
         "docs/operator/OPERATIONS.md": "polaris_quota_refusals_total\n",
         "docs/operator/SLOS.md": "polaris_agency_events_total\n",
         "docs/reference/DATA-MODEL.md": "AgencyQuota\n",
-        "docs/operator/SECURITY.md": "AgencyQuota\n",
+        "docs/operator/SECURITY-CONTROLS.md": "AgencyQuota\n",
     }
 
     def write(overrides=None):
@@ -3963,3 +3963,74 @@ def test_css_animations_resolve_check_fails_on_an_orphaned_animation(tmp_path):
         f.unlink()
     assert checks.check_css_animations_resolve(tmp_path)[0].level == "FAIL", \
         "must FAIL when there is no stylesheet to check"
+
+
+def test_system_map_covers_the_tree_check_fails_both_ways(tmp_path):
+    def write(files):
+        for rel, body in files.items():
+            p = tmp_path / rel; p.parent.mkdir(parents=True, exist_ok=True); p.write_text(body)
+
+    tree = ("```\n"
+            "polaris/\n"
+            "├── README.md                     the front page\n"
+            "├── polaris_web/        the application\n"
+            "└── docs/               the documentation\n"
+            "```\n")
+    jobs = ("- `test`: the product suite.\n"
+            "- `docker-image`: the images.\n")
+    ci = ("on:\n  push:\n    branches: [main]\n\njobs:\n  test:\n    runs-on: x\n"
+          "  docker-image:\n    runs-on: x\n")
+    write({"docs/reference/SYSTEM-MAP.md": "# map\n\n" + tree + "\n" + jobs,
+           ".github/workflows/ci.yml": ci,
+           "README.md": "front page\n",
+           "polaris_web/app.py": "app\n",
+           "docs/README.md": "docs\n"})
+    assert checks.check_system_map_covers_the_tree(tmp_path)[0].level == "OK", \
+        "must PASS when the tree and the job list both match"
+
+    write({"polaris_cli/cli.py": "cli\n"})
+    assert checks.check_system_map_covers_the_tree(tmp_path)[0].level == "FAIL", \
+        "must FAIL when a tracked top-level path is missing from the tree"
+
+    (tmp_path / "polaris_cli/cli.py").unlink()
+    (tmp_path / "polaris_cli").rmdir()
+    write({"docs/reference/SYSTEM-MAP.md": "# map\n\n" + tree.replace(
+        "└── docs/               the documentation", "└── polaris_gone/       a directory that was deleted") + "\n" + jobs})
+    assert checks.check_system_map_covers_the_tree(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the tree lists a path that does not exist"
+
+    write({"docs/reference/SYSTEM-MAP.md": "# map\n\n" + tree + "\n- `test`: only one job listed.\n"})
+    assert checks.check_system_map_covers_the_tree(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the CI job list omits a job the workflow defines"
+
+    write({"docs/reference/SYSTEM-MAP.md": "# map\n\n" + tree + "\n" + jobs
+           + "- `retired-job`: no longer in the workflow.\n"})
+    assert checks.check_system_map_covers_the_tree(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the CI job list names a job that no longer exists"
+
+
+def test_paper_pdf_is_current_check_fails_when_the_source_moves(tmp_path):
+    import hashlib
+    paper = tmp_path / "docs/paper"
+    paper.mkdir(parents=True)
+    tex = paper / "report.tex"
+    tex.write_text("\\documentclass{article}\n")
+    (paper / "report.pdf").write_bytes(b"%PDF-1.4\n")
+    digest = hashlib.sha256(tex.read_bytes()).hexdigest()
+    (paper / "rendered-from.txt").write_text(f"{digest}  report.tex\n")
+    assert checks.check_paper_pdf_is_current(tmp_path)[0].level == "OK", \
+        "must PASS when the stamp matches the source"
+
+    tex.write_text("\\documentclass{article}\n% one more line\n")
+    assert checks.check_paper_pdf_is_current(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the source changed after the PDF was rendered"
+
+    (paper / "rendered-from.txt").unlink()
+    assert checks.check_paper_pdf_is_current(tmp_path)[0].level == "FAIL", \
+        "must FAIL when there is no stamp at all"
+
+    (paper / "rendered-from.txt").write_text(
+        hashlib.sha256(tex.read_bytes()).hexdigest() + "  report.tex\n")
+    (paper / "report.pdf").unlink()
+    assert checks.check_paper_pdf_is_current(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the source ships without its rendered output"

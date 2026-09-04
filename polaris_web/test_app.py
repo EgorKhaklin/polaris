@@ -3648,7 +3648,7 @@ class MetricsMultiprocessTests(unittest.TestCase):
 # ============================================================================
 # CYBERSECURITY-PATCH TESTS
 # ============================================================================
-# One test class per finding category from docs/operator/SECURITY.md. Each test proves the
+# One test class per finding category from docs/operator/SECURITY-CONTROLS.md. Each test proves the
 # patch works end-to-end (not just that the code compiles).
 
 class F01_AuthenticationTests(UnauthenticatedTestCase):

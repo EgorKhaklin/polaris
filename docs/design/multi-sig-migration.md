@@ -224,4 +224,4 @@ entry in `docs/design/concurrency.md` documents the pattern.
 - `docs/design/issuer-discretion.md` —, the constitutional-limits
   leg of the issuer-trust triad.
 - `docs/design/concurrency.md` — the advisory-lock pattern catalog.
-- `docs/operator/SECURITY.md` — cryptographic-migration subsection.
+- `docs/operator/SECURITY-CONTROLS.md` — cryptographic-migration subsection.

@@ -1450,7 +1450,7 @@ print_post_launch_hints() {
     fi
     echo
     printf "%sExplore the Atlas at /atlas for the operational view.%s\n" "$BOLD" "$NC"
-    printf "%sDocs: README.md  /  Security: docs/operator/SECURITY.md%s\n" "$DIM" "$NC"
+    printf "%sDocs: README.md  /  Security: docs/operator/SECURITY-CONTROLS.md%s\n" "$DIM" "$NC"
     echo
 }
 

@@ -69,11 +69,29 @@ pre-commit install
 Every hook is local (no network) and runnable by hand with
 `pre-commit run --all-files`.
 
+## Cleaning the tree
+
+The test suites, the coverage runs and the Rust build leave artifacts that are
+gitignored but still occupy the working tree and the Docker build context:
+
+```bash
+rm -rf .coverage .coverage.* .pytest_cache .hypothesis htmlcov coverage.xml \
+       polaris_zk/target perf-baseline.json
+find . -name __pycache__ -type d -prune -exec rm -rf {} +
+```
+
+`.dockerignore` excludes the same set, so an image build never ships them to
+the daemon, along with the git history, the documentation and any locally
+generated secret material.
+
 ## Style
 
 Declarative prose, present tense, no em-dashes, no filler. Every statement in
 documentation is traceable to the code or schema it describes; numbers carry
-the version they were measured at. JavaScript lives in `static/*.js`, never
+the version they were measured at. A document belongs where its reader looks:
+runbooks in `docs/operator/`, technical reference in `docs/reference/`, the
+record of why a mechanism is built this way in `docs/design/`, and only a
+contributor's working note in `DEVNOTES/`. JavaScript lives in `static/*.js`, never
 inline: the content security policy is `script-src 'self'` and a check
 enforces it. Index names follow the two existing conventions (`uq_*`,
 `idx_*`). The full conventions are in [docs/CONVENTIONS.md](docs/CONVENTIONS.md).
@@ -102,4 +120,4 @@ system is encouraged, provided the constitutional constraints are not weakened
 in the derivative; documenting a derivative to the same audit-of-record
 standard is asked for, not required by the license.
 
-*Maintainer: Egor Khaklin. Last updated: 2026-09-03 (v9.204).*
+*Maintainer: Egor Khaklin. Last updated: 2026-09-04 (v9.225).*

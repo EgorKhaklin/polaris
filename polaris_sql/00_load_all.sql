@@ -10,16 +10,13 @@
 -- Each file is idempotent (DROP IF EXISTS before CREATE), so this script
 -- can be re-run any number of times against an existing database.
 --
--- IMPORTANT — RUN AS A SUPERUSER (v8.32 maintenance note):
--- This file sources 12_v7_constraints.sql which creates triggers, indexes,
--- and a view in the public schema. The polaris_app role (created by
--- 09_grants.sql earlier in this file) has NO DDL privileges by design
--- (defense-in-depth: see 09_grants.sql comment block). If 00_load_all.sql
--- is run as polaris_app, the v7 hardening DDL fails SILENTLY and the
--- database appears loaded but is actually missing C-NEW-1..C-NEW-4
--- (cross-individual-succession trigger, revocation-status trigger,
--- composite index, TokensWithLifecycleSummary view). The v8.32
--- maintenance pass surfaced this gap on the live test DB.
+-- PREREQUISITE: run as a superuser.
+-- This file sources 12_v7_constraints.sql, which creates triggers, an index
+-- and a view in the public schema. The polaris_app role has no DDL privileges
+-- by design (see the comment block in 09_grants.sql), so loading as that role
+-- leaves a database that looks loaded and is missing the cross-individual
+-- succession trigger, the revocation-status trigger, the composite index and
+-- the TokensWithLifecycleSummary view, with no error to say so.
 --
 -- Always load as the macOS default superuser (`vanta` on dev) or the
 -- Postgres superuser (`postgres` on Linux/Docker):
@@ -34,10 +31,17 @@
 -- printed at the end. A clean run shows "Total: 36 tests, 36 passed, 0 failed".
 -- ============================================================================
 
+-- The numeric prefixes are file identifiers, not a load order. The sequence of
+-- \i below is authoritative, and it deviates from the numbers in three places:
+-- 11_atlas.sql loads before 09_grants.sql because the grants cover its
+-- functions; 09_grants.sql is sourced twice, the second time to cover the
+-- tables 10_auth.sql creates; and 12_v7_constraints.sql loads after the tests
+-- because it hardens a schema the tests have already exercised.
+
 \timing on
 \set ECHO queries
 
-\echo Loading 00_migrations_table.sql (v8.95 migration registry; 13th AoR)...
+\echo Loading 00_migrations_table.sql (the migration registry)...
 \i 00_migrations_table.sql
 
 \echo Loading 01_schema.sql...
@@ -76,20 +80,24 @@
 \echo Running 08_tests.sql...
 \i 08_tests.sql
 
-\echo
-\echo ============================================================================
-\echo ALL FILES LOADED. See test summary above for pass/fail counts.
-\echo ============================================================================
+\echo Loading 12_v7_constraints.sql (the v7 hardening triggers, index and view)...
 \i 12_v7_constraints.sql
 
-\echo Loading 13_substrate.sql (M2-3 substrate-dependency manifest)...
+\echo Loading 13_substrate.sql (the substrate-dependency manifest)...
 \i 13_substrate.sql
 
-\echo Loading 13_postgis.sql (R8-4 optional PostGIS migration; no-op without postgis)...
+\echo Loading 13_postgis.sql (optional PostGIS migration; a no-op without postgis)...
 \i 13_postgis.sql
 
-\echo Loading 14_foresight_helpers.sql (v9.12 Position B Layer-1 bundle: 3 SQL functions)...
+\echo Loading 14_foresight_helpers.sql (three SQL helper functions)...
 \i 14_foresight_helpers.sql
 
-\echo Loading 15_ontology.sql (v9.19 ontology layer: 6 semantic views over the schema)...
+\echo Loading 15_ontology.sql (six semantic views over the schema)...
 \i 15_ontology.sql
+
+\echo
+\echo ============================================================================
+\echo ALL FILES LOADED. The test summary above is from 08_tests.sql; the files
+\echo sourced after it (12_v7_constraints.sql and 13_substrate.sql) print their
+\echo own assertions below that summary, so read to the end.
+\echo ============================================================================

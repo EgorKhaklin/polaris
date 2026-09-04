@@ -180,7 +180,7 @@ Each row records:
   rate-limit headers all live in HTTP semantics.
 - **Fail mode:** Generally these don't fail; specific implementation
   bugs (HTTP/2 desync, Host-header confusion) are application-layer
-  concerns covered in `docs/operator/SECURITY.md`.
+  concerns covered in `docs/operator/SECURITY-CONTROLS.md`.
 - **Replacement:** N/A.
 - **Detection:** App-layer testing.
 

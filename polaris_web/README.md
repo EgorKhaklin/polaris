@@ -299,7 +299,7 @@ def individuals_new():
 | operator | ✓               | ✓             |            |             |                           |
 | auditor  | ✓               |               | ✓          | ✓           |                           |
 
-**Controls applied** (full report in `../docs/operator/SECURITY.md`):
+**Controls applied** (full report in `../docs/operator/SECURITY-CONTROLS.md`):
 
 - Authentication: scrypt-hashed passwords, atomic increment of
   `failed_login_count` (C4: no TOCTOU), lockout after 5 failures in 10 min

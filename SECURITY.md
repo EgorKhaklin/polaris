@@ -8,7 +8,7 @@ verified, and how dependencies are kept current.
 Polaris is a reference implementation of a national identity-token system.
 Its guarantees are enforced in the database schema and machine-checked by
 `polaris_checks`; the operator-facing security posture, control by control,
-is [docs/operator/SECURITY.md](docs/operator/SECURITY.md), the threat model is
+is [docs/operator/SECURITY-CONTROLS.md](docs/operator/SECURITY-CONTROLS.md), the threat model is
 [docs/design/threat-model.md](docs/design/threat-model.md), and the scope prepared
 for an external engagement is [docs/RED-TEAM-SCOPE.md](docs/RED-TEAM-SCOPE.md).
 

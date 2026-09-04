@@ -36,7 +36,7 @@ Design notes:
 - The append-only invariant on TokenLifecycleEvent and VerificationEvent is
   respected: the UI offers ADD-only on those tables, no UPDATE/DELETE.
 
-Security controls (see security.py for implementation, docs/operator/SECURITY.md for the
+Security controls (see security.py for implementation, docs/operator/SECURITY-CONTROLS.md for the
 audit findings + patches):
 - Authentication: username + scrypt-hashed password, session-backed
 - Authorization: three roles (admin / operator / auditor), enforced via
@@ -522,7 +522,7 @@ def db_error_to_message(e):
 # ============================================================================
 # Wire security.py into the Flask app: register hooks, expose helpers to
 # templates, register the login/logout/admin routes. See security.py for
-# the actual implementations and docs/operator/SECURITY.md for the audit findings.
+# the actual implementations and docs/operator/SECURITY-CONTROLS.md for the audit findings.
 
 # Make get_db reachable from security.py via app.config (decorators need it
 # but can't import from app.py without circular imports).

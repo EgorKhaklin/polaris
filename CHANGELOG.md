@@ -5,6 +5,49 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.225 — 2026-09-04 (P1.16 ship 6: the map recomputes itself, the build context stops shipping the repository, and the report proves it is current)
+
+The last ship of the repository row, and the last of the presentation pass. Three
+documents that described the tree were maintained by hand and had drifted; one
+build input was never bounded at all.
+
+- **The system map is enforced.** `check_system_map_covers_the_tree` compares
+  the At a glance tree against the tracked top-level paths and the CI job list
+  against the workflow's job keys, failing in both directions: a path the map
+  omits, a path it lists that no longer exists, a job that has drifted. It
+  caught two omissions immediately, the code of conduct and the citation file.
+  The map now says which parts of itself are recomputed and which are prose.
+- **There was no `.dockerignore`.** Every image build sent the whole
+  repository to the daemon: the git history, the site captures, the report PDF,
+  the test suites, and, on a developer machine, whatever sat in
+  `polaris_web/secrets/`. The build context is now an allowlist by exclusion,
+  and the full production image was rebuilt against it to prove nothing an
+  image copies was cut.
+- **The rendered report proves it is current.** `docs/paper/` ships a LaTeX
+  source and its PDF with nothing forcing them to move together.
+  `rendered-from.txt` records the SHA-256 of the source the PDF came from, and
+  `check_paper_pdf_is_current` fails on divergence. Rendering in CI would need
+  a LaTeX toolchain and byte-reproducible output; the stamp catches the same
+  failure, which is a reader citing text the repository has since changed.
+- **The schema loader stops lying about itself.** Its ALL FILES LOADED banner
+  sat four files before the end, so the two files that print assertions after
+  the test summary looked like they had run before it. The banner moves to the
+  end and says where to read; the one silently sourced file gets its own line;
+  the numeric prefixes are explained as identifiers, with the three places the
+  load order deliberately departs from them; and the superuser prerequisite is
+  stated without the incident narrative.
+- **`.gitignore` is rewritten** without release numbers, decision-class labels
+  or the incident story, keeping the one rule that matters: a pattern must not
+  carry a trailing inline comment, because git does not strip them. Every
+  ignore was verified to still bind after the rewrite. `CONTRIBUTING.md` gains
+  the command that cleans the artifacts the suites leave behind.
+- **`docs/operator/SECURITY.md` becomes `SECURITY-CONTROLS.md`**, so the root
+  policy is the only file carrying the name GitHub reads, with a pointer
+  between them and 31 references repointed.
+- **The naming convention is corrected**: it listed `DEVNOTES/` as both a
+  plural container and an ALL_CAPS exception, and its rule against renaming a
+  top-level directory now states the test a rename has to pass.
+
 ## v9.224 — 2026-09-04 (P1.16 ship 5: the design records move into the published documentation)
 
 The threat model, the concurrency catalogue, the substrate manifest, the ZK

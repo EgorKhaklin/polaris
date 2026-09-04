@@ -48,7 +48,7 @@ signs new `IdentityToken` rows that the rest of the system trusts.
 
 **Residual risk:** ACCEPTED. Key compromise is out of scope for
 software controls: addressed by HSM / key-rotation procedures
-documented in `docs/operator/SECURITY.md`.
+documented in `docs/operator/SECURITY-CONTROLS.md`.
 
 ### T-S2: session fixation
 
@@ -424,7 +424,7 @@ function-owner's privileges.
 
 | Threat | Reason |
 |---|---|
-| Physical compromise of HSM holding signing keys | Out of software scope; docs/operator/SECURITY.md addresses HSM lifecycle |
+| Physical compromise of HSM holding signing keys | Out of software scope; docs/operator/SECURITY-CONTROLS.md addresses HSM lifecycle |
 | Quantum cryptanalysis of currently-deployed RSA tokens | Polaris ships with PQ algorithms (ML-DSA primary); RSA tokens are migration-only |
 | Social engineering against issuing agency staff | Out of software scope; agency policy concern |
 | Side-channel attacks (timing, power analysis) on signing | Out of software scope; HSM concern |

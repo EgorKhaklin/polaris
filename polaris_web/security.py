@@ -3,7 +3,7 @@
 #   'self' — never weaken without naming the threat.
 # Read before editing:
 #     ../docs/design/concurrency.md  (atomic increment section — TOCTOU history)
-#     ../docs/operator/SECURITY.md              (full threat model)
+#     ../docs/operator/SECURITY-CONTROLS.md              (full threat model)
 # Tests can lock the admin account. To unlock:
 #     UPDATE AppUser SET locked_until=NULL, failed_login_count=0
 # =============================================================================

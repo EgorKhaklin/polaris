@@ -1,35 +1,33 @@
-# docs/paper/: academic write-up
+# docs/paper/: the academic report
 
-The formal academic write-up of Polaris, in LaTeX + rendered PDF, for
-academic and technical reviewers. Provenance is in [NOTICE](../../NOTICE).
+**Reader:** an academic or technical reviewer reading Polaris as a written
+work, and anyone editing that work. **Job:** hold the LaTeX source, the PDF
+rendered from it, and the stamp that proves the two still agree.
 
----
+The report is the artifact submitted for academic review. It is self-contained
+and citation-ready; [CITATION.cff](../../CITATION.cff) carries the citation
+metadata, and provenance is in [NOTICE](../../NOTICE).
 
-## What's here
-
-| File | Purpose |
+| File | What it is |
 |---|---|
-| [`polaris_project_report.tex`](polaris_project_report.tex) | LaTeX source: edit this; render with `pdflatex` |
-| `polaris_project_report.pdf` | Rendered output: NOT edited by hand |
+| [`polaris_project_report.tex`](polaris_project_report.tex) | The source. Edit this. |
+| `polaris_project_report.pdf` | The rendered output. Never edited by hand. |
+| `rendered-from.txt` | The SHA-256 of the source the PDF was rendered from. |
 
----
-
-## Building
+## Editing it
 
 ```bash
 cd docs/paper
-pdflatex polaris_project_report.tex
-# Run twice if cross-references change.
+pdflatex polaris_project_report.tex     # twice, if cross-references changed
+shasum -a 256 *.tex > rendered-from.txt
 ```
 
----
+The last line is not optional. `check_paper_pdf_is_current` hashes the source
+and compares it against the stamp, so a source edit without a rebuild fails the
+build. Rendering in CI would need a LaTeX toolchain and byte-reproducible
+output; the stamp costs nothing and catches the same divergence, which is a
+reader citing text the repository has since changed.
 
-## What this directory is NOT
-
-- Not the operator runbook (that's in [`../operator/`](../operator/))
-- Not the technical reference (that's in [`../reference/`](../reference/))
-- Not informal developer notes (that's in [`../../DEVNOTES/`](../../DEVNOTES/))
-
-`docs/paper/` is **the artifact submitted for academic review**:
-self-contained, citation-ready, no external dependencies for
-reading.
+The operator runbooks are in [../operator/](../operator/README.md), the
+technical reference in [../reference/](../reference/README.md), and the design
+records in [../design/](../design/README.md).

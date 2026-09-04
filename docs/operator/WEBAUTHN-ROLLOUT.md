@@ -93,7 +93,7 @@ If any of these fail: stop. Run `./scripts/polaris-migrate.sh --up` first
 event type that Phase 6 audits is admitted by `2026-09-01-001`, and without it
 the refusal audit row silently fails the `chk_authaudit_event_type` CHECK).
 If still failing, file an issue per
-[SECURITY.md](SECURITY.md).
+[SECURITY.md](SECURITY-CONTROLS.md).
 
 ---
 

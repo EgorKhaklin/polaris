@@ -2,7 +2,7 @@
 
 **Reader:** the security assessor evaluating a Polaris deployment for national use, and the operator who keeps that posture true. **Job:** state each control that exists today, name the code that enforces it, and name the automated check or test that pins it, so an assessment reads the repository instead of a claim.
 
-Status: controls verified against the repository at v9.199 on 2026-09-02. The disclosure policy (how to report a vulnerability, how to verify a release, the bug-bounty terms) is the root [SECURITY.md](../../SECURITY.md). The STRIDE model is [threat-model.md](../design/threat-model.md); the red-team boundary is [RED-TEAM-SCOPE.md](../RED-TEAM-SCOPE.md); the constitution (C1 to C10) is [MISSION.md](../../MISSION.md).
+Status: controls verified against the repository at v9.199 on 2026-09-02. This document is the control inventory; the file GitHub reads as the security policy is the root [SECURITY.md](../../SECURITY.md), which is why this one is named for what it holds rather than sharing that name. The disclosure policy (how to report a vulnerability, how to verify a release, the bug-bounty terms) is the root [SECURITY.md](../../SECURITY.md). The STRIDE model is [threat-model.md](../design/threat-model.md); the red-team boundary is [RED-TEAM-SCOPE.md](../RED-TEAM-SCOPE.md); the constitution (C1 to C10) is [MISSION.md](../../MISSION.md).
 
 Every check named below is a `check_*` function in [polaris_checks/checks.py](../../polaris_checks/checks.py) and runs without a database: `python3 -m polaris_checks.run`. Every test class named below lives in [polaris_web/test_app.py](../../polaris_web/test_app.py) unless another file is named.
 

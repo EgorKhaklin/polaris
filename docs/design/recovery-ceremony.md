@@ -212,4 +212,4 @@ the race with real `psycopg2` threads (C9 honored).
   advisory-lock pattern).
 - `docs/design/tiered-enrollment.md` — (entry leg).
 - `docs/design/concurrency.md` — the advisory-lock pattern catalog.
-- `docs/operator/SECURITY.md` — recovery threat-model subsection.
+- `docs/operator/SECURITY-CONTROLS.md` — recovery threat-model subsection.

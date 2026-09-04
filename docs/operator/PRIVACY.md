@@ -3,7 +3,7 @@
 **Reader:** the privacy officer or data-protection reviewer assessing a
 Polaris deployment. **Job:** state what personal data Polaris collects, what
 it retains, how the architecture enforces minimization, and what holders can
-expect. This is distinct from [SECURITY.md](SECURITY.md) (which covers
+expect. This is distinct from [SECURITY.md](SECURITY-CONTROLS.md) (which covers
 attacks) and [docs/design/threat-model.md](../design/threat-model.md)
 (which covers the architectural defenses).
 

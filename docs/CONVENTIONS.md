@@ -18,11 +18,13 @@ unprefixed nouns for everything else.
 |---|---|---|
 | `polaris_<domain>/` | `polaris_web/`, `polaris_sql/`, `polaris_checks/`, `polaris_zk/`, `polaris_cli/` | Python package convention; namespaced; unambiguous when `pip install`'d |
 | Unprefixed singular | `site/` | One thing: the published project page and the images it shares with the README |
-| Unprefixed plural | `docs/`, `scripts/`, `meta/`, `deploy/`, `DEVNOTES/` | Container of similar items |
-| ALL_CAPS | `DEVNOTES/` | Historical (v8.x); preserved per v8.20 AoR |
+| Unprefixed plural | `docs/`, `scripts/`, `meta/`, `deploy/` | Container of similar items |
+| ALL_CAPS | `DEVNOTES/` | The one exception, kept because renaming it moves hundreds of references for no reader's benefit |
 
-**Rule:** never rename a top-level directory casually (it touches
-v8.20 AoR and thousands of cross-references).
+**Rule:** a top-level rename moves every cross-reference to it, so it needs a
+reason a reader would recognise. The v9.224 move of the design records out of
+`DEVNOTES/` had one: an assessor does not look in a directory named for
+developer notes. Renaming the directory itself did not, so it kept its name.
 
 ---
 

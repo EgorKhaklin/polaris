@@ -21,7 +21,9 @@ Add a check by writing a `check_*` function and listing it in CHECKS.
 from __future__ import annotations
 
 import pathlib
+import hashlib
 import re
+import subprocess
 from dataclasses import dataclass
 from typing import Callable
 
@@ -3968,7 +3970,7 @@ def check_session_origin_hardening(root: pathlib.Path) -> list[Finding]:
     for rel, needle in (("docs/operator/HARDENING.md", "POLARIS_NETWORK_POLICY_"),
                         ("docs/operator/HARDENING.md", "POLARIS_SESSION_MAX_"),
                         ("docs/operator/WEBAUTHN-ROLLOUT.md", "POLARIS_WEBAUTHN_ATTESTATION"),
-                        ("docs/operator/SECURITY.md", "SESSION_EVICTED")):
+                        ("docs/operator/SECURITY-CONTROLS.md", "SESSION_EVICTED")):
         if needle not in _read(root, rel):
             return _fail("session_hardening", f"{rel} does not document {needle}")
     compose = _read(root, "polaris_web/docker-compose.prod.yml")
@@ -4109,7 +4111,7 @@ def check_abuse_controls(root: pathlib.Path) -> list[Finding]:
                         ("docs/operator/OPERATIONS.md", "polaris_quota_refusals_total"),
                         ("docs/operator/SLOS.md", "polaris_agency_events_total"),
                         ("docs/reference/DATA-MODEL.md", "AgencyQuota"),
-                        ("docs/operator/SECURITY.md", "AgencyQuota")):
+                        ("docs/operator/SECURITY-CONTROLS.md", "AgencyQuota")):
         if needle not in _read(root, rel):
             return _fail("abuse_controls", f"{rel} does not document {needle}")
     return _ok("abuse_controls",
@@ -4373,6 +4375,135 @@ def check_css_animations_resolve(root: pathlib.Path) -> list[Finding]:
                f"every animation name used in the stylesheets resolves to a @keyframes ({checked} uses)")
 
 
+# ---------------------------------------------------------------------------
+# The system map is the first document a reader opens, and it drifted for
+# thirty-six versions: it listed a directory that had been deleted, missed one
+# that had been added, and named CI jobs that no longer existed. A map nobody
+# recomputes is a map nobody can trust. Both directions fail: a tracked
+# top-level path the map omits, and a map entry that names nothing.
+# ---------------------------------------------------------------------------
+_MAP_IGNORED_TOP = {".gitignore", ".dockerignore", ".coveragerc", ".trivyignore",
+                    ".pre-commit-config.yaml", ".github", ".claude"}
+
+
+def _tracked_top_level(root: pathlib.Path) -> set[str]:
+    """Top-level tracked entries, from git when available, else the tree."""
+    try:
+        out = subprocess.run(["git", "-C", str(root), "ls-files"],
+                             capture_output=True, text=True, timeout=30)
+        if out.returncode == 0 and out.stdout.strip():
+            return {line.split("/", 1)[0] for line in out.stdout.splitlines() if line.strip()}
+    except (OSError, subprocess.SubprocessError):
+        pass
+    return {p.name for p in root.iterdir()
+            if not p.name.startswith(".") and p.name not in {"__pycache__", "venv"}}
+
+
+def check_system_map_covers_the_tree(root: pathlib.Path) -> list[Finding]:
+    text = _read(root, "docs/reference/SYSTEM-MAP.md")
+    if not text:
+        return _fail("system_map", "docs/reference/SYSTEM-MAP.md is missing")
+
+    # The tree diagram: entries drawn at depth zero inside the fenced block.
+    block = text.split("```", 2)
+    if len(block) < 2:
+        return _fail("system_map", "the At a glance tree is not a fenced block")
+    listed: set[str] = set()
+    for line in block[1].splitlines():
+        m = re.match(r"^[├└]── ([A-Za-z0-9_.-]+)", line)
+        if m:
+            listed.add(m.group(1).rstrip("/"))
+        m2 = re.match(r"^[├└]── ([A-Za-z0-9_.-]+) / ([A-Za-z0-9_.-]+)", line)
+        if m2:
+            listed.update(m2.groups())
+    if not listed:
+        return _fail("system_map", "the At a glance tree lists no top-level entries")
+
+    tracked = {name for name in _tracked_top_level(root) if name not in _MAP_IGNORED_TOP}
+    missing = sorted(tracked - listed)
+    if missing:
+        return _fail("system_map",
+                     "the At a glance tree does not list tracked top-level "
+                     f"path(s): {', '.join(missing)}")
+    orphans = sorted(name for name in listed - tracked if not (root / name).exists())
+    if orphans:
+        return _fail("system_map",
+                     f"the At a glance tree lists path(s) that do not exist: {', '.join(orphans)}")
+
+    # The CI job list: every job key in ci.yml, and nothing else.
+    ci = _read(root, ".github/workflows/ci.yml")
+    # Only the keys under the top-level `jobs:` mapping; `on:` has two-space
+    # keys of its own (push, pull_request) that are not jobs.
+    job_keys: set[str] = set()
+    in_jobs = False
+    for line in ci.splitlines():
+        if re.match(r"^jobs:\s*$", line):
+            in_jobs = True
+            continue
+        if in_jobs:
+            if line and not line.startswith(" ") and not line.startswith("#"):
+                break
+            m = re.match(r"^  ([a-z][a-z0-9-]*):\s*$", line)
+            if m:
+                job_keys.add(m.group(1))
+    named = set(re.findall(r"^- `([a-z][a-z0-9-]*)`:", text, re.M))
+    if job_keys and named:
+        missing_jobs = sorted(job_keys - named)
+        if missing_jobs:
+            return _fail("system_map",
+                         f"the CI job list omits ci.yml job(s): {', '.join(missing_jobs)}")
+        phantom = sorted(named - job_keys)
+        if phantom:
+            return _fail("system_map",
+                         f"the CI job list names job(s) ci.yml does not define: {', '.join(phantom)}")
+    return _ok("system_map",
+               f"the system map lists every tracked top-level path ({len(tracked)}) "
+               f"and every CI job ({len(job_keys)})")
+
+
+# ---------------------------------------------------------------------------
+# The rendered report — docs/paper/ ships a LaTeX source and the PDF rendered
+# from it. Nothing forced the two to move together, and a PDF that no longer
+# matches its source is worse than no PDF: a reader cites text that the
+# repository has since changed. Rendering in CI would need a LaTeX toolchain
+# and byte-reproducible output; a hash of the source the PDF was rendered from
+# costs nothing and fails the moment the two diverge.
+# ---------------------------------------------------------------------------
+def check_paper_pdf_is_current(root: pathlib.Path) -> list[Finding]:
+    paper = root / "docs/paper"
+    if not paper.is_dir():
+        return _ok("paper_current", "no docs/paper/ directory to check")
+    tex = sorted(paper.glob("*.tex"))
+    pdf = sorted(paper.glob("*.pdf"))
+    stamp = paper / "rendered-from.txt"
+    if not tex:
+        return _ok("paper_current", "docs/paper/ ships no LaTeX source")
+    if not pdf:
+        return _fail("paper_current", "docs/paper/ has a .tex but no rendered PDF")
+    if not stamp.is_file():
+        return _fail("paper_current",
+                     "docs/paper/rendered-from.txt is missing: the PDF cannot be shown to "
+                     "match its source")
+    recorded = {}
+    for line in stamp.read_text(encoding="utf-8", errors="replace").splitlines():
+        parts = line.split()
+        if len(parts) == 2:
+            recorded[parts[1].lstrip("*")] = parts[0].lower()
+    for source in tex:
+        digest = hashlib.sha256(source.read_bytes()).hexdigest()
+        want = recorded.get(source.name)
+        if want is None:
+            return _fail("paper_current",
+                         f"docs/paper/rendered-from.txt does not record {source.name}")
+        if want != digest:
+            return _fail("paper_current",
+                         f"{source.name} has changed since the PDF was rendered. Rebuild it "
+                         "(cd docs/paper && pdflatex polaris_project_report.tex, twice) and "
+                         "restamp: shasum -a 256 *.tex > rendered-from.txt")
+    return _ok("paper_current",
+               f"the rendered report matches the source it was rendered from ({len(tex)} file)")
+
+
 CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_csp_forbids_unsafe_inline,
     check_one_active_token_index,
@@ -4490,6 +4621,8 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_image_builds_are_retried,
     check_site_tokens_match_app,
     check_css_animations_resolve,
+    check_system_map_covers_the_tree,
+    check_paper_pdf_is_current,
 ]
 
 

@@ -1,0 +1,82 @@
+# Polaris — .dockerignore
+#
+# The build context is the repository root for the application and database
+# images, and polaris_web/ for the edge and the pooler. Everything the images
+# COPY is listed in the Dockerfiles; everything else is weight on every build,
+# and some of it must never reach a build daemon at all.
+#
+# Added at v9.225: there was no .dockerignore, so every image build shipped the
+# git history, the site captures, the report PDF and any locally generated
+# secrets to the daemon.
+
+# ============================================================================
+# Never: secret material
+# ============================================================================
+polaris_web/secrets/
+polaris_web/secrets.sealed/
+polaris_web/secrets.sealed.prev/
+polaris.env
+.env
+.env.*
+secrets.json
+credentials.json
+
+# ============================================================================
+# Version control and CI metadata
+# ============================================================================
+.git/
+.github/
+.gitignore
+.dockerignore
+.pre-commit-config.yaml
+
+# ============================================================================
+# Build and test artifacts
+# ============================================================================
+**/__pycache__/
+**/*.py[cod]
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.hypothesis/
+.mypy_cache/
+.ruff_cache/
+polaris_zk/target/
+**/*.rs.bk
+venv/
+.venv/
+env/
+
+# ============================================================================
+# Documentation, the published page and the report
+# None of it is copied into any image.
+# ============================================================================
+docs/
+DEVNOTES/
+meta/
+site/
+*.md
+LICENSE
+NOTICE
+CITATION.cff
+
+# ============================================================================
+# Test suites and local tooling
+# The images run the application, not its tests.
+# ============================================================================
+**/test_*.py
+polaris_checks/
+scripts/
+deploy/
+polaris_cli/
+polaris_zk/witness2/
+polaris_web/venv/
+polaris_web/docker-state/
+polaris_web/.docker-volume/
+polaris-state/
+state/
+.playwright-mcp/
+perf-baseline.json
+.DS_Store

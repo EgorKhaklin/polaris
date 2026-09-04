@@ -107,7 +107,7 @@ FROM (VALUES
 
     ('HTTP/HTTPS framing',   'network', 'IETF RFC 7230 / RFC 7540',
      'Request layer; CSRF tokens, session cookies, rate-limit headers all live here',
-     'Implementation-level desync / Host-confusion bugs (covered by docs/operator/SECURITY.md)',
+     'Implementation-level desync / Host-confusion bugs (covered by docs/operator/SECURITY-CONTROLS.md)',
      'N/A — application-layer concern',
      'App-layer testing'),
 
