@@ -1,14 +1,17 @@
 # Deploys site/ to GitHub Pages (https://egorkhaklin.github.io/polaris-id/).
 # Separate from ci.yml on purpose: the site is a static artifact; product CI
 # gates stay in 'Polaris CI'. Pages is enabled with build_type=workflow.
+#
+# v9.219: no path filter. The page states counts that live elsewhere in the
+# tree (the schema, the check layer, ci.yml), so a filter on site/** would make
+# this workflow structurally blind to the commits that make the page wrong. It
+# runs on every push to main, and the verify job below refuses to publish a
+# page whose numbers or links no longer resolve.
 name: Pages
 
 on:
   push:
     branches: [main]
-    paths:
-      - 'site/**'
-      - '.github/workflows/pages.yml'
   workflow_dispatch:
 
 permissions:
@@ -21,8 +24,22 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  verify:
+    name: The page's numbers and links resolve
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Every stated count is recomputed from the tree
+        run: python3 -m polaris_checks.run
+      - name: Every link and image on the page resolves
+        run: bash scripts/ai-link-check.sh --ci
+
   deploy:
     name: Deploy site/ to GitHub Pages
+    needs: verify
     runs-on: ubuntu-latest
     environment:
       name: github-pages

@@ -78,7 +78,7 @@ is a format decision the project has not taken.
 | P1.15 | 1. The site truth pass | [x] v9.216 (SLH-DSA and WebAuthn v9.194; the globe and street captions v9.213 and v9.214; the launcher tile, the warrant-grade caption, the notional-data badges, the re-measured test counts and the narrowed gating lede v9.216) |
 | P1.15 | 2. The site structure pass | [x] v9.217 (What Polaris is, What this is not with the ledger link, the four run paths, the Evaluate it row, masthead and skip link and landmarks, the UC-kicker and duplicate removals, the head, robots.txt and 404.html) |
 | P1.15 | 3. Assets and tokens | [x] v9.218 (one copy in site/ rather than assets/ with a Pages copy step, see the ruling below; the logo re-exported 942 KB to 44 KB; explicit dimensions and fetch priority; site/tokens.css under the application's token names, pinned by check_site_tokens_match_app) |
-| P1.15 | 4. The site gate | [ ] |
+| P1.15 | 4. The site gate | [x] v9.219 (ai-link-check.sh reads href/src and blob URLs; pages.yml gains a verify job and loses its path filter; the strong lede restored. check_stated_counts already covered site/index.html) |
 | P1.16 | 1. Deletions | [ ] |
 | P1.16 | 2. Asset de-duplication | [x] v9.218 (landed with P1.15 ship 3; assets/ deleted, site/README.md replaces assets/README.md and lists every file with its consumer) |
 | P1.16 | 3. Script rename and index | [ ] |

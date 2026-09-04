@@ -5,6 +5,34 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.219 — 2026-09-04 (P1.15 ship 4: the page cannot publish a number or a link that has stopped being true)
+
+The site claimed its own claims were gated. They were not: the link checker
+never read an `href` or a `src`, and the Pages workflow only ran when something
+under `site/` changed, which is never the commit that makes the page wrong. A
+new table, a new check or a renamed document would publish silently.
+
+- **The link checker reads HTML.** Every `href` and `src` in plain HTML now
+  resolves against the tree, with Flask templates skipped because their
+  attributes are `url_for()` calls. Every
+  `github.com/EgorKhaklin/polaris-id/blob/main/...` link, from any file, is
+  stripped back to the path it names and checked too, which is what the site's
+  outbound links have to be: a relative link would 404 on the published page.
+  808 references now, up from 771, and a probe with a broken image and a broken
+  document link is reported as two failures.
+- **Pages verifies before it publishes.** A verify job runs the invariant layer
+  and the link check, and the deploy job needs it. A page whose numbers no
+  longer match the repository, or whose images no longer exist, is not
+  deployed.
+- **The path filter is gone.** The workflow ran only on changes under `site/`
+  and to itself, which made it structurally blind: the counts it publishes are
+  measured from the schema, the check layer and the CI file. It now runs on
+  every push to main.
+- **The evidence lede is restored to the strong form**, because it is now true:
+  every number and every link on the page is checked before publication, and
+  either one failing stops the deployment. The two test counts stay named as a
+  per-release measurement.
+
 ## v9.218 — 2026-09-04 (P1.15 ship 3: one copy of every image, a logo that is not a megabyte, and one palette)
 
 The repository carried each published image twice, byte for byte, in `assets/`

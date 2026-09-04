@@ -19,6 +19,10 @@
 # What it DOES check:
 #   - Every relative-path Markdown link to a .md / .py / .sh / .sql / .html
 #   - Every comment-style reference in code: '# ../X.md', '// ../../Y.md', etc.
+#   - Every href= and src= in plain HTML (the published site); Flask templates
+#     are skipped, since their attributes are url_for() calls
+#   - Every github.com/EgorKhaklin/polaris-id/blob/main/... link, from any file,
+#     resolved back to the path it names in this tree
 #   - Reports file:line for every broken link
 #
 # Usage:
@@ -75,6 +79,15 @@ MD_LINK = re.compile(r'\]\(([^)]+)\)')
 CODE_PATH = re.compile(r'''(?:['\"])(\.{1,2}/[\w./-]+\.(?:md|py|sh|sql|html|js|css|json))(?:['\"])''')
 # Match Jinja template paths: {% extends "base.html" %} etc.
 JINJA_PATH = re.compile(r"['\"]([\w./-]+\.(?:html|md|css|js))['\"]")
+# Match href= and src= in HTML. The published page references its own images
+# and stylesheet by relative name; nothing checked those until v9.219. The
+# quote characters are written as escapes so this block stays inside a bash
+# command substitution without unbalancing its quoting.
+HTML_ATTR = re.compile(r"(?:href|src)\s*=\s*([\"\x27])([^\"\x27]+)")
+# A link into this repository own tree, written as a github.com blob URL
+# because a relative link would 404 on the published site. Strip it back to a
+# repo-relative path and check that the path exists.
+BLOB_URL = re.compile(r"https://github\.com/EgorKhaklin/polaris-id/blob/main/([^\"\x27#\s>]+)")
 
 # -----------------------------------------------------------------------------
 # Collect all reference candidates as (file, line, target_path)
@@ -121,6 +134,28 @@ for dirpath, dirs, files in os.walk(root):
                     checked += 1
                     if not os.path.exists(resolved):
                         broken.append((rel, lineno, target, 'markdown link'))
+            # HTML href/src, for the published page and any other plain HTML.
+            # Flask templates are skipped: their attributes are url_for() calls.
+            if fname.endswith(".html") and "{{" not in line and "{%" not in line:
+                for m in HTML_ATTR.finditer(line):
+                    target = m.group(2).strip()
+                    if not target or target[0] in ("#", "/"):
+                        continue
+                    if target.startswith(("http://", "https://", "mailto:", "data:")):
+                        continue
+                    target = target.split("#", 1)[0].split("?", 1)[0]
+                    if not target:
+                        continue
+                    resolved = os.path.normpath(os.path.join(os.path.dirname(path), target))
+                    checked += 1
+                    if not os.path.exists(resolved):
+                        broken.append((rel, lineno, target, "html attribute"))
+            # Absolute links into this repository own tree, from any file.
+            for m in BLOB_URL.finditer(line):
+                target = m.group(1).split("#", 1)[0].rstrip(").,")
+                checked += 1
+                if not os.path.exists(os.path.join(root, target)):
+                    broken.append((rel, lineno, target, "repo blob url"))
             # Code-style relative paths (only those starting with ./ or ../)
             for m in CODE_PATH.finditer(line):
                 target = m.group(1)

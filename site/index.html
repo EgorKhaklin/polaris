@@ -291,10 +291,11 @@ footer a{color:var(--ink-dim)}
 
 <section id="evidence" aria-labelledby="evidence-h">
     <h2 id="evidence-h">Verified, not asserted</h2>
-    <p class="lede">The check, job, route and schema-table counts on this page are recomputed
-        from the repository on every push, and a mismatch fails the build. The two test counts
-        are measured per release on the reference machine. CI does not just run tests; it
-        exercises the artifacts.</p>
+    <p class="lede">Every number and every link on this page is checked before it is
+        published: the counts are recomputed from the repository, the links and images are
+        resolved against the tree, and either one failing stops the deployment. The two test
+        counts are measured per release on the reference machine. CI does not just run tests;
+        it exercises the artifacts.</p>
     <div class="numbers">
         <div class="num"><b>645</b><span>product tests, live DB</span></div>
         <div class="num"><b>76</b><span>crypto-witness tests</span></div>
