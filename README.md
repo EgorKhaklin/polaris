@@ -103,8 +103,8 @@ Four layers. The schema is the core; everything else is a client of it.
                  │ signs under
       ┌──────────▼────────────────────────────────────────────────┐
       │  SIGNATURES           ML-DSA-65 default (FIPS 204),       │
-      │                       SLH-DSA registered (FIPS 205),     │
-      │                       not yet a signer; algorithm        │
+      │                       SLH-DSA registered (FIPS 205),      │
+      │                       not yet a signer; algorithm         │
       │                       registry: rotation is a row, not a  │
       │                       redeploy                            │
       └───────────────────────────────────────────────────────────┘
