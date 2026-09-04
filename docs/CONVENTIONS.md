@@ -44,9 +44,12 @@ conventional + agent-runbook docs; `lowercase.<ext>` for everything else.
 
 | Family | Pattern | Read by |
 |---|---|---|
-| Agent layer | `scripts/ai-<verb>.sh` | Agents (Claude) |
-| Operator layer | `scripts/polaris-<verb>.sh` | Humans (operators) |
-| Helpers | `scripts/<name>.py` | Other scripts (shell-out) |
+| Shell scripts | `scripts/polaris-<verb>.sh` | Whoever the header names: an operator, CI, or a contributor |
+| Python helpers | `scripts/polaris_<name>.py` | The shell script that shells out to them |
+
+One prefix, because the reader of a script is stated in its header rather than
+encoded in its name. The `ai-` prefix the fleet carried until v9.222 said who
+wrote the script, which is not information anyone running it needs.
 
 **Rule:** every script's first comment block (after shebang) is
 the doc-comment. Format:
@@ -177,13 +180,13 @@ as new entries cross-referencing the prior.
 **Bump procedure** (the ship discipline in [`../CLAUDE.md`](../CLAUDE.md)):
 1. Edit the `__version__` literal and `appVersion` in `deploy/helm/polaris/Chart.yaml`
 2. Prepend the CHANGELOG entry
-3. Run `python3 -m polaris_checks.run`, then `scripts/ai-done.sh` (must report READY)
+3. Run `python3 -m polaris_checks.run`, then `scripts/polaris-preflight.sh` (must report READY)
 
 ---
 
 ## 10. Documentation cross-references
 
-**Markdown links must resolve.** `bash scripts/ai-link-check.sh`
+**Markdown links must resolve.** `bash scripts/polaris-link-check.sh`
 walks every Markdown link of shape `[text]` followed by `(path)` and
 confirms target exists. CI runs this on every push.
 

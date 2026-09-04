@@ -81,7 +81,7 @@ curl -fsS -o /dev/null -w '%{http_code}\n' "https://${POLARIS_DOMAIN}/settings/w
 #  in the compose stack the app is reachable only through Caddy)
 
 # Confirm the WebAuthn ceremony tests pass (needs the 3.12 venv, Postgres, Redis)
-cd /path/to/polaris && ./scripts/ai-test.sh quick 2>&1 | grep -i webauthn
+cd /path/to/polaris && ./scripts/polaris-test.sh quick 2>&1 | grep -i webauthn
 
 # Confirm the structural invariants pass
 cd /path/to/polaris && python3 -m polaris_checks.run

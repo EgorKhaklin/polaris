@@ -34,7 +34,7 @@ fail() { echo "::error::$*" >&2; exit 1; }
 command -v jq >/dev/null 2>&1 || fail "jq is required"
 
 # ----------------------------------------------------------------------------
-# Find a python with the runtime surface (same search order as ai-test.sh).
+# Find a python with the runtime surface (same search order as polaris-test.sh).
 # ----------------------------------------------------------------------------
 PY="${POLARIS_TEST_PYTHON:-}"
 if [ -z "$PY" ]; then

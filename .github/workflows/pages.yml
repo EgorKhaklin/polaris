@@ -35,7 +35,7 @@ jobs:
       - name: Every stated count is recomputed from the tree
         run: python3 -m polaris_checks.run
       - name: Every link and image on the page resolves
-        run: bash scripts/ai-link-check.sh --ci
+        run: bash scripts/polaris-link-check.sh --ci
 
   deploy:
     name: Deploy site/ to GitHub Pages

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# ai-release-notes.sh: render the GitHub release body for one version from its
+# polaris-release-notes.sh: render the GitHub release body for one version from its
 # CHANGELOG.md entry, in the fixed shape every release uses:
 #   summary, Breaking changes, Upgrade, Verify this release, Details.
 #
 # Usage:
-#   scripts/ai-release-notes.sh 9.205            # prints the body to stdout
-#   scripts/ai-release-notes.sh 9.205 > notes.md && gh release create v9.205 --notes-file notes.md
+#   scripts/polaris-release-notes.sh 9.205            # prints the body to stdout
+#   scripts/polaris-release-notes.sh 9.205 > notes.md && gh release create v9.205 --notes-file notes.md
 #
 # The summary and the item list come from the CHANGELOG block verbatim. The
 # Breaking changes section is "None" unless the block contains a line that

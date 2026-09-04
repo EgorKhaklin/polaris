@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# scripts/ai-link-check.sh — verify cross-references resolve (v8.5)
+# scripts/polaris-link-check.sh — verify every cross-reference resolves
 #
 # After v8.4 reorganized 9 reference docs into docs/, ~30 cross-references
 # in code and Markdown had to be updated by a Python pass. The pass caught
@@ -26,8 +26,8 @@
 #   - Reports file:line for every broken link
 #
 # Usage:
-#     scripts/ai-link-check.sh        # human-readable report
-#     scripts/ai-link-check.sh --ci   # fail with exit 1 on any broken link
+#     scripts/polaris-link-check.sh        # human-readable report
+#     scripts/polaris-link-check.sh --ci   # fail with exit 1 on any broken link
 # =============================================================================
 
 set -uo pipefail
@@ -97,7 +97,7 @@ checked = 0
 
 # Files whose comments contain illustrative placeholder paths
 # (e.g. "../X.md" as an EXAMPLE, not a real reference).
-SELF_REFERENTIAL = {'ai-link-check.sh'}
+SELF_REFERENTIAL = {'polaris-link-check.sh'}
 
 for dirpath, dirs, files in os.walk(root):
     dirs[:] = [d for d in dirs if d not in SKIP_DIRS and not d.startswith('.')]

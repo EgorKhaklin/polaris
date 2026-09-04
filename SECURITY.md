@@ -62,7 +62,7 @@ initial report, extended for Critical findings as the patch warrants.
 - The SQL schema, procedures, triggers and indexes (`polaris_sql/`)
 - The Rust ZK prover and verifier (`polaris_zk/`) and the Python second witness
 - The invariant-check layer (`polaris_checks/`)
-- The operator scripts (`scripts/polaris-*.sh`)
+- Every script under `scripts/` (all now `polaris-*`: operator tools, the CI drills and the contributor gates)
 - The Dockerfiles, the compose files, the Helm chart and the Linux installer
 - The macOS launcher
 - The migration framework
@@ -150,5 +150,5 @@ policy.
 ---
 
 *Maintainer: Egor Khaklin (VANTA)*
-*Last updated: 2026-09-03 (v9.201)*
+*Last updated: 2026-09-04 (v9.222)*
 *Machine-readable: the live `/.well-known/security.txt` route (RFC 9116)*

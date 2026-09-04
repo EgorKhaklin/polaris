@@ -5,6 +5,35 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.222 — 2026-09-04 (P1.16 ship 3: the scripts are named for their job, and indexed by their reader)
+
+Seven scripts carried an `ai-` prefix that said who wrote them rather than who
+runs them. Two of the seven are contributor gates that CI invokes on every
+push, one is the assessor tool the red-team scope points at, and one renders
+every release body. None of that is agent tooling, and an operator opening
+`scripts/` should not have to decide which half of the directory is meant for
+them.
+
+- **One naming rule.** `ai-coverage.sh` becomes `polaris-coverage.sh`,
+  `ai-link-check.sh` becomes `polaris-link-check.sh`, `ai-test.sh` becomes
+  `polaris-test.sh`, `ai-done.sh` becomes `polaris-preflight.sh` (named for
+  what it is rather than for the state it announces),
+  `ai-release-notes.sh` becomes `polaris-release-notes.sh`,
+  `ai-authz-audit.sh` becomes `polaris-authz-audit.sh`, and its Python half
+  becomes `polaris_authz_audit.py`. Every caller moves in the same commit: two
+  workflows, the pre-commit configuration, the coverage configuration, the
+  check layer and its tests, the web test suite, the version file's own bump
+  procedure, and nine documents.
+- **`scripts/README.md` is the index.** Forty scripts in four tables by reader:
+  operator, CI, contributor, and the two Python helpers. Each row states what
+  the script does and who calls it.
+- **The naming convention is rewritten.** `docs/CONVENTIONS.md` described an
+  agent layer and an operator layer; there is one layer now, and the reader of
+  a script is stated in its header rather than encoded in its name.
+- **Four headers lose their archaeology.** The pre-ship gate no longer opens
+  by naming the apparatus removed at v9.55, and three others drop version
+  stamps that described when they were written rather than what they do.
+
 ## v9.221 — 2026-09-04 (P1.16 ship 1: delete what nothing calls, and prove the one property a deleted script was carrying)
 
 Subtractive, with one addition: the schema loader's idempotency claim moves

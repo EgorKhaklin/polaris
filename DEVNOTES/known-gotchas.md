@@ -124,8 +124,7 @@ This bit `polaris_mac_launch.sh` once. Fixed in v5.
 ### `awk match($0, RE, arr)` with the array argument is gawk-only
 
 Linux base awk (mawk on Ubuntu/Debian) doesn't support the third array
-argument. Use Python or grep-based parsing for portability. Caught in
-`scripts/ai-context-digest.sh`.
+argument. Use Python or grep-based parsing for portability.
 
 ### Playwright `wait_for_load_state("networkidle")` hangs on this site
 
@@ -261,7 +260,7 @@ delimiter is single-quoted.
 
 Fix: don't put bare backticks in the heredoc body. If you need to match
 a backtick in regex, use the character escape or rewrite to avoid it.
-Caught when ai-link-check.sh's regex had `[\'"`]` and the script wouldn't
+Caught when polaris-link-check.sh's regex had `[\'"`]` and the script wouldn't
 parse.
 
 ### `setsid` doesn't exist on macOS
@@ -290,7 +289,7 @@ Every release had to remember: tests green, CHANGELOG updated,
 link-check clean, no orphaned debug code, no stale `?v=v8.X` cache
 busters. Easy to miss one.
 
-`scripts/ai-done.sh` runs `polaris_checks` plus the link-check and
+`scripts/polaris-preflight.sh` runs `polaris_checks` plus the link-check and
 prints a single verdict. Make this the last step before claiming a
 feature is shipped.
 

@@ -17,8 +17,8 @@
 ## Test discipline
 
 - [ ] `python3 -m polaris_checks.run` reports READY
-- [ ] `./scripts/ai-test.sh` passes (the DB-backed suites)
-- [ ] `./scripts/ai-link-check.sh --ci` resolves every reference
+- [ ] `./scripts/polaris-test.sh` passes (the DB-backed suites)
+- [ ] `./scripts/polaris-link-check.sh --ci` resolves every reference
 - [ ] New behaviour carries a test that fails without it, or a `check_*` with a detection test
 - [ ] `polaris_web/__version__.py`, `deploy/helm/polaris/Chart.yaml` and CHANGELOG.md are updated in this PR
 - [ ] Documentation that describes the changed behaviour is updated in this PR

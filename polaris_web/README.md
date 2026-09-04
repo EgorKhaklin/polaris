@@ -326,8 +326,8 @@ factory; see also `../DEVNOTES/rate-limiter.md`.
 
 ```bash
 # from the project root, via the cognitive-layer wrapper:
-../scripts/ai-test.sh           # full suite (~60s)
-../scripts/ai-test.sh quick     # skip slow concurrency/property tests
+../scripts/polaris-test.sh           # full suite (~60s)
+../scripts/polaris-test.sh quick     # skip slow concurrency/property tests
 
 # or directly:
 python3 test_app.py

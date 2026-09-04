@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""ai_authz_audit.py — unified authorization-as-code report (v9.19).
+"""polaris_authz_audit.py — unified authorization-as-code report (v9.19).
 
 Polaris's authorization model is distributed across four surfaces:
   1. `polaris_web/app.py`  — `@security.login_required` + `@security.require_role(...)` decorators
@@ -21,9 +21,9 @@ Output sections:
         - tables in 01_schema.sql with no GRANT in 09_grants.sql
 
 CLI:
-    python3 ai_authz_audit.py             # human-readable
-    python3 ai_authz_audit.py --json      # JSON (audit trail)
-    python3 ai_authz_audit.py --role NAME # filter to one role
+    python3 polaris_authz_audit.py             # human-readable
+    python3 polaris_authz_audit.py --json      # JSON (audit trail)
+    python3 polaris_authz_audit.py --role NAME # filter to one role
 """
 
 from __future__ import annotations

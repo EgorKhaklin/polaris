@@ -880,13 +880,13 @@ def test_coverage_gated_check_discriminates(tmp_path):
     wf = tmp_path / ".github" / "workflows"
     scripts.mkdir()
     wf.mkdir(parents=True)
-    cov = scripts / "ai-coverage.sh"
+    cov = scripts / "polaris-coverage.sh"
     ci = wf / "ci.yml"
 
     # No coverage script -> coverage not measured.
     ci.write_text("jobs:\n  test:\n    steps:\n      - run: python -m unittest\n")
     assert checks.check_coverage_gated(tmp_path)[0].level == "FAIL", \
-        "must FAIL when ai-coverage.sh is absent"
+        "must FAIL when polaris-coverage.sh is absent"
 
     # Script measures but does not gate.
     cov.write_text("coverage report\n")
@@ -896,18 +896,18 @@ def test_coverage_gated_check_discriminates(tmp_path):
     # Gates in the script, but CI never runs it.
     cov.write_text("coverage report --fail-under=$COVERAGE_FLOOR\n")
     assert checks.check_coverage_gated(tmp_path)[0].level == "FAIL", \
-        "must FAIL when CI does not run ai-coverage.sh"
+        "must FAIL when CI does not run polaris-coverage.sh"
 
     # CI runs it with a floor, but no Rust coverage gate.
     ci.write_text("jobs:\n  test:\n    steps:\n"
                   "      - env:\n          COVERAGE_FLOOR: \"72\"\n"
-                  "        run: bash scripts/ai-coverage.sh\n")
+                  "        run: bash scripts/polaris-coverage.sh\n")
     assert checks.check_coverage_gated(tmp_path)[0].level == "FAIL", \
         "must FAIL when Rust coverage is not gated (no fail-under-lines)"
 
     ci.write_text("jobs:\n  test:\n    steps:\n"
                   "      - env:\n          COVERAGE_FLOOR: \"72\"\n"
-                  "        run: bash scripts/ai-coverage.sh\n"
+                  "        run: bash scripts/polaris-coverage.sh\n"
                   "      - run: cargo llvm-cov --fail-under-lines 85\n")
     assert checks.check_coverage_gated(tmp_path)[0].level == "OK", \
         "must PASS with the Python script+floor, CI running it, and the Rust gate"
@@ -3784,7 +3784,7 @@ def test_presentation_surface_check_fails_on_a_missing_file_or_stale_policy(tmp_
         "SECURITY.md": "Report a vulnerability through GitHub, which creates a private advisory.\n`gh attestation verify`\n*Last updated: 2026-09-03 (v9.205)*\n",
         "CONTRIBUTING.md": "*Last updated: 2026-09-03 (v9.205)*\n",
         ".github/ISSUE_TEMPLATE/config.yml": "blank_issues_enabled: false\ncontact_links:\n  - url: https://github.com/x/y/security/advisories/new\n",
-        ".github/PULL_REQUEST_TEMPLATE.md": "## Motivation\n", "scripts/ai-release-notes.sh": "#!/bin/bash\n",
+        ".github/PULL_REQUEST_TEMPLATE.md": "## Motivation\n", "scripts/polaris-release-notes.sh": "#!/bin/bash\n",
         "polaris_web/__version__.py": "__version__ = \"9.205\"\n",
     }
     write(good)

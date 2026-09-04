@@ -48,7 +48,7 @@ polaris/
 │   └── paper/          ← the academic report (TeX and PDF)
 ├── DEVNOTES/           ← design notes, the project record, per-ship notes under ships/
 ├── meta/               ← structural records (redaction proof, structural architecture, the TLA+ model)
-├── scripts/            ← operator tools (polaris-*) and the workflow scripts (ai-*)
+├── scripts/            ← every shell tool (polaris-*): deploys, drills, gates, checks
 ├── site/               ← the published project page (GitHub Pages), its logo and the Atlas captures
 │
 ├── .github/workflows/  ← ci.yml (14 jobs), dr-drill.yml (monthly), sbom.yml (per release), pages.yml (the site)
@@ -95,7 +95,7 @@ publishes `site/`.
 | Directory | What |
 |---|---|
 | [`polaris_checks/`](../../polaris_checks/) | The flat invariant layer: plain `check_*(repo_root)` functions with detection tests; `python3 -m polaris_checks.run` gates CI. |
-| [`scripts/`](../../scripts/) | Operator tools (`polaris-*`): deploy, backup, restore, drills, migration, secrets, recovery. Workflow scripts (`ai-*`): the ship gate, the link checker, the test wrapper, coverage. |
+| [`scripts/`](../../scripts/) | Every shell tool, all `polaris-*`: deploy, backup, restore, the drills, migrations, secrets, recovery, and the contributor gates (preflight, link check, tests, coverage). [`scripts/README.md`](../../scripts/README.md) names the reader and the caller of each. |
 | [`deploy/`](../../deploy/) | The Helm profile, the Linux install and units, the observability configuration. |
 | [`meta/`](../../meta/) | Structural records: the redaction proof, the structural-architecture note, the TLA+ model of C3. |
 

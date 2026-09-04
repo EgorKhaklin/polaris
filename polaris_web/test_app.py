@@ -93,7 +93,7 @@ def reload_sample_data():
     # run as the schema OWNER, which is a different identity from the one the
     # app under test connects as. CI already satisfies this by running
     # everything as `postgres`; a least-privilege local runner does not, which
-    # is how scripts/ai-test.sh silently produced 200 setUp errors.
+    # is how scripts/polaris-test.sh silently produced 200 setUp errors.
     reload_user = os.environ.get('POLARIS_TEST_RELOAD_USER') or db_user
     reload_pass = os.environ.get('POLARIS_TEST_RELOAD_PASSWORD')
     if reload_pass is None:

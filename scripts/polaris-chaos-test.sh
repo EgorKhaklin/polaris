@@ -74,7 +74,7 @@ cd "${POLARIS_ROOT}"
 # 3.9, importing polaris_web/zk.py raises on its 3.10+ annotations, and the
 # zk_binary_absent scenario silently mistook that import failure for a
 # verifier refusal: permanently fail-safe, never exercising anything. Same
-# discovery order as scripts/ai-test.sh.
+# discovery order as scripts/polaris-test.sh.
 PY_BIN="${POLARIS_TEST_PYTHON:-}"
 if [[ -z "${PY_BIN}" ]]; then
     for cand in \

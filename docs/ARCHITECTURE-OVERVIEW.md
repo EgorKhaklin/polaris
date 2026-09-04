@@ -274,7 +274,7 @@ algorithms flow through the `CryptographicAlgorithm` table (C7)).
   `13_substrate.sql`, run when the database initializes.
 
 Run the check layer via `python3 -m polaris_checks.run`; the DB-backed
-suites via `./scripts/ai-test.sh` (which wraps the env). The measured
+suites via `./scripts/polaris-test.sh` (which wraps the env). The measured
 counts, stamped with the version they were taken at, are in the
 README's "Verified, not asserted" table.
 

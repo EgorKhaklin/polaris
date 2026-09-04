@@ -161,7 +161,7 @@ Most of those jobs carry a comment naming the specific past failure they exist t
 
 ```bash
 python3 -m polaris_checks.run      # the invariant layer, no database needed
-./scripts/ai-test.sh               # the full product suite against local Postgres
+./scripts/polaris-test.sh               # the full product suite against local Postgres
 ./polaris_mac_launch.sh test       # the same, via the launcher
 ```
 

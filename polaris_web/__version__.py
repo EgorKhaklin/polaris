@@ -16,10 +16,10 @@ match a future bump — old entries are frozen (audit-of-record discipline).
 Bump procedure (see CLAUDE.md "Shipping"):
     1. Edit `__version__` below.
     2. Prepend a `## vX.Y — DATE (subtitle)` block to CHANGELOG.md.
-    3. Run `bash scripts/ai-done.sh` (polaris_checks + link-check) until READY.
+    3. Run `bash scripts/polaris-preflight.sh` (polaris_checks + link-check) until READY.
 """
 
-__version__: str = "9.221"
+__version__: str = "9.222"
 
 
 # Backwards-compat alias for code that imported `POLARIS_VERSION`

@@ -4,7 +4,7 @@ run.py — the check runner. One command, no apparatus.
     python3 -m polaris_checks.run            # human-readable; exit 1 on any FAIL
     python3 -m polaris_checks.run --json     # machine-readable
 
-This replaces the ai-* script fleet + the colony runner: it runs every check
+One entry point for the invariant layer: it runs every check
 in polaris_checks.checks and reports. Exit code is non-zero iff any check FAILs,
 so it gates CI directly.
 """

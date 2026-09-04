@@ -112,7 +112,7 @@ break.
 - **Every route in [app.py](../polaris_web/app.py)**, with role enforcement
   (`admin`, `operator`, `auditor`) as implemented by `require_role` in
   [security.py](../polaris_web/security.py). The
-  [authz audit script](../scripts/ai-authz-audit.sh) lists the expected
+  [authz audit script](../scripts/polaris-authz-audit.sh) lists the expected
   guard per route; a route reachable below its documented role is a
   finding.
 - **Authentication.** Password login, the WebAuthn second factor

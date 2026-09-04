@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================================
-# scripts/ai-coverage.sh — measure + gate test coverage (roadmap P0.8).
+# scripts/polaris-coverage.sh — measure + gate test coverage (roadmap P0.8).
 #
 # Runs the Python suites under coverage.py in PARALLEL-APPEND mode (each suite
 # writes its own .coverage.* data file), combines them, prints the report, and
@@ -8,14 +8,14 @@
 # it is set just below the measured baseline, so real regressions fail CI while
 # noise does not, and it is raised deliberately as coverage improves.
 #
-# The DB suites need the same environment as scripts/ai-test.sh (Postgres as the
-# schema owner; see DEVNOTES / the ai-test.sh header). CI provides it; locally,
-# export POLARIS_DB_* first or run via ai-test.sh's environment.
+# The DB suites need the same environment as scripts/polaris-test.sh (Postgres as the
+# schema owner; see DEVNOTES / the polaris-test.sh header). CI provides it; locally,
+# export POLARIS_DB_* first or run via polaris-test.sh's environment.
 #
 # Usage:
-#   scripts/ai-coverage.sh                 # run, report, gate on the floor
-#   scripts/ai-coverage.sh --no-gate       # run + report only (no fail-under)
-#   COVERAGE_FLOOR=80 scripts/ai-coverage.sh   # override the floor
+#   scripts/polaris-coverage.sh                 # run, report, gate on the floor
+#   scripts/polaris-coverage.sh --no-gate       # run + report only (no fail-under)
+#   COVERAGE_FLOOR=80 scripts/polaris-coverage.sh   # override the floor
 # ============================================================================
 
 set -uo pipefail

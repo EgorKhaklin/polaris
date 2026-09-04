@@ -47,15 +47,15 @@ functions, with tested detection correctness.
 # Run the C1-C10 check layer (no DB; gates on any FAIL):
 python3 -m polaris_checks.run
 
-# The DB-backed product suites (need Postgres + the venv; ai-test wraps env):
-./scripts/ai-test.sh
+# The DB-backed product suites (need Postgres + the venv; polaris-test wraps env):
+./scripts/polaris-test.sh
 # or directly, with a py3.12 venv that has the full app stack:
 cd polaris_web && python3 -m unittest test_check_constraints test_invariants_property test_redaction_property test_app
 cd polaris_cli && python3 -m unittest test_cli
 
 # Cross-reference integrity + the thin pre-ship gate:
-./scripts/ai-link-check.sh --ci
-./scripts/ai-done.sh          # polaris_checks + link-check; --strict to fail hard
+./scripts/polaris-link-check.sh --ci
+./scripts/polaris-preflight.sh          # polaris_checks + link-check; --strict to fail hard
 ```
 
 Read first: [`MISSION.md`](MISSION.md) (constitution), [`ROADMAP.md`](ROADMAP.md)
@@ -72,7 +72,7 @@ A ship is a coherent change, verified:
 3. **Bump** `polaris_web/__version__.py` (`MAJOR.MINOR`) and `appVersion` in
    `deploy/helm/polaris/Chart.yaml` to match (`check_helm_chart_version_current`).
 4. **CHANGELOG:** prepend a `## vX.Y, DATE (subtitle)` block.
-5. **Gate:** `bash scripts/ai-done.sh` must report READY; `ai-link-check.sh --ci`
+5. **Gate:** `bash scripts/polaris-preflight.sh` must report READY; `polaris-link-check.sh --ci`
    must resolve.
 6. **Definition of shipped:** the new test passes, the gate passes, the work
    closes against its spec.

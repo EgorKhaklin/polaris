@@ -23,9 +23,9 @@ repos:
         always_run: true
 
       # Cross-reference integrity: every Markdown link + code path resolves.
-      - id: ai-link-check
-        name: ai-link-check (Markdown + cross-ref resolution)
-        entry: bash scripts/ai-link-check.sh --ci
+      - id: polaris-link-check
+        name: polaris-link-check (Markdown + cross-ref resolution)
+        entry: bash scripts/polaris-link-check.sh --ci
         language: system
         pass_filenames: false
         always_run: true

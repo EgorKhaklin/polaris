@@ -2293,7 +2293,7 @@ def check_docs_index_coverage(root: pathlib.Path) -> list[Finding]:
 def check_presentation_surface(root: pathlib.Path) -> list[Finding]:
     required = ("CODE_OF_CONDUCT.md", "CITATION.cff", "SECURITY.md", "CONTRIBUTING.md",
                 ".github/ISSUE_TEMPLATE/config.yml", ".github/PULL_REQUEST_TEMPLATE.md",
-                "scripts/ai-release-notes.sh")
+                "scripts/polaris-release-notes.sh")
     missing = [r for r in required if not (root / r).is_file()]
     if missing:
         return _fail("presentation_surface", f"missing: {', '.join(missing)}")
@@ -3208,17 +3208,17 @@ def check_zk_tree_depth_synced(root: pathlib.Path) -> list[Finding]:
 # ratchet (fails on a drop). Pin that the Python gate script exists and CI runs
 # it with a floor, and that CI gates the Rust library coverage too.
 def check_coverage_gated(root: pathlib.Path) -> list[Finding]:
-    sh = _read(root, "scripts/ai-coverage.sh")
+    sh = _read(root, "scripts/polaris-coverage.sh")
     if not sh:
-        return _fail("coverage_gate", "scripts/ai-coverage.sh is missing; coverage is not measured")
+        return _fail("coverage_gate", "scripts/polaris-coverage.sh is missing; coverage is not measured")
     if "--fail-under" not in sh:
         return _fail("coverage_gate",
-                     "ai-coverage.sh does not gate on a floor (--fail-under); it measures "
+                     "polaris-coverage.sh does not gate on a floor (--fail-under); it measures "
                      "coverage without failing on a regression")
     ci = _read(root, ".github/workflows/ci.yml")
-    if "ai-coverage.sh" not in ci:
+    if "polaris-coverage.sh" not in ci:
         return _fail("coverage_gate",
-                     "CI does not run scripts/ai-coverage.sh; the Python coverage floor is "
+                     "CI does not run scripts/polaris-coverage.sh; the Python coverage floor is "
                      "never enforced")
     if "COVERAGE_FLOOR" not in ci:
         return _fail("coverage_gate", "CI runs coverage without setting a COVERAGE_FLOOR")
@@ -3227,7 +3227,7 @@ def check_coverage_gated(root: pathlib.Path) -> list[Finding]:
                      "CI does not gate the Rust library coverage (cargo llvm-cov "
                      "--fail-under-lines); only Python is floored")
     return _ok("coverage_gate",
-               "coverage is measured and gated on both surfaces: Python via ai-coverage.sh "
+               "coverage is measured and gated on both surfaces: Python via polaris-coverage.sh "
                "with a COVERAGE_FLOOR, Rust via cargo llvm-cov --fail-under-lines")
 
 

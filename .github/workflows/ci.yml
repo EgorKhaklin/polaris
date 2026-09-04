@@ -116,8 +116,8 @@ jobs:
 
       # The loader's header has claimed since v6 that every file is idempotent,
       # so the documented recovery path (reload the schema, re-apply the
-      # migrations) is safe to repeat. scripts/polaris-idempotency-test.sh
-      # proved that by hand and nothing ran it, so the property lands here, on
+      # migrations) is safe to repeat. A standalone script proved that by hand
+      # and nothing ran it (deleted at v9.221), so the property lands here, on
       # the database CI has already built. Reloading WITHOUT re-migrating drops
       # the migration-created tables by design, which is why this asserts the
       # whole documented path rather than the loader alone.
@@ -155,7 +155,7 @@ jobs:
         run: python3 -m polaris_checks.run
 
       # P0.8 — the DB suites (check-constraints, property, app, CLI) + the
-      # detection tests run once under coverage via scripts/ai-coverage.sh, which
+      # detection tests run once under coverage via scripts/polaris-coverage.sh, which
       # combines them and fails on a red suite OR a coverage drop below the
       # floor. Consolidated here (rather than as separate steps) so nothing runs
       # twice; the script prints `::error::suite failed: <which>` for granularity.
@@ -193,7 +193,7 @@ jobs:
       - name: Python suites under coverage + floor gate (DB, with ZK binary)
         env:
           COVERAGE_FLOOR: "72"
-        run: bash scripts/ai-coverage.sh
+        run: bash scripts/polaris-coverage.sh
 
       # v9.190 (roadmap P1.8) — abuse controls, exercised: promtool unit tests
       # of the velocity + quota alerts, then a per-agency verification quota
@@ -228,8 +228,8 @@ jobs:
           path: /tmp/perf-baseline.json
           if-no-files-found: ignore
 
-      - name: ai-link-check
-        run: bash scripts/ai-link-check.sh --ci
+      - name: polaris-link-check
+        run: bash scripts/polaris-link-check.sh --ci
 
       - name: ZK crate tests
         working-directory: polaris_zk

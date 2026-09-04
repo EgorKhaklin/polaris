@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# scripts/ai-authz-audit.sh — authorization-as-code review (v9.19)
+# scripts/polaris-authz-audit.sh — the who-can-do-what report
 #
 # Walks all four authorization surfaces (app.py decorators + 09_grants.sql +
 # AppUser.role CHECK enum + IssuerDiscretionPolicy) and emits a unified
@@ -12,9 +12,9 @@
 # rows are optional DB context if reachable).
 #
 # Usage:
-#     scripts/ai-authz-audit.sh                    # full report
-#     scripts/ai-authz-audit.sh --json             # JSON (audit trail)
-#     scripts/ai-authz-audit.sh --role admin       # filter to one role
+#     scripts/polaris-authz-audit.sh                    # full report
+#     scripts/polaris-authz-audit.sh --json             # JSON (audit trail)
+#     scripts/polaris-authz-audit.sh --role admin       # filter to one role
 # =============================================================================
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -30,7 +30,7 @@ for cand in \
         break
     fi
 done
-[ -z "$PY" ] && { echo "ai-authz-audit: no python3" >&2; exit 1; }
+[ -z "$PY" ] && { echo "polaris-authz-audit: no python3" >&2; exit 1; }
 
 for arg in "$@"; do
     case "$arg" in
@@ -41,4 +41,4 @@ for arg in "$@"; do
     esac
 done
 
-exec "$PY" "$HERE/ai_authz_audit.py" "$@"
+exec "$PY" "$HERE/polaris_authz_audit.py" "$@"

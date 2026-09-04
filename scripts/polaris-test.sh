@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# scripts/ai-test.sh — one-shot test runner (v8.5)
+# scripts/polaris-test.sh — one-shot runner for the database-backed suites
 #
 # The Polaris test suite needs:
 #   - Python venv with flask + psycopg2 (the system python doesn't have them)
@@ -12,15 +12,15 @@
 #     tests can lock it; reload_sample_data() fixes it but only between tests,
 #     not before the first one)
 #
-# Pre-v8.5 every test run required typing all of the above. ai-test.sh wraps
+# Pre-v8.5 every test run required typing all of the above. polaris-test.sh wraps
 # it. The redis instance is per-invocation so failures don't leave a stale
 # pid file behind.
 #
 # Usage:
-#     scripts/ai-test.sh                       # full suite
-#     scripts/ai-test.sh quick                 # skip the slow tests
-#     scripts/ai-test.sh CursorPaginationTokensTests   # single class
-#     scripts/ai-test.sh CursorPaginationTokensTests.test_cursor_walks_full_set_with_no_dupes_or_skips
+#     scripts/polaris-test.sh                       # full suite
+#     scripts/polaris-test.sh quick                 # skip the slow tests
+#     scripts/polaris-test.sh CursorPaginationTokensTests   # single class
+#     scripts/polaris-test.sh CursorPaginationTokensTests.test_cursor_walks_full_set_with_no_dupes_or_skips
 # =============================================================================
 
 set -uo pipefail

@@ -34,13 +34,13 @@ A pull request is ready when all of these hold:
 
 - `python3 -m polaris_checks.run` reports READY (the invariant layer; no
   database needed).
-- `./scripts/ai-test.sh` passes: the DB-backed suites in `polaris_web/` and
+- `./scripts/polaris-test.sh` passes: the DB-backed suites in `polaris_web/` and
   `polaris_cli/` against a local PostgreSQL (`quick` skips the slow
   concurrency and property tests while iterating).
 - The SQL self-tests in `polaris_sql/08_tests.sql` pass; they run when the
   database container initializes.
-- `./scripts/ai-link-check.sh --ci` resolves every reference.
-- `./scripts/ai-done.sh` reports READY; it runs the checks and the link
+- `./scripts/polaris-link-check.sh --ci` resolves every reference.
+- `./scripts/polaris-preflight.sh` reports READY; it runs the checks and the link
   checker as the pre-ship gate.
 - New behaviour carries a test that fails without it. A new invariant carries
   a `check_*` in `polaris_checks/checks.py` with a detection test in
@@ -62,7 +62,7 @@ pre-commit install
 | Hook | What it does |
 |---|---|
 | `polaris-checks` | Runs the invariant layer; non-zero on any FAIL |
-| `ai-link-check` | Every Markdown link and code path must resolve |
+| `polaris-link-check` | Every Markdown link and code path must resolve |
 | `no-secret-in-prod-compose` | Refuses a literal secret value in the production compose file |
 | `em-dash-block-new` | Refuses a new em-dash on any human-facing surface ([docs/CONVENTIONS.md](docs/CONVENTIONS.md), section 11) |
 
