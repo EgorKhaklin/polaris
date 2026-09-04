@@ -5,6 +5,40 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.212 — 2026-09-04 (the freeze line is recorded closed, on the owner's direction)
+
+The constitution's freeze line was written as a definition of done with an
+expiry: six mechanically verifiable conditions, three permitted classes of
+work after them, and an abandonment clause for the thesis. All six conditions
+are met, the abandonment clause fired at the v9.40 terminus, and the external
+trigger the section requires for a new arc occurred on 2026-08-31. Until now
+MISSION.md carried that as a note appended by an agent; the owner directed
+that it be recorded as what it is.
+
+- **Nothing in the freeze line is edited.** The six conditions, the three
+  classes of permitted work, the new-arc rule, the abandonment clause and the
+  tamper paragraph stand byte for byte. The section's own mechanism, its
+  amendment log, carries the change.
+- **The note above the log becomes a closure statement**: which condition is
+  met and by what command, that the abandonment clause fired and that a check
+  keeps `THESIS.md` from drifting back to the open framing, that the arc is
+  national deployment under ROADMAP.md's phases with the constitution as a
+  hard gate on each, and that `docs/PRODUCTION-READINESS.md` is the bound on
+  every claim the repository makes.
+- **The amendment log gains its second row**, dated today: pending to closed,
+  cost none because no condition changed, authority the owner's recorded
+  direction. Its header column is renamed from Sanctum to Authority, since
+  the Sanctum apparatus it named was removed at v9.55; the first row keeps
+  its own authority verbatim.
+- **The amendment rule at the end of the document** now says the conditions
+  are never edited (rather than that the section is never edited, which the
+  log contradicted), and states plainly that "production ready" is not a
+  phrase this project applies to itself until the decisions in the readiness
+  ledger are recorded as made for a named deployment.
+- **ROADMAP.md's decision record** is restated to match: the freeze line is
+  closed, the trigger is named, the constitution still gates every phase, and
+  the readiness ledger bounds the claims.
+
 ## v9.211 — 2026-09-04 (P1.17 ship 6: the chrome stops performing, and the seed stops naming its author)
 
 The last ship of row P1.17, and of the presentation pass.

@@ -10,27 +10,50 @@ rule at the end of this file.
 
 ## Freeze line — definition of done (v9.27, amended once v9.29)
 
-**Status note (2026-09-02, additive).** Nothing below this note is
-altered. Two of this section's conditions have since fired, and both are
-recorded elsewhere in this repository. The abandonment clause fired: the
-v9.40 terminus passed with no external cold read, so
-[docs/THESIS.md](docs/THESIS.md) documents the strong claim as retired and
-inconclusive. The external trigger this section requires for a new arc
-occurred on 2026-08-31, when the project owner directed a complete plan to
-national deployment; [ROADMAP.md](ROADMAP.md) carries that decision record
-and CHANGELOG v9.158 the ship. The active arc is national deployment. The
-constitution is carried through it as a hard gate and nothing in it is
-softened.
+**Status: closed and passed (2026-09-04, additive).** Nothing below this
+note is altered, softened, or removed; the freeze line stands as written and
+is now a closed record rather than a pending target.
+
+*The six conditions are met, and each is still verifiable from outside by
+the command it names:* the ten constraints are enforced in the schema and
+exercised by the constraint suite; the invariant layer maps a plain check to
+each of them and to the production posture, every check paired with a
+detection test, and `python3 -m polaris_checks.run` exits zero; the property
+tests drive adversarial inputs at C1, C2 and C3 and at the redaction proof;
+the Rust prover and the Python second witness agree bit for bit on the epoch
+root; the observability surface is wired and serves; and the full product
+suite is green on every push, in a CI that also boots the production stack,
+proves the post-quantum handshake, round-trips an encrypted backup, and
+measures recovery against its targets.
+
+*The abandonment clause fired.* The v9.40 terminus passed with no external
+cold read, so [docs/THESIS.md](docs/THESIS.md) documents the strong claim as
+retired and inconclusive, permanently. `check_thesis_terminus_honest` fails
+the build if that framing ever drifts back to open.
+
+*The external trigger this section requires for a new arc occurred* on
+2026-08-31, when the project owner directed a complete plan to national
+deployment. [ROADMAP.md](ROADMAP.md) carries that decision record; the arc is
+national deployment, and it runs under the phases in that file with this
+constitution as a hard gate on every one of them. What such a deployment
+still needs, and what it may not yet claim, is
+[docs/PRODUCTION-READINESS.md](docs/PRODUCTION-READINESS.md), which is the
+bound on every claim this repository makes.
 
 **AMENDMENT LOG:**
 
-| Date         | Old → New          | Cost                | Sanctum |
-|--------------|--------------------| ------------------- |---------|
-| 2026-05-16   | v9.30 → v9.31      | one ship slip       | v9.29 |
+| Date         | Old → New          | Cost                | Authority |
+|--------------|--------------------| ------------------- |-----------|
+| 2026-05-16   | v9.30 → v9.31      | one ship slip       | v9.29 Sanctum |
+| 2026-09-04   | pending → closed   | none: no condition changed | Owner direction, recorded in CHANGELOG v9.212 |
 
-The amendment is logged once, with stated cost. No further amendments
-are pre-authorized. The next amendment requires another Sanctum + the
-operator routing through the external referent.
+Each amendment is logged with its stated cost. No further amendments are
+pre-authorized; the next one requires the owner's recorded direction, in
+this table and in the CHANGELOG. The second row records a status change,
+not a change to any condition: the conditions themselves are unaltered,
+and the 2026-09-04 note above says which of them are met and how each is
+checked. (The Sanctum apparatus the first row names was removed at v9.55;
+the owner's recorded direction is what authorizes an amendment now.)
 
 ---
 
@@ -307,8 +330,13 @@ registry rather than in code.
 
 ## Amending this document
 
-- The freeze-line section is never edited. Dated notes may be appended
-  beneath its heading; they alter nothing below them.
+- The freeze-line section's conditions are never edited. Dated notes may be
+  appended beneath its heading and rows to its amendment log; neither alters
+  a condition, and the log states the authority for each change.
+- The bound on what this repository may claim is
+  [docs/PRODUCTION-READINESS.md](docs/PRODUCTION-READINESS.md). "Production
+  ready" is not a phrase this project applies to itself until the decisions
+  listed there are recorded as made for a named deployment.
 - A row of the constraints table changes only together with the object
   that enforces it and the check that pins it.
 - Every amendment is recorded in [CHANGELOG.md](CHANGELOG.md) in the

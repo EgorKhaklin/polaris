@@ -94,11 +94,11 @@ Four layers. The schema is the core; everything else is a client of it.
                  │                              │ subprocess
       ┌──────────▼─────────────┐   ┌────────────▼─────────────────┐
       │  SCHEMA  PostgreSQL 16 │   │  ZK PROVER  Rust + Plonky2   │
-      │  tables, stored        │   │  Merkle-inclusion SNARK,     │
-      │  procedures, append-   │   │  re-verified bit-for-bit by  │
-      │  only audit triggers   │   │  an independent Python       │
-      │  (the security         │   │  second witness              │
-      │  boundary)             │   └──────────────────────────────┘
+      │  tables, procedures,   │   │  Merkle-inclusion SNARK,     │
+      │  triggers, append-only │   │  re-verified bit-for-bit by  │
+      │  audit (the security   │   │  an independent Python       │
+      │  boundary)             │   │  second witness              │
+      │                        │   └──────────────────────────────┘
       └──────────┬─────────────┘
                  │ signs under
       ┌──────────▼────────────────────────────────────────────────┐

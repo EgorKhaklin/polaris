@@ -5,14 +5,18 @@ fresh session reads [CLAUDE.md](CLAUDE.md), then this file, picks the first
 unblocked item in the active phase, and ships it under the standing ship
 discipline. Shipped history lives in [CHANGELOG.md](CHANGELOG.md), not here.
 
-**Decision record.** MISSION.md's v9.32 freeze line limited work to hardening,
-measurement, and thesis evidence, and required a named operator trigger to open
-a new arc. That trigger occurred: on 2026-08-31 the project owner (VANTA)
-directed a complete plan to real national deployment. This roadmap is that
-recorded decision. The constitution (C1-C10 and the vocation) is not softened
-by it; every phase below carries the constitution as a hard gate, and several
-previously retired scope decisions are explicitly reopened here with reasons,
-rather than silently.
+**Decision record.** MISSION.md's freeze line defined when the core was done,
+limited the work that followed to hardening, measurement and thesis evidence,
+and required a named operator trigger to open a new arc. Its six conditions
+are met and it is recorded closed (MISSION.md's amendment log, 2026-09-04).
+The trigger it required occurred on 2026-08-31, when the project owner
+directed a complete plan to real national deployment; this roadmap is that
+recorded decision. The constitution (C1 to C10 and the vocation) is not
+softened by it: every phase below carries the constitution as a hard gate,
+what a deployment may not yet claim is bounded by
+[docs/PRODUCTION-READINESS.md](docs/PRODUCTION-READINESS.md), and several
+previously retired scope decisions are reopened here with reasons, rather
+than silently.
 
 **Status marks:** `[ ]` pending · `[>]` in progress · `[x]` done ·
 `[EXT]` blocked on an external actor (funding, law, vendor, institution).
