@@ -5,16 +5,16 @@
  * the stack down when the heartbeat goes stale (default 180s per
  * v8.51).
  *
- * v8.46 — externalized from base.html inline <script> so that
+ * v8.46: externalized from base.html inline <script> so that
  * `script-src 'self'` (CSP, C5) does not block the beacon.
  *
- * v8.51 — visibility + focus + pageshow listeners added. Browser
+ * v8.51: visibility + focus + pageshow listeners added. Browser
  * background-tab throttling (~1/min in Chrome/Safari/Firefox) was
  * exceeding the launcher's then-45s stale threshold. The fix raised
  * the threshold AND made the first foreground-return always produce
  * a fresh beat.
  *
- * v8.55 — REMOVED `pagehide` / `beforeunload` listeners + the
+ * v8.55: REMOVED `pagehide` / `beforeunload` listeners + the
  * `farewell()` function that called `sendBeacon('/api/quit')`.
  *
  * Why removed: those events fire on EVERY page navigation, not just
@@ -26,7 +26,7 @@
  * navigated between sections.
  *
  * The browser API offers no reliable way to distinguish "user
- * navigated to another same-site page" from "user closed the tab" —
+ * navigated to another same-site page" from "user closed the tab" -
  * both fire pagehide AND beforeunload. The quit-beacon-on-navigation
  * was fundamentally unsafe.
  *
@@ -53,14 +53,14 @@
                 credentials: 'same-origin',
                 headers: { 'Content-Length': '0' }
             });
-        } catch (e) { /* ignore — best effort */ }
+        } catch (e) { /* ignore, best effort */ }
     }
 
     // Initial beat + steady-state interval.
     beat();
     setInterval(beat, INTERVAL_MS);
 
-    // v8.51 — beat on foreground return. Browsers throttle
+    // v8.51, beat on foreground return. Browsers throttle
     // setInterval in background tabs to ~1/min, which can exceed the
     // launcher's stale threshold. These listeners force a fresh beat
     // the instant the tab becomes user-visible again.
@@ -72,7 +72,7 @@
     document.addEventListener('visibilitychange', beatOnReturn);
     window.addEventListener('focus', beat);
     // pageshow fires after navigation + bfcache restore (back/forward
-    // cache) — without this, hitting the back button after a sleep
+    // cache), without this, hitting the back button after a sleep
     // could land on a stale page that wouldn't beat until the next
     // setInterval tick.
     window.addEventListener('pageshow', beat);

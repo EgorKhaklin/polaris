@@ -5,6 +5,63 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.211 — 2026-09-04 (P1.17 ship 6: the chrome stops performing, and the seed stops naming its author)
+
+The last ship of row P1.17, and of the presentation pass.
+
+- **The post-login boot overlay is gone.** A 1.6-second "ACCESS GRANTED"
+  curtain, with a scan line and a progress bar, stood between an operator
+  and their dashboard on every sign-in, and the panels behind it faded in
+  on a stagger. The stylesheet's own contract, three lines into the file,
+  is an intelligence-report aesthetic with no decorative flourishes. The
+  overlay, the stagger, their five keyframe animations and the
+  `--reveal-delay` inline styles are deleted; the masthead already shows
+  the operator's name and role permanently.
+- **The footer states the version instead of two things that were not
+  true**: a schema version literal with no referent, and a Latin motto on
+  the chrome of the duress queue.
+- **One cache-bust value.** Eleven hand-maintained `?v=` stamps across six
+  templates (`v9145a`, `heart002`, `flash001`, and so on) become the
+  shipped version, so a release busts every cached asset at once and no
+  stamp can go stale on its own.
+- **The Atlas speaks operations, not surveillance.** "Node Console"
+  becomes "Event detail", reticles become markers in the legend and the
+  help text, the feed's `god-notice` class names become `atlas-feed-item`,
+  and the detail kicker reads LIFECYCLE EVENT and VERIFICATION EVENT.
+- **The stylesheet is renumbered and de-archived.** Its section markers now
+  match physical order (the file had 13, 16, 14, 15 in that sequence and
+  four sections that never appeared in the index), the index is regenerated
+  from them, five orphaned keyframes and three subsection comments carried
+  from a merged skin file are deleted, and the section titles carry no
+  version numbers. 3769 lines to 3662, with the brace balance verified.
+- **The pager reads as a page size**, not as an internal mode name; its
+  three assertions now pin the cursor parameter in the Next link, which is
+  the behaviour that matters.
+- **The seed's first individual is a synthetic name.** The sample database
+  named the author as person #1; it now reads Adrian Vasquez, in the same
+  shape as the other holders, with the SQL comments, the seed-data
+  reference and five assertions moved with it.
+- **The landing page tells the truth about deployment.** "Arc B (May 2026)
+  closed the gap" becomes what a reader needs: the deployment path ships
+  and is scripted end to end, Polaris is a reference implementation and is
+  not yet a system to run with real identity data, and the readiness ledger
+  is linked twice. The ML-DSA cell names the gate (real signing under the
+  production default, a labelled placeholder otherwise) and the reading
+  list gains the post-quantum posture.
+- **The em-dash sweep finishes in the application.** The stylesheet's 19 and
+  the JavaScript's 77 are converted under the same rules the documentation
+  used, so no human-facing surface in the repository carries one outside the
+  audit-of-record files. Every script still parses.
+- **The v9.210 CI failure is fixed here.** The new metrics-ACL drill named
+  its stub upstream `aclup` and told Caddy to proxy to `upstream`, so the
+  in-network probe read a 502 from a hostname that did not resolve; the
+  step now points at the right host, waits for the stub to answer before
+  probing, and retries each probe with the edge's log on failure. Run
+  verbatim on the maintainer's machine: in-network 200 on both paths,
+  outside 404 on both, ordinary routes 200 either way. (The same run also
+  hit a transient Docker Hub pull failure in the test job, unrelated to
+  the ship.)
+
 ## v9.210 — 2026-09-03 (P1.17 ship 5: the metrics surfaces are closed at the edge, and the log stream is namespaced)
 
 The duress signal rides on two unauthenticated routes. Until this ship the

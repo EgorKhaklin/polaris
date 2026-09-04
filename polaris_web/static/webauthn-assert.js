@@ -1,4 +1,4 @@
-/* v8.97 — WebAuthn assertion (login second factor).
+/* v8.97: WebAuthn assertion (login second factor).
    Position B of a recorded decision.
 
    Required DOM:

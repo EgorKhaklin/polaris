@@ -745,7 +745,7 @@ jobs:
                   not remote_ip {$POLARIS_METRICS_ALLOW:private_ranges}
               }
               respond @metrics_from_outside 404
-              reverse_proxy upstream:8000
+              reverse_proxy aclup:8000
           }
           EOF
           cat > /tmp/acl-upstream.py <<'EOF'
@@ -763,11 +763,24 @@ jobs:
           docker rm -f aclup acledge >/dev/null 2>&1 || true
           docker run -d --rm --name aclup --network aclnet \
             -v /tmp/acl-upstream.py:/u.py:ro python:3.12-alpine python /u.py >/dev/null
+          # The stub has to be answering before the edge is asked to proxy to
+          # it, or the first probe reads a 502 from a cold upstream and says
+          # the ACL is broken when it is not.
+          for i in $(seq 1 30); do
+            docker run --rm --network aclnet curlimages/curl:8.11.1 \
+              -fsS -o /dev/null http://aclup:8000/metrics && break
+            sleep 1
+          done
           probe() {  # $1 = expected code, $2 = path, $3 = case
-            code=$(docker run --rm --network aclnet curlimages/curl:8.11.1 \
-                     -s -o /dev/null -w '%{http_code}' "http://acledge:8080$2")
-            [ "$code" = "$1" ] || { echo "::error::$3: $2 answered $code, expected $1"; exit 1; }
-            echo "  $3 $2 -> $code"
+            for i in $(seq 1 10); do
+              code=$(docker run --rm --network aclnet curlimages/curl:8.11.1 \
+                       -s -o /dev/null -w '%{http_code}' "http://acledge:8080$2")
+              [ "$code" = "$1" ] && { echo "  $3 $2 -> $code"; return 0; }
+              sleep 1
+            done
+            echo "::error::$3: $2 answered $code, expected $1"
+            docker logs acledge 2>&1 | tail -20
+            exit 1
           }
           docker run -d --rm --name acledge --network aclnet \
             -v /tmp/acl.Caddyfile:/etc/caddy/Caddyfile:ro polaris-caddy:ci >/dev/null

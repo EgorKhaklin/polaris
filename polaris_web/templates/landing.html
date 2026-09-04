@@ -133,7 +133,7 @@
     <div class="substrate-grid">
         <div class="substrate-cell">
             <h3>ML-DSA-65</h3>
-            <p>NIST FIPS 204 lattice-based signatures. Post-quantum secure under the Module-LWE assumption.</p>
+            <p>NIST FIPS 204 lattice signatures on every token, real under the production default and a labelled deterministic placeholder otherwise. The full posture, including what is still classical, is in PQC-POSTURE.md.</p>
         </div>
         <div class="substrate-cell">
             <h3>Plonky2 ZK-SNARK</h3>
@@ -178,11 +178,13 @@
 </section>
 
 <section class="landing-deploy" aria-labelledby="deploy-title">
-    <h2 id="deploy-title" class="landing-section-title">Deployable in production</h2>
+    <h2 id="deploy-title" class="landing-section-title">Deploying the reference stack</h2>
     <p class="landing-section-lede">
-        Arc B (May 2026) closed the gap between architectural
-        sophistication and operational reality. The complete
-        production stack ships in the repo.
+        The deployment path ships in the repository and is scripted end to
+        end. Polaris is a reference implementation: it is not yet a system
+        you can run with real national-identity data, and what still stands
+        between here and there is listed openly in
+        <a href="https://github.com/EgorKhaklin/polaris-id/blob/main/docs/PRODUCTION-READINESS.md">PRODUCTION-READINESS.md</a>.
     </p>
 
     <pre class="landing-codeblock" aria-label="Production deployment commands"><code>git clone &lt;polaris repo&gt; &amp;&amp; cd polaris
@@ -198,7 +200,9 @@ curl -fsS https://${POLARIS_DOMAIN}/api/health | jq .</code></pre>
         runbook is
         <a href="https://github.com/EgorKhaklin/polaris-id/blob/main/docs/operator/OPERATIONS.md">OPERATIONS.md</a>;
         the secrets primer is
-        <a href="https://github.com/EgorKhaklin/polaris-id/blob/main/docs/operator/SECRETS.md">SECRETS.md</a>.
+        <a href="https://github.com/EgorKhaklin/polaris-id/blob/main/docs/operator/SECRETS.md">SECRETS.md</a>,
+        and what a deployment still needs from its operator is
+        <a href="https://github.com/EgorKhaklin/polaris-id/blob/main/docs/PRODUCTION-READINESS.md">PRODUCTION-READINESS.md</a>.
     </p>
 </section>
 
@@ -209,6 +213,7 @@ curl -fsS https://${POLARIS_DOMAIN}/api/health | jq .</code></pre>
         <li><a href="https://github.com/EgorKhaklin/polaris-id/blob/main/docs/reference/GLOSSARY.md">Glossary</a>: every defined term</li>
         <li><a href="https://github.com/EgorKhaklin/polaris-id/blob/main/docs/reference/DATA-MODEL.md">Data model</a>: every table and every constraint</li>
         <li><a href="https://github.com/EgorKhaklin/polaris-id/blob/main/docs/reference/API.md">API reference</a>: every endpoint</li>
+        <li><a href="https://github.com/EgorKhaklin/polaris-id/blob/main/docs/reference/PQC-POSTURE.md">Post-quantum posture</a>: what is post-quantum today and what is not</li>
         <li><a href="https://github.com/EgorKhaklin/polaris-id/blob/main/docs/operator/SECURITY.md">Security posture</a>: the threat model, the controls, the audit</li>
         <li><a href="https://github.com/EgorKhaklin/polaris-id/blob/main/docs/operator/PRIVACY.md">Privacy posture</a>: data minimization, rotation, and what the schema does not carry</li>
     </ul>

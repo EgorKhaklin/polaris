@@ -163,12 +163,12 @@
             </div>
 
             {# Tone legend: operators should not have to guess the color code. #}
-            <div class="globe-legend" aria-label="Reticle color legend">
+            <div class="globe-legend" aria-label="Marker colour legend">
                 <span class="legend-item"><span class="legend-dot legend-zk"></span>zero-knowledge</span>
                 <span class="legend-item"><span class="legend-dot legend-selective"></span>selective</span>
                 <span class="legend-item"><span class="legend-dot legend-full"></span>full disclosure</span>
                 <span class="legend-item"><span class="legend-dot legend-alert"></span>failure / revocation</span>
-                <span class="legend-item legend-cluster-note">⊕ n = cluster · click to zoom</span>
+                <span class="legend-item legend-cluster-note">⊕ n = cluster of events · click to zoom</span>
             </div>
 
             {# Fetch-failure chip: hidden until a non-abort atlas fetch error.
@@ -188,25 +188,25 @@
             </div>
         </div>
 
-        <aside class="atlas-dock" aria-label="Event feed and node console">
+        <aside class="atlas-dock" aria-label="Event feed and event detail">
             <div class="dock-tabs">
                 <button class="dock-tab dock-tab-active" type="button" data-dock-tab="feed">
                     Event Feed <span class="dock-tab-count" data-atlas-feed-count></span>
                 </button>
                 <button class="dock-tab" type="button" data-dock-tab="console">
-                    Node Console
+                    Event detail
                 </button>
             </div>
             <div class="dock-panel dock-panel-active" data-dock-panel="feed">
-                <div class="god-notice-feed" data-atlas-event-feed-scroll>
+                <div class="atlas-feed" data-atlas-event-feed-scroll>
                     <ul class="atlas-feed-list" data-atlas-event-feed></ul>
                 </div>
             </div>
             <div class="dock-panel" data-dock-panel="console">
                 <div class="globe-detail" id="atlas-globe-detail" aria-live="polite">
-                    <span class="detail-kicker">Node Console</span>
+                    <span class="detail-kicker">Event detail</span>
                     <strong>Drag to pan. Scroll to zoom from globe to street level.</strong>
-                    <span>Click any reticle or feed entry to inspect token, lifecycle, and verification context. Clusters zoom in on click; zoom all the way down to streets and buildings. Read the exact coordinate under the cursor off CUR in the status bar. F for fullscreen.</span>
+                    <span>Click any marker or feed entry to inspect token, lifecycle, and verification context. Clusters zoom in on click; zoom all the way down to streets and buildings. Read the exact coordinate under the cursor off CUR in the status bar. F for fullscreen.</span>
                 </div>
             </div>
         </aside>
@@ -241,5 +241,5 @@
        relaxation for those origins is scoped to this endpoint only. #}
     <link rel="stylesheet" href="{{ url_for('static', filename='vendor/maplibre-gl.css') }}">
     <script src="{{ url_for('static', filename='vendor/maplibre-gl.js') }}"></script>
-    <script src="{{ url_for('static', filename='atlas-map.js') }}?v=v9152a"></script>
+    <script src="{{ url_for('static', filename='atlas-map.js') }}?v={{ polaris_version }}"></script>
 {% endblock %}

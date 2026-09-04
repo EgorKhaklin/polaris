@@ -466,7 +466,7 @@ class IndividualCRUDTests(PolarisTestCase):
         r = self.client.get('/individuals')
         self.assertEqual(r.status_code, 200)
         self.assertHTML(r,
-            'Egor Khaklin', 'Maria Santos', 'James Chen',
+            'Adrian Vasquez', 'Maria Santos', 'James Chen',
             'Priya Patel', 'David Okafor')
 
     def test_create_individual(self):
@@ -485,12 +485,12 @@ class IndividualCRUDTests(PolarisTestCase):
 
     def test_edit_individual(self):
         r = self._post('/individuals/1/edit', data={
-            'legal_name': 'Egor Khaklin (renamed)',
+            'legal_name': 'Adrian Vasquez (renamed)',
             'date_of_birth': '2005-03-12',
             'jurisdiction': 'US-PA',
         }, follow_redirects=True)
         self.assertEqual(r.status_code, 200)
-        self.assertHTML(r, 'Egor Khaklin (renamed)', 'is updated')
+        self.assertHTML(r, 'Adrian Vasquez (renamed)', 'is updated')
 
     def test_edit_nonexistent_individual_404s(self):
         r = self.client.get('/individuals/9999/edit')
@@ -802,7 +802,7 @@ class UC4Tests(PolarisTestCase):
         # Active tokens dropdown should show holders of active tokens
         self.assertIn('Maria Santos', body)  # T2 is ACTIVE
         # Reserve dropdown should show Egor's RESERVE token
-        self.assertIn('Egor Khaklin', body)
+        self.assertIn('Adrian Vasquez', body)
 
     def test_uc4_activates_reserve_end_to_end(self):
         """Full UC-4 happy path. Sets up the precondition (Egor needs to have
@@ -3439,7 +3439,7 @@ class SQLConsoleTests(PolarisTestCase):
             'sql': 'SELECT individual_id, legal_name FROM Individual ORDER BY individual_id LIMIT 3'
         })
         self.assertEqual(r.status_code, 200)
-        self.assertHTML(r, 'Egor Khaklin', 'Maria Santos', 'James Chen')
+        self.assertHTML(r, 'Adrian Vasquez', 'Maria Santos', 'James Chen')
 
     def test_update_blocked_by_whitelist(self):
         r = self._post('/sql', data={
@@ -5965,8 +5965,10 @@ class CursorPaginationTokensTests(PolarisTestCase):
         body = r.get_data(as_text=True)
         # Cursor mode should produce tokens 3 and 4.
         self.assertEqual(self._ids_on_page(body), [3, 4])
-        # And pager UI should be in cursor mode, not page mode.
-        self.assertIn('Cursor mode', body)
+        # And the pager must be in cursor mode: its Next link carries a
+        # cursor, and no page number is rendered (v9.211: the label itself
+        # no longer names the mode, the link does).
+        self.assertIn('cursor=', self._next_cursor_url_from_pager(body) or '')
         self.assertNotIn('Page 99', body)
 
     def test_invalid_cursor_falls_back_to_first_page_within_cursor_mode(self):
@@ -5976,7 +5978,7 @@ class CursorPaginationTokensTests(PolarisTestCase):
         self.assertEqual(r.status_code, 200)
         body = r.get_data(as_text=True)
         self.assertEqual(self._ids_on_page(body), [1, 2])
-        self.assertIn('Cursor mode', body)
+        self.assertIn('cursor=', self._next_cursor_url_from_pager(body) or '')
 
     def test_pager_renders_cursor_links_in_cursor_mode(self):
         r = self.client.get('/tokens?cursor=&page_size=2')
@@ -5993,7 +5995,7 @@ class CursorPaginationTokensTests(PolarisTestCase):
         self.assertEqual(r.status_code, 200)
         body = r.get_data(as_text=True)
         self.assertIn('Page 1', body)
-        self.assertNotIn('Cursor mode', body)
+        self.assertNotIn('cursor=', self._next_cursor_url_from_pager(body) or '')
         # The pager next link uses page=, not cursor=
         next_href = self._next_cursor_url_from_pager(body)
         self.assertIsNotNone(next_href)

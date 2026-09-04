@@ -1,12 +1,12 @@
 // =============================================================================
-// Polaris Atlas — MapLibre street-level console (v9.146)
+// Polaris Atlas, MapLibre street-level console (v9.146)
 //
 // Replaces the bespoke D3 orthographic globe with a MapLibre GL basemap that
 // zooms from a 3D globe down to street level (CARTO dark-matter free vector
 // tiles, self-hosted MapLibre engine, no Mapbox token). The data architecture
 // is unchanged: events are fetched per-viewport from /api/atlas/* (server-side
 // spatial aggregation, capped by C8), so this scales the same way the globe
-// did. ZERO_KNOWLEDGE events are never plotted — the server excludes them from
+// did. ZERO_KNOWLEDGE events are never plotted, the server excludes them from
 // every spatial layer (C6). The basemap is cartography, not new exposure.
 //
 // Read before editing:
@@ -92,7 +92,7 @@
     map.on('error', function (e) {
         // Basemap/tile/glyph errors are non-fatal and often transient (a single
         // tile 404, a font-range miss). They must NOT raise the data-feed chip,
-        // which is reserved for actual /api/atlas fetch failures — otherwise a
+        // which is reserved for actual /api/atlas fetch failures, otherwise a
         // momentary CARTO hiccup reads as "ATLAS FEED INTERRUPTED". Log only.
         if (e && e.error) console.warn('Atlas basemap warning:', e.error.message || e.error);
     });
@@ -155,7 +155,7 @@
         // --- Subject-focus layers (v9.148): one investigated subject's path ---
         // A gold trajectory connecting their disclosed events in time order, on
         // top of (and replacing) the operational clusters. ZK events are never
-        // here — the server withholds them.
+        // here, the server withholds them.
         map.addSource('atlas-subject', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addSource('atlas-subject-path', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
         map.addLayer({
@@ -370,7 +370,7 @@
 
         var kicker = document.createElement('span');
         kicker.className = 'detail-kicker';
-        kicker.textContent = (pr.kind === 'lifecycle' ? 'LIFECYCLE NODE' : 'VERIFICATION NODE')
+        kicker.textContent = (pr.kind === 'lifecycle' ? 'LIFECYCLE EVENT' : 'VERIFICATION EVENT')
                              + ' / ' + (pr.eventType || pr.context || 'EVENT') + '-' + (pr.event_id || '');
         detail.appendChild(kicker);
 
@@ -451,7 +451,7 @@
             // running DB still has the old one). Tell the operator how to fix it.
             detail.textContent = /HTTP 5\d\d/.test(msg)
                 ? 'server error (' + msg + '). The atlas database functions may be '
-                  + 'out of date — reload the schema (./polaris_mac_launch.sh up, or '
+                  + 'out of date, reload the schema (./polaris_mac_launch.sh up, or '
                   + 'reset to fully reload).'
                 : (msg ? 'network or server problem (' + msg + ').' : 'connection problem.');
         }
@@ -525,7 +525,7 @@
     map.on('mousemove', function (e) {
         if (cursorEl) cursorEl.textContent = fmtCoord(e.lngLat.lat, 'N', 'S') + ' ' + fmtCoord(e.lngLat.lng, 'E', 'W');
     });
-    mapEl.addEventListener('mouseleave', function () { if (cursorEl) cursorEl.textContent = '— —'; });
+    mapEl.addEventListener('mouseleave', function () { if (cursorEl) cursorEl.textContent = '- -'; });
 
     function syncReadouts() {
         setText('#atlas-hud-heading', Math.round((map.getBearing() + 360) % 360).toString().padStart(3, '0') + '°');
@@ -573,7 +573,7 @@
     }
 
     // =========================================================================
-    // Filters — chips drive filterState; every change resets the fetch key
+    // Filters, chips drive filterState; every change resets the fetch key
     // =========================================================================
     function refetchAll() { lastFetchKey = null; scheduleFetch(); loadTimeline(); }
 
@@ -639,7 +639,7 @@
     });
 
     // =========================================================================
-    // Subject focus (v9.148) — single-subject investigation (admin/auditor).
+    // Subject focus (v9.148), single-subject investigation (admin/auditor).
     // Search a person, drop everything else, plot only their disclosed events
     // as a gold path of "what they did". ZK verifications are withheld by the
     // server and reported as a count. This is governed (gated + audit-logged
@@ -683,7 +683,7 @@
                 focusedSubject = data.individual;
                 if (inflight) inflight.abort();
                 // Combine verifications AND lifecycle events (issuance/activation/
-                // revocation), ordered in time — the real "what they did" path. A
+                // revocation), ordered in time, the real "what they did" path. A
                 // subject may have only a lifecycle event (e.g. just an ISSUED
                 // activation and no verifications yet); it must still plot and the
                 // map must still zoom to it.
@@ -708,7 +708,7 @@
                 // separate empty-hint chip stays hidden so the two never overlap.
                 toggleEmptyHint(false);
 
-                // Banner — accurate count, ZK note. "located" counts what is on
+                // Banner, accurate count, ZK note. "located" counts what is on
                 // the map (non-ZK verifications + lifecycle events).
                 if (bannerEl) {
                     bannerEl.hidden = false;
@@ -790,7 +790,7 @@
     if (clearBtn) clearBtn.addEventListener('click', clearFocus);
 
     // =========================================================================
-    // Controls — zoom / reset / spin / fullscreen
+    // Controls, zoom / reset / spin / fullscreen
     // =========================================================================
     var zin = document.querySelector('[data-atlas-zoom-in]');
     var zout = document.querySelector('[data-atlas-zoom-out]');
@@ -827,7 +827,7 @@
     if (spinBtn) spinBtn.addEventListener('click', function () { setSpin(!spinning); });
     map.on('dragstart', function () { if (spinning) setSpin(false); });
 
-    // Fullscreen — the whole console takes the display ('f' or the chip).
+    // Fullscreen, the whole console takes the display ('f' or the chip).
     var shellEl = document.querySelector('.atlas-shell');
     var fsBtn = document.querySelector('[data-atlas-fullscreen]');
     function toggleFullscreen() {

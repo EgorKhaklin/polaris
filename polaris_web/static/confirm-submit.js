@@ -4,19 +4,19 @@
  * Two opt-in patterns, both attribute-driven so templates declare
  * behavior without inline JS:
  *
- *   1. `<form data-confirm="…">` — submit shows window.confirm() and
+ *   1. `<form data-confirm="…">`, submit shows window.confirm() and
  *      cancels if the user declines. Replaces inline
  *      `onsubmit="return confirm('…')"` in:
  *      - templates/agencies_list.html (delete agency)
  *      - templates/individuals_list.html (delete individual)
  *      - templates/tokens_detail.html (delete token)
  *
- *   2. `<input|select … data-submit-on-change>` — change event
+ *   2. `<input|select … data-submit-on-change>`, change event
  *      auto-submits the parent form. Replaces inline
  *      `onchange="this.form.submit()"` in:
  *      - templates/individuals_enrollment.html (jurisdiction filter)
  *
- * v8.46 — externalized for CSP `script-src 'self'` compliance. The
+ * v8.46: externalized for CSP `script-src 'self'` compliance. The
  * message is read from the form's `data-confirm` attribute; Jinja
  * autoescaping handles HTML safety in the rendered attribute value.
  *

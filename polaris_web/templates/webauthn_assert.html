@@ -39,5 +39,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='webauthn-assert.js') }}?v=waa001" defer></script>
+<script src="{{ url_for('static', filename='webauthn-assert.js') }}?v={{ polaris_version }}" defer></script>
 {% endblock %}

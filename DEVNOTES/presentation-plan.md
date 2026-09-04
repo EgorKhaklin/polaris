@@ -73,7 +73,7 @@ ship; the row is done when every ship under it is `[x]`.
 | P1.17 | 3. The messages | [x] v9.208 |
 | P1.17 | 4. The CLI | [x] v9.209 (the `polaris` versus `polaris-id` name is decided: `polaris-id`, applied everywhere) |
 | P1.17 | 5. Observability | [x] v9.210 (the metrics ACL now ships in both edges and is exercised in the caddy-edge job) |
-| P1.17 | 6. The chrome and the seed | [ ] |
+| P1.17 | 6. The chrome and the seed | [x] v9.211 |
 
 Each ship follows the standing discipline in CLAUDE.md: edit, check, bump,
 CHANGELOG, gate READY, CI green, release. A ship that touches a runbook or

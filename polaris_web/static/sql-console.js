@@ -5,7 +5,7 @@
  * When the user clicks an example <pre> element, copy its textContent
  * into the #sql textarea so they can immediately edit + run it.
  *
- * v8.46 — externalized from sql_console.html inline `onclick=`
+ * v8.46: externalized from sql_console.html inline `onclick=`
  * attribute. The handler is now attached via addEventListener,
  * since inline `onclick=` is blocked under `script-src 'self'`.
  *

@@ -120,5 +120,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='webauthn-register.js') }}?v=war001" defer></script>
+<script src="{{ url_for('static', filename='webauthn-register.js') }}?v={{ polaris_version }}" defer></script>
 {% endblock %}

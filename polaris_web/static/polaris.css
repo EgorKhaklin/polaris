@@ -1,26 +1,28 @@
 /* ============================================================================
-   POLARIS — IDENTITY TOKEN SYSTEM
-   Unified interface stylesheet (v9.142 redesign)
+   POLARIS IDENTITY TOKEN SYSTEM
+   The interface stylesheet: one file, one theme.
 
-   One file, one theme. Replaces the former two-layer stack (light
-   polaris.css + polaris-scifi.css skin) with a single dark mission-console
-   design system: deep navy surfaces, gold command accents, cyan live data.
-   Visual contract (DEVNOTES/style.md): intelligence-report aesthetic,
-   generous whitespace, no decorative flourishes, no emoji.
+   A dark operations console: deep navy surfaces, gold command accents,
+   cyan live data. The visual contract, from DEVNOTES/style.md, is an
+   intelligence-report aesthetic: generous whitespace, no decorative
+   flourishes, no emoji. Sections are numbered in the order they appear.
 
    Sections
-     01 Design tokens          08 Pills + state badges
-     02 Base + typography      09 Panels, cards, callouts
-     03 Masthead + navigation  10 Flash messages
-     04 Page shell + footer    11 Dashboard data-viz
-     05 Buttons                12 Login + WebAuthn
-     06 Forms                  13 SQL console
-     07 Tables + list chrome   14 Landing  15 Demo  16 Error
-     17 Page helpers           18 Atlas (carried, tuned)
-     19 Boot overlay + reveal  20 Responsive + motion
+     01 Design tokens                  13 SQL console
+     02 Base + typography              14 Error pages
+     03 Masthead + navigation          15 Landing (public, anonymous)
+     04 Page shell + footer            16 Demo (public walkthrough)
+     05 Buttons                        17 Page helpers
+     06 Forms                          18 Atlas: the operational map
+     07 Tables + list chrome           19 Responsive + motion
+     08 Pills + state badges           20 Atlas: legend, error chip, zoom chips, keyboard focus
+     09 Panels, cards, callouts        21 Atlas: sweep, fullscreen, cursor readout
+     10 Flash messages                 22 Atlas: the MapLibre basemap
+     11 Dashboard data-viz             23 Atlas: subject-focus investigation
+     12 Login + WebAuthn
    ============================================================================ */
 
-/* ----- 01 Design tokens ------------------------------------------------- */
+/* ----- 01 Design tokens ---------------------------------------------------- */
 
 :root {
     /* Surfaces */
@@ -58,7 +60,7 @@
     --font-mono: 'JetBrains Mono', 'SF Mono', ui-monospace, Menlo, Monaco,
                  Consolas, monospace;
 
-    /* Legacy aliases — carried Atlas/feed rules reference these names.
+    /* Legacy aliases: carried Atlas/feed rules reference these names.
        They now resolve into the unified dark palette. */
     --navy:        #0a1421;
     --navy-deep:   #071019;
@@ -73,7 +75,7 @@
     --green-bg:    rgba(95, 217, 162, 0.12);
 }
 
-/* ----- 02 Base + typography --------------------------------------------- */
+/* ----- 02 Base + typography ------------------------------------------------ */
 
 * { box-sizing: border-box; }
 
@@ -104,7 +106,7 @@ body {
         radial-gradient(ellipse 120% 700px at 50% -90px,
                         rgba(93, 214, 255, 0.05) 0%, transparent 55%),
         linear-gradient(180deg, #081120 0%, var(--void) 420px) var(--void);
-    /* No background-attachment: fixed — it janks scrolling on low-end GPUs
+    /* No background-attachment: fixed: it janks scrolling on low-end GPUs
        and breaks stitched full-page captures. Pixel-based stops keep the
        top glow identical without it. */
 }
@@ -177,7 +179,7 @@ a:hover { color: #8ee3ff; text-decoration: underline; }
 
 hr { border: 0; border-top: 1px solid var(--line); margin: 22px 0; }
 
-/* ----- 03 Masthead + navigation ------------------------------------------ */
+/* ----- 03 Masthead + navigation -------------------------------------------- */
 
 .masthead {
     background: linear-gradient(180deg, #0c1929 0%, #081220 100%);
@@ -324,7 +326,7 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 22px 0; }
     letter-spacing: 0.02em;
 }
 
-/* User strip — right edge of the masthead */
+/* User strip: right edge of the masthead */
 .user-strip {
     margin-left: auto;
     display: flex;
@@ -384,7 +386,7 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 22px 0; }
 }
 .btn-logout:hover { color: var(--red); border-color: rgba(255,116,120,0.4); background: var(--red-tint); }
 
-/* ----- 04 Page shell + footer -------------------------------------------- */
+/* ----- 04 Page shell + footer ---------------------------------------------- */
 
 .content {
     flex: 1;
@@ -408,7 +410,7 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 22px 0; }
 .footer-sep { margin: 0 8px; color: rgba(141, 166, 196, 0.35); }
 .footer-motto { color: var(--gold); font-style: italic; text-transform: none; letter-spacing: 0.05em; }
 
-/* ----- 05 Buttons --------------------------------------------------------- */
+/* ----- 05 Buttons ---------------------------------------------------------- */
 
 .btn {
     display: inline-flex;
@@ -508,7 +510,7 @@ hr { border: 0; border-top: 1px solid var(--line); margin: 22px 0; }
     text-transform: none;
 }
 
-/* ----- 06 Forms ----------------------------------------------------------- */
+/* ----- 06 Forms ------------------------------------------------------------ */
 
 form.standard { max-width: 760px; }
 form.standard.narrow { max-width: 480px; }
@@ -601,7 +603,7 @@ input[disabled], select[disabled], textarea[disabled] {
 
 .inline-form { display: inline; }
 
-/* ----- 07 Tables + list chrome -------------------------------------------- */
+/* ----- 07 Tables + list chrome --------------------------------------------- */
 
 table.data, .data-table {
     width: 100%;
@@ -751,7 +753,7 @@ td.actions form + form { margin-left: 6px; }
     color: var(--ink-faint);
 }
 
-/* ----- 08 Pills + state badges -------------------------------------------- */
+/* ----- 08 Pills + state badges --------------------------------------------- */
 
 .pill {
     display: inline-block;
@@ -834,7 +836,7 @@ td.actions form + form { margin-left: 6px; }
     50%      { opacity: 0.35; }
 }
 
-/* ----- 09 Panels, cards, callouts ----------------------------------------- */
+/* ----- 09 Panels, cards, callouts ------------------------------------------ */
 
 /* Stat cards (dashboard headline grid) */
 .stats-grid {
@@ -1005,7 +1007,7 @@ td.actions form + form { margin-left: 6px; }
     color: var(--gold);
 }
 
-/* UC banner — the constitutional strip atop each use-case form */
+/* UC banner: the constitutional strip atop each use-case form */
 .uc-banner {
     display: flex;
     align-items: baseline;
@@ -1398,7 +1400,7 @@ td.actions form + form { margin-left: 6px; }
 /* Federation viewer */
 .fed-arrow { color: var(--gold); font-size: 15px; text-align: center; }
 
-/* ----- 12 Login + WebAuthn -------------------------------------------------- */
+/* ----- 12 Login + WebAuthn ------------------------------------------------- */
 
 .login-page {
     flex: 1;
@@ -1498,7 +1500,7 @@ td.actions form + form { margin-left: 6px; }
 .webauthn-enroll { margin: 14px 0 30px; max-width: 560px; }
 .webauthn-step { margin: 10px 0; color: var(--ink-dim); }
 
-/* ----- 13 SQL console --------------------------------------------------------- */
+/* ----- 13 SQL console ------------------------------------------------------ */
 
 textarea.sql {
     min-height: 150px;
@@ -1556,7 +1558,7 @@ textarea.sql {
     color: var(--gold);
 }
 
-/* ----- 16 Error pages ----------------------------------------------------------- */
+/* ----- 14 Error pages ------------------------------------------------------ */
 
 .error-page {
     max-width: 660px;
@@ -1592,7 +1594,7 @@ textarea.sql {
     margin-top: 26px;
 }
 
-/* ----- 14 Landing (public, anonymous) -------------------------------------- */
+/* ----- 15 Landing (public, anonymous) -------------------------------------- */
 
 .body-landing .content,
 .body-demo .content { max-width: 1180px; }
@@ -1808,7 +1810,7 @@ textarea.sql {
 }
 .landing-foot-links a { font-weight: 650; }
 
-/* ----- 15 Demo (public walkthrough) ------------------------------------------ */
+/* ----- 16 Demo (public walkthrough) ---------------------------------------- */
 
 .demo-hero {
     max-width: 880px;
@@ -1983,9 +1985,9 @@ textarea.sql {
     flex-wrap: wrap;
 }
 
-/* ----- 17 Page helpers --------------------------------------------------------- */
+/* ----- 17 Page helpers ----------------------------------------------------- */
 
-.god-notice-feed { display: flex; flex-direction: column; gap: 6px; }
+.atlas-feed { display: flex; flex-direction: column; gap: 6px; }
 
 .health-sub { font-size: 11px; color: var(--ink-dim); }
 
@@ -1997,9 +1999,9 @@ textarea.sql {
     color: var(--ink-faint);
 }
 
-/* ----- 18 Atlas — operational globe (carried from v8/v9, re-tokenized) ----- */
+/* ----- 18 Atlas: the operational map --------------------------------------- */
 
-/* --- Atlas god view --- */
+/* --- Atlas event feed --- */
 
 .globe-toolbar {
     display: flex;
@@ -2045,7 +2047,7 @@ textarea.sql {
     border-style: solid;
 }
 
-/* Context picker — a <details> wrapping a flyout panel of context pills.
+/* Context picker: a <details> wrapping a flyout panel of context pills.
    Closed: looks like a single chip. Open: anchors a small panel below. */
 .chip-context-picker {
     position: relative;
@@ -2087,14 +2089,14 @@ textarea.sql {
 
 .toolbar-chip-context.toolbar-chip-active {
     /* Context active state uses a slightly cooler highlight so it doesn't
-       compete with the gold of the primary view chip — at a glance the
+       compete with the gold of the primary view chip: at a glance the
        operator should read "primary view = X, narrowed by contexts Y, Z". */
     background: rgba(126, 196, 232, 0.85);
     color: var(--navy-deep);
     box-shadow: inset 0 0 0 1px rgba(126, 196, 232, 0.95);
 }
 
-/* Time-window band — second toolbar row. The timeline strip stretches
+/* Time-window band: second toolbar row. The timeline strip stretches
    to fill remaining space. */
 .globe-toolbar-time {
     margin-bottom: 12px;
@@ -2161,7 +2163,7 @@ textarea.sql {
     color: #ffffff;
 }
 
-/* Active chip — strong contrast against the dark toolbar so the current
+/* Active chip: strong contrast against the dark toolbar so the current
    view is unambiguous at a glance. Pre-v8.2 the active state was a faint
    gold tint that was easy to miss; this is the fix. */
 .toolbar-chip-active,
@@ -2223,7 +2225,7 @@ textarea.sql {
     height: 100%;
     cursor: grab;
     touch-action: none;
-    /* v9.145: hidden, not visible — at ultra zoom the projected world is
+    /* v9.145: hidden, not visible: at ultra zoom the projected world is
        enormous and unclipped paint bounds stall the compositor. The stage
        is the console boundary; clipping at it is correct. */
     overflow: hidden;
@@ -2316,7 +2318,7 @@ textarea.sql {
     stroke: none;
 }
 
-/* Reticle ring — slightly heavier than pre-v8.2 so the active layer
+/* Reticle ring: slightly heavier than pre-v8.2 so the active layer
    reads at a glance rather than dissolving into the graticule. */
 .reticle-ring {
     fill: none;
@@ -2331,7 +2333,7 @@ textarea.sql {
     opacity: 0.85;
 }
 
-/* Center dot — bumped from 1.7px to 2.4px (v8.2). The hard center is what
+/* Center dot: bumped from 1.7px to 2.4px (v8.2). The hard center is what
    the eye locks onto; making it bigger by 40% is the difference between
    "I see something happening there" and "is that a node or a star?" */
 .reticle-core {
@@ -2343,7 +2345,7 @@ textarea.sql {
 
 /* New-arrival ping (v8.2). When renderNodes() adds a node that wasn't in
    the previous frame's dataset, atlas-globe.js attaches `.node-fresh` for
-   ~3 seconds. The ping is a single expanding ring with opacity decay —
+   ~3 seconds. The ping is a single expanding ring with opacity decay -
    readable peripherally without stealing focus from the selected node.
    Two pings overlap in the keyframes so the ring stays visible while a
    second wave starts; this gives a fluid "pulse" rather than a single
@@ -2440,7 +2442,7 @@ textarea.sql {
 .node-full { color: #d4a04c; }
 .node-alert { color: #e85a5a; }
 
-/* Selected node — brighter + slightly larger */
+/* Selected node: brighter + slightly larger */
 .d3-globe-node.node-selected .reticle-ring {
     stroke-width: 1.3px;
     opacity: 0.95;
@@ -2489,7 +2491,7 @@ textarea.sql {
     margin-bottom: 4px;
 }
 
-/* Primary HUD value — the headline number for a panel. v8.2 bumped from
+/* Primary HUD value: the headline number for a panel. v8.2 bumped from
    18px to 30px so "Active Tokens 3" reads as data, not as decoration. */
 .hud-value {
     color: #ffffff;
@@ -2500,7 +2502,7 @@ textarea.sql {
     font-variant-numeric: tabular-nums;
 }
 
-/* Secondary HUD value — used where two metrics share a panel. */
+/* Secondary HUD value: used where two metrics share a panel. */
 .hud-value-small {
     color: #ffffff;
     font-size: 17px;
@@ -2591,7 +2593,7 @@ textarea.sql {
 }
 
 /* ============================================================
-   Atlas v3 — Gotham reframe additions
+   Atlas v3: Gotham reframe additions
    ============================================================ */
 
 /* Top strip: identity stamp inside the toolbar replaces the H1 title */
@@ -2707,7 +2709,7 @@ textarea.sql {
 
 /* Fullbleed Atlas: tighter outer rhythm and a slightly narrower right
    rail so the globe stage gets the dominant share of the viewport. */
-.god-notice-feed {
+.atlas-feed {
     display: flex;
     flex-direction: column;
     gap: 1px;
@@ -2715,7 +2717,7 @@ textarea.sql {
     overflow-y: auto;
 }
 
-.god-notice {
+.atlas-feed-item {
     display: grid;
     grid-template-columns: 10px minmax(0, 1fr) auto;
     gap: 9px;
@@ -2735,19 +2737,19 @@ textarea.sql {
     font: inherit;
 }
 
-.god-notice:hover,
-.god-notice:focus {
+.atlas-feed-item:hover,
+.atlas-feed-item:focus {
     background: rgba(15, 37, 62, 0.88);
     outline: 1px solid rgba(232, 190, 100, 0.38);
     outline-offset: -1px;
     text-decoration: none;
 }
 
-.god-notice.notice-issued { border-left-color: var(--gold); }
-.god-notice.notice-activated { border-left-color: #79f2a1; }
-.god-notice.notice-revoked,
-.god-notice.notice-lost,
-.god-notice.notice-expired { border-left-color: #ff7478; }
+.atlas-feed-item.notice-issued { border-left-color: var(--gold); }
+.atlas-feed-item.notice-activated { border-left-color: #79f2a1; }
+.atlas-feed-item.notice-revoked,
+.atlas-feed-item.notice-lost,
+.atlas-feed-item.notice-expired { border-left-color: #ff7478; }
 
 .notice-light {
     width: 8px;
@@ -2799,7 +2801,7 @@ textarea.sql {
 }
 
 
-/* Atlas v6 — cluster reticle count + JS-populated event feed (carried) */
+/* Atlas v6: cluster reticle count + JS-populated event feed (carried) */
 
 .reticle-cluster-count {
     fill: var(--cyan, #5dd6ff);
@@ -2903,7 +2905,6 @@ textarea.sql {
 /* ----------------------------------------------------------------- */
 
 /* Atlas glow enhancements (folded in from the former skin layer) */
-/* -- 9. Atlas-specific enhancements -- */
 .atlas-stage,
 .atlas-container,
 .globe-stage {
@@ -3024,159 +3025,12 @@ textarea.sql {
 }
 
 
-/* ----- 19 Boot overlay + staggered reveal (dashboard only) ----- */
 /* Scoped to .body-dashboard: pre-v9.142 the stagger applied on every page
    because the skin class sat on <body> globally; list pages felt sluggish. */
-/* -- 4. Cinematic post-login boot overlay -- */
-.scifi-boot-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 9999;
-    background:
-        radial-gradient(ellipse at 50% 50%, rgba(90, 214, 255, 0.06) 0%, transparent 50%),
-        linear-gradient(180deg, rgba(2, 8, 18, 0.98) 0%, rgba(5, 14, 28, 0.98) 100%);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    pointer-events: none;
-    opacity: 1;
-    animation: scifi-boot-fade 1.6s ease-out 0.1s forwards;
-}
-
-@keyframes scifi-boot-fade {
-    0%   { opacity: 0; }
-    10%  { opacity: 1; }
-    70%  { opacity: 1; }
-    100% { opacity: 0; visibility: hidden; }
-}
-
-.scifi-boot-overlay .boot-content {
-    text-align: center;
-    color: #ffffff;
-    font-family: 'JetBrains Mono', 'SF Mono', monospace;
-    z-index: 2;
-}
-
-.scifi-boot-overlay .boot-pre {
-    color: var(--cyber, #5ad6ff);
-    font-size: 0.78rem;
-    letter-spacing: 0.5em;
-    text-transform: uppercase;
-    margin-bottom: 18px;
-    opacity: 0;
-    animation: scifi-boot-pre 1.6s ease-out 0.2s forwards;
-}
-
-@keyframes scifi-boot-pre {
-    0%, 10% { opacity: 0; transform: translateY(-4px); }
-    25%     { opacity: 1; transform: translateY(0); }
-    80%     { opacity: 1; }
-    100%    { opacity: 0; }
-}
-
-.scifi-boot-overlay .boot-main {
-    font-size: 3.2rem;
-    font-weight: 600;
-    letter-spacing: 0.36em;
-    color: #ffffff;
-    text-shadow:
-        0 0 12px var(--cyber-glow, rgba(90, 214, 255, 0.42)),
-        0 0 28px var(--cyber-glow, rgba(90, 214, 255, 0.42)),
-        0 0 4px var(--cyber, #5ad6ff);
-    margin: 0 0 20px 0;
-    opacity: 0;
-    transform: scale(0.92);
-    animation: scifi-boot-main 1.6s cubic-bezier(0.16, 1, 0.3, 1) 0.35s forwards;
-}
-
-@keyframes scifi-boot-main {
-    0%, 15% { opacity: 0; transform: scale(0.92); letter-spacing: 0.6em; }
-    40%     { opacity: 1; transform: scale(1); letter-spacing: 0.36em; }
-    80%     { opacity: 1; }
-    100%    { opacity: 0; transform: scale(1.02); }
-}
-
-.scifi-boot-overlay .boot-sub {
-    color: rgba(217, 230, 238, 0.75);
-    font-size: 0.78rem;
-    letter-spacing: 0.18em;
-    text-transform: uppercase;
-    margin-bottom: 24px;
-    opacity: 0;
-    animation: scifi-boot-pre 1.6s ease-out 0.55s forwards;
-}
-
-.scifi-boot-overlay .boot-sub strong {
-    color: var(--gold-bright, #e8be64);
-    font-weight: 600;
-}
-
-.scifi-boot-overlay .boot-dot {
-    display: inline-block;
-    width: 4px; height: 4px;
-    background: var(--cyber, #5ad6ff);
-    border-radius: 50%;
-    margin: 0 10px;
-    vertical-align: middle;
-    box-shadow: 0 0 6px var(--cyber-glow, rgba(90, 214, 255, 0.42));
-}
-
-.scifi-boot-overlay .boot-progress {
-    width: 280px;
-    height: 2px;
-    background: rgba(90, 214, 255, 0.12);
-    overflow: hidden;
-    margin: 0 auto;
-    border: 1px solid rgba(90, 214, 255, 0.18);
-}
-
-.scifi-boot-overlay .boot-progress-fill {
-    height: 100%;
-    width: 0%;
-    background: linear-gradient(90deg, var(--cyber, #5ad6ff), var(--gold-bright, #e8be64));
-    box-shadow: 0 0 8px var(--cyber-glow, rgba(90, 214, 255, 0.42));
-    animation: scifi-boot-progress 1.2s ease-out 0.4s forwards;
-}
-
-@keyframes scifi-boot-progress {
-    0%   { width: 0%; }
-    100% { width: 100%; }
-}
 
 /* Horizontal scan-line sweeping down once during the boot */
-.scifi-boot-overlay .boot-scan-line {
-    position: absolute;
-    left: 0; right: 0;
-    height: 1px;
-    background: linear-gradient(90deg,
-        transparent 0%,
-        var(--cyber, #5ad6ff) 30%,
-        var(--gold-bright, #e8be64) 50%,
-        var(--cyber, #5ad6ff) 70%,
-        transparent 100%);
-    box-shadow: 0 0 12px var(--cyber, #5ad6ff);
-    opacity: 0;
-    animation: scifi-boot-scan 1.6s ease-out 0.1s forwards;
-}
 
-@keyframes scifi-boot-scan {
-    0%   { top: 0%;   opacity: 0; }
-    15%  { opacity: 1; }
-    100% { top: 100%; opacity: 0; }
-}
 
-/* -- 5. Staggered fade-in for dashboard content behind the overlay -- */
-.body-dashboard .scifi-reveal {
-    opacity: 0;
-    transform: translateY(8px);
-    animation: scifi-reveal-fade 0.55s ease-out forwards;
-    animation-delay: var(--reveal-delay, 0s);
-}
-
-@keyframes scifi-reveal-fade {
-    to { opacity: 1; transform: translateY(0); }
-}
 
 /* Stagger the atlas-panel/atlas-row blocks behind the overlay so the
    dashboard reveals progressively as the boot overlay fades out. */
@@ -3198,10 +3052,8 @@ textarea.sql {
 .body-dashboard main.content > h2:nth-of-type(3)         { animation-delay: 1.4s; }
 .body-dashboard main.content > table.data                { animation-delay: 1.35s; }
 
-/* Respect reduced motion — skip all the animation, show content immediately */
+/* Respect reduced motion: skip all the animation, show content immediately */
 @media (prefers-reduced-motion: reduce) {
-    .scifi-boot-overlay { display: none; }
-    .body-dashboard .scifi-reveal,
     .body-dashboard main.content > .atlas-row,
     .body-dashboard main.content > .stats-grid,
     .body-dashboard main.content > table.data,
@@ -3217,7 +3069,7 @@ textarea.sql {
 
 /* ============================================================================
 
-/* ----- 20 Responsive + motion ----------------------------------------------- */
+/* ----- 19 Responsive + motion ---------------------------------------------- */
 
 @media (max-width: 1080px) {
     .masthead-inner { padding: 10px 16px; }
@@ -3276,7 +3128,7 @@ textarea.sql {
     border-top: 1px solid var(--line);
 }
 
-/* ----- 21 Atlas v9.143 additions: legend, error chip, zoom chips, kbd focus -- */
+/* ----- 20 Atlas: legend, error chip, zoom chips, keyboard focus ------------ */
 
 .globe-legend {
     /* Pinned to the stage bottom (above the classification strip); in normal
@@ -3372,7 +3224,7 @@ textarea.sql {
     border-radius: 4px;
 }
 
-/* Empty-viewport hint (success with zero nodes — distinct from the error chip) */
+/* Empty-viewport hint (success with zero nodes: distinct from the error chip) */
 .atlas-empty-chip {
     position: absolute;
     top: 14px;
@@ -3530,7 +3382,7 @@ textarea.sql {
 .dock-panel-active { display: flex; flex-direction: column; }
 
 /* Feed fills and scrolls inside the dock */
-.atlas-dock .god-notice-feed {
+.atlas-dock .atlas-feed {
     flex: 1;
     min-height: 0;
     overflow-y: auto;
@@ -3619,7 +3471,7 @@ textarea.sql {
 /* Full-bleed pages align the masthead with the console edges */
 .body-atlas .masthead-inner { max-width: none; }
 
-/* ----- 23 Atlas futurization (v9.145): sweep, fullscreen, cursor ----------- */
+/* ----- 21 Atlas: sweep, fullscreen, cursor readout ------------------------- */
 
 /* Radar sweep: a slow conic wash rotating behind the globe. GPU-cheap
    (transform-only animation); killed by the global reduced-motion rule. */
@@ -3663,7 +3515,7 @@ textarea.sql {
 .atlas-globe-svg { cursor: crosshair; }
 .atlas-globe-svg:active { cursor: grabbing; }
 
-/* ----- 24 Atlas MapLibre basemap (v9.146) --------------------------------- */
+/* ----- 22 Atlas: the MapLibre basemap -------------------------------------- */
 
 #atlas-map {
     position: absolute;
@@ -3715,7 +3567,7 @@ textarea.sql {
     font-weight: 650;
 }
 
-/* ----- 25 Atlas subject-focus investigation (v9.148) ---------------------- */
+/* ----- 23 Atlas: subject-focus investigation ------------------------------- */
 
 .atlas-subject-search { position: relative; }
 

@@ -1,6 +1,6 @@
 /* polaris_web/static/nav-dropdown.js
  *
- * v8.35 — coordinate the masthead nav <details> dropdowns so opening one
+ * v8.35: coordinate the masthead nav <details> dropdowns so opening one
  * (SUBSTRATE or USE CASES) closes the others. Without this, both panels
  * can be open simultaneously and their absolute-positioned content
  * overlaps visually.
@@ -11,7 +11,7 @@
 (function () {
     var menus = document.querySelectorAll('.primary-nav .nav-uc-menu');
     if (menus.length < 2) {
-        return; // only one (or zero) dropdowns — nothing to coordinate
+        return; // only one (or zero) dropdowns, nothing to coordinate
     }
     menus.forEach(function (menu) {
         menu.addEventListener('toggle', function () {

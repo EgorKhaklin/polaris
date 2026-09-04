@@ -125,7 +125,7 @@ class ListCommandTests(CLIBaseTestCase):
 
     def test_list_individuals(self):
         r = run_cli('list', 'individuals')
-        self.assertIn('Egor Khaklin', r.stdout)
+        self.assertIn('Adrian Vasquez', r.stdout)
         self.assertIn('Maria Santos', r.stdout)
         self.assertIn('James Chen', r.stdout)
 
@@ -186,7 +186,7 @@ class QueryCommandTests(CLIBaseTestCase):
     def test_simple_select(self):
         r = run_cli('query',
             'SELECT individual_id, legal_name FROM Individual ORDER BY individual_id LIMIT 3')
-        self.assertIn('Egor Khaklin', r.stdout)
+        self.assertIn('Adrian Vasquez', r.stdout)
         self.assertIn('Maria Santos', r.stdout)
 
     def test_update_blocked(self):

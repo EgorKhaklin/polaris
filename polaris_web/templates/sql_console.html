@@ -78,5 +78,5 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='sql-console.js') }}?v=sql001" defer></script>
+<script src="{{ url_for('static', filename='sql-console.js') }}?v={{ polaris_version }}" defer></script>
 {% endblock %}

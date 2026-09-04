@@ -14,7 +14,7 @@
 <nav class="pager" aria-label="Pagination">
     <span class="pager-meta">
         {%- if cursor_mode -%}
-            Cursor mode · {{ page_size }} per page
+            {{ page_size }} per page
         {%- else -%}
             Page {{ page }} · {{ page_size }} per page
         {%- endif -%}

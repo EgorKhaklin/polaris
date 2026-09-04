@@ -4,10 +4,10 @@
 //     ../../docs/reference/SCALING.md                       (architectural treatment)
 //     ../../DEVNOTES/atlas-scaling.md        (what NOT to change without measuring)
 // Key entry points:
-//     renderNodes()       — d3 enter/update/exit binding
-//     isVisibleByFilter() — clusters bypass; points sub-filter
-//     fetchData()         — debounced 220ms; AbortController cancels in-flight
-//     chooseGrid(zoom)    — DON'T tighten without testing pan/zoom feel
+//     renderNodes()      , d3 enter/update/exit binding
+//     isVisibleByFilter(), clusters bypass; points sub-filter
+//     fetchData()        , debounced 220ms; AbortController cancels in-flight
+//     chooseGrid(zoom)   , DON'T tighten without testing pan/zoom feel
 // =============================================================================
 
 /* Polaris Atlas Globe / Gotham profile
@@ -46,7 +46,7 @@
     var svg = d3.select(svgEl);
 
     // ============================================================
-    // SVG defs — rim halation filter, vignette gradient, land shade
+    // SVG defs, rim halation filter, vignette gradient, land shade
     // ============================================================
     var defs = svg.append('defs');
 
@@ -95,13 +95,13 @@
     // v8.3 (A+C): unified filter state. The toolbar UI elements drive this
     // object directly; serializeFilters() turns it into a query string for
     // the /api/atlas/* endpoints. Two coupled axes the user controls:
-    //   view     — what the dots ARE (verification | lifecycle).
+    //   view    , what the dots ARE (verification | lifecycle).
     //              "tokens" was historically a synonym for verification;
     //              we keep the label in the UI but treat both the same.
-    //   window   — temporal lens; one of 1h | 24h | 7d | 30d | all.
-    //   modifiers— boolean toggles applied on top of view+window. They
+    //   window  , temporal lens; one of 1h | 24h | 7d | 30d | all.
+    //   modifiers- boolean toggles applied on top of view+window. They
     //              translate to specific server params.
-    //   contexts — multi-select VerificationContext values. Empty = all.
+    //   contexts, multi-select VerificationContext values. Empty = all.
     var filterState = {
         view:      'verification',
         // 'all' by default: the seed data's events are historical, so the
@@ -149,7 +149,7 @@
     };
 
     // ============================================================
-    // Layer stack — ordering matters for compositing
+    // Layer stack, ordering matters for compositing
     // ============================================================
     var root = svg.append('g').attr('class', 'd3-globe-root');
 
@@ -225,7 +225,7 @@
         // Exit
         sel.exit().remove();
 
-        // Enter — build the reticle ornament for new data points
+        // Enter, build the reticle ornament for new data points
         var enter = sel.enter()
             .append('g')
             .attr('class', function (d) {
@@ -237,9 +237,9 @@
 
         enter.each(function (d) {
             var g = d3.select(this);
-            // Hit target — invisible large circle so the reticle is easy to click
+            // Hit target, invisible large circle so the reticle is easy to click
             g.append('circle').attr('class', 'reticle-hit').attr('r', 16);
-            // Pulse ring — sits BEHIND the static ring; only animates when
+            // Pulse ring, sits BEHIND the static ring; only animates when
             // the node carries .node-fresh. The base radius matches the
             // static ring; CSS scales it. v8.2 / V2.
             var ringR = d.isCluster ? clusterRadius(d.count) : 10;
@@ -255,10 +255,10 @@
             g.append('line').attr('class', 'reticle-tick').attr('x1', 0).attr('y1', 6).attr('x2', 0).attr('y2', 12);
             g.append('line').attr('class', 'reticle-tick').attr('x1', -12).attr('y1', 0).attr('x2', -6).attr('y2', 0);
             g.append('line').attr('class', 'reticle-tick').attr('x1', 6).attr('y1', 0).attr('x2', 12).attr('y2', 0);
-            // Center dot — radius now driven by CSS (.reticle-core { r }) so
+            // Center dot, radius now driven by CSS (.reticle-core { r }) so
             // a future visual pass can scale all centers in one place.
             g.append('circle').attr('class', 'reticle-core');
-            // Label group — hidden for clusters at low zoom
+            // Label group, hidden for clusters at low zoom
             if (!d.isCluster) {
                 var lg = g.append('g').attr('class', 'reticle-label-group');
                 lg.append('line').attr('class', 'reticle-leader')
@@ -313,7 +313,7 @@
                 }
             });
             setTimeout(function () {
-                // Look up by id again — the DOM may have re-rendered in
+                // Look up by id again, the DOM may have re-rendered in
                 // the interim. Only clear nodes whose id was in THIS
                 // frame's fresh set; later frames may have marked others.
                 nodeLayer.selectAll('g.d3-globe-node').each(function (d) {
@@ -327,7 +327,7 @@
         redraw();
     }
 
-    // Cluster radius — sqrt-scaled so an order-of-magnitude jump in count
+    // Cluster radius, sqrt-scaled so an order-of-magnitude jump in count
     // produces a 3.16x visual jump, not a 10x one. Capped at 28px so dense
     // clusters don't blow out the screen.
     function clusterRadius(count) {
@@ -373,13 +373,13 @@
             var cap = 4;
             if (mag > cap) { vx = vx * cap / mag; vy = vy * cap / mag; }
             velocity = [vx, vy];
-            // User finished panning the globe — refetch for the new bbox
+            // User finished panning the globe, refetch for the new bbox
             scheduleFetch();
         })
     );
 
     // ============================================================
-    // Zoom — v9.144b ultra-zoom with frame easing.
+    // Zoom, v9.144b ultra-zoom with frame easing.
     //
     // setZoom() sets a TARGET; the animate loop eases the actual zoom
     // toward it each frame (exponential approach), so wheel, chips,
@@ -462,7 +462,7 @@
             if (activeFilter === 'failures') return (d.n_failure || 0) > 0;
             return true;
         }
-        // Point nodes — server already filtered by kind. Sub-chip refinement:
+        // Point nodes, server already filtered by kind. Sub-chip refinement:
         if (activeFilter === 'pq')       return Boolean(d.pq);
         if (activeFilter === 'failures') return d.outcome === 'FAILURE';
         // Default ('tokens', 'verifications', 'lifecycle'): show everything
@@ -492,7 +492,7 @@
             landBorders.datum(landFeature).attr('d', path);
         }
 
-        // Country labels — two-pass: project + score, then suppress collisions, then render
+        // Country labels, two-pass: project + score, then suppress collisions, then render
         if (countryFeatures.length) {
             // Pass 1: build candidate list, area-weighted
             var cands = [];
@@ -517,7 +517,7 @@
                     bbox: { x0: pt[0] - w / 2, x1: pt[0] + w / 2, y0: pt[1] - h / 2, y1: pt[1] + h / 2 }
                 });
             }
-            // Pass 2: greedy collision suppression — sort by area desc, drop overlappers
+            // Pass 2: greedy collision suppression, sort by area desc, drop overlappers
             cands.sort(function (a, b) { return b.area - a.area; });
             var kept = [];
             for (var j = 0; j < cands.length; j++) {
@@ -553,7 +553,7 @@
                 });
         }
 
-        // Reticle nodes — null-guarded because renderNodes() may not have
+        // Reticle nodes, null-guarded because renderNodes() may not have
         // been called yet (initial render before the first API fetch).
         if (nodeSelection) {
             nodeSelection.each(function (d) {
@@ -686,14 +686,14 @@
         meta.textContent = stampBits.join(' / ');
         detail.appendChild(meta);
 
-        // Predecessor lineage chain — collapsed inline render
+        // Predecessor lineage chain, collapsed inline render
         if (d.lineage && d.lineage.predecessorId) {
             var line = document.createElement('span');
             line.className = 'detail-lineage';
             line.innerHTML = 'lineage: #' + d.lineage.predecessorId +
                              ' <span class="detail-lineage-status">' + d.lineage.predecessorStatus + '</span>' +
                              ' → #' + (d.tokenId || '?') +
-                             ' <span class="detail-lineage-seq">seq ' + (d.lineage.sequence || '—') + '</span>';
+                             ' <span class="detail-lineage-seq">seq ' + (d.lineage.sequence || '-') + '</span>';
             detail.appendChild(line);
         }
 
@@ -727,7 +727,7 @@
                 };
             })
             .on('end', function () {
-                // Clusters promise "click to zoom in" in their subtitle —
+                // Clusters promise "click to zoom in" in their subtitle -
                 // honor it: double the zoom centered on the cluster, which
                 // refetches and resolves it into points or finer clusters.
                 if (d.isCluster) setZoom(targetZoom * 2);
@@ -759,7 +759,7 @@
         filterState.modifiers[name] = !filterState.modifiers[name];
         // Anomalies and PQ are mutually contradictory in spirit (anomalies
         // surfaces failures, PQ surfaces successful PQ-signed events).
-        // We allow both in case someone wants the intersection — the
+        // We allow both in case someone wants the intersection, the
         // server returns the AND of all filters, which is fine.
         // Update legacy activeFilter so isVisibleByFilter still works.
         if (filterState.modifiers.pq) activeFilter = 'pq';
@@ -818,7 +818,7 @@
     // ============================================================
 
     // The visible "bbox" on an orthographic globe is the hemisphere centered
-    // on the rotation focus — there isn't a clean lat/lon rectangle for it.
+    // on the rotation focus, there isn't a clean lat/lon rectangle for it.
     // For the API we use a generous bounding rectangle that contains the
     // visible hemisphere, which gives us all the data we could see plus a
     // little margin on the back side. The aggregator on the server filters
@@ -980,7 +980,7 @@
         var grid = chooseGrid(zoom);
         var kind = kindForFilter(activeFilter);
         var filterQS = serializeFilters();
-        // Cache key includes filter state — pre-v8.3 it didn't, so toggling
+        // Cache key includes filter state, pre-v8.3 it didn't, so toggling
         // a chip while the same bbox/zoom was active produced a stale cache hit.
         var key = kind + '|' + bbox.join(',') + '|' + grid + '|' + renderMode + '|' + filterQS;
         if (key === lastFetchKey) return;
@@ -1028,7 +1028,7 @@
                 }
             });
 
-        // HUD signals — independent fetch, doesn't block reticles
+        // HUD signals, independent fetch, doesn't block reticles
         apiCall('/api/atlas/stats?bbox=' + encodeURIComponent(bboxParam) +
                 '&' + filterQS, signal)
             .then(updateAtlasStats)
@@ -1038,7 +1038,7 @@
     }
 
     // ============================================================
-    // Fetch-failure surfacing — a console.warn is invisible to an
+    // Fetch-failure surfacing, a console.warn is invisible to an
     // operator. A non-abort failure raises a small chip over the
     // stage with a Retry control; any subsequent success clears it.
     // ============================================================
@@ -1065,7 +1065,7 @@
     }
 
     // ============================================================
-    // LIVE refresh — the LIVE chip used to be decorative; data only
+    // LIVE refresh, the LIVE chip used to be decorative; data only
     // refetched on viewport/filter changes. Refresh the reticles,
     // HUD stats, and histogram every 60s while the tab is visible,
     // and immediately when the operator returns to the tab.
@@ -1084,7 +1084,7 @@
     });
 
     // ============================================================
-    // v8.3 / A — histogram strip below the toolbar
+    // v8.3 / A, histogram strip below the toolbar
     //
     // Pulls bucket counts from /api/atlas/timeline and renders a small
     // SVG with one bar per bucket. The bar is split by anomaly portion
@@ -1214,7 +1214,7 @@
     // chips) and call it once after the world topology resolves.
 
     // ============================================================
-    // Event Feed (right rail) — paginated /api/atlas/events
+    // Event Feed (right rail), paginated /api/atlas/events
     // ============================================================
     var eventFeedEl = document.querySelector('[data-atlas-event-feed]');
     var eventFeedCursor = null;
@@ -1234,7 +1234,7 @@
         var body = document.createElement('div');
         body.className = 'atlas-feed-body';
         var title = document.createElement('strong');
-        title.textContent = ev.holder_name || '—';
+        title.textContent = ev.holder_name || '-';
         body.appendChild(title);
         var sub = document.createElement('span');
         sub.textContent = ev.agency_name + ' · ' + (ev.detail || '');
@@ -1293,11 +1293,11 @@
         });
     }
 
-    // Kick off the first fetch — happens after the world topology resolves
+    // Kick off the first fetch, happens after the world topology resolves
     // (see the d3.json block below). The world data is needed for the
     // reticles to project correctly.
 
-    // v8.3 (A+C) chip handlers — view, window, modifier, context.
+    // v8.3 (A+C) chip handlers, view, window, modifier, context.
     document.querySelectorAll('[data-atlas-view]').forEach(function (b) {
         b.addEventListener('click', function () { setView(b.dataset.atlasView); });
     });
@@ -1332,7 +1332,7 @@
     if (zoomOutBtn) zoomOutBtn.addEventListener('click', function () { setZoom(targetZoom / 1.6); });
 
     // ============================================================
-    // Fullscreen — the console takes the whole display ('f' or the
+    // Fullscreen, the console takes the whole display ('f' or the
     // command-bar chip). The ResizeObserver re-measures the globe
     // when the stage box jumps.
     // ============================================================
@@ -1361,7 +1361,7 @@
     document.addEventListener('webkitfullscreenchange', syncFullscreenChip);
 
     // ============================================================
-    // Cursor coordinates — invert the projection under the pointer
+    // Cursor coordinates, invert the projection under the pointer
     // and stream LAT/LON to the status bar. This is the pinpoint
     // readout: at ultra zoom the operator reads the exact position
     // of an event off the cursor.
@@ -1379,24 +1379,24 @@
             // Only meaningful inside the projected disc.
             var dx = pt[0] - width / 2, dy = pt[1] - height / 2;
             if (Math.sqrt(dx * dx + dy * dy) > baseRadius * zoom) {
-                cursorEl.textContent = '— —';
+                cursorEl.textContent = '- -';
                 return;
             }
             var geo = projection.invert(pt);
             if (!geo || isNaN(geo[0]) || isNaN(geo[1])) {
-                cursorEl.textContent = '— —';
+                cursorEl.textContent = '- -';
                 return;
             }
             cursorEl.textContent =
                 fmtCoord(geo[1], 'N', 'S') + ' ' + fmtCoord(geo[0], 'E', 'W');
         });
         svgEl.addEventListener('mouseleave', function () {
-            cursorEl.textContent = '— —';
+            cursorEl.textContent = '- -';
         });
     }
 
     // ============================================================
-    // Keyboard operation — the globe is focusable (tabindex=0):
+    // Keyboard operation, the globe is focusable (tabindex=0):
     // arrows rotate, +/- zoom, space toggles spin.
     // ============================================================
     svgEl.addEventListener('keydown', function (event) {

@@ -19,7 +19,7 @@ your map.
 
 | ID | Legal name | DOB | Jurisdiction | Notes |
 |---|---|---|---|---|
-| 1 | Egor Khaklin | 1995-08-12 | US-PA | The author. Token T1 RESERVE. |
+| 1 | Adrian Vasquez | 2005-03-12 | US-PA | Token T1 RESERVE. |
 | 2 | Maria Santos | 1988-03-21 | US-CA | Token T2 ACTIVE. **Has demo duress code enrolled** (`911911`, scrypt hash in `IdentityToken.duress_code_hash`). |
 | 3 | James Chen | 1979-11-04 | US-NY | Token T3 ACTIVE. Federal NY issued. |
 | 4 | Priya Patel | 1992-06-17 | US-TX | Token T4 ACTIVE. Filed under SLH-DSA-128s (registry row; no SLH-DSA signer is wired). |

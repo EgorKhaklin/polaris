@@ -1,4 +1,4 @@
-/* v8.97 — WebAuthn enrollment (settings page).
+/* v8.97: WebAuthn enrollment (settings page).
    Position B of a recorded decision.
 
    Required DOM:

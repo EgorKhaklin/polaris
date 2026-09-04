@@ -1,8 +1,6 @@
 {# AI-context: 6 panels, server-side data aggregation. CSP-safe: no inline scripts. See DEVNOTES/atlas-scaling.md (analytics queries follow same patterns). #}
 {% extends "base.html" %}
 {% block title %}Dashboard{% endblock %}
-{# body-dashboard scopes the boot overlay + staggered reveal; pre-v9.142 the
-   stagger leaked onto every page and made list pages feel sluggish. #}
 {% block body_class %} body-dashboard{% endblock %}
 {% block content %}
 <h1>System Dashboard</h1>
@@ -37,8 +35,8 @@
 {# Five tiles for the proof and trust structures behind the tokens. Each
    links to its list page. The duress tile is admin/auditor only; the other
    four are visible to every logged-in role. #}
-<h2 class="scifi-reveal" style="--reveal-delay: 0.12s">Proofs and trust</h2>
-<div class="stats-grid scifi-reveal" style="--reveal-delay: 0.14s">
+<h2>Proofs and trust</h2>
+<div class="stats-grid">
     <a href="{{ url_for('anchors_list') }}" class="stat-card stat-card-link">
         <div class="label">Anchor Batches</div>
         <div class="value">{{ v2_substrate.anchor_batch_count }}</div>
@@ -89,28 +87,8 @@
     {% endif %}
 </div>
 
-{# ================== CINEMATIC POST-LOGIN BOOT OVERLAY ==================
-   CSS-only animation. The overlay fades out via animation-fill-mode: forwards
-   and pointer-events:none transitions to clear at the same time. Total
-   duration ~1.6s. The dashboard panels behind animate-in staggered. #}
-<div class="scifi-boot-overlay" aria-hidden="true">
-    <div class="boot-scan-line"></div>
-    <div class="boot-content">
-        <div class="boot-pre">// POLARIS // SESSION INITIALIZED</div>
-        <div class="boot-main">ACCESS GRANTED</div>
-        <div class="boot-sub">
-            ROLE <strong>{{ current_user.role|upper }}</strong>
-            <span class="boot-dot"></span>
-            USER <strong>{{ current_user.username }}</strong>
-            <span class="boot-dot"></span>
-            AUDIT TRAIL ACTIVE
-        </div>
-        <div class="boot-progress"><div class="boot-progress-fill"></div></div>
-    </div>
-</div>
-
-<h2 class="scifi-reveal" style="--reveal-delay: 0.2s">Token Status Breakdown</h2>
-<table class="data status-breakdown-table scifi-reveal" style="--reveal-delay: 0.3s">
+<h2>Token Status Breakdown</h2>
+<table class="data status-breakdown-table">
     <thead>
         <tr><th>Status</th><th>Count</th><th>Notes</th></tr>
     </thead>

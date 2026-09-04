@@ -19,7 +19,7 @@
 --
 -- The data is constructed so that every UC and every Q (relational-algebra
 -- query) returns a non-empty, plausible result. UC-7 (warrant audit) for
--- legal_name='Egor Khaklin' returns no rows because Egor's token (T1) is
+-- legal_name='Adrian Vasquez' returns no rows because that token (T1) is
 -- in RESERVE state and has produced no verification events yet; this is
 -- intentional and demonstrates the schema's strictness.
 -- ============================================================================
@@ -44,7 +44,7 @@ TRUNCATE TABLE ZkVerificationNonce,
 -- ============================================================================
 
 INSERT INTO Individual (legal_name, date_of_birth, jurisdiction, enrollment_date) VALUES
-    ('Egor Khaklin',  '2005-03-12', 'US-PA', '2026-01-15 09:30:00'),  -- 1
+    ('Adrian Vasquez', '2005-03-12', 'US-PA', '2026-01-15 09:30:00'),  -- 1
     ('Maria Santos',  '1988-07-22', 'US-CA', '2026-01-22 14:15:00'),  -- 2
     ('James Chen',    '1972-11-04', 'US-NY', '2026-02-03 10:45:00'),  -- 3
     ('Priya Patel',   '1995-05-18', 'US-TX', '2026-02-10 11:00:00'),  -- 4
@@ -174,7 +174,7 @@ VALUES
 -- ============================================================================
 
 INSERT INTO TokenLifecycleEvent (token_id, actor_agency_id, event_type, event_timestamp, reason_code, latitude, longitude) VALUES
-    -- T1 (Egor Khaklin / Pennsylvania) — Pittsburgh, PA
+    -- T1 (Adrian Vasquez, Pennsylvania): Pittsburgh, PA
     (1, 2, 'ISSUED',    '2026-01-15 09:30:00', 'INITIAL_ENROLLMENT',         40.4406,  -79.9959),
     -- T2 (Maria Santos / California) — Los Angeles, CA
     (2, 3, 'ISSUED',    '2026-01-22 14:15:00', 'INITIAL_ENROLLMENT',         34.0522, -118.2437),

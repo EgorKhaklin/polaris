@@ -4,11 +4,11 @@
  *
  * Polaris C2 invariant: ZERO_KNOWLEDGE verifications MUST have
  * token_id IS NULL. C6 enforces this server-side; this script
- * provides client-side guidance — disabling the token-id select
- * and updating the hint text — so operators see the constraint
+ * provides client-side guidance, disabling the token-id select
+ * and updating the hint text, so operators see the constraint
  * before submitting rather than after a server-side 400.
  *
- * v8.46 — externalized from verifications_form.html inline <script>
+ * v8.46: externalized from verifications_form.html inline <script>
  * and inline `onchange=` attribute. The onchange listener is now
  * attached via addEventListener, since `onchange=` is also blocked
  * under `script-src 'self'`.

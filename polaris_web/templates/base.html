@@ -5,10 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Polaris{% endblock %} | Identity Token System</title>
     <meta name="description" content="Polaris identity-token console: post-quantum signing, zero-knowledge verification, append-only audit-of-record, compulsion-resistant by design.">{# SEO: Lighthouse meta-description audit #}
-    {# Bump ?v= when editing CSS so dev browsers don't serve stale styles.
-       v9.142: one unified stylesheet; the former polaris-scifi.css skin
+    {# The asset query string is the shipped version, so a release busts every
+       cached asset at once and no hand-maintained stamp can go stale.
+       (Historically each file carried its own hand-bumped stamp.
        layer was merged into polaris.css (single dark design system). #}
-    <link rel="stylesheet" href="{{ url_for('static', filename='polaris.css') }}?v=v9145a">
+    <link rel="stylesheet" href="{{ url_for('static', filename='polaris.css') }}?v={{ polaris_version }}">
     <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='favicon.svg') }}">
 </head>
 <body class="{% block body_class %}{% endblock %}">
@@ -138,15 +139,13 @@
     <footer class="page-footer">
         <span>Polaris Identity Token System</span>
         <span class="footer-sep">·</span>
-        <span>Schema v1.0</span>
-        <span class="footer-sep">·</span>
-        <span class="footer-motto">Fixus inter mutabilia</span>
+        <span>Version {{ polaris_version }}</span>
     </footer>
     {% block scripts %}{% endblock %}
 
-    {% if launcher_watch %}<script src="{{ url_for('static', filename='heartbeat.js') }}?v=heart002" defer></script>{% endif %}
-    <script src="{{ url_for('static', filename='flash-dismiss.js') }}?v=flash001" defer></script>
-    <script src="{{ url_for('static', filename='nav-dropdown.js') }}?v=navdd001" defer></script>
-    <script src="{{ url_for('static', filename='confirm-submit.js') }}?v=conf001" defer></script>
+    {% if launcher_watch %}<script src="{{ url_for('static', filename='heartbeat.js') }}?v={{ polaris_version }}" defer></script>{% endif %}
+    <script src="{{ url_for('static', filename='flash-dismiss.js') }}?v={{ polaris_version }}" defer></script>
+    <script src="{{ url_for('static', filename='nav-dropdown.js') }}?v={{ polaris_version }}" defer></script>
+    <script src="{{ url_for('static', filename='confirm-submit.js') }}?v={{ polaris_version }}" defer></script>
 </body>
 </html>
