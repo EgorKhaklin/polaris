@@ -5,6 +5,35 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.224 — 2026-09-04 (P1.16 ship 5: the design records move into the published documentation)
+
+The threat model, the concurrency catalogue, the substrate manifest, the ZK
+soundness ledger, the two-witness principle and one record per mechanism were
+filed under `DEVNOTES/`, a directory whose name tells an assessor not to look
+there. They are exactly the documents an assessor reads.
+
+- **Twenty-two documents move to `docs/design/`**, flattened: the ten
+  cross-cutting records and the twelve per-mechanism ones, with the `ships/`
+  subdirectory gone. The index states a reader and a job for each.
+- **Two duplications resolve.** The redaction proof existed twice; the longer
+  copy under `meta/` carries the adversary model, so the shorter one is
+  deleted and its inbound links repointed. The two quantum-observer notes,
+  one speculative and one honest, merge into a single document that says
+  plainly what the table is: a reserved scaffold, inert, with the three
+  conditions that would reopen the decision.
+- **Every record opens with its reader and its job**, and the internal
+  mission identifiers (`R11-3`, `M2-8`, the `Ships with` and `Introduced`
+  headers) are stripped. A full voice pass over the bodies is recorded in the
+  plan rather than done here, so that the move stayed reviewable.
+- **209 references were rewritten across 61 files**, each resolved against its
+  own directory rather than string-replaced, and the link checker confirms all
+  845 resolve. `test_prose_and_sql_forms_agree`, which compares the substrate
+  manifest against the `SystemDependency` view, was skipping silently on the
+  moved path and now runs again.
+- **`DEVNOTES/` keeps the four notes that are genuinely internal**: the house
+  style, the gotcha list, the project record and the plan of this pass. Its
+  README says so, and the v8.26 reorganization receipt it carried is gone.
+
 ## v9.223 — 2026-09-04 (P1.16 ship 4: every top-level directory says who it is for)
 
 Three directories held load-bearing material with no way in: the invariant

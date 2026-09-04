@@ -1,7 +1,6 @@
-# DEVNOTES/ships/webauthn.md
+# WebAuthn for operators
 
-**Introduced:** v8.97. Shipped end-to-end same-day; first non-example
-migration via the v8.95 framework.
+**Reader:** an engineer or an assessor. **Job:** Operator credential registration, how the second factor is enforced, and what the grace period buys.
 
 This file is the canonical write-up for Polaris's WebAuthn-MFA operator
 authentication: how operator credentials are registered, how MFA is

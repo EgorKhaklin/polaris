@@ -1,4 +1,6 @@
-# DEVNOTES/observability.md: operator runbook for application metrics
+# Observability
+
+**Reader:** an engineer or an assessor. **Job:** What a running deployment tells its operator, and how.
 
 **Audience:** operator running a deployed Polaris instance.
 **Scope:** this document covers OBSERVING THE RUNNING APPLICATION.
@@ -21,7 +23,7 @@ metrics backend is required.
 
 As of v9.27, **duress events are the
 headline.** An unobservable duress signal is the coercion-cover
-failure mode: the duress-code feature (R11-5 / M2-10) becomes
+failure mode: the duress-code feature becomes
 decorative if no one alerts on it.
 
 ---

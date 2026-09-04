@@ -21,7 +21,7 @@ to grey-box:
 
 - **Week 1, black box.** The firm receives a deployment URL and nothing else.
 - **Week 2, grey box.** The firm receives this document, the
-  [threat model](../DEVNOTES/threat-model.md), the
+  [threat model](design/threat-model.md), the
   [architecture overview](ARCHITECTURE-OVERVIEW.md), the
   [PQC posture](reference/PQC-POSTURE.md), and read access to the source. The
   grey-box phase starts with a confirmed read of [MISSION.md](../MISSION.md)
@@ -68,7 +68,7 @@ alter the record of having done so.
 `AuthAuditLog`. The append-only triggers in
 [06_triggers.sql](../polaris_sql/06_triggers.sql) and
 [the audit-access migration](../polaris_sql/migrations/2026-05-15-003-audit-access-log.up.sql) and the
-[audit-of-record discipline](../DEVNOTES/audit-of-record.md) are the controls
+[audit-of-record discipline](design/audit-of-record.md) are the controls
 under test.
 
 ### TA-3: state-level adversary
@@ -213,7 +213,7 @@ break.
   Attempt to read a plaintext secret from disk on a running host.
 - **ML-DSA-65 token signatures** through
   [pqc_signing.py](../polaris_web/pqc_signing.py) and the two independent
-  verifiers ([two-witness principle](../DEVNOTES/two-witness-principle.md)).
+  verifiers ([two-witness principle](design/two-witness-principle.md)).
 
 ### Backup, restore, and disaster recovery
 
@@ -273,7 +273,7 @@ break.
 - ML-DSA-65 signing: unforgeable per FIPS 204.
 - The Plonky2 Merkle-inclusion circuit in [polaris_zk](../polaris_zk/src/lib.rs)
   and the second witness in [witness2/verifier.py](../polaris_zk/witness2/verifier.py): the
-  verifier refuses a forged proof ([zk-soundness](../DEVNOTES/zk-soundness.md)).
+  verifier refuses a forged proof ([zk-soundness](design/zk-soundness.md)).
 - Merkle anchoring ([anchoring.py](../polaris_web/anchoring.py)): the
   verifier refuses a tampered inclusion proof.
 - Duress codes: the comparison is constant-time.
@@ -367,5 +367,5 @@ commit to:
    [test_checks.py](../polaris_checks/test_checks.py), for every finding a
    repository-level check can catch, so the regression is caught on every
    run.
-5. Update the [threat model](../DEVNOTES/threat-model.md) to absorb the
+5. Update the [threat model](design/threat-model.md) to absorb the
    findings.

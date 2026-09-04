@@ -33,7 +33,7 @@ signature. The procedure COALESCEs to the legacy placeholder string only for
 direct SQL callers that pass no signature, so existing tooling is unaffected.
 `polaris_checks.check_pqc_signing_wired` asserts this wiring stays in place.
 
-Per the two-witness principle (`DEVNOTES/two-witness-principle.md`), the
+Per the two-witness principle (`docs/design/two-witness-principle.md`), the
 ML-DSA-65 verify path is now **two-witnessed** (v9.133): the primary verdict
 (liboqs) is cross-checked against an INDEPENDENT second witness — cryptography's
 MLDSA65 (OpenSSL-backed, not liboqs) — and the two must AGREE (`verify_both`). A

@@ -1,6 +1,6 @@
 -- ============================================================================
 -- AI-context: stored procedures with concurrency hazards. Read before editing:
---     ../DEVNOTES/concurrency.md             ← hazard inventory + protections
+--     ../docs/design/concurrency.md             ← hazard inventory + protections
 -- After editing, RELOAD: psql -d $DB -f polaris_sql/05_procedures.sql
 -- ============================================================================
 
@@ -1071,7 +1071,7 @@ COMMENT ON PROCEDURE uc6_migrate_algorithm(INTEGER, INTEGER, BYTEA, BOOLEAN, TEX
 -- AnchorBatch is the 5th audit-of-record instance in Polaris — append-only,
 -- once created the merkle_root cannot be rewritten (every inclusion proof
 -- issued against it depends on its immutability). See
--- DEVNOTES/audit-of-record.md.
+-- docs/design/audit-of-record.md.
 --
 -- Implements PDF §9 "Centralized trust assumption" leg — the relational
 -- schema as the off-chain commitment-record layer.
@@ -1089,7 +1089,7 @@ DECLARE
     v_new_batch_id    INTEGER;
     v_alg_exists      INTEGER;
 BEGIN
-    -- C9: per-algorithm advisory lock. See DEVNOTES/concurrency.md
+    -- C9: per-algorithm advisory lock. See docs/design/concurrency.md
     -- ("Per-algorithm advisory-lock") for the rationale.
     PERFORM pg_advisory_xact_lock(
         hashtext('polaris.anchor.close-batch.' || p_algorithm_id::TEXT));
@@ -1174,7 +1174,7 @@ COMMENT ON PROCEDURE close_anchor_batch(INTEGER, VARCHAR, JSONB) IS
 --
 -- NO transitive trust: this procedure creates exactly one edge in the
 -- graph. The verification flow looks up exactly one row. R1 audit
--- refinement; see DEVNOTES/ships/federation.md.
+-- refinement; see docs/design/federation.md.
 -- ----------------------------------------------------------------------------
 CREATE OR REPLACE PROCEDURE uc10_attest_trust(
     p_attesting_id  INTEGER,
@@ -1241,7 +1241,7 @@ COMMENT ON PROCEDURE uc10_attest_trust(INTEGER, INTEGER, INTEGER, DATE, INTEGER)
   'R11-3 / M2-8. Records a federation trust edge (attesting → attested for '
   'context, valid until date). Per-attesting-agency advisory lock for C9. '
   'Admin role required. NO transitive trust — single-row insert; verification '
-  'reads single row. See DEVNOTES/ships/federation.md.';
+  'reads single row. See docs/design/federation.md.';
 
 -- ----------------------------------------------------------------------------
 -- uc10_revoke_attestation (R11-3 / M2-8)
@@ -1330,7 +1330,7 @@ COMMENT ON PROCEDURE uc10_revoke_attestation(INTEGER, VARCHAR, INTEGER) IS
   'R11-3 / M2-8. Revokes an active federation attestation. Per-attesting-agency '
   'advisory lock for C9. Admin role required. One-way revocation enforced by '
   'enforce_attestation_immutability trigger. Forward-looking — past '
-  'VerificationEvent rows survive. See DEVNOTES/ships/federation.md.';
+  'VerificationEvent rows survive. See docs/design/federation.md.';
 
 -- ----------------------------------------------------------------------------
 -- uc11_close_epoch (R10-1 / M2-1)
@@ -1432,7 +1432,7 @@ COMMENT ON PROCEDURE uc11_close_epoch(VARCHAR, TIMESTAMP, INTEGER, JSONB) IS
   'R10-1 / M2-1. Closes a ZK-SNARK epoch with pre-computed Merkle root + '
   'per-leaf proof paths. Admin-only. Per-procedure advisory lock (6th catalog '
   'entry) prevents concurrent epoch closures. Hard cap: 10000 leaves. '
-  'See DEVNOTES/ships/zk-snark.md.';
+  'See docs/design/zk-snark.md.';
 
 -- ----------------------------------------------------------------------------
 -- uc12_record_duress (R11-5 / M2-10 / v8.24)
@@ -1492,7 +1492,7 @@ COMMENT ON PROCEDURE uc12_record_duress(INTEGER, INTEGER, INTEGER, VARCHAR) IS
   'R11-5 / M2-10. Records a detected duress event in DuressEvent (8th audit-of-'
   'record). Called by verifications_new after constant-time hash match. NO '
   'advisory lock — DuressEvent rows do not contend. The coercer-visible flow '
-  'proceeds normally; this is the silent OOB alert. See DEVNOTES/ships/duress-codes.md.';
+  'proceeds normally; this is the silent OOB alert. See docs/design/duress-codes.md.';
 
 -- ============================================================================
 -- END OF 05_procedures.sql

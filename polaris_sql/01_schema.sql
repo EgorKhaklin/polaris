@@ -1,7 +1,7 @@
 -- ============================================================================
 -- AI-context: schema DDL. The partial unique index uq_one_active_per_person
 --   is load-bearing for concurrency safety. Read:
---     ../DEVNOTES/concurrency.md  (partial unique index section)
+--     ../docs/design/concurrency.md  (partial unique index section)
 --   DROP TABLE CASCADE means data is wiped on reload. After any edit, also
 --   rerun: 02_indexes.sql, 09_grants.sql.
 -- ============================================================================
@@ -563,7 +563,7 @@ COMMENT ON COLUMN GenomicAnchor.anchor_hash IS
 --
 -- The scaffold-state and operational-state invariants are enforced by
 -- CHECK constraints so the deferred fields can't be partially populated.
--- See DEVNOTES/ships/quantum-observer.md for the architectural rationale.
+-- See docs/design/quantum-observer.md for the architectural rationale.
 -- ============================================================================
 
 -- coverage:exempt — M2-5 scaffold; no live writes; drift via migrations framework when M2-5 activates
@@ -628,7 +628,7 @@ COMMENT ON TABLE QuantumObserverBinding IS
   'Until quantum-observer hardware exists, every row is binding_status=SCAFFOLD '
   'and the functional fields are NULL. Two CHECK constraints enforce the '
   'scaffold vs operational state transition. M2-5 / R10-5 — see '
-  'DEVNOTES/ships/quantum-observer.md for the architectural rationale.';
+  'docs/design/quantum-observer.md for the architectural rationale.';
 
 COMMENT ON COLUMN QuantumObserverBinding.binding_status IS
   'SCAFFOLD = placeholder (current state until hardware exists). '
@@ -752,7 +752,7 @@ COMMENT ON TABLE AgencyQuota IS
 --                         documentation in progress.
 --   ENROLLED            — has at least one non-terminal IdentityToken.
 --                         Recorded as a policy event, NOT auto-derived from
---                         token state — see DEVNOTES/ships/tiered-enrollment.md
+--                         token state — see docs/design/tiered-enrollment.md
 --                         for the auto-derivation-is-wrong argument.
 --   EXEMPT              — civic-policy recognition of non-token participation
 --                         (biometric incompatibility, religious exemption,
@@ -790,7 +790,7 @@ COMMENT ON TABLE EnrollmentStatusEvent IS
   'PENDING_ENROLLMENT, ENROLLED, EXEMPT, LAPSED. State transitions are '
   'policy events recorded here; the schema does not enforce sequencing. '
   'Implements PDF §9 population-coverage open problem; see '
-  'DEVNOTES/ships/tiered-enrollment.md for the asymmetric-design rationale '
+  'docs/design/tiered-enrollment.md for the asymmetric-design rationale '
   '(EXEMPT frictionless, NOT_ENROLLED-enumeration deliberate).';
 
 -- ----------------------------------------------------------------------------
@@ -842,7 +842,7 @@ COMMENT ON TABLE IndividualErasureEvent IS
 -- an attacker cannot bypass the cool-down, cannot self-approve, cannot
 -- skip the three-channel verification. The database refuses.
 --
--- See DEVNOTES/ships/recovery-ceremony.md for the adversary walk and what
+-- See docs/design/recovery-ceremony.md for the adversary walk and what
 -- breaks if any CHECK is removed. The advisory-lock on
 -- claimed_individual_id (in uc9_complete_recovery) provides C9
 -- concurrency correctness; cross-individual recoveries remain parallel.
@@ -878,7 +878,7 @@ CREATE TABLE RecoveryRequest (
     -- Cool-down enforcement (≥ 48h between request and decision).
     -- This is the administrative window per PDF §9.1 "defined grace
     -- period"; the operational grace credential (TemporaryAttestation)
-    -- is a follow-up — see DEVNOTES/ships/recovery-ceremony.md.
+    -- is a follow-up — see docs/design/recovery-ceremony.md.
     cooldown_expires_at      TIMESTAMP    NOT NULL,
 
     CONSTRAINT cooldown_window_minimum CHECK (
@@ -944,7 +944,7 @@ COMMENT ON TABLE RecoveryRequest IS
 -- concentration triad (alongside R11-6 = constitutional limits ✅ and
 -- M2-8 = federation, open).
 -- ----------------------------------------------------------------------------
--- coverage:exempt — C7 algorithm metadata; partial unique index on token_id; tg_tokensignature_ordering enforces signed_at <= issued_at; see DEVNOTES/ships/token-signature.md
+-- coverage:exempt — C7 algorithm metadata; partial unique index on token_id; tg_tokensignature_ordering enforces signed_at <= issued_at; see docs/design/token-signature.md
 CREATE TABLE TokenSignature (
     signature_id       SERIAL       PRIMARY KEY,
     token_id           INTEGER      NOT NULL
@@ -989,7 +989,7 @@ COMMENT ON TABLE TokenSignature IS
 --
 -- AnchorBatch is the FIFTH audit-of-record instance in Polaris (after
 -- TokenLifecycleEvent, RecoveryRequest, TokenSignature, and Sanctum sessions);
--- see DEVNOTES/audit-of-record.md. The append-only invariant is enforced by
+-- see docs/design/audit-of-record.md. The append-only invariant is enforced by
 -- extending the reject_audit_modification trigger to this table (in
 -- 06_triggers.sql).
 --
@@ -1026,7 +1026,7 @@ COMMENT ON TABLE AnchorBatch IS
   'are operator-set when (and only when) the batch is actually pushed to a '
   'PQ-capable distributed ledger; NOT auto-derived. Implements PDF §9 '
   '"Centralized trust assumption" — the off-chain audit layer under '
-  'DID-anchoring. See DEVNOTES/ships/anchoring.md and DEVNOTES/audit-of-record.md.';
+  'DID-anchoring. See docs/design/anchoring.md and docs/design/audit-of-record.md.';
 
 -- Now that AnchorBatch exists, add the FK from BlockchainAnchor.batch_id.
 ALTER TABLE BlockchainAnchor
@@ -1097,7 +1097,7 @@ COMMENT ON TABLE AgencyTrustAttestation IS
   'mutation is the one-way revocation pair (revocation_date, reason). '
   'NO transitive trust — verification reads exactly one row per check. '
   'v1 = operator-logged; v2 path = agency-signed signatures (deferred). '
-  'See DEVNOTES/ships/federation.md.';
+  'See docs/design/federation.md.';
 
 -- ----------------------------------------------------------------------------
 -- TokenStateEpoch + TokenStateEpochLeaf: ZK-SNARK epoch infrastructure
@@ -1122,7 +1122,7 @@ COMMENT ON TABLE AgencyTrustAttestation IS
 -- in the polaris_zk crate.
 --
 -- Implements PDF §9 ZK-SNARK requirement — closes Substrate-D arc to
--- 5/5. See DEVNOTES/ships/zk-snark.md.
+-- 5/5. See docs/design/zk-snark.md.
 -- ----------------------------------------------------------------------------
 -- coverage:exempt — epoch-state Merkle structure; mutations gated by tg_tokenstateepoch_append_only; tested via epoch invariants
 CREATE TABLE TokenStateEpoch (
@@ -1146,7 +1146,7 @@ COMMENT ON TABLE TokenStateEpoch IS
   'The 7th audit-of-record instance in Polaris. Append-only via '
   'enforce_epoch_immutability trigger. The SNARK proves membership in '
   'merkle_root; verifiers consult this row to check epoch boundary '
-  '(valid_until). See DEVNOTES/ships/zk-snark.md.';
+  '(valid_until). See docs/design/zk-snark.md.';
 
 -- coverage:exempt — epoch-leaf table; FK to tokenstateepoch; same append-only discipline
 CREATE TABLE TokenStateEpochLeaf (
@@ -1167,7 +1167,7 @@ COMMENT ON TABLE TokenStateEpochLeaf IS
   'is the leaf hash and inclusion proof for a token at the epoch '
   'snapshot. The Rust prover reads its row to generate a ZK proof. '
   'Note: v1 stores proof_path in plaintext; v2 would encrypt under '
-  'holder key. See DEVNOTES/ships/zk-snark.md.';
+  'holder key. See docs/design/zk-snark.md.';
 
 -- ----------------------------------------------------------------------------
 -- ZkVerificationNonce: single-use nonce store for ZK-proof anti-replay (R2).
@@ -1246,7 +1246,7 @@ COMMENT ON TABLE DuressEvent IS
   'reject_audit_modification trigger. The OOB alert channel for '
   'detected duress signals. NOT joined into the operator-visible '
   '/verifications list (R6 audit refinement — anti-revealing posture). '
-  'See DEVNOTES/ships/duress-codes.md.';
+  'See docs/design/duress-codes.md.';
 
 -- ============================================================================
 -- END OF 01_schema.sql

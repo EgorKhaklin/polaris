@@ -378,7 +378,7 @@ plaintext (`test_duress_code_hash_length_floor` in `test_app.py`,
 
 ## 8. Threat model summary
 
-The full STRIDE analysis is [DEVNOTES/threat-model.md](../../DEVNOTES/threat-model.md).
+The full STRIDE analysis is [docs/design/threat-model.md](../design/threat-model.md).
 For secrets specifically:
 
 | Threat | Mitigation |
@@ -417,4 +417,4 @@ pairing or printed mnemonic, and disabling MFA on an account all live in
 - [ENCRYPTION-AT-REST.md](ENCRYPTION-AT-REST.md): disk encryption on the host
 - [`polaris_web/docker-compose.prod.yml`](../../polaris_web/docker-compose.prod.yml): where each secret is mounted
 - [`polaris_web/secretstore.py`](../../polaris_web/secretstore.py): the sealed-store implementation
-- [DEVNOTES/threat-model.md](../../DEVNOTES/threat-model.md): STRIDE analysis
+- [docs/design/threat-model.md](../design/threat-model.md): STRIDE analysis

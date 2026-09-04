@@ -1,13 +1,6 @@
-# DEVNOTES/ships/multi-sig-migration.md
+# Algorithm migration
 
-**Ships with:** R11-1 / M2-6 / v8.18
-**Implements:** PDF §9.4 cryptographic-migration during transitions
-**Code surface:** `01_schema.sql` (TokenSignature table), `02_indexes.sql`
-(idx_token_signature_active partial index), `05_procedures.sql`
-(uc6_migrate_algorithm + UC-1/UC-9 extensions), `06_triggers.sql`
-(enforce_token_has_active_signature + enforce_token_signature_immutability),
-`04_data.sql` (backfill), `polaris_web/app.py` (`/uc6/migrate`),
-`polaris_web/templates/uc6_migrate.html`.
+**Reader:** an engineer or an assessor. **Job:** How a token moves to a new signature algorithm without a gap in coverage.
 
 ---
 
@@ -22,26 +15,20 @@ window — the case the PDF §9.4 phrase names:
 > migration problem, when ML-DSA or SLH-DSA is replaced by a successor
 > algorithm. A production system would require either simultaneous
 > mass reissuance, or a multi-signature scheme where tokens can accept
-> signatures from multiple algorithms during transition periods."*
-
-R11-1 implements the multi-signature scheme. Simultaneous mass
+> signatures from multiple algorithms during transition periods."* implements the multi-signature scheme. Simultaneous mass
 reissuance was the other option in the PDF; it's not viable at
 population scale.
 
-## The issuer-trust-concentration triad
-
-R11-1 closes one leg of the **issuer-trust-concentration triad**
+## The issuer-trust-concentration triad closes one leg of the **issuer-trust-concentration triad**
 named in PDF §9:
 
 | Leg | PDF §9 requirement | Item | Status |
 |---|---|---|---|
-| **Cryptographic diversity** | "cryptographic diversity across issuers" | **R11-1** | ✅ v8.18 |
-| Federation | "a federation model with mutual recognition between independent authorities" | M2-8 | ⬜ |
-| Constitutional limits | "constitutional limits on issuer discretion" | R11-6 | ✅ v8.15 |
-
-R11-6 sits at the intersection of both triads — exit leg of the
+| **Cryptographic diversity** | "cryptographic diversity across issuers" | **** | ✅ v8.18 |
+| Federation | "a federation model with mutual recognition between independent authorities" | | ⬜ |
+| Constitutional limits | "constitutional limits on issuer discretion" | | ✅ v8.15 | sits at the intersection of both triads — exit leg of the
 holder-protection triad AND third leg of the issuer-trust triad.
-Shipping R11-1 closes leg 1 of issuer-trust. **M2-8 is now the only
+Shipping closes leg 1 of issuer-trust. ** is now the only
 unshipped leg across both triads.**
 
 ## What this is NOT
@@ -49,7 +36,7 @@ unshipped leg across both triads.**
 - **Not Polaris deciding which algorithm to use.** The schema records
   the algorithm a signature was generated under; agencies and the
   jurisdiction's cryptographic authority decide which algorithms are
-  credible. Same posture as R11-4 / R11-6 / R11-2 / C7.
+  credible. Same posture as / C7.
 - **Not auto-derivation of `TokenSignature.deprecation_date` from
   `CryptographicAlgorithm.deprecation_date`.** The two columns serve
   different purposes:
@@ -216,7 +203,7 @@ implementation signatures from real production ones.
 
 ## Per-token advisory lock — concurrency model
 
-Pattern catalog (see `DEVNOTES/concurrency.md`):
+Pattern catalog (see `docs/design/concurrency.md`):
 
 | Use case | Lock key | Granularity |
 |---|---|---|
@@ -225,17 +212,16 @@ Pattern catalog (see `DEVNOTES/concurrency.md`):
 | **UC-6 migration** | **per-token** | **Cross-token parallel** |
 
 Three patterns, three granularities, same mechanism. The catalog
-entry in `DEVNOTES/concurrency.md` documents the pattern.
+entry in `docs/design/concurrency.md` documents the pattern.
 
 ## Cross-references
 
 - PDF §9.4 "Cryptographic migration during transitions" — original
   problem statement.
-- `proposals/R11-1-multisig-transitional.md` — the post-audit
+- `proposals/-multisig-transitional.md` — the post-audit
   proposal with the seven refinements folded in.
-- `MISSION.md` *Polaris is NOT an authority* + C7 — the constraints
-  R11-1 calibrates against and strengthens.
-- `DEVNOTES/ships/issuer-discretion.md` — R11-6, the constitutional-limits
+- `MISSION.md` *Polaris is NOT an authority* + C7 — the constraints calibrates against and strengthens.
+- `docs/design/issuer-discretion.md` —, the constitutional-limits
   leg of the issuer-trust triad.
-- `DEVNOTES/concurrency.md` — the advisory-lock pattern catalog.
+- `docs/design/concurrency.md` — the advisory-lock pattern catalog.
 - `docs/operator/SECURITY.md` — cryptographic-migration subsection.

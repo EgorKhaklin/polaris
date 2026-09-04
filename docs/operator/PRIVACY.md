@@ -4,7 +4,7 @@
 Polaris deployment. **Job:** state what personal data Polaris collects, what
 it retains, how the architecture enforces minimization, and what holders can
 expect. This is distinct from [SECURITY.md](SECURITY.md) (which covers
-attacks) and [DEVNOTES/threat-model.md](../../DEVNOTES/threat-model.md)
+attacks) and [docs/design/threat-model.md](../design/threat-model.md)
 (which covers the architectural defenses).
 
 ---
@@ -51,7 +51,7 @@ events stay (the action is permanent, even when the actor is gone).
 
 The audit invariant (C1) means events are permanent. This is a
 deliberate trade-off: the system's repudiation defense (R-R1, R-R2
-in `DEVNOTES/threat-model.md`) requires that events cannot be
+in `docs/design/threat-model.md`) requires that events cannot be
 deleted, even at the holder's request.
 
 ---
@@ -452,7 +452,7 @@ enumeration deliberate) is the privacy stance. The schema cannot
 prevent misuse, but it can make the misuse named. Naming is the
 precondition for governance catching it.
 
-See `DEVNOTES/ships/tiered-enrollment.md` for the full adversary walk and
+See `docs/design/tiered-enrollment.md` for the full adversary walk and
 mechanism-design rationale.
 
 ---

@@ -1,4 +1,6 @@
-# DEVNOTES/concurrency.md
+# Concurrency
+
+**Reader:** an engineer or an assessor. **Job:** Every race-prone path, the lock that serialises it, and the test that proves it.
 
 <!-- coherence:taxonomy-allowed, hazard inventory + 7 lock-pattern sections (UC-8, UC-9, etc. per use-case) + catalog summary; each pattern is a distinct concurrency hazard with its own lock, test, and rationale -->
 
@@ -152,7 +154,7 @@ Concurrency bugs that aren't in the test suite WILL come back.
 
 ---
 
-## Advisory-lock pattern: UC-8 / R11-6 (added v8.15)
+## Advisory-lock pattern: UC-8 / (added v8.15)
 
 The bounded-revocation procedure (`uc8_revoke_token`) has a different
 shape of race than the row-level ones above. The rate-limit check
@@ -200,7 +202,7 @@ locking on token_id would let them both pass.
 
 ---
 
-## Per-individual advisory-lock: UC-9 / R11-2 (added v8.17)
+## Per-individual advisory-lock: UC-9 / (added v8.17)
 
 Same pattern as UC-8, applied to a different shape of contention.
 `uc9_complete_recovery` faces this race: two threads (or two
@@ -231,7 +233,7 @@ succeeds, T-1 fail with "not PENDING".
 
 ---
 
-## Per-token advisory-lock: UC-6 / R11-1 (added v8.18)
+## Per-token advisory-lock: UC-6 / (added v8.18)
 
 Third entry in the catalog. Same advisory-lock mechanism as UC-8 and
 UC-9, but the contention is per-token: `uc6_migrate_algorithm` races
@@ -275,7 +277,7 @@ Test `test_uc6_verification_snapshot_consistent_with_migration`
 asserts this contract explicitly so the verification path can rely
 on it.
 
-## Per-algorithm advisory-lock: R10-2 / M2-2 (added v8.21)
+## Per-algorithm advisory-lock: (added v8.21)
 
 Fourth entry in the catalog. `close_anchor_batch(algorithm_id, root,
 proofs)` groups pending `BlockchainAnchor` rows by their underlying
@@ -300,9 +302,9 @@ Test: `ConcurrencyTests.test_close_anchor_batch_cross_algorithm_parallel`
 asserts that closes for algorithms 2 and 3 complete in ~0.3s (the
 held lock duration), not ~0.6s (serialized).
 
-See `DEVNOTES/ships/anchoring.md` for the broader R10-2 / M2-2 write-up.
+See `docs/design/anchoring.md` for the broader write-up.
 
-## Per-attesting-agency advisory-lock: R11-3 / M2-8 (added v8.22)
+## Per-attesting-agency advisory-lock: (added v8.22)
 
 Fifth entry in the catalog. `uc10_attest_trust` and
 `uc10_revoke_attestation` both hold
@@ -326,9 +328,9 @@ inside is a no-op reacquire on the same transaction.
 Test: `ConcurrencyTests.test_uc10_cross_attesting_agency_parallelizes`
 asserts cross-agency parallelism completes in ~0.3s.
 
-See `DEVNOTES/ships/federation.md` for the broader R11-3 / M2-8 write-up.
+See `docs/design/federation.md` for the broader write-up.
 
-## Per-procedure advisory-lock: R10-1 / M2-1 (added v8.23)
+## Per-procedure advisory-lock: (added v8.23)
 
 Sixth entry in the catalog. `uc11_close_epoch` holds
 `pg_advisory_xact_lock(hashtext('polaris.zk.close-epoch'))`: a
@@ -349,7 +351,7 @@ Test: `ConcurrencyTests.test_uc11_close_epoch_both_rows_committed`
 asserts that both serialized closures commit (lock = ordering, not
 loss-of-write).
 
-See `DEVNOTES/ships/zk-snark.md` for the broader R10-1 / M2-1 write-up.
+See `docs/design/zk-snark.md` for the broader write-up.
 
 ## Catalog summary
 

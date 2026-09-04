@@ -11,7 +11,7 @@
 //
 // Read before editing:
 //   ../../docs/reference/SCALING.md          (viewport-aggregation architecture)
-//   ../../DEVNOTES/atlas-scaling.md          (what NOT to change without measuring)
+//   ../../docs/design/atlas-scaling.md          (what NOT to change without measuring)
 // =============================================================================
 (function () {
     'use strict';

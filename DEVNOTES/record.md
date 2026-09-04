@@ -9,7 +9,7 @@ moved here on 2026-09-02 (v9.195) so the constitution carries only the
 constitution. The text is the record as written at the time, kept
 verbatim apart from two citations of files that no longer exist; ticket
 labels such as M2-1 or R11-3 are the labels the CHANGELOG and the
-per-ship notes in [ships/](ships/) still use. Where this record and the
+per-ship notes in [ships/](../docs/design/) still use. Where this record and the
 running code disagree, the code and [CHANGELOG.md](../CHANGELOG.md) are
 authoritative.
 
@@ -37,7 +37,7 @@ historical record, v2 as the closed mission.
 5. ✅ Concurrency hazards identified and sealed with tests (achieved v6)
 6. ✅ Scales to 2M+ events with bounded API responses (achieved v6)
 7. ✅ Test coverage: 1077 Python (12 test classes incl. property + redaction-property) + 171 SQL self-tests (achieved v6/v7; growing each release)
-8. ✅ Threat model: STRIDE-categorized, every threat mapped to a control (DEVNOTES/threat-model.md)
+8. ✅ Threat model: STRIDE-categorized, every threat mapped to a control (docs/design/threat-model.md)
 9. ✅ Antimeridian-spanning bbox queries (wrap-aware predicate; 11_atlas.sql)
 10. ✅ Cursor pagination on list pages (achieved v7.4 — keyset cursors on /tokens and /verifications)
 11. ✅ Property-based tests for invariants (19 Hypothesis tests on C1, C2, C3 in test_invariants_property.py)
@@ -91,7 +91,7 @@ M2-2. ✅ **Functional DID anchoring** (achieved v8.21 / R10-2 —
        Substrate-D arc closed 5/5 — M2-1 ZK-SNARK delivered v8.23).
 
 M2-3. ✅ **Substrate-dependency manifest** (achieved v8 —
-       `DEVNOTES/substrate.md` is the prose form; `SystemDependency` view
+       `docs/design/substrate.md` is the prose form; `SystemDependency` view
        in `polaris_sql/13_substrate.sql` is the queryable mirror; 27 rows
        across 7 layers (crypto, network, storage, runtime, standards,
        hardware, human); `SubstrateManifestTests` confirms the prose and
@@ -123,7 +123,7 @@ M2-6. ✅ **Multi-signature transitional state** (achieved v8.18 /
        Post-Quantum panel read from TokenSignature; 16 tests in
        `MultiSignatureTests` + 3 in `ConcurrencyTests` (per-token race,
        verify+migrate snapshot consistency, cross-token parallelism)
-       + 5 SQL self-tests in section N; `DEVNOTES/ships/multi-sig-migration.md`
+       + 5 SQL self-tests in section N; `docs/design/multi-sig-migration.md`
        documents the adversary walk, the verification consistency
        model, the no-auto-derivation argument, and the
        issuer-trust-concentration triad positioning. Closes the
@@ -145,7 +145,7 @@ M2-7. ✅ **Catastrophic-loss recovery — UC-9** (achieved v8.17 /
        predecessor_token_id=NULL + tags all lifecycle rows with
        `[RECOVERY:<id>]`; three Flask routes + templates;
        15 CatastrophicLossRecoveryTests + 2 ConcurrencyTests; 5 SQL
-       self-tests in section M; `DEVNOTES/ships/recovery-ceremony.md`
+       self-tests in section M; `docs/design/recovery-ceremony.md`
        documents the adversary walk, mechanism design, and the
        administrative-vs-operational grace-period framing. The third
        leg of the "schema doesn't weaponize itself against the
@@ -175,7 +175,7 @@ M2-9. ✅ **Tiered enrollment / population coverage** (achieved v8.16 /
        returns per-jurisdiction × status counts only — per-individual
        NOT_ENROLLED enumeration deliberately not first-class;
        10 tests in `TieredEnrollmentTests` + 5 SQL self-tests in
-       section L; `DEVNOTES/ships/tiered-enrollment.md` documents the
+       section L; `docs/design/tiered-enrollment.md` documents the
        asymmetric design (EXEMPT frictionless, mass-NOT_ENROLLED
        enumeration deliberate) and the PDF §9 anchoring.)
 
@@ -204,7 +204,7 @@ M2-11. ✅ **Issuer-discretion bounds** (achieved v8.15 / R11-6 —
        serializes concurrent boundary races for C9 correctness;
        11 tests in `IssuerDiscretionBoundsTests` + 2 in
        `ConcurrencyTests` + 7 SQL self-tests in section K;
-       `DEVNOTES/ships/issuer-discretion.md` documents the policy choices,
+       `docs/design/issuer-discretion.md` documents the policy choices,
        adversary walk, and PDF §9 anchoring).
 
 M2-12. ✅ **Verification-graph redaction proof** (achieved v8 —

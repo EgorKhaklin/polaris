@@ -1,8 +1,6 @@
-# DEVNOTES/ships/zk-snark.md
+# The ZK-SNARK
 
-**Introduced:** v8.23 (R10-1 / M2-1). Closes the Substrate-D arc to **5/5**.
-The last open substrate item; the v2 mission goes from 10 ✅ / 2 ⬜ to
-11 ✅ / 1 ⬜ with this ship.
+**Reader:** an engineer or an assessor. **Job:** What the Plonky2 circuit proves, and the second witness that checks it.
 
 This file is the canonical write-up for Polaris's ZK-SNARK layer: which
 cryptographic primitive, why, what the circuit proves, how it integrates,
@@ -12,7 +10,7 @@ what v1 ships, what v1 deliberately defers.
 
 ## The picked combination: C3 + A4 + B3
 
-The M2-1 alignment-exploration narrowed the 4 × 3 × 3 design space
+The alignment-exploration narrowed the 4 × 3 × 3 design space
 (4 SNARK families, 3 circuit designs, 3 trusted-setup postures) to a
 single combination:
 
@@ -22,7 +20,7 @@ single combination:
 - **A4 — Plonky2 SNARK family.** FRI-based, hash-only commitments,
   post-quantum-comfortable. The only candidate that aligns with
   Polaris's "post-quantum by default" mission at the SNARK layer.
-- **B3 — Hybrid-Merkle circuit reusing R10-2 infrastructure.** The
+- **B3 — Hybrid-Merkle circuit reusing infrastructure.** The
   issuer publishes a Merkle root over the active-token set per epoch;
   the SNARK proves Merkle membership in this root, bound to
   (epoch_id, context_id, nonce) public inputs.
@@ -81,16 +79,14 @@ binary at startup or assume it's pre-built. v1 ships the source and a
 build instruction; production deployment would compile the binary
 once and distribute it alongside Polaris.
 
-## Hash choice: Poseidon (not SHA3)
-
-R10-2's `AnchorBatch` uses SHA3-256 because it's the operator-policy
-hash for off-chain commitments. R10-1's `TokenStateEpoch` uses
+## Hash choice: Poseidon (not SHA3)'s `AnchorBatch` uses SHA3-256 because it's the operator-policy
+hash for off-chain commitments.'s `TokenStateEpoch` uses
 **Poseidon** because Poseidon is SNARK-friendly — its arithmetic
 constraints fit Plonky2's circuit efficiently. SHA3 inside a circuit
 would be 10,000+ R1CS constraints per hash; Poseidon is ~100.
 
 The two commitments are distinct primitives for distinct primitives.
-DEVNOTES/substrate.md adds a row for Poseidon explicitly so the
+docs/design/substrate.md adds a row for Poseidon explicitly so the
 manifest captures both. `TokenStateEpoch.merkle_root` stores the
 Poseidon root as a hex-encoded byte sequence (same hex format as
 `AnchorBatch.merkle_root`, different underlying hash).
@@ -119,7 +115,7 @@ It does NOT by itself prevent replay of the *identical* request:
 `/api/zk/verify` does not issue or consume nonces (the prover chooses the
 nonce and carries it in the request), so the same bundle resubmitted
 verifies again. Bundle-replay resistance requires the single-use nonce
-store deferred in [`../threat-model.md`](../threat-model.md) T-T2; until
+store deferred in [`../threat-model.md`](threat-model.md) T-T2; until
 then anti-replay relies on context-side enforcement and the
 `VerificationEvent` freshness window.
 
@@ -141,7 +137,7 @@ performs this check before invoking the Rust verifier.
 
 ### R5. Substrate manifest update
 
-Two new rows in `DEVNOTES/substrate.md` + `13_substrate.sql`:
+Two new rows in `docs/design/substrate.md` + `13_substrate.sql`:
 - `Plonky2 SNARK` (crypto layer; in-tree dependency `plonky2 = "0.2"`)
 - `Rust toolchain` (runtime layer; required to build `polaris_zk`)
 
@@ -165,8 +161,8 @@ the regression is named here in §"Performance budget."
 
 `uc11_close_epoch` is an explicit operator action — admin-role-required.
 No scheduled job auto-closes epochs. The schema records the epoch;
-the operator decides when to close. Same posture as R10-2's
-`committed_to_chain` and R11-3's federation attestation.
+the operator decides when to close. Same posture as's
+`committed_to_chain` and's federation attestation.
 
 ### R8. TokenStateEpoch is the 7th audit-of-record instance
 
@@ -175,12 +171,12 @@ nothing on the row can change — every proof issued against
 `merkle_root` depends on its immutability. The TokenStateEpochLeaf
 table is also append-only (extends `reject_audit_modification`).
 
-### R9. Coexistence with R11-3 federation check
+### R9. Coexistence with federation check
 
 The verifications_new SUCCESS path now has TWO complementary
 cryptographic gatings, applied by disclosure level:
 
-| Disclosure | Federation check (R11-3) | SNARK check (M2-1) |
+| Disclosure | Federation check | SNARK check |
 |---|---|---|
 | ZERO_KNOWLEDGE | N/A (no issuer disclosed) | **runs** |
 | SELECTIVE | **runs** | N/A (no proof submitted) |
@@ -216,7 +212,7 @@ applies. No verification flow runs both checks for the same event.
 2. **Attacker's optimal response:** Forge a proof. Plonky2 is
    FRI-based and post-quantum-comfortable; soundness reduces to
    cryptographic assumptions the substrate already documents
-   (`DEVNOTES/substrate.md`). Game over for the attacker at the
+   (`docs/design/substrate.md`). Game over for the attacker at the
    cryptographic layer — unless the attacker can move *outside the
    proof* to a side channel.
 3. **Equilibrium:** The proof itself reveals nothing. The
@@ -228,7 +224,7 @@ applies. No verification flow runs both checks for the same event.
 4. **Second-best attack:** Correlate ZERO_KNOWLEDGE events with
    FULL or SELECTIVE events for the same individual across
    contexts and timestamps to reconstruct identity from the
-   verification graph. Defeated *outside the SNARK* by M2-12
+   verification graph. Defeated *outside the SNARK* by
    (redaction proof) + R6 anti-revealing + the C8 atlas hard caps
    that bound aggregate visibility. The SNARK alone does not solve
    this; the system's response is that the verification graph is
@@ -265,6 +261,6 @@ applies. No verification flow runs both checks for the same event.
 - `polaris_sql/10_auth.sql` — demo epoch seed (3 leaves over BANKING context).
 - `polaris_web/test_app.py` — `ZKSnarkTests` (15+ tests),
   `ConcurrencyTests.test_uc11_*` (2 tests).
-- `DEVNOTES/substrate.md` — Plonky2 + Rust toolchain rows.
-- `DEVNOTES/audit-of-record.md` — `TokenStateEpoch` is the 7th instance.
-- `DEVNOTES/concurrency.md` — per-procedure advisory-lock is the 6th catalog entry.
+- `docs/design/substrate.md` — Plonky2 + Rust toolchain rows.
+- `docs/design/audit-of-record.md` — `TokenStateEpoch` is the 7th instance.
+- `docs/design/concurrency.md` — per-procedure advisory-lock is the 6th catalog entry.

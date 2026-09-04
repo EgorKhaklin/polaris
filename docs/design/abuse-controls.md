@@ -1,30 +1,19 @@
-# DEVNOTES/ships/abuse-controls.md
+# Abuse controls
 
-**Ships with:** roadmap P1.8 / v9.190
-**Implements:** the abuse-controls row: per-agency quotas and velocity anomaly
-alerts on issuance, revocation, and verification, exercised with the load
-generator; plus the redis-py major deferred from P0.3.
-**Code surface:** `01_schema.sql` (AgencyQuota), `02_indexes.sql` (window
-indexes), `06_triggers.sql` (enforce_agency_quota + three triggers), migration
-`2026-09-01-002-agency-quota`, `polaris_web/app.py` (counters, 429 mapping),
-`polaris_web/security.py` (redis-py retry contract), `polaris_cli/polaris.py`
-(quota-set / quota-show), `deploy/observability/polaris-alerts.yml` +
-`polaris-alerts.test.yml` + the overview dashboard, `scripts/polaris_load_gen.py`
-(operator-flow mode), `scripts/polaris-abuse-drill.sh`, `.github/workflows/ci.yml`
-(redis service + drill step).
+**Reader:** an engineer or an assessor. **Job:** The per-agency quotas, where they are enforced, and what an operator sees when one refuses a write.
 
 ---
 
 ## What this is
 
-Two controls on the SHAPE of agency behaviour, in the R11-6 lineage
+Two controls on the SHAPE of agency behaviour, in the lineage
 (`issuer-discretion.md`): a hard bound (quotas) and an early signal
 (velocity alerts).
 
 - **Quotas** are opt-in, per agency, per kind, in rolling windows, and live in
   the database as a BEFORE trigger. A cap holds on every path: the stored
   procedures, the SQL console, a bulk loader. There is deliberately no opt-out
-  GUC (unlike the raw-UPDATE guard of R11-6): a sanctioned procedure is still
+  GUC (unlike the raw-UPDATE guard of: a sanctioned procedure is still
   the agency doing the thing the cap bounds.
 - **Velocity alerts** compare each agency against ITS OWN trailing week, not
   against a global number, so a large agency's normal day never trips a small
@@ -38,7 +27,7 @@ Two controls on the SHAPE of agency behaviour, in the R11-6 lineage
   functions of an agency's size; a default absolute cap would break a large
   legitimate agency on day one and protect nobody in the meantime. The
   always-on control is the alert; the cap is the operator's answer to it.
-- **Count-based caps, next to the percentage bound.** R11-6 bounds revocation
+- **Count-based caps, next to the percentage bound.** bounds revocation
   as a share of an agency's issued base; a share says nothing about absolute
   rate, and a percentage bound cannot exist for issuance (no denominator) or
   verification (not the agency's own tokens). Counts per window compose with

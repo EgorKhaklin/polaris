@@ -8,7 +8,7 @@ The witness shares no code with the Rust crate or with Glass; it re-derives the
 Goldilocks+Poseidon+Merkle membership fact and the public-input binding in a
 different language and number representation.
 
-Honest scope (see DEVNOTES/zk-soundness.md):
+Honest scope (see docs/design/zk-soundness.md):
   - Statement-level surface (membership + public-input binding) is two-witnessed.
   - Proof-byte integrity (the FRI object) is checked by the Rust decoder alone;
     the witness ABSTAINS on that axis by construction. The proof-byte-tamper

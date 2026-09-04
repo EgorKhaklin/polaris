@@ -2,7 +2,7 @@
 # AI-context: auth, rate limit, CSRF, CSP, security headers. The CSP is
 #   'self' — never weaken without naming the threat.
 # Read before editing:
-#     ../DEVNOTES/concurrency.md  (atomic increment section — TOCTOU history)
+#     ../docs/design/concurrency.md  (atomic increment section — TOCTOU history)
 #     ../docs/operator/SECURITY.md              (full threat model)
 # Tests can lock the admin account. To unlock:
 #     UPDATE AppUser SET locked_until=NULL, failed_login_count=0

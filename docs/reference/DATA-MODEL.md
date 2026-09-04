@@ -42,7 +42,7 @@ Schema is in `polaris_sql/01_schema.sql`. Indexes in
 `polaris_sql/02_indexes.sql`. Triggers (state machine, append-only,
 audit) in `polaris_sql/06_triggers.sql`. The reserved future
 primitive (`QuantumObserverBinding`) is in scaffold state: see
-`DEVNOTES/ships/quantum-observer.md`.
+`docs/design/quantum-observer.md`.
 
 ---
 
@@ -304,11 +304,11 @@ anchors carry both.
 
 Per-batch Merkle commitment of `BlockchainAnchor` leaves. One row per
 `close_anchor_batch` invocation. The Polaris schema is the off-chain
-audit-of-record (see `DEVNOTES/audit-of-record.md`); append-only via
+audit-of-record (see `docs/design/audit-of-record.md`); append-only via
 `trg_anchor_batch_append_only`. `committed_to_chain` /
 `external_chain` / `external_chain_tx` are operator-set future-fields
 for the eventual external-PQ-ledger integration. See
-`DEVNOTES/ships/anchoring.md`.
+`docs/design/anchoring.md`.
 
 ### `DuressEvent`
 
@@ -327,7 +327,7 @@ acknowledges the alert.
 R6 anti-revealing posture: the `/verifications` operator dashboard
 does NOT join to `DuressEvent`. Only admins/auditors with explicit
 access (via `/api/duress/events` or SQL console) can see duress
-events. See `DEVNOTES/ships/duress-codes.md`.
+events. See `docs/design/duress-codes.md`.
 
 ### `TokenStateEpoch`
 
@@ -337,7 +337,7 @@ Per-epoch Merkle commitment over the active-token set. Append-only via
 depends on its immutability. The `valid_until` field bounds proof
 validity; the verifier checks this before accepting a proof. The
 Merkle root is a Poseidon hash (not SHA3-256, because Poseidon is
-SNARK-friendly for the Plonky2 circuit). See `DEVNOTES/ships/zk-snark.md`.
+SNARK-friendly for the Plonky2 circuit). See `docs/design/zk-snark.md`.
 
 ### `TokenStateEpochLeaf`
 
@@ -346,7 +346,7 @@ Per-token witness within an epoch. Each row stores the
 reads its row to generate a ZK proof. Append-only (inherits
 `reject_audit_modification`). Unique on (epoch_id, token_id): one
 witness per token per epoch. v1 stores `proof_path` in plaintext;
-v2 would encrypt under the holder's key. See `DEVNOTES/ships/zk-snark.md`.
+v2 would encrypt under the holder's key. See `docs/design/zk-snark.md`.
 
 ### `AgencyTrustAttestation`
 
@@ -372,7 +372,7 @@ triple" and serves the read path. Revoked rows fall out of the index
 and the audit trail accumulates. v1 ships with operator-logged
 attestations (`signed_by AppUser`); v2 path is cryptographic
 agency-signed attestations (left out of v8.22 by design: see
-`DEVNOTES/ships/federation.md`'s "v1 vs v2 split").
+`docs/design/federation.md`'s "v1 vs v2 split").
 
 ### `GenomicAnchor`
 
@@ -380,7 +380,7 @@ Hash-only commitment to a genomic identifier per token. Three CHECK
 constraints enforce the privacy invariant: (1) hash must be hex,
 (2) hash length must match the algorithm, (3) hash cannot consist
 solely of {A,C,G,T,U,N} characters (i.e., cannot be plaintext
-genomic data). See `DEVNOTES/substrate.md`.
+genomic data). See `docs/design/substrate.md`.
 
 ### `QuantumObserverBinding` (scaffold)
 
@@ -388,7 +388,7 @@ Substrate-level reservation for a quantum-measurement attestation
 primitive (Appendix F.2). Every current row has `binding_status =
 'SCAFFOLD'` with functional fields NULL. Two CHECK constraints
 enforce the SCAFFOLD ↔ OPERATIONAL state transition structurally.
-See `DEVNOTES/ships/quantum-observer.md`.
+See `docs/design/quantum-observer.md`.
 
 ### `IssuerDiscretionPolicy`
 
@@ -400,7 +400,7 @@ inherits the system-wide defaults (5.00% / 30 days), set as
 a `justification` length floor of 20 characters so any loosening
 is auditable from the row alone. Implements the PDF §9
 *"constitutional limits on issuer discretion"* leg of the
-issuer-trust-concentration triad. See `DEVNOTES/ships/issuer-discretion.md`.
+issuer-trust-concentration triad. See `docs/design/issuer-discretion.md`.
 
 ### `AgencyQuota`
 
@@ -430,7 +430,7 @@ rather than inferred. The append-only invariant is enforced by the
 extension of `reject_audit_modification` to this table. State-machine
 sequencing is NOT trigger-enforced: application policy enforces
 order where it matters. Implements the PDF §9 *Population coverage*
-open problem; see `DEVNOTES/ships/tiered-enrollment.md` for the asymmetric
+open problem; see `docs/design/tiered-enrollment.md` for the asymmetric
 design rationale (EXEMPT frictionless, mass-NOT_ENROLLED enumeration
 deliberate).
 
@@ -457,7 +457,7 @@ weaponize itself against the holder"* triad alongside R11-4 (entry)
 and R11-6 (exit). The procedure `uc9_complete_recovery` enforces
 admin-only completion (operator initiates, admin decides) and uses
 `pg_advisory_xact_lock` on `claimed_individual_id` for C9
-correctness. See `DEVNOTES/ships/recovery-ceremony.md` for the adversary
+correctness. See `docs/design/recovery-ceremony.md` for the adversary
 walk and the administrative-vs-operational grace-period framing.
 
 ### `TokenSignature`
@@ -484,7 +484,7 @@ as the deprecated-history accumulates indefinitely.
 Implements PDF §9.4 multi-signature transitional state. Closes the
 cryptographic-diversity leg of the issuer-trust-concentration triad
 (alongside R11-6 = constitutional limits ✅ and M2-8 = federation,
-open). See `DEVNOTES/ships/multi-sig-migration.md` for the adversary
+open). See `docs/design/multi-sig-migration.md` for the adversary
 walk and the verification consistency model.
 
 ---
@@ -605,7 +605,7 @@ so operators don't go looking for the wrong shape.
 - **Substrate dependencies** (M2-3 / v8.5) live in the
   `SystemDependency` **view** (not table), defined in
   `polaris_sql/13_substrate.sql`. Queryable via `SELECT * FROM
-  SystemDependency`; mirrors `DEVNOTES/substrate.md`.
+  SystemDependency`; mirrors `docs/design/substrate.md`.
 
 ---
 

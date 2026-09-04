@@ -1,8 +1,6 @@
-# DEVNOTES/substrate.md: what Polaris depends on, and what breaks if it's compromised
+# The substrate
 
-**Mission link:** v2 M2-3 / R10-3. Companion to `meta/redaction-proof.md`
-and the project report's Appendix E ("Why Identity Cannot Outrun Its
-Primitives").
+**Reader:** an engineer or an assessor. **Job:** Every primitive Polaris depends on, and which are reserved rather than built.
 
 This is the manifest of every primitive Polaris stands on. The
 architectural argument from Appendix E states that "every higher-level
@@ -51,9 +49,9 @@ Each row records:
   ↔ holder, token ↔ algorithm) becomes asserted by whoever recovers the
   signing key, not the original issuer. The schema's authenticity claim
   has no referent.
-- **Replacement:** Multi-signature transitional state (M2-6 / R11-1):
+- **Replacement:** Multi-signature transitional state:
   each token carries signatures from N algorithms during the migration
-  window; verification accepts any in the active set. Without M2-6,
+  window; verification accepts any in the active set. Without,
   replacement requires simultaneous mass reissuance of every token.
 - **Detection:** `CryptographicAlgorithm.deprecation_date` is the
   proactive signal: set when a cryptanalytic advance becomes public,
@@ -99,8 +97,7 @@ Each row records:
 - **Layer:** crypto
 - **Authority:** NIST (FIPS 202 for SHA-3); IETF / academic for the
   BLAKE family
-- **Role:** Hash functions for `GenomicAnchor.anchor_hash` (M2-4 /
-  R10-4), the future ZK-SNARK Fiat-Shamir transform (M2-1 / R10-1),
+- **Role:** Hash functions for `GenomicAnchor.anchor_hash`, the future ZK-SNARK Fiat-Shamir transform,
   CSRF-token integrity (HMAC-SHA256 in `security.py`), and password
   scrypt's internal hash (Werkzeug default).
 - **Fail mode:** Genomic anchor collisions become possible (two distinct
@@ -221,12 +218,12 @@ Each row records:
   envelope encryption).
 - **Detection:** Outside Polaris's purview.
 
-#### Redis (R8-2: multi-process rate limiter)
+#### Redis: multi-process rate limiter)
 - **Layer:** storage
 - **Authority:** Redis Ltd.
 - **Role:** Atomic sliding-window per-IP rate counters when
   `POLARIS_REDIS_URL` is set and `POLARIS_RATE_LIMIT_BACKEND=redis`.
-  Backed by a Lua script for atomicity (see `DEVNOTES/rate-limiter.md`).
+  Backed by a Lua script for atomicity (see `docs/design/rate-limiter.md`).
 - **Fail mode:** Redis unreachable → `RedisRateLimiter.allow()` fails
   closed (returns False) per OWASP "fail securely". Result: every
   rate-limited request returns 429 until Redis recovers. The app stays
@@ -299,8 +296,7 @@ Each row records:
   argument collapses regardless of the schema's local enforcement.
 - **Replacement:** Cryptographic-diversity stance, issue under
   multiple PQ algorithms from different national standards bodies
-  (NIST + ETSI + Korean KCMVP). Not currently modeled; would extend
-  M2-6 (R11-1) to include source-of-standard.
+  (NIST + ETSI + Korean KCMVP). Not currently modeled; would extend to include source-of-standard.
 - **Detection:** Public standards process; NIST publication of
   withdrawal notice.
 
@@ -313,12 +309,12 @@ Each row records:
   format. The current `VARCHAR(200)` is permissive enough to survive
   most revisions; a complete rewrite would force schema migration.
 - **Replacement:** Schema migration (column type change). The
-  underlying anchor mechanism (M2-2 / R10-2) is independent of the
+  underlying anchor mechanism is independent of the
   DID standard, DID is the naming convention, not the cryptographic
   primitive.
 - **Detection:** W3C-DID working group publications.
 
-#### Merkle tree commitment (in-tree, R10-2 / M2-2 / v8.21)
+#### Merkle tree commitment (in-tree, / v8.21)
 - **Layer:** crypto
 - **Authority:** in-tree primitive, `polaris_web/anchoring.py`
   (`compute_batch`, `merkle_root`, `inclusion_proof`, `verify_proof`).
@@ -336,9 +332,9 @@ Each row records:
   the audit is per-batch, not global.
 - **Detection:** Operator must monitor NIST hash-function status; SHA3
   has no known weakness as of 2026 but is on a 20-year radar.
-- **See also:** `DEVNOTES/ships/anchoring.md` for the full write-up.
+- **See also:** `docs/design/anchoring.md` for the full write-up.
 
-#### Plonky2 SNARK (in-tree, R10-1 / M2-1 / v8.23)
+#### Plonky2 SNARK (in-tree, / v8.23)
 - **Layer:** crypto
 - **Authority:** in-tree dependency, `polaris_zk/` Rust crate using
   `plonky2 = "0.2"` from crates.io (upstream: `mir-protocol/plonky2`).
@@ -346,7 +342,7 @@ Each row records:
   Plonky2 circuit (`polaris_zk/src/lib.rs`) proves Merkle inclusion
   in `TokenStateEpoch.merkle_root` bound to `(epoch_id, context_id,
   nonce)` public inputs. FRI-based, hash-only: post-quantum-
-  comfortable. The C3+A4+B3 pick from the M2-1 alignment-exploration
+  comfortable. The C3+A4+B3 pick from the alignment-exploration
   Sanctum. Closes Substrate-D arc to 5/5.
 - **Fail mode:** A circuit soundness bug accepts invalid witnesses
   silently. A breaking change in upstream Plonky2 forces a re-port
@@ -358,7 +354,7 @@ Each row records:
   Cryptographic audits of the circuit code; in-tree unit tests
   (`cargo test`) include malicious-prover, replay, and cross-epoch
   scenarios.
-- **See also:** `DEVNOTES/ships/zk-snark.md` for the full write-up.
+- **See also:** `docs/design/zk-snark.md` for the full write-up.
 
 #### Rust toolchain (assumed but build-required, v8.23)
 - **Layer:** runtime
@@ -398,9 +394,9 @@ Each row records:
   Polaris records `IdentityToken.biometric_binding_type`: the
   enclave is the substrate that makes that field meaningful.
 - **Fail mode:** Enclave compromise → biometric template extractable
-  → biometric anchor reversible → genomic-anchor analog (M2-4)
+  → biometric anchor reversible → genomic-anchor analog
   partially defeated.
-- **Replacement:** Hardware refresh; quantum-observer binding (M2-5)
+- **Replacement:** Hardware refresh; quantum-observer binding
   in the very long run.
 - **Detection:** Vendor disclosure; cryptographic side-channel
   research publication.
@@ -424,9 +420,9 @@ Each row records:
   WHO they are is a personnel-vetting concern outside the schema.
 - **Fail mode:** Insider-threat issuance (rogue token) or insider-threat
   revocation (denaturalization-style mass revocation). The schema
-  defends against the second through M2-11 (R11-6) issuer-discretion
+  defends against the second through issuer-discretion
   bounds; against the first only through audit (UC-7) plus
-  cryptographic-diversity-across-issuers (M2-8 / R11-3).
+  cryptographic-diversity-across-issuers.
 - **Replacement:** Personnel-vetting policy; periodic key ceremony
   re-attestation.
 - **Detection:** `AuthAuditLog` records every administrative action.
@@ -434,8 +430,8 @@ Each row records:
 #### Out-of-band identity verification
 - **Layer:** human
 - **Authority:** operator policy
-- **Role:** UC-4 reserve activation (today) and M2-7 catastrophic-loss
-  recovery (R11-2, future) both require identity verification by
+- **Role:** UC-4 reserve activation (today) and catastrophic-loss
+  recovery, future) both require identity verification by
   channels other than the token itself: biometric + sworn statement
   + secondary identification. Polaris records the result; the
   verification process is human.
@@ -451,7 +447,7 @@ Each row records:
 - **Layer:** hardware
 - **Authority:** Quantum-information research community; NIST PQC
   follow-on program
-- **Role:** M2-5 / R10-5, `QuantumObserverBinding` table reserves the
+- **Role:**, `QuantumObserverBinding` table reserves the
   substrate slot for an eventual quantum-measurement attestation
   primitive (Appendix F.2). Every current row is `binding_status =
   'SCAFFOLD'` with functional fields NULL. When quantum-observer
@@ -481,8 +477,8 @@ This manifest must be revisited when:
 - **A primitive moves between layers**: e.g., if hardware-binding
   becomes a software emulation, that's a layer demotion that changes
   the fail-mode analysis.
-- **A new substrate-relevant mission item ships**: M2-1 (real
-  ZK-SNARK) lands a Groth16 dependency, still pending; M2-2 (DID
+- **A new substrate-relevant mission item ships**: (real
+  ZK-SNARK) lands a Groth16 dependency, still pending; (DID
   anchoring) landed in v8.21 and is recorded above as
   "Merkle tree commitment (in-tree)".
 
@@ -500,9 +496,9 @@ This manifest must be revisited when:
   argument this manifest operationalizes.
 - `MISSION.md` C7: `CryptographicAlgorithm` table is the proximate
   schema-level expression of "primitives are queryable".
-- `DEVNOTES/threat-model.md`: STRIDE threats; this manifest enumerates
+- `docs/design/threat-model.md`: STRIDE threats; this manifest enumerates
   the substrate behind those threats.
-- `DEVNOTES/rate-limiter.md`: Redis dependency detail.
+- `docs/design/rate-limiter.md`: Redis dependency detail.
 - `meta/redaction-proof.md`: the privacy claim built on top of the
   cryptographic primitives listed here.
 - `polaris_sql/13_substrate.sql`: the queryable mirror

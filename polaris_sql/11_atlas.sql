@@ -2,7 +2,7 @@
 -- AI-context: this file is performance-critical and the architecture decisions
 --   in it are NON-OBVIOUS. Read these before editing:
 --     ../docs/reference/SCALING.md                          ← architectural treatment
---     ../DEVNOTES/atlas-scaling.md           ← what NOT to change without measuring
+--     ../docs/design/atlas-scaling.md           ← what NOT to change without measuring
 -- ============================================================================
 
 -- ============================================================================

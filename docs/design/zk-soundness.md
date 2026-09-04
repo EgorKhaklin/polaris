@@ -1,4 +1,6 @@
-# ZK soundness ledger: what Polaris's Merkle-inclusion proof actually guarantees
+# ZK soundness
+
+**Reader:** an engineer or an assessor. **Job:** What the words proof and zero-knowledge mean here, precisely.
 
 Polaris's `polaris_zk` crate uses the words *proof*, *zero-knowledge*, and
 *post-quantum*. This is the honest ledger: which of those claims are rigorous,
@@ -146,5 +148,5 @@ misreading of the spec, and never substitutes for an external audit.
 |---|---|
 | The independent witness | `polaris_zk/witness2/` (+ `test_witness2.py`) |
 | The verdict differential | `polaris_web/test_zk_second_witness.py` |
-| The two-witness principle | [`DEVNOTES/two-witness-principle.md`](two-witness-principle.md) |
-| Per-ship ZK reference | [`DEVNOTES/ships/zk-snark.md`](ships/zk-snark.md) |
+| The two-witness principle | [`docs/design/two-witness-principle.md`](two-witness-principle.md) |
+| Per-ship ZK reference | [`docs/design/zk-snark.md`](zk-snark.md) |

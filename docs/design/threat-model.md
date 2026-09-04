@@ -1,4 +1,6 @@
-# DEVNOTES/threat-model.md
+# Threat model
+
+**Reader:** an engineer or an assessor. **Job:** The adversaries, the surfaces they reach, and what is out of scope.
 
 <!-- coherence:taxonomy-allowed, STRIDE is a standard taxonomy (S, T, R, I, D, E) + scope + deferred + coverage + how-to-use; consolidating S+T+R+I+D+E would invert the entire frame -->
 
@@ -20,7 +22,7 @@ For each, threats are listed with a short identifier (T-XX), the
 attack scenario, the affected component, and the control(s) that
 address it.
 
-This document closed v1 done-list item 8 (the record is in [`record.md`](record.md)).
+This document closed v1 done-list item 8 (the record is in [`record.md`](../../DEVNOTES/record.md)).
 
 ---
 
@@ -322,7 +324,7 @@ out, or to crack a weak password.
 
 **Residual risk:** LOW under single-process; **DEFERRED** under
 multi-worker (the in-memory limiter is per-worker; multi-worker needs
-Redis: backlog item R8-2).
+Redis: backlog item.
 
 ### D-D3: write-amplification via append-only triggers
 
@@ -434,10 +436,10 @@ function-owner's privileges.
 
 | Threat | Backlog item | Rationale |
 |---|---|---|
-| T-T2 cross-context replay | R8-1 (property tests for invariants) | Currently relies on context-side enforcement; a nonce table would harden but isn't blocking |
+| T-T2 cross-context replay | (property tests for invariants) | Currently relies on context-side enforcement; a nonce table would harden but isn't blocking |
 | D-D4 connection-pool exhaustion | docs/operator/OPERATIONS.md | Production deployment concern |
 | I-I4 sensitive data in logs | docs/operator/OPERATIONS.md retention policy | Operational, not architectural |
-| D-D2 multi-worker rate limit | R8-2 (Redis-backed limiter) | Acknowledged limitation |
+| D-D2 multi-worker rate limit | (Redis-backed limiter) | Acknowledged limitation |
 
 ---
 

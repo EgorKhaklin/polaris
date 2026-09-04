@@ -1,10 +1,6 @@
-# DEVNOTES/ships/token-signature.md
+# Token signatures
 
-**Introduced:** v9.24 PQC scaffold + (since pre-v8.77) `TokenSignature` table
-in `polaris_sql/01_schema.sql`. Closes the verification step of the C7
-flow (CryptographicAlgorithm → TokenSignature → IdentityToken). Surfaced
-as a documentation gap by foresight 2026-05-17 (joint Architect /
-Anti-Architect review).
+**Reader:** an engineer or an assessor. **Job:** How a signature is produced, stored and verified across a rotation.
 
 This file is the canonical write-up for Polaris's token-signature primitive:
 where signatures live, how they're verified, and what the
@@ -71,7 +67,7 @@ operator after enabling the flag.
 - It does NOT bind the signature to the holder's biometric or device
   (DeviceBinding is a separate table for that).
 - It does NOT support multi-signature schemes (see
-  `DEVNOTES/ships/multi-sig-migration.md` for the transitional state and
+  `docs/design/multi-sig-migration.md` for the transitional state and
   the deferral of full multi-sig to a future ship).
 - It does NOT prove revocation (see `RevocationList` for that surface;
   TokenSignature records the original signing event only).

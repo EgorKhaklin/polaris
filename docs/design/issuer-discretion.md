@@ -1,11 +1,6 @@
-# DEVNOTES/ships/issuer-discretion.md
+# Issuer discretion
 
-**Ships with:** R11-6 / M2-11 / v8.15
-**Implements:** PDF §9 *"constitutional limits on issuer discretion"*
-**Code surface:** `01_schema.sql` (IssuerDiscretionPolicy), `05_procedures.sql`
-(uc8_revoke_token), `06_triggers.sql` (enforce_revocation_velocity_bound),
-`02_indexes.sql` (idx_lifecycle_revoked_time), `09_grants.sql` (GUCs),
-`polaris_web/app.py` (`/uc8/revoke`), `polaris_web/templates/uc8_revoke.html`.
+**Reader:** an engineer or an assessor. **Job:** The limits on what an issuing agency can do at scale, and where they bind.
 
 ---
 
@@ -16,12 +11,10 @@ tokens. Above the cap, a co-signer from a different agency holding `BOTH`
 on the token's algorithm is required. The cap is per-agency and rolling.
 
 The PDF's §9 "Issuer trust concentration" names three production-system
-requirements: cryptographic diversity (R11-1), federation (M2-8), and
-*constitutional limits on issuer discretion*. R11-6 is the third leg.
+requirements: cryptographic diversity, federation, and
+*constitutional limits on issuer discretion*. is the third leg.
 
-## What it is NOT
-
-R11-6 is **not** Polaris becoming an authority over the holder. The
+## What it is NOT is **not** Polaris becoming an authority over the holder. The
 agency still makes the revocation decision. Polaris only constrains the
 *shape* of agency behavior — the same category as C3 (one ACTIVE per
 individual: a constraint on issuance behavior) and C7 (algorithm
@@ -152,7 +145,7 @@ with an `insufficient_privilege` error.
    legitimate workflows. The chosen defaults (5% / 30 days) prioritize
    denaturalization resistance over operational latitude.
 
-## What R11-6 does NOT protect against
+## What does NOT protect against
 
 - **Slow long-tail abuse** under the bound. An agency that revokes
   4.99% / month for a year still gets ~60%. Counter-mechanism: audit
@@ -169,13 +162,13 @@ with an `insufficient_privilege` error.
 
 ## Cross-references
 
-- `meta/redaction-proof.md` — M2-12, the other PDF §9 leg already
+- `meta/redaction-proof.md` —, the other PDF §9 leg already
   closed (verification-graph redaction proof).
-- `proposals/R11-1-multisig-transitional.md` — M2-6, the
+- `proposals/-multisig-transitional.md` —, the
   cryptographic-diversity leg.
 - The PDF, §9 "Issuer trust concentration" — original problem
   statement.
-- `DEVNOTES/concurrency.md` — the advisory-lock pattern added to the
+- `docs/design/concurrency.md` — the advisory-lock pattern added to the
   catalog there.
 - `MISSION.md` — C5 (audit-trail completeness) and C7 (algorithm
-  metadata via table) are the constraints R11-6 strengthens.
+  metadata via table) are the constraints strengthens.

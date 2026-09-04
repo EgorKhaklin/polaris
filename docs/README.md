@@ -26,6 +26,7 @@ root.
 
 | Directory | What it holds |
 |---|---|
+| [design/](design/README.md) | Why it is built this way: the threat model, the concurrency catalogue, the substrate manifest, and one record per mechanism. |
 | [operator/](operator/README.md) | The runbooks: install, deploy, operate, secure, back up, recover, and the drill ledger. |
 | [reference/](reference/README.md) | The technical reference: the API, the data model, the post-quantum posture, the performance baseline, scaling, the glossary, the system map. |
 | [paper/](paper/README.md) | The academic report, TeX and PDF. |

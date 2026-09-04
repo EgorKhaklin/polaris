@@ -13,7 +13,7 @@ This is the C3+A4+B3 ship picked in the M2-1 alignment-exploration Sanctum:
 The schema-level commitment (`TokenStateEpoch.merkle_root`) is the Poseidon
 root produced by Plonky2 over the per-token leaf hashes. This is different
 from R10-2's SHA3-256 anchoring — two distinct cryptographic commitments
-for two distinct primitives. See DEVNOTES/ships/zk-snark.md.
+for two distinct primitives. See docs/design/zk-snark.md.
 """
 
 from __future__ import annotations

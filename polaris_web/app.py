@@ -3232,7 +3232,7 @@ def individuals_delete(ind_id):
 # Per-jurisdiction × status rollup. Counts only — per-individual enumeration
 # of NOT_ENROLLED is NOT a first-class query, by deliberate design. An
 # admin who needs it must write the join directly, leaving an audit trace.
-# See DEVNOTES/ships/tiered-enrollment.md for the asymmetric-design rationale.
+# See docs/design/tiered-enrollment.md for the asymmetric-design rationale.
 # ============================================================================
 
 @app.route('/individuals/enrollment')

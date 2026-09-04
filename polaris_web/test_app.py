@@ -6244,7 +6244,7 @@ class GenomicAnchorTests(PolarisTestCase):
 # Tests verify: (1) the scaffold state is the default, (2) the scaffold
 # invariant fires on premature population, (3) the operational invariant
 # fires on incomplete operational rows, (4) the enum CHECK rejects bad states.
-# See DEVNOTES/ships/quantum-observer.md for the architectural rationale.
+# See docs/design/quantum-observer.md for the architectural rationale.
 # ============================================================================
 
 class QuantumObserverBindingTests(PolarisTestCase):
@@ -6359,7 +6359,7 @@ class QuantumObserverBindingTests(PolarisTestCase):
 # ============================================================================
 # V8 — M2-3 / R10-3 SUBSTRATE-DEPENDENCY MANIFEST
 # Operationalizes Appendix E. The SystemDependency view enumerates every
-# primitive Polaris depends on; DEVNOTES/substrate.md is the prose form of
+# primitive Polaris depends on; docs/design/substrate.md is the prose form of
 # the same data. Tests assert (a) the view loads cleanly with all required
 # columns + layer labels, (b) the well-known load-bearing primitives
 # (ML-DSA, PostgreSQL, scrypt, Redis) are present, and (c) the prose form
@@ -6438,13 +6438,13 @@ class SubstrateManifestTests(PolarisTestCase):
                     f"this test if the dependency has been removed.")
 
     def test_prose_and_sql_forms_agree(self):
-        """DEVNOTES/substrate.md and SystemDependency view are dual
+        """docs/design/substrate.md and SystemDependency view are dual
         representations. Every primitive named in the SQL view must have
         a mention in the prose. Drift between the two means one is
         misleading the reader."""
         prose_path = os.path.join(
             os.path.dirname(os.path.abspath(__file__)),
-            '..', 'DEVNOTES', 'substrate.md'
+            '..', 'docs', 'design', 'substrate.md'
         )
         if not os.path.exists(prose_path):
             self.skipTest(f"prose form not found at {prose_path}")
@@ -6468,7 +6468,7 @@ class SubstrateManifestTests(PolarisTestCase):
                 missing_in_prose.append(p)
         self.assertEqual(missing_in_prose, [],
             f"Primitives in SystemDependency but missing from prose form "
-            f"(DEVNOTES/substrate.md): {missing_in_prose}. The two views "
+            f"(docs/design/substrate.md): {missing_in_prose}. The two views "
             f"have drifted — update substrate.md to mention each.")
 
     def test_view_is_read_only(self):

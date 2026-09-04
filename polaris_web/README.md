@@ -320,7 +320,7 @@ def individuals_new():
 The `security.py` module is the single source of
 truth for all access controls. Audit it directly rather than reading
 docs. The rate-limiter backend selection lives in `_RateLimiter`
-factory; see also `../DEVNOTES/rate-limiter.md`.
+factory; see also `../docs/design/rate-limiter.md`.
 
 ## Testing
 
@@ -375,7 +375,7 @@ optional backends, measured at v9.194) covers:
   mocks (C9): covers per-agency / per-individual / per-token /
   per-algorithm / per-attesting-agency / per-procedure advisory locks
 - Substrate manifest (`SubstrateManifestTests`): verifies the prose
-  form in `../DEVNOTES/substrate.md` matches the SQL view in
+  form in `../docs/design/substrate.md` matches the SQL view in
   `../polaris_sql/13_substrate.sql`
 
 Supplementary suites:

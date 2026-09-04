@@ -1,7 +1,6 @@
-# DEVNOTES/ships/anchoring.md
+# Blockchain anchoring
 
-**Introduced:** v8.21 (R10-2 / M2-2). Closes the Substrate-D arc to
-4/5 done (M2-1 ZK-SNARK remains).
+**Reader:** an engineer or an assessor. **Job:** How a batch of audit rows is committed to an external anchor, and what that does and does not prove.
 
 This file is the canonical write-up for Polaris's DID anchoring layer:
 how Merkle batches are computed, where the substrate enforcement lives,
@@ -9,7 +8,7 @@ and what the schema does versus what the operator decides.
 
 ---
 
-## What R10-2 implements
+## What implements
 
 PDF §9 "Centralized trust assumption" names DID anchoring as the
 substrate alternative to the relational schema as a sole trust root.
@@ -87,7 +86,7 @@ calls for the same algorithm serialize; two parallel calls for
 different algorithms run in parallel. This is the same shape as the
 per-agency lock (UC-8), per-individual lock (UC-9), and per-token
 lock (UC-6) — the fourth entry in Polaris's per-entity advisory-lock
-catalog. See `DEVNOTES/concurrency.md`.
+catalog. See `docs/design/concurrency.md`.
 
 The lock protects against the phantom-batch race: without it, two
 threads could each see the same pending leaf set, both INSERT an
@@ -108,7 +107,7 @@ discretion visible:
 
 2. **No `close_anchor_batch_chain` procedure.** A future tooling
    layer might add a procedure that takes (batch_id, external_chain,
-   external_chain_tx) and flips `committed_to_chain = TRUE`. R10-2
+   external_chain_tx) and flips `committed_to_chain = TRUE`.
    deliberately ships without it.
 
 3. **Hash algorithm is not in the schema.** As above, it's an
@@ -170,7 +169,7 @@ to change.
    against the same algorithm to compose a malicious leaf set
    before the lock acquires. Defeated by the per-algorithm
    `pg_advisory_xact_lock(algorithm_id)` (4th catalog entry in
-   `DEVNOTES/concurrency.md`): the second caller waits, then sees
+   `docs/design/concurrency.md`): the second caller waits, then sees
    the first caller's `batch_id IS NOT NULL` rows and finds no
    eligible leaves. Tested by
    `ConcurrencyTests.test_close_anchor_batch_concurrent`.
@@ -198,8 +197,8 @@ to change.
 - `polaris_sql/08_tests.sql` — Section O (5 self-tests).
 - `polaris_web/test_app.py` — `AnchorBatchTests` (15 tests),
   `ConcurrencyTests.test_close_anchor_batch_*` (2 tests).
-- `DEVNOTES/audit-of-record.md` — `AnchorBatch` is the 5th instance
+- `docs/design/audit-of-record.md` — `AnchorBatch` is the 5th instance
   of the principle.
-- `DEVNOTES/concurrency.md` — per-algorithm advisory-lock is the
+- `docs/design/concurrency.md` — per-algorithm advisory-lock is the
   4th entry in the catalog.
-- `MISSION.md` — M2-2 marked ✅ in the v2 done-list.
+- `MISSION.md` — marked ✅ in the v2 done-list.

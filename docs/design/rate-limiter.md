@@ -1,4 +1,6 @@
-# DEVNOTES/rate-limiter.md
+# Rate limiting
+
+**Reader:** an engineer or an assessor. **Job:** The per-IP defence, its backend, and its failure mode.
 
 Per-IP rate limiting (CWE-307 / CWE-770 mitigation) is the front-line defense
 against credential-stuffing, brute-force login, and form-spam abuse. The

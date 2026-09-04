@@ -1,5 +1,7 @@
 # The two-witness principle
 
+**Reader:** an engineer or an assessor. **Job:** Why no cryptographic verdict is trusted from one implementation.
+
 > Any cryptographic verdict Polaris ships must be checkable by a second,
 > independent implementation. A verdict only one program can produce is a
 > promise, not a proof.
@@ -32,7 +34,7 @@ It catches **implementation divergence**: a bug in one verifier that the other
 does not share. It is a differential check, not an audit. It does **not** catch a
 shared misreading of the spec or threat model (both witnesses can be wrong about
 the same thing), and it never substitutes for external review. Name the boundary
-every time, the way `DEVNOTES/zk-soundness.md` and Glass's Pentecost README both
+every time, the way `docs/design/zk-soundness.md` and Glass's Pentecost README both
 do.
 
 ## Why this fits Polaris
@@ -50,7 +52,7 @@ the ZK verdict, which until v9.44 rested on a single Rust verifier.
 
 | Verdict | Primary witness | Second witness | Coverage |
 |---|---|---|---|
-| ZK Merkle-inclusion (membership + binding) | `polaris_zk` Rust crate (`verify`) | `polaris_zk/witness2/` (Python) | Statement-level; abstains on proof-byte integrity (`DEVNOTES/zk-soundness.md`) |
+| ZK Merkle-inclusion (membership + binding) | `polaris_zk` Rust crate (`verify`) | `polaris_zk/witness2/` (Python) | Statement-level; abstains on proof-byte integrity (`docs/design/zk-soundness.md`) |
 | PQC signature (ML-DSA-65, `pqc_signing.verify`) | liboqs / `oqs` (single impl) | **ABSTAIN: none yet** | Recorded per rule 4: a lone verifier, acknowledged not hidden. As of v9.58 the signing path is wired into issuance (`uc1_issue` calls `pqc_signing.signature_bytes_for_token`), but the real ML-DSA path is OFF by default (`POLARIS_USE_REAL_PQC`) and the verify path remains a single liboqs implementation, so it renders no production verdict today. Add a second witness (or an explicit ABSTAIN ledger) before it goes live. |
 
 This is rule 4 in practice: a lone verifier is not silently shipped. The PQC

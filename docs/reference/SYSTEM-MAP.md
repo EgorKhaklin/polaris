@@ -45,8 +45,9 @@ polaris/
 │   ├── ARCHITECTURE-OVERVIEW.md, PRODUCTION-READINESS.md, RED-TEAM-SCOPE.md, THESIS.md, SEED_DATA.md, CONVENTIONS.md
 │   ├── operator/       ← the runbooks (seventeen documents and an index)
 │   ├── reference/      ← this directory
+│   ├── design/         ← why it is built this way: the threat model, the mechanisms, the substrate
 │   └── paper/          ← the academic report (TeX and PDF)
-├── DEVNOTES/           ← design notes, the project record, per-ship notes under ships/
+├── DEVNOTES/           ← the contributor's working notes: gotchas, house style, the project record
 ├── meta/               ← structural records (redaction proof, structural architecture, the TLA+ model)
 ├── scripts/            ← every shell tool (polaris-*): deploys, drills, gates, checks
 ├── site/               ← the published project page (GitHub Pages), its logo and the Atlas captures
@@ -107,7 +108,7 @@ publishes `site/`.
 | [`docs/reference/`](README.md) | API, DATA-MODEL, PQC-POSTURE, PERFORMANCE-BASELINE, SCALING, GLOSSARY, this map |
 | [`docs/`](../README.md) | ARCHITECTURE-OVERVIEW, PRODUCTION-READINESS (the bound on every claim), RED-TEAM-SCOPE, THESIS, SEED_DATA, CONVENTIONS |
 | [`docs/paper/`](../paper/) | The academic report |
-| [`DEVNOTES/`](../../DEVNOTES/) | Design notes (audit of record, concurrency, threat model, substrate, ZK soundness, the two-witness principle, style), the project record, and one note per major ship under `ships/` |
+| [`DEVNOTES/`](../../DEVNOTES/) | The contributor's working notes: the gotcha list, the house style, the project record, and the plan of the pass in progress. The design set moved to [`docs/design/`](../design/README.md) at v9.224. |
 
 ---
 
@@ -133,8 +134,9 @@ CHANGELOG.md                       every ship, never edited retroactively
 | What just shipped? | [`CHANGELOG.md`](../../CHANGELOG.md) (top entry is the latest) |
 | How do I work on it? | [`CLAUDE.md`](../../CLAUDE.md), [`CONTRIBUTING.md`](../../CONTRIBUTING.md) |
 | How is it built, layer by layer? | [`docs/ARCHITECTURE-OVERVIEW.md`](../ARCHITECTURE-OVERVIEW.md) |
-| A cross-cutting design question (audit of record, concurrency, threat model) | [`DEVNOTES/`](../../DEVNOTES/README.md) |
-| How does ship X work? | [`DEVNOTES/ships/`](../../DEVNOTES/ships/) |
+| A cross-cutting design question (audit of record, concurrency, threat model) | [`docs/design/`](../design/README.md) |
+| How does one mechanism work (duress codes, federation, the ZK proof)? | [`docs/design/`](../design/README.md) |
+| A contributor's working note (gotchas, house style, the project record) | [`DEVNOTES/`](../../DEVNOTES/README.md) |
 | Naming and structural conventions | [`docs/CONVENTIONS.md`](../CONVENTIONS.md) |
 | The checks | [`polaris_checks/checks.py`](../../polaris_checks/checks.py) |
 

@@ -1,4 +1,4 @@
--- AI-context: append-only enforcement, audit trigger, lifecycle event auto-emission. Audit trigger reads polaris.{actor_agency_id, reason_code, event_lat, event_lon} GUCs. See DEVNOTES/concurrency.md.
+-- AI-context: append-only enforcement, audit trigger, lifecycle event auto-emission. Audit trigger reads polaris.{actor_agency_id, reason_code, event_lat, event_lon} GUCs. See docs/design/concurrency.md.
 -- ============================================================================
 -- POLARIS — IDENTITY TOKEN SYSTEM
 -- 06_triggers.sql : State-machine enforcement triggers
@@ -217,7 +217,7 @@ COMMENT ON FUNCTION reject_audit_modification IS
   'Blocks UPDATE and DELETE on append-only audit tables (TokenLifecycleEvent, '
   'VerificationEvent, EnrollmentStatusEvent, AnchorBatch). Realizes NFR-4 at '
   'the tooling layer. AnchorBatch joined the set in v8.21 / R10-2 as the '
-  'fifth audit-of-record instance — see DEVNOTES/audit-of-record.md.';
+  'fifth audit-of-record instance — see docs/design/audit-of-record.md.';
 
 -- ----------------------------------------------------------------------------
 -- AUTOMATIC LIFECYCLE AUDIT on IdentityToken status changes.

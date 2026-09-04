@@ -1,8 +1,6 @@
-# DEVNOTES/ships/federation.md
+# Federation
 
-**Introduced:** v8.22 (R11-3 / M2-8). Closes the issuer-trust-concentration
-triad to 3/3 (after R11-1 cryptographic diversity ✅ and R11-6 constitutional
-limits ✅).
+**Reader:** an engineer or an assessor. **Job:** How cross-agency trust is recorded and consulted, with no transitive trust.
 
 This file is the canonical write-up for Polaris's federation layer: how
 cross-agency trust is recorded, how the verification flow consults it, and
@@ -10,12 +8,12 @@ what the schema does versus what the operator decides.
 
 ---
 
-## What R11-3 implements
+## What implements
 
 PDF §9.2 names "issuer trust concentration" as an open problem the schema
 does not yet model. Today, every `IdentityToken` carries an
 `issuing_agency_id`, and verification implicitly trusts whichever agency
-issued the token. R11-3 replaces "implicit trust" with an explicit,
+issued the token. replaces "implicit trust" with an explicit,
 declarative trust graph:
 
 1. **`AgencyTrustAttestation` table** — directional edges in the
@@ -92,7 +90,7 @@ threads on the same agency could attest+revoke in interleaving order
 such that the final state is ambiguous. With it, same-agency operations
 serialize; cross-agency operations parallelize.
 
-See `DEVNOTES/concurrency.md` "Per-attesting-agency advisory-lock" for
+See `docs/design/concurrency.md` "Per-attesting-agency advisory-lock" for
 the full discussion.
 
 ## v1 = operator-logged; v2 path = agency-signed (R4 audit refinement)
@@ -172,7 +170,7 @@ hard-coded trust.
 
 ### Anchoring attestations themselves
 
-Parallel to R10-2's `committed_to_chain` future-field on `AnchorBatch`:
+Parallel to's `committed_to_chain` future-field on `AnchorBatch`:
 attestations are high-value cryptographic commitments and could
 themselves be batched into a Merkle log for external verifiability.
 
@@ -268,6 +266,6 @@ field, to support AJAX/JSON callers).
   `verifications_new` extension + `/api/federation/*` routes.
 - `polaris_web/test_app.py` — `IssuerFederationTests` (15 tests) +
   `ConcurrencyTests.test_uc10_*` (2 tests).
-- `DEVNOTES/audit-of-record.md` — `AgencyTrustAttestation` is the 6th instance.
-- `DEVNOTES/concurrency.md` — per-attesting-agency advisory-lock is the 5th catalog entry.
-- `MISSION.md` — M2-8 marked ✅ in the v2 done-list.
+- `docs/design/audit-of-record.md` — `AgencyTrustAttestation` is the 6th instance.
+- `docs/design/concurrency.md` — per-attesting-agency advisory-lock is the 5th catalog entry.
+- `MISSION.md` — marked ✅ in the v2 done-list.

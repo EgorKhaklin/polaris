@@ -74,7 +74,7 @@ the original apply-row; it appends a new row with `event_type='reverted'`.
 This is the same audit-of-record discipline as `TokenLifecycleEvent`,
 `VerificationEvent`, `EnrollmentStatusEvent`, and the other
 audit-of-record instances in Polaris (thirteen at v9.194; the list is in
-`DEVNOTES/audit-of-record.md`).
+`docs/design/audit-of-record.md`).
 
 "Currently applied" is computed dynamically as "the last event for this
 `name` is `applied`, not `reverted`." Re-applying a previously-reverted

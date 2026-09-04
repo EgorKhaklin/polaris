@@ -287,7 +287,7 @@ VALUES
 --
 -- committed_to_chain stays FALSE: a batch row is the relational
 -- audit-of-record. Pushing to an external PQ-capable ledger is operator
--- discretion, not auto-derived. See DEVNOTES/ships/anchoring.md.
+-- discretion, not auto-derived. See docs/design/anchoring.md.
 -- ============================================================================
 
 WITH batch_mldsa AS (

@@ -63,7 +63,7 @@ That single command:
    (`05_procedures.sql`)
 6. Installs the state-machine trigger, the append-only triggers on
    every audit-of-record table (thirteen surfaces at v9.194; the list
-   is in `DEVNOTES/audit-of-record.md`), auto-audit trigger,
+   is in `docs/design/audit-of-record.md`), auto-audit trigger,
    revocation-velocity-bound trigger (R11-6), enrollment-seed
    trigger (R11-4), active-signature + signature-immutability
    triggers (R11-1), attestation immutability (R11-3),
@@ -226,7 +226,7 @@ Assertions on the `SystemDependency` view: ≥ 15 primitives, no NULL
 fail-modes, all layer labels in {crypto, network, storage, runtime,
 standards, hardware, human}. The Python-side
 `SubstrateManifestTests` additionally asserts that
-`DEVNOTES/substrate.md` (prose) and this view (SQL) stay in sync.
+`docs/design/substrate.md` (prose) and this view (SQL) stay in sync.
 
 ---
 

@@ -1,5 +1,5 @@
 -- AI-context: M2-3 / R10-3 — substrate-dependency manifest, queryable form.
--- The prose form is DEVNOTES/substrate.md; this SQL view is its mirror so
+-- The prose form is docs/design/substrate.md; this SQL view is its mirror so
 -- the manifest is machine-readable. The two MUST stay in sync — if a row
 -- is added or removed here, mirror it in the prose, and vice versa.
 -- Updates to this file should be reflected in 00_load_all.sql's load order.
@@ -16,7 +16,7 @@
 --
 -- The view is read-only by construction (VALUES-backed). DDL is the only
 -- way to amend it — which means changes are reviewable and require a
--- schema-load run. The prose form (DEVNOTES/substrate.md) is the longer
+-- schema-load run. The prose form (docs/design/substrate.md) is the longer
 -- explanation; this view is the indexable form. Both must stay in sync.
 -- ============================================================================
 
@@ -224,7 +224,7 @@ FROM (VALUES
 COMMENT ON VIEW SystemDependency IS
   'Substrate-dependency manifest (M2-3 / R10-3). Operationalizes Appendix E '
   'of docs/paper/polaris_project_report.pdf: every higher-level property of the system '
-  'is derivative of the primitives listed here. Mirror of DEVNOTES/substrate.md '
+  'is derivative of the primitives listed here. Mirror of docs/design/substrate.md '
   '(prose form). The two must stay in sync. Read-only by construction (VALUES-'
   'backed view); changes are DDL and reviewable.';
 
@@ -269,6 +269,6 @@ END$$;
 -- ============================================================================
 -- END OF 13_substrate.sql
 -- One read-only view (SystemDependency). The prose companion is
--- DEVNOTES/substrate.md and the test mirror is in test_app.py
+-- docs/design/substrate.md and the test mirror is in test_app.py
 -- (SubstrateManifestTests).
 -- ============================================================================

@@ -2097,7 +2097,7 @@ def check_stated_counts(root: pathlib.Path) -> list[Finding]:
 # a reviewer who grepped for them found nothing and had to conclude the
 # constitution was decorative.
 # ---------------------------------------------------------------------------
-_OBJECT_DOCS = ("MISSION.md", "CLAUDE.md", "DEVNOTES/audit-of-record.md",
+_OBJECT_DOCS = ("MISSION.md", "CLAUDE.md", "docs/design/audit-of-record.md",
                 "docs/operator/PRIVACY.md", "docs/ARCHITECTURE-OVERVIEW.md")
 _OBJECT_SEARCH_DIRS = ("polaris_sql", "polaris_sql/migrations", "polaris_web", "polaris_cli")
 _OBJECT_NAME_PREFIXES = ("enforce_", "reject_", "chk_", "uq_", "trg_", "idx_")

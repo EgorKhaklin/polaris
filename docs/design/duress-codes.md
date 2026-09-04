@@ -1,7 +1,6 @@
-# DEVNOTES/ships/duress-codes.md
+# Duress codes
 
-**Introduced:** v8.24 (R11-5 / M2-10). The **v2 mission-closer** — last ⬜
-in the v2 done-list. After this ship, v2 = **12/12 ✅**.
+**Reader:** an engineer or an assessor. **Job:** The compulsion-resistant verification path, and why a coercer cannot see it.
 
 This file is the canonical write-up for Polaris's compulsion-resistance
 layer: how the duress code works, why timing matters, what the OOB
@@ -9,7 +8,7 @@ notification path looks like, and what v1 deliberately defers.
 
 ---
 
-## What R11-5 implements (PDF §9.5)
+## What implements (PDF §9.5)
 
 A holder under physical coercion needs a way to signal duress without
 the coercer noticing. The verification flow today is binary:
@@ -21,9 +20,7 @@ PDF §9.5 names this as the compulsion-resistance open problem. The
 classical mitigation (banking, jewelry stores, high-security retail)
 is a **duress code**: a secondary credential the holder enters under
 coercion that *looks* like successful verification from the coercer's
-view, while silently firing an out-of-band alert.
-
-R11-5 implements this at the schema + verification-flow layer:
+view, while silently firing an out-of-band alert. implements this at the schema + verification-flow layer:
 
 1. **`IdentityToken.duress_code_hash`** — optional column storing a
    Werkzeug scrypt hash of the holder's duress code. NULL = not
@@ -88,8 +85,7 @@ documented in `10_auth.sql`). Production deployment would have a
 dedicated enrollment flow (operator-mediated) in a separate ROADMAP
 item.
 
-Same posture as R10-2's `committed_to_chain` future-field and
-R11-3's federation attestation: schema records the structure;
+Same posture as's `committed_to_chain` future-field and's federation attestation: schema records the structure;
 operator decides when to enroll.
 
 ### R5. OOB notification — v1 reference scope, v2 path named
@@ -250,8 +246,8 @@ link added in v8.25.
   `verifications_new` extension + `/api/duress/events` +
   `/api/duress/record` routes.
 - `polaris_web/test_app.py` — `DuressCodeTests` (13 tests).
-- `DEVNOTES/audit-of-record.md` — `DuressEvent` is the 8th instance.
-- `MISSION.md` — M2-10 marked ✅; v2 done-list = 12/12.
+- `docs/design/audit-of-record.md` — `DuressEvent` is the 8th instance.
+- `MISSION.md` — marked ✅; v2 done-list = 12/12.
 
 ## v2 mission-closure
 

@@ -118,10 +118,10 @@ this binary and time it; never embed prover state into Python
 
 | Question | Read |
 |---|---|
-| Why Plonky2 + FRI vs Groth16 + ECDSA? | `DEVNOTES/threat-model.md` (PQ section) |
+| Why Plonky2 + FRI vs Groth16 + ECDSA? | `docs/design/threat-model.md` (PQ section) |
 | Ship CHANGELOG entry | search `CHANGELOG.md` for `v8.23` |
-| Per-ship reference doc | `DEVNOTES/ships/zk-snark.md` |
-| Adversary walk + threat model | `DEVNOTES/threat-model.md` (PQ section) |
+| Per-ship reference doc | `docs/design/zk-snark.md` |
+| Adversary walk + threat model | `docs/design/threat-model.md` (PQ section) |
 | Schema integration | `polaris_sql/01_schema.sql` (search `TokenStateEpoch`) |
 | Flask wrapper | `polaris_web/zk.py` |
 | v2 mission link | M2-1 (Substrate-D arc; 5/5 closed) |

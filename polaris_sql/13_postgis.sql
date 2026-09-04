@@ -168,7 +168,7 @@ END $postgis_setup$;
 --                50000   -- 50km radius around Pittsburgh
 --            );
 --
---  - DEVNOTES/atlas-scaling.md documents the design trade-off.
+--  - docs/design/atlas-scaling.md documents the design trade-off.
 --  - Acceptance criterion (≥3× improvement at 10M+ events) is verified
 --    in a v8.x follow-up — requires a real PostGIS server + a 10M-row
 --    stress dataset (the v8.80 polaris-load-test.sh scaffold can help

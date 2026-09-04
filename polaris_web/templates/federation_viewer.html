@@ -81,9 +81,9 @@
         <li><strong>Audit-of-record:</strong> <code>AgencyTrustAttestation</code> is the 6th audit-of-record instance. Rows are append-only at the data-content level (an immutability trigger blocks mutation of any field except <code>revocation_date</code> and <code>revocation_reason</code>); revocation is recorded as a state transition, not a delete.</li>
     </ol>
     <p class="footnote">
-        Mechanism design: <code>DEVNOTES/ships/federation.md</code>.
+        Mechanism design: <code>docs/design/federation.md</code>.
         Concurrency: per-attesting-agency lock is the 5th entry in
-        <code>DEVNOTES/concurrency.md</code>.
+        <code>docs/design/concurrency.md</code>.
     </p>
 </div>
 {% endblock %}

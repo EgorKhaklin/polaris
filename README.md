@@ -66,12 +66,12 @@ Consolidating cards is the easy half. The hard half is what happens when an adve
 
 | Threat | In practice | The answer | Detail |
 |---|---|---|---|
-| **Cryptographic compulsion** | "Sign this or I break your fingers." | A second secret produces an indistinguishable verification that silently records a `DuressEvent`. Every operator-visible surface shows success. | [duress-codes](DEVNOTES/ships/duress-codes.md) |
-| **Catastrophic loss** | Token lost; the holder has nothing to prove who they are. | A two-phase recovery ceremony with independent out-of-band channels, a cooldown, and an admin-gated completion. | [recovery-ceremony](DEVNOTES/ships/recovery-ceremony.md) |
-| **Quantum migration** | Today's signatures break when a quantum computer arrives. | Tokens carry classical and post-quantum signatures simultaneously during cutover, with a database rule that exactly one is active. The default is already post-quantum. | [multi-sig-migration](DEVNOTES/ships/multi-sig-migration.md) |
-| **Issuer concentration** | One agency issues tokens that pass as another agency's. | Explicit-only federation, no transitive trust. Every cross-agency verification gates on an active trust attestation row. | [federation](DEVNOTES/ships/federation.md) |
-| **Auditability vs. privacy** | "Prove this token was in the ledger" without revealing which one. | A Plonky2 ZK-SNARK over a Merkle commitment answers membership and nothing else. | [zk-snark](DEVNOTES/ships/zk-snark.md) |
-| **Issuer overreach** | An agency revokes tokens at industrial scale, outside policy. | A per-agency revocation-rate ceiling enforced by trigger and audited under an advisory lock. | [issuer-discretion](DEVNOTES/ships/issuer-discretion.md) |
+| **Cryptographic compulsion** | "Sign this or I break your fingers." | A second secret produces an indistinguishable verification that silently records a `DuressEvent`. Every operator-visible surface shows success. | [duress-codes](docs/design/duress-codes.md) |
+| **Catastrophic loss** | Token lost; the holder has nothing to prove who they are. | A two-phase recovery ceremony with independent out-of-band channels, a cooldown, and an admin-gated completion. | [recovery-ceremony](docs/design/recovery-ceremony.md) |
+| **Quantum migration** | Today's signatures break when a quantum computer arrives. | Tokens carry classical and post-quantum signatures simultaneously during cutover, with a database rule that exactly one is active. The default is already post-quantum. | [multi-sig-migration](docs/design/multi-sig-migration.md) |
+| **Issuer concentration** | One agency issues tokens that pass as another agency's. | Explicit-only federation, no transitive trust. Every cross-agency verification gates on an active trust attestation row. | [federation](docs/design/federation.md) |
+| **Auditability vs. privacy** | "Prove this token was in the ledger" without revealing which one. | A Plonky2 ZK-SNARK over a Merkle commitment answers membership and nothing else. | [zk-snark](docs/design/zk-snark.md) |
+| **Issuer overreach** | An agency revokes tokens at industrial scale, outside policy. | A per-agency revocation-rate ceiling enforced by trigger and audited under an advisory lock. | [issuer-discretion](docs/design/issuer-discretion.md) |
 
 ---
 
@@ -219,7 +219,7 @@ No single row is novel. The contribution is the assembly: all five properties in
 |---|---|
 | Deciding whether this is worth your time | [MISSION.md](MISSION.md), the constitution: what the system refuses to do and why |
 | Reviewing the architecture | [ARCHITECTURE-OVERVIEW](docs/ARCHITECTURE-OVERVIEW.md) · [SYSTEM-MAP](docs/reference/SYSTEM-MAP.md) |
-| Reading the security posture | [SECURITY.md](SECURITY.md) · [PQC-POSTURE](docs/reference/PQC-POSTURE.md) · [RED-TEAM-SCOPE](docs/RED-TEAM-SCOPE.md) · [threat model](DEVNOTES/threat-model.md) |
+| Reading the security posture | [SECURITY.md](SECURITY.md) · [PQC-POSTURE](docs/reference/PQC-POSTURE.md) · [RED-TEAM-SCOPE](docs/RED-TEAM-SCOPE.md) · [threat model](docs/design/threat-model.md) |
 | Integrating against it | [API](docs/reference/API.md) · [DATA-MODEL](docs/reference/DATA-MODEL.md) · [GLOSSARY](docs/reference/GLOSSARY.md) |
 | Operating a deployment | [docs/operator/](docs/operator/README.md), seventeen runbooks and ledgers from install to disaster recovery |
 | Reading it as an academic artifact | [The project report](docs/paper/polaris_project_report.pdf) (PDF, same license) · [CITATION.cff](CITATION.cff) |

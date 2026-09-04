@@ -1,6 +1,6 @@
-# RASP rules: runtime application self-protection
+# Runtime application self-protection
 
-**Status:** Rule catalog with implemented vs gap status per rule
+**Reader:** an engineer or an assessor. **Job:** The runtime self-protection rules, which are implemented and which are gaps.
 
 ---
 
@@ -26,14 +26,12 @@ Three rule classes:
 ## Rate-limit rules
 
 ### R-RL-1: per-IP rate limit on auth endpoints
-**Status:** ✅ IMPLEMENTED (v8.x, `polaris_web/security.py` rate_limiter)
 **Surface:** `/login`, `/auth/webauthn/assert/*`
 **Limit:** 10 requests / minute / IP
-**Backend:** Redis (R8-2 atomic INCR + EXPIRE)
+**Backend:** Redis atomic INCR + EXPIRE)
 **Gap:** none
 
 ### R-RL-2: per-IP rate limit on verification endpoints
-**Status:** ✅ IMPLEMENTED (v8.x)
 **Surface:** `/verifications`, `/api/atlas/*`
 **Limit:** 60 requests / minute / IP
 **Backend:** Redis
@@ -53,7 +51,7 @@ bulk-attestation patterns
 would run inside the same transaction so race conditions are sealed.
 
 ### R-RL-4: per-issuer revocation-rate cap
-**Status:** ✅ IMPLEMENTED (v8.15, R11-6 issuer-discretion bounds)
+**Status:** ✅ IMPLEMENTED (v8.15, issuer-discretion bounds)
 **Surface:** `uc8_revoke_token`
 **Limit:** policy-configurable in `IssuerDiscretionPolicy`
 **Mechanism:** trigger-enforced; row insertion in

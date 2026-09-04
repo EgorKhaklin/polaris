@@ -20,7 +20,7 @@ a real member of the tree at the committed root, recomputed with our own
 Poseidon/Merkle (merkle.py) - and checks (2) directly. It does NOT parse the
 Plonky2 proof bytes; cryptographic soundness of the FRI proof object is outside
 its model and it ABSTAINS on proof-byte integrity by construction. That axis is
-left to the Rust decoder. See DEVNOTES/zk-soundness.md for the honest ledger.
+left to the Rust decoder. See docs/design/zk-soundness.md for the honest ledger.
 
 So: agreement here means a second, independent implementation of the same field,
 hash, and Merkle semantics confirms the verifier's verdict on the underlying

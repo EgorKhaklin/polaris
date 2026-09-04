@@ -1,4 +1,6 @@
-# DEVNOTES/atlas-scaling.md
+# Atlas scaling
+
+**Reader:** an engineer or an assessor. **Job:** How the map stays bounded as the event log grows.
 
 The scaling story in 60 lines. Full treatment in `docs/reference/SCALING.md`.
 
@@ -115,7 +117,7 @@ If any are 2× off, run `EXPLAIN ANALYZE` and check whether an index
 got dropped or whether the planner picked a seq scan when an index
 scan was expected.
 
-## PostGIS-optional scaling path (v8.88 / R8-4)
+## PostGIS-optional scaling path (v8.88 /
 
 The default schema uses composite B-tree indexes on
 `(latitude, longitude)` for atlas spatial queries. B-tree starts to
@@ -154,7 +156,7 @@ The application-layer atlas functions (`atlas_clusters_*`,
 `atlas_points_*`, etc.) still use the B-tree path until a v8.x
 follow-up ship rewrites them: that rewrite is gated on a
 PostGIS-enabled environment plus a 10M-event benchmark dataset
-where the ≥3× R8-4 acceptance criterion can be measured. Until
+where the ≥3× acceptance criterion can be measured. Until
 then, operators can hand-query the GiST index:
 
 ```sql
@@ -186,4 +188,4 @@ The atlas SQL functions will gain a CASE branch on
 emit either the GiST or B-tree path at function-call time. The
 acceptance criterion (≥3× improvement at 10M+ events) is verified
 by running `scripts/polaris-load-test.sh` against the rewritten
-functions in both modes. R8-4 Phase 2.
+functions in both modes. Phase 2.

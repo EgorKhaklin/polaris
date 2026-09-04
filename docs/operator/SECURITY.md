@@ -2,7 +2,7 @@
 
 **Reader:** the security assessor evaluating a Polaris deployment for national use, and the operator who keeps that posture true. **Job:** state each control that exists today, name the code that enforces it, and name the automated check or test that pins it, so an assessment reads the repository instead of a claim.
 
-Status: controls verified against the repository at v9.199 on 2026-09-02. The disclosure policy (how to report a vulnerability, how to verify a release, the bug-bounty terms) is the root [SECURITY.md](../../SECURITY.md). The STRIDE model is [threat-model.md](../../DEVNOTES/threat-model.md); the red-team boundary is [RED-TEAM-SCOPE.md](../RED-TEAM-SCOPE.md); the constitution (C1 to C10) is [MISSION.md](../../MISSION.md).
+Status: controls verified against the repository at v9.199 on 2026-09-02. The disclosure policy (how to report a vulnerability, how to verify a release, the bug-bounty terms) is the root [SECURITY.md](../../SECURITY.md). The STRIDE model is [threat-model.md](../design/threat-model.md); the red-team boundary is [RED-TEAM-SCOPE.md](../RED-TEAM-SCOPE.md); the constitution (C1 to C10) is [MISSION.md](../../MISSION.md).
 
 Every check named below is a `check_*` function in [polaris_checks/checks.py](../../polaris_checks/checks.py) and runs without a database: `python3 -m polaris_checks.run`. Every test class named below lives in [polaris_web/test_app.py](../../polaris_web/test_app.py) unless another file is named.
 
@@ -150,18 +150,18 @@ The allowed set is the `chk_authaudit_event_type` CHECK constraint. `F11_AuditLo
 
 ## Holder-protection mechanisms
 
-The project report's "Limitations and Open Problems" section ([polaris_project_report.tex](../paper/polaris_project_report.tex)) names six open problems. Four have a relational answer enforced at the schema layer and are described here because each is a control against the system's own operators. The other two, population coverage and the centralized trust assumption, are answered by [tiered-enrollment.md](../../DEVNOTES/ships/tiered-enrollment.md) and [federation.md](../../DEVNOTES/ships/federation.md).
+The project report's "Limitations and Open Problems" section ([polaris_project_report.tex](../paper/polaris_project_report.tex)) names six open problems. Four have a relational answer enforced at the schema layer and are described here because each is a control against the system's own operators. The other two, population coverage and the centralized trust assumption, are answered by [tiered-enrollment.md](../design/tiered-enrollment.md) and [federation.md](../design/federation.md).
 
 ### Issuer discretion bounds
 
-The report's "Issuer trust concentration" problem asks for three things: cryptographic diversity across issuers ([Cryptographic migration](#cryptographic-migration) below), a federation model with mutual recognition (`AgencyTrustAttestation`, [federation.md](../../DEVNOTES/ships/federation.md)), and constitutional limits on issuer discretion. The third leg:
+The report's "Issuer trust concentration" problem asks for three things: cryptographic diversity across issuers ([Cryptographic migration](#cryptographic-migration) below), a federation model with mutual recognition (`AgencyTrustAttestation`, [federation.md](../design/federation.md)), and constitutional limits on issuer discretion. The third leg:
 
 - `uc8_revoke_token` is the single sanctioned revocation path. It enforces a rolling-window cap on the share of its own tokens one issuing agency may revoke: system default 5.00% over 30 days (`polaris.default_max_revoke_percent`, `polaris.default_window_days`), overridable per agency in `IssuerDiscretionPolicy` with a justification of at least 20 characters so any loosening is auditable.
 - Above the cap a co-signer is required: a different agency holding `BOTH` authorization on the token's algorithm. The co-signer is recorded in the lifecycle row as `[COSIGN:<agency_id>]`, so a third party can detect one co-signer reused across mass-revocation events.
 - A direct `UPDATE` to `REVOKED` that bypasses the procedure is refused by the `enforce_revocation_velocity_bound` trigger in [06_triggers.sql](../../polaris_sql/06_triggers.sql). `pg_advisory_xact_lock` keyed on the agency serializes concurrent revocations by the same agency (C9).
 - `AgencyQuota` extends the same leg to issuance and verification: opt-in per-agency caps (issuances and revocations per rolling day, verifications per rolling hour) that the `enforce_agency_quota` trigger binds on every write path, advisory-locked so the count is exact under concurrent writers. A refused write is an HTTP 429, a `quota_refused` log line, and a `polaris_quota_refusals_total` increment. Per-agency velocity counters feed the `PolarisIssuanceVelocity`, `PolarisRevocationVelocity`, and `PolarisVerificationVelocity` alerts ([observability README](../../deploy/observability/README.md)), which page when one agency's hour exceeds an absolute floor and four times its own trailing weekly mean. These controls bound what an agency may do and count what it does, never what a person is.
 
-Tested by `IssuerDiscretionBoundsTests` and `AgencyQuotaTests`; pinned by `check_abuse_controls`. What the bound does not cover: slow abuse under the cap (4.99% a month compounds to roughly 60% a year, which civic audit reporting has to catch), collusion of every agency, and forgery of a co-signer identity (the co-signer is recorded procedurally, not hardware-attested). The full mechanism walk is [issuer-discretion.md](../../DEVNOTES/ships/issuer-discretion.md) and [abuse-controls.md](../../DEVNOTES/ships/abuse-controls.md).
+Tested by `IssuerDiscretionBoundsTests` and `AgencyQuotaTests`; pinned by `check_abuse_controls`. What the bound does not cover: slow abuse under the cap (4.99% a month compounds to roughly 60% a year, which civic audit reporting has to catch), collusion of every agency, and forgery of a co-signer identity (the co-signer is recorded procedurally, not hardware-attested). The full mechanism walk is [issuer-discretion.md](../design/issuer-discretion.md) and [abuse-controls.md](../design/abuse-controls.md).
 
 ### Catastrophic-loss recovery
 
@@ -176,7 +176,7 @@ The report's "Catastrophic-loss risk" problem: a holder loses every token and de
 
 The partial unique index `uq_one_pending_recovery_per_individual` allows one `PENDING` request per individual. An operator initiates (`uc9_initiate_recovery`); an admin decides (`uc9_complete_recovery`, which raises `insufficient_privilege` for any other role; the `/uc9/decide/<id>` route also carries `@require_role('admin')`). `pg_advisory_xact_lock` on the claimed individual prevents two decisions on one request. Every transition during an approved recovery carries `[RECOVERY:<id>]` in its lifecycle `reason_code`, so audit replay reconstructs the ceremony from the lifecycle log alone.
 
-Tested by `CatastrophicLossRecoveryTests`. Not covered: an attacker who controls all three channels and waits out the cool-down, and the report's "operational grace period" reading, since the holder stays dark during the 48-hour window (a temporary attestation credential is the planned answer). Mechanism walk: [recovery-ceremony.md](../../DEVNOTES/ships/recovery-ceremony.md).
+Tested by `CatastrophicLossRecoveryTests`. Not covered: an attacker who controls all three channels and waits out the cool-down, and the report's "operational grace period" reading, since the holder stays dark during the 48-hour window (a temporary attestation credential is the planned answer). Mechanism walk: [recovery-ceremony.md](../design/recovery-ceremony.md).
 
 ### Cryptographic migration
 
@@ -191,7 +191,7 @@ The report's "Cryptographic migration during transitions" problem: how tokens mo
 
 `UNIQUE (token_id, algorithm_id)` blocks a duplicate-algorithm migration on one token, and `idx_token_signature_active` keeps the active-signature lookup indexed. `uc6_migrate_algorithm` is the single sanctioned path and takes `pg_advisory_xact_lock` on the token (C9); the route is `/uc6/migrate`. Tested by `MultiSignatureTests`.
 
-Not covered: a compromise of a not-yet-deprecated algorithm (orderly deprecation cannot retroactively reject signatures that were valid when produced), and automatic cascade from `CryptographicAlgorithm.deprecation_date` (algorithm-wide and per-signature deprecation are separate columns by design; operator policy through UC-6 is the only path). Signing itself, real ML-DSA-65 or the deterministic placeholder, is [PQC-POSTURE.md](../reference/PQC-POSTURE.md). Mechanism walk: [multi-sig-migration.md](../../DEVNOTES/ships/multi-sig-migration.md).
+Not covered: a compromise of a not-yet-deprecated algorithm (orderly deprecation cannot retroactively reject signatures that were valid when produced), and automatic cascade from `CryptographicAlgorithm.deprecation_date` (algorithm-wide and per-signature deprecation are separate columns by design; operator policy through UC-6 is the only path). Signing itself, real ML-DSA-65 or the deterministic placeholder, is [PQC-POSTURE.md](../reference/PQC-POSTURE.md). Mechanism walk: [multi-sig-migration.md](../design/multi-sig-migration.md).
 
 ### Compulsion resistance: duress codes
 
@@ -203,7 +203,7 @@ The report's "Compulsion resistance" problem: biometric binding stops casual the
 
 `DuressEvent` is append-only. The operator `/verifications` list does not join to it; admins and auditors read `/api/duress/events` or the table directly, and the `PolarisDuressEvent` alert pages on a new row (`check_duress_alertable`). Enrollment is per token and explicit; nothing derives a duress code automatically. Tested by `DuressCodeTests`.
 
-Not covered: a coercer who knows the mechanism and forbids its use; a typo that misses the duress code and raises suspicion (codes are chosen to differ from verify codes by enough characters that a typo does not collide); and aggregate timing analysis across many holders. Mechanism walk: [duress-codes.md](../../DEVNOTES/ships/duress-codes.md).
+Not covered: a coercer who knows the mechanism and forbids its use; a typo that misses the duress code and raises suspicion (codes are chosen to differ from verify codes by enough characters that a typo does not collide); and aggregate timing analysis across many holders. Mechanism walk: [duress-codes.md](../design/duress-codes.md).
 
 ---
 

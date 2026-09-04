@@ -12,7 +12,7 @@ installation in [INSTALL.md](INSTALL.md), [LINUX-SERVER.md](LINUX-SERVER.md),
 [DR.md](DR.md) and the drill ledger [DR-DRILLS.md](DR-DRILLS.md); high
 availability in [FAILOVER.md](FAILOVER.md); per-alert runbooks in
 [RUNBOOKS.md](RUNBOOKS.md); service objectives in [SLOS.md](SLOS.md); the
-threat model in [../../DEVNOTES/threat-model.md](../../DEVNOTES/threat-model.md)
+threat model in [../design/threat-model.md](../design/threat-model.md)
 and [../../SECURITY.md](../../SECURITY.md); the API in
 [../reference/API.md](../reference/API.md).
 
@@ -770,7 +770,7 @@ After step 3 both should return `t`. The schema gains:
 
 The atlas functions still use the B-tree path; operators with PostGIS active
 can query the GiST index directly (a sample `ST_DWithin` query is in
-[DEVNOTES/atlas-scaling.md](../../DEVNOTES/atlas-scaling.md), section
+[docs/design/atlas-scaling.md](../design/atlas-scaling.md), section
 "PostGIS-optional scaling path").
 
 **When NOT to enable PostGIS:** managed Postgres tiers that gate it behind
@@ -1356,7 +1356,7 @@ If you ever need to retire a Polaris instance:
 - Application code internals: [CLAUDE.md](../../CLAUDE.md), [DEVNOTES/](../../DEVNOTES/README.md)
 - Cryptographic algorithm choice: [PQC-POSTURE.md](../reference/PQC-POSTURE.md), [SECURITY.md](SECURITY.md)
 - Schema design: [DATA-MODEL.md](../reference/DATA-MODEL.md)
-- Threat model: [DEVNOTES/threat-model.md](../../DEVNOTES/threat-model.md)
+- Threat model: [docs/design/threat-model.md](../design/threat-model.md)
 - API reference: [API.md](../reference/API.md)
 - Privacy posture: [PRIVACY.md](PRIVACY.md)
 - WebAuthn and hardware-token operator auth: [WEBAUTHN-ROLLOUT.md](WEBAUTHN-ROLLOUT.md)

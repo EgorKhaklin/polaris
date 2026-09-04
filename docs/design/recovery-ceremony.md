@@ -1,14 +1,6 @@
-# DEVNOTES/ships/recovery-ceremony.md
+# The recovery ceremony
 
-**Ships with:** R11-2 / M2-7 / v8.17
-**Implements:** PDF §9.1 catastrophic-loss-risk open problem
-**Code surface:** `01_schema.sql` (RecoveryRequest), `02_indexes.sql`
-(idx_recovery_request_status_individual + uq_one_pending_recovery_per_individual),
-`05_procedures.sql` (uc9_initiate_recovery, uc9_complete_recovery),
-`10_auth.sql` (sample PENDING row, seeded after AppUser exists),
-`polaris_web/app.py` (`/uc9/initiate-recovery`, `/uc9/queue`,
-`/uc9/decide/<id>`), three templates in
-`polaris_web/templates/uc9_*.html`.
+**Reader:** an engineer or an assessor. **Job:** How a holder recovers an identity without a single point of compromise.
 
 ---
 
@@ -20,9 +12,9 @@ exclusion after catastrophic token loss.
 
 | Leg | Threat blocked | Item | Status |
 |---|---|---|---|
-| Entry | Forced non-enrollment as exclusion gradient | R11-4 | ✅ v8.16 |
-| Exit | Mass denaturalization without co-signature | R11-6 | ✅ v8.15 |
-| **Recovery** | **Catastrophic loss → permanent exclusion** | **R11-2** | **✅ v8.17** |
+| Entry | Forced non-enrollment as exclusion gradient | | ✅ v8.16 |
+| Exit | Mass denaturalization without co-signature | | ✅ v8.15 |
+| **Recovery** | **Catastrophic loss → permanent exclusion** | **** | **✅ v8.17** |
 
 The PDF §9.1 phrase the proposal anchors against:
 
@@ -36,16 +28,13 @@ The PDF §9.1 phrase the proposal anchors against:
 > defined grace period during which the holder retains access to
 > essential services."*
 
-## What this is NOT
-
-R11-2 is **not Polaris deciding who deserves recovery.** The four
+## What this is NOT is **not Polaris deciding who deserves recovery.** The four
 `CHECK` constraints on `RecoveryRequest` constrain the *shape* of
 the decision; the agencies and out-of-band verification processes
 make the decision. Same posture as C3 (one ACTIVE per individual:
 constraint on issuance behavior, not a holder verdict), C7
-(algorithm metadata: constraint on what agencies may sign with),
-R11-6 (issuer-discretion bounds: constraint on revocation velocity),
-and R11-4 (tiered enrollment vocabulary: constraint on how
+(algorithm metadata: constraint on what agencies may sign with), (issuer-discretion bounds: constraint on revocation velocity),
+and (tiered enrollment vocabulary: constraint on how
 non-enrollment is recorded).
 
 ## The two-phase ceremony
@@ -145,11 +134,11 @@ lifecycle log alone — the tag is the join key back to the
      admins (`/uc9/queue`), so a suspicious pattern is visible
      before the decision lands.
 5. **Defender's cost:** Legitimate recovery takes ≥48 hours; the
-   holder is civically dark during this window (until R11-2 v2 lands
+   holder is civically dark during this window (until v2 lands
    the operational `TemporaryAttestation`). This is a real cost
    that operators may want to weight against the bound. A future
    `RecoveryDiscretionPolicy` table could allow per-jurisdiction
-   tuning, mirroring R11-6's `IssuerDiscretionPolicy`.
+   tuning, mirroring's `IssuerDiscretionPolicy`.
 6. **Mechanism-design note:** Triple-channel + cool-down + admin
    co-sign shifts attacker cost from "fake one signature" to
    "compromise three channels AND defeat the cool-down AND get an
@@ -200,7 +189,7 @@ the ceremony's mechanism.
 
 ## Concurrency: the per-individual advisory lock
 
-The `pg_advisory_xact_lock` pattern follows R11-6's per-agency lock
+The `pg_advisory_xact_lock` pattern follows's per-agency lock
 shape. Two threads calling `uc9_complete_recovery(recovery_id=X)`
 on the same PENDING request would each pass the cool-down +
 three-channel CHECKs before either UPDATE landed. The first to
@@ -216,12 +205,11 @@ the race with real `psycopg2` threads (C9 honored).
 ## Cross-references
 
 - PDF §9.1 "Catastrophic-loss risk" — original problem statement.
-- `MISSION.md` *Polaris is NOT an authority* — the constraint
-  R11-2 calibrates against.
-- `proposals/R11-2-catastrophic-loss-recovery.md` — original
+- `MISSION.md` *Polaris is NOT an authority* — the constraint calibrates against.
+- `proposals/-catastrophic-loss-recovery.md` — original
   proposal with the alignment-audit refinements.
-- `DEVNOTES/ships/issuer-discretion.md` — R11-6 (exit leg, same
+- `docs/design/issuer-discretion.md` — (exit leg, same
   advisory-lock pattern).
-- `DEVNOTES/ships/tiered-enrollment.md` — R11-4 (entry leg).
-- `DEVNOTES/concurrency.md` — the advisory-lock pattern catalog.
+- `docs/design/tiered-enrollment.md` — (entry leg).
+- `docs/design/concurrency.md` — the advisory-lock pattern catalog.
 - `docs/operator/SECURITY.md` — recovery threat-model subsection.

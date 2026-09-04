@@ -1,0 +1,54 @@
+# docs/design/: why it is built this way
+
+**Reader:** an engineer or an assessor who has read what Polaris does and now
+wants to know how a specific guarantee is actually held up.
+**Job:** one record per mechanism, written when the mechanism was designed and
+kept beside the code it describes.
+
+These documents were filed under `DEVNOTES/` until v9.224, where an assessor
+would not have looked for them. Nothing here is a runbook: for operating a
+deployment see [operator/](../operator/README.md), and for the API, the schema
+and the posture documents see [reference/](../reference/README.md).
+
+## Cross-cutting
+
+| Document | What it answers |
+|---|---|
+| [threat-model.md](threat-model.md) | Which adversaries, reaching which surfaces, and what is deliberately out of scope |
+| [audit-of-record.md](audit-of-record.md) | Why the audit tables are append-only at the database, and what that costs |
+| [concurrency.md](concurrency.md) | Every race-prone path, the lock that serialises it, and the test that proves it |
+| [substrate.md](substrate.md) | Every primitive Polaris depends on, and which slots are reserved rather than built |
+| [two-witness-principle.md](two-witness-principle.md) | Why no cryptographic verdict is trusted from a single implementation |
+| [zk-soundness.md](zk-soundness.md) | What the words proof and zero-knowledge are allowed to mean here |
+| [observability.md](observability.md) | What a running deployment tells its operator, and through which surface |
+| [rasp-rules.md](rasp-rules.md) | The runtime self-protection rules, implemented and gaps alike |
+| [rate-limiter.md](rate-limiter.md) | The per-IP defence, its backend, and its failure mode |
+| [atlas-scaling.md](atlas-scaling.md) | How the map stays bounded as the event log grows |
+
+## One mechanism each
+
+| Document | The mechanism |
+|---|---|
+| [duress-codes.md](duress-codes.md) | The compulsion-resistant verification path |
+| [recovery-ceremony.md](recovery-ceremony.md) | Recovering an identity without a single point of compromise |
+| [federation.md](federation.md) | Cross-agency trust, recorded explicitly, never transitive |
+| [issuer-discretion.md](issuer-discretion.md) | The ceiling on what an issuing agency can do at scale |
+| [multi-sig-migration.md](multi-sig-migration.md) | Moving a token to a new signature algorithm with no gap |
+| [token-signature.md](token-signature.md) | How a signature is produced, stored, and verified across rotation |
+| [zk-snark.md](zk-snark.md) | What the Plonky2 circuit proves, and the witness that checks it |
+| [anchoring.md](anchoring.md) | Committing a batch of audit rows to an external anchor |
+| [tiered-enrollment.md](tiered-enrollment.md) | The evidence tiers behind an issued token |
+| [webauthn.md](webauthn.md) | Operator credentials, enforcement, and the grace period |
+| [abuse-controls.md](abuse-controls.md) | The per-agency quotas and what a refusal looks like |
+| [quantum-observer.md](quantum-observer.md) | A reserved schema scaffold, and why it stays unbuilt |
+
+The proof that the zero-knowledge redaction holds against an explicit
+adversary, rather than merely storing a NULL, is
+[meta/redaction-proof.md](../../meta/redaction-proof.md).
+
+**On voice.** These records were written as working notes and read like it:
+they carry more history than a reference document should, and their headings
+are uneven. Each one now opens with its reader and its job, and the internal
+mission identifiers are gone. A full voice pass over the bodies is recorded in
+[DEVNOTES/presentation-plan.md](../../DEVNOTES/presentation-plan.md) rather
+than done here, so that the move itself stayed reviewable.

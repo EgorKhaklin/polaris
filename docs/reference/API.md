@@ -363,7 +363,7 @@ Errors (PostgreSQL SQLSTATE):
 - Free-form RAISE EXCEPTION: invalid co-signer, already-terminal
   token, missing authorization.
 
-See `DEVNOTES/ships/issuer-discretion.md` for the policy choices (N=5.00%,
+See `docs/design/issuer-discretion.md` for the policy choices (N=5.00%,
 W=30 days defaults; per-agency overrides via
 `IssuerDiscretionPolicy`).
 
@@ -385,7 +385,7 @@ exposed as a route: an admin who needs it writes the join against
 `IndividualCurrentEnrollment` directly, which leaves an
 `AuthAuditLog` trace.
 
-See `DEVNOTES/ships/tiered-enrollment.md` for the asymmetric-design
+See `docs/design/tiered-enrollment.md` for the asymmetric-design
 rationale.
 
 ### UC-9 routes
@@ -438,7 +438,7 @@ Errors:
   decided), approver = requester, missing new-token parameters on
   APPROVED.
 
-See `DEVNOTES/ships/recovery-ceremony.md` for the full adversary walk and
+See `docs/design/recovery-ceremony.md` for the full adversary walk and
 mechanism design.
 
 ### `POST /uc6/migrate`
@@ -469,7 +469,7 @@ Errors:
 - `42501` `insufficient_privilege`: direct UPDATE/DELETE on
   `TokenSignature` that bypasses the procedure.
 
-See `DEVNOTES/ships/multi-sig-migration.md` for the verification
+See `docs/design/multi-sig-migration.md` for the verification
 consistency model and the no-auto-derivation argument.
 
 ---
@@ -496,7 +496,7 @@ REVOKED instead.
 Three endpoints back the DID-anchoring Merkle batch layer. The Polaris
 schema is the off-chain audit-of-record; an external PQ-capable
 ledger is an optional operator-discretion destination for the
-committed Merkle root. See `DEVNOTES/ships/anchoring.md` for the design
+committed Merkle root. See `docs/design/anchoring.md` for the design
 write-up.
 
 ### `POST /api/anchor/batch` (admin)
@@ -595,7 +595,7 @@ Returns `404` if the token has no `BlockchainAnchor` row.
 
 Two endpoints manage the federation trust graph (`AgencyTrustAttestation`).
 Both are admin-only and CSRF-protected. The federation flow is described in
-`DEVNOTES/ships/federation.md`.
+`docs/design/federation.md`.
 
 ### CSRF for JSON callers
 
@@ -686,7 +686,7 @@ helper inspects exactly one row in `AgencyTrustAttestation`.
 ## Duress code API
 
 Compulsion-resistance per PDF §9.5. The `DuressEvent` table is the
-8th audit-of-record. See `DEVNOTES/ships/duress-codes.md` for the full
+8th audit-of-record. See `docs/design/duress-codes.md` for the full
 write-up.
 
 The main interaction is implicit: when the holder types a duress
@@ -770,7 +770,7 @@ distinguish a duress signal from a normal verification.
 
 Plonky2-backed Merkle-inclusion proofs over `TokenStateEpoch`
 snapshots. The Rust prover lives in `polaris_zk/`; this layer is the
-schema + route bridge. See `DEVNOTES/ships/zk-snark.md` for the full
+schema + route bridge. See `docs/design/zk-snark.md` for the full
 write-up.
 
 ### `POST /api/zk/epoch/close` (admin)
@@ -859,7 +859,7 @@ All `/api/*` JSON endpoints return errors as:
 
 Error messages are sanitized through `db_error_to_message()` in
 `security.py`; raw psycopg2 errors are never surfaced (threat I-I3 in
-[the threat model](../../DEVNOTES/threat-model.md)).
+[the threat model](../design/threat-model.md)).
 
 Status codes:
 - `200`: success

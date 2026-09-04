@@ -714,7 +714,7 @@ The section 8.4 template is the structure. Reviewers check:
   delivered as a Secret.
 - [`PRODUCTION-READINESS.md`](../PRODUCTION-READINESS.md): the
   deployment-scale gaps, multi-region among them.
-- [`DEVNOTES/threat-model.md`](../../DEVNOTES/threat-model.md): the STRIDE
+- [`docs/design/threat-model.md`](../design/threat-model.md): the STRIDE
   threat model these procedures answer.
 - Scripts: [`polaris-dr-drill.sh`](../../scripts/polaris-dr-drill.sh),
   [`polaris-offsite-drill.sh`](../../scripts/polaris-offsite-drill.sh),

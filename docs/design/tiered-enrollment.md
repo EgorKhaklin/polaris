@@ -1,14 +1,6 @@
-# DEVNOTES/ships/tiered-enrollment.md
+# Tiered enrolment
 
-**Ships with:** R11-4 / M2-9 / v8.16
-**Implements:** PDF §9 *Population coverage* open problem
-**Code surface:** `01_schema.sql` (EnrollmentStatusEvent), `02_indexes.sql`
-(idx_enrollment_event_individual_time, idx_enrollment_event_status),
-`03_view.sql` (IndividualCurrentEnrollment), `06_triggers.sql`
-(seed_default_enrollment_status, append-only extension),
-`07_queries.sql` (civic_enrollment_summary), `04_data.sql` (5 seed
-events + 3 new sample individuals), `polaris_web/app.py`
-(`/individuals/enrollment`), `polaris_web/templates/individuals_enrollment.html`.
+**Reader:** an engineer or an assessor. **Job:** The evidence tiers behind an issued token.
 
 ---
 
@@ -28,15 +20,11 @@ has a current enrollment status drawn from a five-value enum:
 Transitions are recorded in `EnrollmentStatusEvent` (append-only). The
 `IndividualCurrentEnrollment` view returns the latest event's status
 per individual, falling back to `NOT_ENROLLED` via `COALESCE` if no
-events exist.
-
-R11-4 implements the schema's answer to the PDF §9 second clause:
+events exist. implements the schema's answer to the PDF §9 second clause:
 *"an accepted path for unregistered persons to participate in civic
 life without tokens."* `EXEMPT` is that path made first-class.
 
-## What this is NOT
-
-R11-4 is **not Polaris deciding who counts.** It adds *vocabulary*
+## What this is NOT is **not Polaris deciding who counts.** It adds *vocabulary*
 for policy state, never *decisions* about which state a person
 should be in. The MISSION constraint *"Polaris is NOT an authority"*
 is the central sensitivity here; the design is calibrated against
@@ -55,7 +43,7 @@ overreach in three places:
 
 ## The asymmetric design
 
-The hardest design choice in R11-4 is the *asymmetry between EXEMPT
+The hardest design choice in is the *asymmetry between EXEMPT
 and NOT_ENROLLED*. They look superficially similar — both are "no
 token" — but they're treated differently on purpose.
 
@@ -72,12 +60,12 @@ possible — an admin can write the join against
 `IndividualCurrentEnrollment` directly — but it is NOT exposed as a
 function and shows up in `AuthAuditLog` when an admin runs it.
 
-Why this matters: the second-best attack against R11-4 (after the
+Why this matters: the second-best attack against (after the
 primary vocabulary defense holds) is to *weaponize NOT_ENROLLED as a
 surveillance marker*. "Build me a list of everyone in this
 jurisdiction who hasn't enrolled." The asymmetry says: that query is
 *possible* but it is *named, deliberate, and audit-visible* — not
-inferred via implicit-from-absence, the way the pre-R11-4 schema
+inferred via implicit-from-absence, the way the pre- schema
 forced you to write the query.
 
 The schema cannot prevent the misuse. It can make the misuse named.
@@ -97,7 +85,7 @@ Naming is the precondition for governance catching it.
 
 3. **Equilibrium:** The schema records enrollment state without
    privileging any value of it. External civic policy decides what
-   services require tokens; R11-4 just makes the policy's input
+   services require tokens; just makes the policy's input
    legible. `EXEMPT` provides a recognized non-token path so
    coercion doesn't have an uncontested gradient.
 
@@ -109,7 +97,7 @@ Naming is the precondition for governance catching it.
 
 6. **Defender's cost:** Some legitimate civic uses (vaccination
    outreach, voter-registration drives) do need to enumerate the
-   unenrolled. R11-4 doesn't prevent this; it makes it *explicit*,
+   unenrolled. doesn't prevent this; it makes it *explicit*,
    not implicit-via-omission.
 
 7. **Mechanism-design note:** This is the sociotechnically
@@ -122,9 +110,7 @@ Naming is the precondition for governance catching it.
 The temptation is real: emit `ENROLLED` automatically when an
 individual gets a non-terminal token, emit `LAPSED` automatically
 when their last non-terminal token goes terminal. It would save
-hand-recording.
-
-R11-4 deliberately rejects this. Three reasons:
+hand-recording. deliberately rejects this. Three reasons:
 
 1. **A person can be EXEMPT regardless of token state.** Someone
    recognized as a civic participant under an alternative path
@@ -170,13 +156,11 @@ doesn't have them, so this is a DBA operation.
 ## Cross-references
 
 - PDF §9 "Population coverage" — original problem statement.
-- `MISSION.md` *Polaris is NOT an authority* — the constraint
-  R11-4 calibrates against.
-- `proposals/R11-4-tiered-enrollment.md` — the original proposal
+- `MISSION.md` *Polaris is NOT an authority* — the constraint calibrates against.
+- `proposals/-tiered-enrollment.md` — the original proposal
   with the alignment audit.
 - `docs/operator/PRIVACY.md` — Population-coverage subsection citing this
   document.
-- R11-6 / `DEVNOTES/ships/issuer-discretion.md` — the *exit* leg of the
-  "schema doesn't weaponize itself against the holder" triad;
-  R11-4 is the *entry* leg. (R11-2, when shipped, will be the
+- / `docs/design/issuer-discretion.md` — the *exit* leg of the
+  "schema doesn't weaponize itself against the holder" triad; is the *entry* leg., when shipped, will be the
   *recovery* leg.)

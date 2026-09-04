@@ -312,7 +312,7 @@ Every path shares the same secrets discipline
 ([DR.md](operator/DR.md), with the measured drills in
 [DR-DRILLS.md](operator/DR-DRILLS.md)), the same host hardening
 ([HARDENING.md](operator/HARDENING.md)) and the same threat model
-([DEVNOTES/threat-model.md](../DEVNOTES/threat-model.md)). What a
+([docs/design/threat-model.md](design/threat-model.md)). What a
 deployment still needs from its operator is the decision table in
 [PRODUCTION-READINESS.md](PRODUCTION-READINESS.md).
 
@@ -412,7 +412,7 @@ For a first look: walk `/demo`, then the dashboard and the Atlas.
 - [CLAUDE.md](../CLAUDE.md): the developer and agent runbook
 - [polaris_checks/checks.py](../polaris_checks/checks.py): the invariant layer
 - [meta/structural-architecture.md](../meta/structural-architecture.md): structural enforcement primitives
-- [DEVNOTES/threat-model.md](../DEVNOTES/threat-model.md): the STRIDE model
+- [docs/design/threat-model.md](design/threat-model.md): the STRIDE model
 - [docs/operator/OPERATIONS.md](operator/OPERATIONS.md): the day-2 runbook
 - [docs/operator/DR.md](operator/DR.md): disaster recovery
 - [docs/operator/WEBAUTHN-ROLLOUT.md](operator/WEBAUTHN-ROLLOUT.md): the WebAuthn rollout
