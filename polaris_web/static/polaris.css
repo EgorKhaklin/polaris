@@ -1989,8 +1989,6 @@ textarea.sql {
 
 .atlas-feed { display: flex; flex-direction: column; gap: 6px; }
 
-.health-sub { font-size: 11px; color: var(--ink-dim); }
-
 .category {
     font-size: 10px;
     font-weight: 700;
@@ -2002,18 +2000,6 @@ textarea.sql {
 /* ----- 18 Atlas: the operational map --------------------------------------- */
 
 /* --- Atlas event feed --- */
-
-.globe-toolbar {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 4px;
-    padding: 4px;
-    border: 1px solid rgba(153, 184, 217, 0.22);
-    background: rgba(3, 10, 19, 0.56);
-    border-radius: 6px;
-    margin-bottom: 6px;
-}
 
 /* v8.3 (A+C): chip groups inside a band visually cluster the chips that
    belong to the same control axis. The chip-divider thin vertical rule
@@ -2098,21 +2084,6 @@ textarea.sql {
 
 /* Time-window band: second toolbar row. The timeline strip stretches
    to fill remaining space. */
-.globe-toolbar-time {
-    margin-bottom: 12px;
-    align-items: stretch;
-    min-height: 50px;
-}
-
-.globe-toolbar-time .chip-group {
-    align-self: center;
-}
-
-.atlas-id-strip-secondary {
-    color: rgba(150, 180, 210, 0.65);
-    align-self: center;
-}
-
 .atlas-timeline-strip {
     flex: 1 1 auto;
     min-width: 200px;
@@ -2136,10 +2107,6 @@ textarea.sql {
 
 .atlas-timeline-bar-anomaly {
     fill: #ff6868;
-}
-
-.globe-toolbar-time .toolbar-live {
-    align-self: center;
 }
 
 .toolbar-chip {
@@ -2301,47 +2268,14 @@ textarea.sql {
 /* ============================================================
    Reticle nodes
    ============================================================ */
-.d3-globe-node {
-    cursor: pointer;
-    outline: none;
-    transition: opacity 0.18s;
-    color: #d6e3f0;
-}
-
-.d3-globe-node.node-hidden {
-    opacity: 0;
-    pointer-events: none;
-}
-
-.reticle-hit {
-    fill: transparent;
-    stroke: none;
-}
 
 /* Reticle ring: slightly heavier than pre-v8.2 so the active layer
    reads at a glance rather than dissolving into the graticule. */
-.reticle-ring {
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 1.1px;
-    opacity: 0.72;
-}
 
-.reticle-tick {
-    stroke: currentColor;
-    stroke-width: 1.1px;
-    opacity: 0.85;
-}
 
 /* Center dot: bumped from 1.7px to 2.4px (v8.2). The hard center is what
    the eye locks onto; making it bigger by 40% is the difference between
    "I see something happening there" and "is that a node or a star?" */
-.reticle-core {
-    fill: currentColor;
-    stroke: rgba(0, 0, 0, 0.65);
-    stroke-width: 0.5px;
-    r: 2.4px;
-}
 
 /* New-arrival ping (v8.2). When renderNodes() adds a node that wasn't in
    the previous frame's dataset, atlas-globe.js attaches `.node-fresh` for
@@ -2350,121 +2284,18 @@ textarea.sql {
    Two pings overlap in the keyframes so the ring stays visible while a
    second wave starts; this gives a fluid "pulse" rather than a single
    blink. */
-.d3-globe-node.node-fresh::after { content: ''; }  /* no-op anchor */
+  /* no-op anchor */
 
-.reticle-pulse {
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 1.4px;
-    opacity: 0;
-    pointer-events: none;
-    transform-box: fill-box;
-    transform-origin: center;
-}
 
-.d3-globe-node.node-fresh .reticle-pulse {
-    animation: reticle-pulse-expand 1.4s ease-out infinite;
-}
 
-.d3-globe-node.node-fresh .reticle-ring {
-    /* The ring itself gets a brief, brighter beat so the static layer
-       confirms the activity even on the first frame the pulse appears. */
-    animation: reticle-ring-flare 1.4s ease-out infinite;
-}
 
-@keyframes reticle-pulse-expand {
-    0%   { transform: scale(0.6); opacity: 0.85; }
-    70%  { transform: scale(2.4); opacity: 0; }
-    100% { transform: scale(2.4); opacity: 0; }
-}
 
-@keyframes reticle-ring-flare {
-    0%, 100% { opacity: 0.72; stroke-width: 1.1px; }
-    35%      { opacity: 1;    stroke-width: 1.6px; }
-}
 
-@media (prefers-reduced-motion: reduce) {
-    .d3-globe-node.node-fresh .reticle-pulse,
-    .d3-globe-node.node-fresh .reticle-ring {
-        animation: none;
-    }
-    .d3-globe-node.node-fresh .reticle-pulse {
-        opacity: 0.55;
-        transform: scale(1.6);
-    }
-}
 
-.reticle-label-group {
-    opacity: 0;
-    transition: opacity 0.16s ease;
-    pointer-events: none;
-}
 
-.d3-globe-node.node-hover .reticle-label-group,
-.d3-globe-node.node-selected .reticle-label-group,
-.d3-globe-node:focus .reticle-label-group {
-    opacity: 1;
-}
 
-.reticle-leader {
-    stroke: currentColor;
-    stroke-width: 0.7px;
-    opacity: 0.6;
-}
 
-.reticle-label-bg {
-    fill: rgba(4, 9, 17, 0.92);
-    stroke: rgba(150, 180, 210, 0.42);
-    stroke-width: 0.6px;
-    rx: 1;
-}
 
-.reticle-label-title {
-    fill: #ffffff;
-    font-family: 'SF Mono', 'Berkeley Mono', Monaco, Consolas, monospace;
-    font-size: 9px;
-    font-weight: 600;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-}
-
-.reticle-label-sub {
-    fill: rgba(170, 195, 220, 0.85);
-    font-family: 'SF Mono', 'Berkeley Mono', Monaco, Consolas, monospace;
-    font-size: 8px;
-    letter-spacing: 1.1px;
-    text-transform: uppercase;
-}
-
-/* Tone classes drive currentColor on the reticle */
-.node-zk { color: #79e6b3; }
-.node-selective { color: #7fc2e0; }
-.node-full { color: #d4a04c; }
-.node-alert { color: #e85a5a; }
-
-/* Selected node: brighter + slightly larger */
-.d3-globe-node.node-selected .reticle-ring {
-    stroke-width: 1.3px;
-    opacity: 0.95;
-}
-
-.d3-globe-node.node-selected .reticle-core {
-    r: 2.4px;
-}
-
-.d3-globe-node.node-selected .reticle-tick {
-    opacity: 1;
-    stroke-width: 1.3px;
-}
-
-/* Bracket frame around selected node */
-.bracket-arm {
-    fill: none;
-    stroke: rgba(255, 255, 255, 0.85);
-    stroke-width: 1.2px;
-    filter: drop-shadow(0 0 2px rgba(126, 196, 232, 0.7));
-    pointer-events: none;
-}
 
 /* ============================================================
    HUD elements
@@ -2503,8 +2334,6 @@ textarea.sql {
 }
 
 .globe-hud-tl { top: 14px; left: 14px; }
-.globe-hud-tr { top: 14px; right: 14px; text-align: right; }
-.globe-hud-bl { bottom: 32px; left: 14px; }
 .globe-hud-br { bottom: 32px; right: 14px; text-align: right; }
 
 .hud-label {
@@ -2533,16 +2362,6 @@ textarea.sql {
     font-weight: 600;
     letter-spacing: 0.6px;
     font-variant-numeric: tabular-nums;
-}
-
-.hud-row {
-    display: flex;
-    align-items: baseline;
-    gap: 12px;
-}
-
-.hud-row + .hud-row {
-    margin-top: 8px;
 }
 
 .hud-stack {
@@ -2775,70 +2594,8 @@ textarea.sql {
 .atlas-feed-item.notice-lost,
 .atlas-feed-item.notice-expired { border-left-color: #ff7478; }
 
-.notice-light {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: currentColor;
-    box-shadow: 0 0 14px currentColor;
-}
 
-.notice-copy {
-    min-width: 0;
-}
-
-.notice-copy strong,
-.notice-copy span {
-    display: block;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.notice-copy strong {
-    color: #ffffff;
-    font-size: 11px;
-    letter-spacing: 0.8px;
-}
-
-.notice-copy span {
-    color: #9fb3c8;
-    font-size: 11px;
-}
-
-.notice-time {
-    color: #7f93aa;
-    font-family: 'SF Mono', Monaco, Consolas, monospace;
-    font-size: 10px;
-    white-space: nowrap;
-}
-
-
-
-@media (prefers-reduced-motion: reduce) {
-    .d3-globe-rim-layer { filter: none; }
-}
-
-.health-sub {
-    font-size: 11px;
-    color: var(--steel-light);
-}
-
-
-/* Atlas v6: cluster reticle count + JS-populated event feed (carried) */
-
-.reticle-cluster-count {
-    fill: var(--cyan, #5dd6ff);
-    font-family: 'JetBrains Mono', ui-monospace, monospace;
-    font-size: 9px;
-    font-weight: 600;
-    letter-spacing: 0.6px;
-    pointer-events: none;
-    text-shadow: 0 0 4px rgba(0,0,0,0.6);
-}
-.d3-globe-node.node-alert .reticle-cluster-count {
-    fill: #ff6f6f;
-}
+/* The event feed, populated by atlas-map.js */
 
 .atlas-feed-list {
     list-style: none;
@@ -2929,8 +2686,6 @@ textarea.sql {
 /* ----------------------------------------------------------------- */
 
 /* Atlas glow enhancements (folded in from the former skin layer) */
-.atlas-stage,
-.atlas-container,
 .globe-stage {
     background: radial-gradient(circle at 50% 50%,
         rgba(10, 37, 64, 0.4) 0%,
@@ -2940,18 +2695,8 @@ textarea.sql {
         inset 0 0 0 1px rgba(90, 214, 255, 0.12);
 }
 
-/* reticle glow boost */
-.d3-globe-node circle {
-    filter: drop-shadow(0 0 4px currentColor);
-}
-
-.d3-globe-node.node-fresh circle {
-    filter: drop-shadow(0 0 8px currentColor);
-}
-
 /* HUD values get the sci-fi glow */
-.hud-value,
-.hud-value-primary {
+.hud-value {
     color: #ffffff;
     text-shadow:
         0 0 12px rgba(90, 214, 255, 0.5),
@@ -2968,7 +2713,6 @@ textarea.sql {
 }
 
 /* atlas filter toolbar */
-.atlas-toolbar,
 .toolbar-strip {
     background: linear-gradient(180deg,
         rgba(2, 8, 18, 0.94) 0%,
@@ -2979,8 +2723,7 @@ textarea.sql {
         0 0 18px rgba(0, 0, 0, 0.5);
 }
 
-.toolbar-chip,
-.filter-chip {
+.toolbar-chip {
     background: rgba(10, 25, 48, 0.6);
     border: 1px solid rgba(90, 214, 255, 0.18);
     color: #c0d0dc;
@@ -2991,15 +2734,13 @@ textarea.sql {
     transition: all 0.15s ease;
 }
 
-.toolbar-chip:hover,
-.filter-chip:hover {
+.toolbar-chip:hover {
     background: rgba(90, 214, 255, 0.1);
     border-color: var(--cyber);
     color: #ffffff;
 }
 
-.toolbar-chip.active,
-.filter-chip.active {
+.toolbar-chip.active {
     background: linear-gradient(180deg, rgba(90, 214, 255, 0.22), rgba(90, 214, 255, 0.08));
     border-color: var(--cyber);
     color: #ffffff;
@@ -3020,73 +2761,17 @@ textarea.sql {
 }
 
 /* LIVE indicator with pulse */
-.live-indicator,
-.badge-live {
-    color: var(--neon-red);
-    text-transform: uppercase;
-    letter-spacing: 0.18em;
-    font-weight: 600;
-    position: relative;
-    padding-left: 14px;
-}
-
-.live-indicator::before,
-.badge-live::before {
-    content: '';
-    position: absolute;
-    left: 0; top: 50%;
-    width: 8px; height: 8px;
-    margin-top: -4px;
-    background: var(--neon-red);
-    border-radius: 50%;
-    box-shadow: 0 0 10px var(--neon-red);
-    animation: scifi-pulse 1.4s ease-in-out infinite;
-}
-
 @keyframes scifi-pulse {
     0%, 100% { opacity: 0.4; transform: scale(0.85); }
     50%      { opacity: 1;   transform: scale(1.1); }
 }
 
 
-/* Scoped to .body-dashboard: pre-v9.142 the stagger applied on every page
-   because the skin class sat on <body> globally; list pages felt sluggish. */
-
-/* Horizontal scan-line sweeping down once during the boot */
-
-
-
-/* Stagger the atlas-panel/atlas-row blocks behind the overlay so the
-   dashboard reveals progressively as the boot overlay fades out. */
-.body-dashboard main.content > .atlas-row,
-.body-dashboard main.content > .stats-grid,
-.body-dashboard main.content > table.data,
-.body-dashboard main.content > h2 {
-    opacity: 0;
-    animation: scifi-reveal-fade 0.6s ease-out forwards;
-}
-
-.body-dashboard main.content > h2:nth-of-type(1)         { animation-delay: 0.6s; }
-.body-dashboard main.content > .stats-grid               { animation-delay: 0.45s; }
-.body-dashboard main.content > .status-breakdown-table   { animation-delay: 0.75s; }
-.body-dashboard main.content > .atlas-row:nth-of-type(1) { animation-delay: 0.9s; }
-.body-dashboard main.content > .atlas-row:nth-of-type(2) { animation-delay: 1.05s; }
-.body-dashboard main.content > .atlas-row:nth-of-type(3) { animation-delay: 1.2s; }
-.body-dashboard main.content > h2:nth-of-type(2)         { animation-delay: 1.3s; }
-.body-dashboard main.content > h2:nth-of-type(3)         { animation-delay: 1.4s; }
-.body-dashboard main.content > table.data                { animation-delay: 1.35s; }
-
-/* Respect reduced motion: skip all the animation, show content immediately */
-@media (prefers-reduced-motion: reduce) {
-    .body-dashboard main.content > .atlas-row,
-    .body-dashboard main.content > .stats-grid,
-    .body-dashboard main.content > table.data,
-    .body-dashboard main.content > h2 {
-        opacity: 1 !important;
-        transform: none !important;
-        animation: none !important;
-    }
-}
+/* The dashboard reveal was deleted at v9.211 with the boot overlay: content
+   appears when the page does. Its stagger rules outlived it and set every
+   panel to opacity 0 with an animation whose keyframes were gone, so the
+   dashboard rendered blank from v9.211 to v9.220. They are removed here, and
+   check_css_animations_resolve fails the build on the next such orphan. */
 
 /* End iteration 6 ============================================================ */
 

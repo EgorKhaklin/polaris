@@ -4330,6 +4330,49 @@ def check_site_tokens_match_app(root: pathlib.Path) -> list[Finding]:
                f"the site and the application share all {len(site)} design tokens by name and value")
 
 
+# ---------------------------------------------------------------------------
+# CSS animations — a rule that sets opacity 0 and animates it back with
+# `animation: <name> ... forwards` renders nothing at all if <name> has no
+# @keyframes. That is not a cosmetic defect: v9.211 deleted the boot overlay
+# and its keyframes but left the dashboard's stagger rules behind, so the
+# System Dashboard rendered blank from v9.211 to v9.220 and no test noticed,
+# because every element was present in the DOM at opacity 0. Every animation
+# name a stylesheet uses must be defined in that stylesheet.
+# ---------------------------------------------------------------------------
+def check_css_animations_resolve(root: pathlib.Path) -> list[Finding]:
+    css_files = sorted((root / "polaris_web/static").glob("*.css"))
+    if not css_files:
+        return _fail("css_animations", "no stylesheet found under polaris_web/static")
+    checked = 0
+    for path in css_files:
+        text = path.read_text(encoding="utf-8", errors="replace")
+        defined = set(re.findall(r"@keyframes\s+([A-Za-z_][\w-]*)", text))
+        used: set[str] = set()
+        for decl in re.findall(r"\banimation(?:-name)?\s*:\s*([^;}]+)", text):
+            for part in decl.split(","):
+                for token in part.split():
+                    token = token.strip()
+                    if (not token or token in ("none", "infinite", "alternate", "forwards",
+                                               "backwards", "both", "normal", "reverse",
+                                               "paused", "running", "initial", "inherit",
+                                               "unset", "!important", "alternate-reverse")
+                            or token.startswith(("var(", "steps(", "cubic-bezier("))
+                            or re.match(r"^-?[\d.]+m?s$", token)
+                            or re.match(r"^(ease|ease-in|ease-out|ease-in-out|linear)$", token)
+                            or re.match(r"^[\d.]+$", token)):
+                        continue
+                    used.add(token)
+        missing = sorted(n for n in used if n not in defined)
+        if missing:
+            return _fail("css_animations",
+                         f"polaris_web/static/{path.name} animates {missing[0]}, which has no "
+                         "@keyframes: the animated elements keep their starting state, which is "
+                         "usually invisible")
+        checked += len(used)
+    return _ok("css_animations",
+               f"every animation name used in the stylesheets resolves to a @keyframes ({checked} uses)")
+
+
 CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_csp_forbids_unsafe_inline,
     check_one_active_token_index,
@@ -4446,6 +4489,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_metrics_edge_acl,
     check_image_builds_are_retried,
     check_site_tokens_match_app,
+    check_css_animations_resolve,
 ]
 
 

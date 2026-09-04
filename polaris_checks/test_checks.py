@@ -3933,3 +3933,33 @@ def test_site_tokens_match_app_check_fails_when_the_palette_forks(tmp_path):
     (tmp_path / "site/tokens.css").unlink()
     assert checks.check_site_tokens_match_app(tmp_path)[0].level == "FAIL", \
         "must FAIL when the token file is missing"
+
+
+def test_css_animations_resolve_check_fails_on_an_orphaned_animation(tmp_path):
+    css = tmp_path / "polaris_web/static"
+    css.mkdir(parents=True)
+    good = """
+@keyframes fade-in { from { opacity: 0 } to { opacity: 1 } }
+.panel { opacity: 0; animation: fade-in 0.6s ease-out forwards; }
+.spinner { animation-name: fade-in; animation-duration: 2s; }
+"""
+    (css / "polaris.css").write_text(good)
+    assert checks.check_css_animations_resolve(tmp_path)[0].level == "OK", \
+        "must PASS when every animation name has a @keyframes"
+
+    (css / "polaris.css").write_text(
+        ".panel { opacity: 0; animation: reveal-fade 0.6s ease-out forwards; }\n")
+    assert checks.check_css_animations_resolve(tmp_path)[0].level == "FAIL", \
+        "must FAIL when an animation names keyframes that were deleted"
+
+    (css / "polaris.css").write_text(
+        "@keyframes fade-in { from { opacity: 0 } }\n"
+        ".a { animation: fade-in 1s linear infinite alternate both; }\n"
+        ".b { animation: none; }\n")
+    assert checks.check_css_animations_resolve(tmp_path)[0].level == "OK", \
+        "must not mistake timing, direction or fill keywords for an animation name"
+
+    for f in css.glob("*.css"):
+        f.unlink()
+    assert checks.check_css_animations_resolve(tmp_path)[0].level == "FAIL", \
+        "must FAIL when there is no stylesheet to check"

@@ -5,6 +5,31 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.220 — 2026-09-04 (the System Dashboard was blank, and the stylesheet stops carrying a renderer that no longer exists)
+
+**The dashboard rendered nothing.** v9.211 deleted the post-login boot overlay
+and its keyframes, but left behind the stagger rules that faded the dashboard
+panels in behind it. Those rules set every panel to `opacity: 0` and animated
+it back with `scifi-reveal-fade`, which no longer existed, so from v9.211 to
+this version the System Dashboard showed its title and nothing else. Every
+element was in the DOM at full size, which is why 467 tests and the invariant
+layer all passed: the content was present and invisible.
+
+- **The orphaned reveal apparatus is deleted**, including the reduced-motion
+  block that existed only to undo it. The dashboard now renders when the page
+  does, which is what v9.211 intended.
+- **`check_css_animations_resolve` is check 116.** Every animation name a
+  stylesheet uses must have a `@keyframes` in that stylesheet. Run against the
+  previous release it fails with the exact diagnosis; run against this one it
+  passes. Its detection test covers the orphan, the timing and fill keywords
+  that are not animation names, and a missing stylesheet.
+- **The stylesheet loses 38 selectors and 282 lines** left by the d3 globe the
+  Atlas replaced: the globe toolbar, the node and reticle families with their
+  label and pulse rules, the two unused HUD corners, the live indicator, the
+  notice rows, and the filter chip. Every removal was checked against the
+  templates and the live scripts first, and the file parses with no errors
+  before and after each one.
+
 ## v9.219 — 2026-09-04 (P1.15 ship 4: the page cannot publish a number or a link that has stopped being true)
 
 The site claimed its own claims were gated. They were not: the link checker
