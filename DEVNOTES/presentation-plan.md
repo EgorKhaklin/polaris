@@ -58,7 +58,7 @@ ship; the row is done when every ship under it is `[x]`.
 | P1.14 | 3. Community health files | [x] v9.203 (FUNDING.yml kept; see the ruling above) |
 | P1.14 | 4. CONTRIBUTING in public voice; README above the fold | [x] v9.204 |
 | P1.14 | 5. Release-note shape; `check_presentation_surface` | [x] v9.205 (also: Code of Conduct 3.0; the README Atlas capture re-taken from the running app; P1.15 ship 3 and P1.17 ship 6 re-capture after the chrome changes) |
-| P1.15 | 1. The site truth pass | [ ] (counts and the SLH-DSA and WebAuthn claims corrected v9.194; the globe and street captions corrected v9.213; the launcher tile, the warrant-grade caption, the notional-data statements and the v9.194 measured-at block remain) |
+| P1.15 | 1. The site truth pass | [x] v9.216 (SLH-DSA and WebAuthn v9.194; the globe and street captions v9.213 and v9.214; the launcher tile, the warrant-grade caption, the notional-data badges, the re-measured test counts and the narrowed gating lede v9.216) |
 | P1.15 | 2. The site structure pass | [ ] |
 | P1.15 | 3. Assets and tokens | [ ] |
 | P1.15 | 4. The site gate | [ ] |

@@ -5,6 +5,38 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.216 — 2026-09-04 (P1.15 ship 1: the project site says only what the repository can support)
+
+The Pages site is one of the two front doors, and it had drifted since v9.194:
+numbers measured twenty-one versions ago, a claim about its own gating that was
+broader than the gate, a marketing word standing in for a real access control,
+and three screenshots of invented data with nothing on the page saying so.
+
+- **The evidence numbers are re-measured at this version.** 645 product tests
+  passing on the reference machine, up from 640, and 76 crypto witnesses of 80
+  collected, unchanged. The method is the one the README states: `pytest -q`
+  per suite, with the skips named and their reason given.
+- **The lede says which numbers are gated and which are measured.** The check,
+  job, route and schema-table counts are recomputed from the repository on
+  every push and fail the build on a mismatch; the two test counts are a
+  per-release measurement. The stronger sentence returns when the site's own
+  link and count gate lands in P1.15 ship 4.
+- **The launcher tile is gone.** A double-click convenience sat in the evidence
+  grid beside CI counts, where nothing could gate it and it measured nothing.
+- **Subject focus loses "warrant-grade" for the control that exists**: it is
+  restricted to the admin and auditor roles and writes an audit row on every
+  use. That is the enforceable statement; the other one was a posture.
+- **Every capture is labelled notional on the page**, in the caption, in the
+  alt text, and in a corner badge over the figure so the label survives a
+  crop. The images are not re-baked: a stamp inside a full-width PNG renders
+  at about four pixels and cannot be read.
+- **Two cryptography claims narrow to what the code does.** The registry claim
+  now says which algorithm signed a token is data, rather than that nothing is
+  hardcoded anywhere, which the shipped ML-DSA-65 signer contradicts. The
+  signing cell states that both production paths sign with real liboqs bytes
+  and that a development run records a deterministic placeholder under a label
+  that says so.
+
 ## v9.215 — 2026-09-04 (every image is built one way: retried, and stamped with the version that shipped it)
 
 Three releases in a row were marked red by outages nobody here can fix. A

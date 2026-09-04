@@ -56,6 +56,11 @@ h1{font-size:clamp(44px,7vw,76px);font-weight:750;letter-spacing:.3em;margin:0 0
 /* atlas showcase */
 .atlas-showcase{max-width:1180px;margin:0 auto 90px;padding:0 22px}
 .atlas-hero{margin:0 0 18px}
+.atlas-hero,.atlas-pair figure{position:relative}
+.notional-badge{position:absolute;top:10px;right:10px;z-index:2;font-family:var(--mono);font-size:10px;
+    font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--gold-b);
+    background:rgba(3,9,18,.82);border:1px solid var(--gold);border-radius:4px;padding:4px 8px}
+.notional-note{color:var(--gold-b)}
 .atlas-hero img,.atlas-pair img{width:100%;height:auto;display:block;border:1px solid var(--line-strong);
     border-radius:8px;box-shadow:0 30px 80px rgba(2,8,18,.7)}
 .atlas-hero figcaption,.atlas-pair figcaption{color:var(--dim);margin:12px auto 0;line-height:1.6;
@@ -152,17 +157,20 @@ footer a{color:var(--dim)}
 
 <section class="atlas-showcase">
     <figure class="atlas-hero">
-        <img src="atlas-globe.png" alt="The Polaris Atlas: a dark operational map of North America with verification clusters, the event feed, and the post-quantum and zero-knowledge coverage figures" loading="lazy">
-        <figcaption><span class="ag-kicker">THE ATLAS</span> The operational surface: a map that zooms from the continent to the street. Every marker is a verification or lifecycle event, plotted where it happened. Zero-knowledge verifications are never plotted: the map's own queries exclude them, and a zero-knowledge event carries no token id to attribute it by.</figcaption>
+        <span class="notional-badge">Notional data</span>
+        <img src="atlas-globe.png" alt="Notional data. The Polaris Atlas: a dark operational map of North America with verification clusters, the event feed, and the post-quantum and zero-knowledge coverage figures" loading="lazy">
+        <figcaption><span class="ag-kicker">THE ATLAS</span> The operational surface: a map that zooms from the continent to the street. Every marker is a verification or lifecycle event, plotted where it happened. Zero-knowledge verifications are never plotted: the map's own queries exclude them, and a zero-knowledge event carries no token id to attribute it by. <span class="notional-note">Notional data. Every name, agency, and coordinate in these captures is invented.</span></figcaption>
     </figure>
     <div class="atlas-pair">
         <figure>
-            <img src="atlas-street.png" alt="The Atlas at street level, every verification event drawn on its own coordinate along one avenue" loading="lazy">
-            <figcaption><b>Zoom to the street.</b> Clusters resolve into single events, each on the coordinate where it happened. Events are fetched per viewport, so the browser holds only what is on screen, whether the ledger carries a thousand events or a hundred million.</figcaption>
+            <span class="notional-badge">Notional data</span>
+            <img src="atlas-street.png" alt="Notional data. The Atlas at street level, every verification event drawn on its own coordinate along one avenue" loading="lazy">
+            <figcaption><b>Zoom to the street.</b> Clusters resolve into single events, each on the coordinate where it happened. Events are fetched per viewport, so the browser holds only what is on screen, whether the ledger carries a thousand events or a hundred million. <span class="notional-note">Notional data.</span></figcaption>
         </figure>
         <figure>
-            <img src="atlas-subject.png" alt="Subject-focus investigation drawing one individual's disclosed events as a gold path" loading="lazy">
-            <figcaption><b>Signal in the noise.</b> Warrant-grade subject focus (admin/auditor, audit-logged) isolates one named subject and draws a path of what they did. Their zero-knowledge verifications cannot be plotted, or even attributed: the privacy default survives the investigation.</figcaption>
+            <span class="notional-badge">Notional data</span>
+            <img src="atlas-subject.png" alt="Notional data. Subject-focus investigation drawing one individual's disclosed events as a gold path" loading="lazy">
+            <figcaption><b>Signal in the noise.</b> Subject focus isolates one named subject and draws a path of what they disclosed. It is restricted to the admin and auditor roles and writes an audit row on every use. Their zero-knowledge verifications cannot be plotted, or even attributed: the privacy default survives the investigation. <span class="notional-note">Notional data.</span></figcaption>
         </figure>
     </div>
 </section>
@@ -221,19 +229,20 @@ footer a{color:var(--dim)}
 
 <section>
     <h2>Verified, not asserted</h2>
-    <p class="lede">Every claim on this page is backed by a gate that fails if the claim
-        stops being true. CI does not just run tests; it exercises the artifacts.</p>
+    <p class="lede">The check, job, route and schema-table counts on this page are recomputed
+        from the repository on every push, and a mismatch fails the build. The two test counts
+        are measured per release on the reference machine. CI does not just run tests; it
+        exercises the artifacts.</p>
     <div class="numbers">
-        <div class="num"><b>640</b><span>product tests, live DB</span></div>
+        <div class="num"><b>645</b><span>product tests, live DB</span></div>
         <div class="num"><b>76</b><span>crypto-witness tests</span></div>
         <div class="num"><b>114</b><span>invariant checks</span></div>
         <div class="num"><b>14</b><span>CI jobs</span></div>
         <div class="num"><b>5</b><span>services booted in CI</span></div>
-        <div class="num"><b>1</b><span>double-click to launch</span></div>
     </div>
-    <p class="asof">measured at v9.194</p>
+    <p class="asof">test counts measured at v9.215; the rest recomputed on every push</p>
     <ul class="prodlist">
-        <li><strong>The production stack boots in CI.</strong> Five services behind a self-built TLS edge come up end to end on every push, and health is asserted through the edge. Building that job surfaced four prod-down bugs the day it landed, which is the point.</li>
+        <li><strong>The production stack boots in CI.</strong> Five services behind a self-built TLS edge come up end to end on every push, and health is asserted through the edge. Building that job surfaced four prod-down bugs the day it landed.</li>
         <li><strong>Backups restore, provably.</strong> An encrypted backup and restore round-trip runs in CI with a fail-closed negative check, plus streaming replication and a failover runbook.</li>
         <li><strong>The post-quantum handshake is proven, not claimed.</strong> CI negotiates X25519MLKEM768 against a real certificate on every push, and signs with real ML-DSA-65 inside the production image.</li>
         <li><strong>CVEs gate the build.</strong> Both the dependency surface and all four self-built container images are scanned on every push; a fixable CRITICAL fails CI.</li>
@@ -243,11 +252,12 @@ footer a{color:var(--dim)}
 
 <section>
     <h2>Real cryptography</h2>
-    <p class="lede">No hardcoded algorithms anywhere: the signing algorithm is a foreign key
-        to a first-class registry. Rotation is a row update, not a redeploy.</p>
+    <p class="lede">Which algorithm signed a token is data, not code: a foreign key into a
+        first-class registry, so adding or retiring one is a row, not a redeploy. The shipped
+        signer implements ML-DSA-65.</p>
     <div class="cells">
-        <div class="cell"><h3>ML-DSA-65 default</h3>
-            <p>NIST FIPS 204 lattice signatures, Level 3, on every new token from day one. Real bytes via liboqs, verified by two independent witnesses.</p></div>
+        <div class="cell"><h3>ML-DSA-65 signing</h3>
+            <p>NIST FIPS 204 lattice signatures, Level 3, on every new token. Both shipped production paths sign with real liboqs bytes, cross-checked by a second implementation. A development run without that flag records a deterministic SHA3-256 placeholder under a label that says so, so a development signature can never pass for a real one.</p></div>
         <div class="cell"><h3>SLH-DSA registered</h3>
             <p>FIPS 205 hash-based signatures rest on different assumptions than lattices, so both parameter sets are rows in the algorithm registry and a rotation is a row update. No SLH-DSA signer is wired yet; that gap is on the ledger in PQC-POSTURE.md.</p></div>
         <div class="cell"><h3>Plonky2 ZK-SNARK</h3>

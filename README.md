@@ -146,12 +146,12 @@ ECDSA-P256       ECDSA            FIPS 186-4   128         64 B         72 B   l
 
 ## Verified, not asserted
 
-Every claim above is backed by a gate that fails if the claim stops being true. Counts measured at v9.194; the table counts, check count, route count and CI-job count are re-measured by `polaris_checks` on every run.
+Every claim above is backed by a gate that fails if the claim stops being true. The table, check, route and CI-job counts are re-measured by `polaris_checks` on every run; the two test counts were measured at v9.215.
 
 | Layer | Scale | What it proves |
 |---|---|---|
-| Product tests (live database) | 640 | Every CHECK constraint, every use case, every route, redaction at every read path, concurrency with real threads, the secret store; `test_app`, `test_cli`, `test_check_constraints`, the two property suites, `test_secretstore` |
-| Crypto witnesses | 76 passing of 80 collected | ML-DSA-65 sign/verify against both witnesses, in-file and in-token (PKCS#11) custody; the Rust and Python epoch roots agree; `test_pqc_signing`, `test_custody`, `test_zk_second_witness`, `witness2`. Both rows count tests passing on the reference machine at v9.194 (`pytest -q` per suite); the four crypto tests and twelve product tests skipped there need an optional backend (AWS KMS, a PKCS#11 module, a browser) and run in CI |
+| Product tests (live database) | 645 | Every CHECK constraint, every use case, every route, redaction at every read path, concurrency with real threads, the secret store; `test_app`, `test_cli`, `test_check_constraints`, the two property suites, `test_secretstore` |
+| Crypto witnesses | 76 passing of 80 collected | ML-DSA-65 sign/verify against both witnesses, in-file and in-token (PKCS#11) custody; the Rust and Python epoch roots agree; `test_pqc_signing`, `test_custody`, `test_zk_second_witness`, `witness2`. Both rows count tests passing on the reference machine at v9.215 (`pytest -q` per suite); the four crypto tests and twelve product tests skipped there need an optional backend (AWS KMS, a PKCS#11 module, a browser) and run in CI |
 | Invariant checks | 114 | C1-C10 plus production posture, each check paired with a detection test |
 | CI jobs | 14 | See below |
 
