@@ -107,7 +107,7 @@ JSON payload arriving over the wire.
                             └────────────┬───────────────┘
                                          ▼
                             ┌────────────────────────────┐
-                            │  atlas-globe.js            │
+                            │  atlas-map.js              │
                             │   ─ currentBbox()          │
                             │   ─ chooseGrid(zoom)       │
                             │   ─ debounced fetcher      │
@@ -117,7 +117,7 @@ JSON payload arriving over the wire.
                             └────────────────────────────┘
 ```
 
-The browser never sees more than a few hundred reticles at a time.
+The browser never sees more than a few hundred markers at a time.
 Server-side aggregation collapses a million events in a 5° grid cell
 into a single cluster row carrying only the centroid + summary counts:
 
@@ -216,29 +216,31 @@ longitude predicate (see Antimeridian section below).
 | Endpoint                    | Hard cap          | Purpose |
 |-----------------------------|-------------------|---------|
 | `GET /api/atlas/clusters`   | 5000 clusters     | Aggregated bins for low-zoom |
-| `GET /api/atlas/points`     | 2000 points       | Individual reticles for high-zoom |
+| `GET /api/atlas/points`     | 2000 points       | Individual markers for high-zoom |
 | `GET /api/atlas/stats`      | one row           | HUD signals scoped to bbox |
 | `GET /api/atlas/events`     | 500 events        | Paginated unified feed |
 
 ---
 
-## Frontend (atlas-globe.js)
+## Frontend (atlas-map.js)
 
-`renderNodes(newData)` uses the d3 enter/update/exit pattern so the
-globe re-renders cleanly on every fetch. Cluster nodes get a sqrt-scaled
-radius and the count rendered inside the ring; point nodes get the full
-reticle ornament with leader line + label.
+The map is a MapLibre GL canvas with two data layers over one GeoJSON
+source. Clusters are circles whose radius interpolates on the event count,
+with the count drawn inside; individual events are smaller circles coloured
+by disclosure level, or red for a failure or revocation. Nothing is drawn
+in the DOM, so a viewport holding a few hundred markers costs a few hundred
+GPU primitives rather than a few hundred SVG nodes.
 
-`scheduleFetch()` is debounced at 220 ms: pan/zoom events trigger one
-batched API call rather than one per frame. AbortController cancels the
+`scheduleFetch()` is debounced at 220 ms: pan and zoom trigger one batched
+API call rather than one per frame, and an AbortController cancels the
 previous fetch when a new one starts.
 
-The cluster→point switchover happens when:
+The switch from clusters to individual events happens when the viewport
+holds few enough of them:
 
 ```javascript
 if (data.count <= 30 && zoom >= 2) {
-    // Few enough events to render individuals
-    // Fetch /api/atlas/points instead
+    // few enough events to draw individually: fetch /api/atlas/points
 }
 ```
 

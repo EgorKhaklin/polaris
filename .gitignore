@@ -64,7 +64,7 @@ Cargo.lock.bak
 **/*.rs.bk
 
 # ============================================================================
-# Node / JS (atlas-globe.js vendored; nothing installed in-repo, but
+# Node / JS (the map library is vendored; nothing installed in-repo, but
 # guard against accidental npm activity)
 # ============================================================================
 node_modules/
@@ -148,15 +148,8 @@ polaris_web/.docker-volume/
 # ============================================================================
 # Derived / auto-generated state (v9.34 polish per Class B1 decision)
 # ============================================================================
-# These files are rewritten by scripts on every read-side invocation,
-# which dirties the tree and blocks the kill test. Past snapshots
-# remain in git history (immutable per v8.20 AoR); going forward,
-# these are operator-local state. `journal/<date>-architect.md` snapshots
-# are KEPT tracked per the Architect persona's audit-of-record
-# discipline (Class B2 decision).
-meta/brain-map/brain-map.html
-polaris_swarm/civitas/census-roll.json
-polaris_swarm/civitas/treasury-roll.json
+# Files a script rewrites on every run are operator-local state, not source:
+# tracking them dirties the tree on a read-only invocation.
 
 # Playwright MCP tool artifacts (browser console logs) - operator-local
 .playwright-mcp/

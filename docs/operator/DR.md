@@ -725,9 +725,10 @@ The section 8.4 template is the structure. Reviewers check:
   [`polaris-purge.sh`](../../scripts/polaris-purge.sh)),
   [`polaris-recover-admin.sh`](../../scripts/polaris-recover-admin.sh),
   [`polaris-ct-monitor.sh`](../../scripts/polaris-ct-monitor.sh),
-  [`polaris-rotate-secret.sh`](../../scripts/polaris-rotate-secret.sh),
-  [`polaris-doctor.sh`](../../scripts/polaris-doctor.sh) (read-only
-  diagnostics).
+  [`polaris-rotate-secret.sh`](../../scripts/polaris-rotate-secret.sh).
+  For a read-only health read of a running deployment, `GET /api/health`
+  reports structured per-component status; on a development checkout,
+  `./polaris_mac_launch.sh doctor` inspects the local stack.
 - [`polaris_web/docker-compose.prod.yml`](../../polaris_web/docker-compose.prod.yml):
   the production stack, including the `pg_data` and `pgbackrest_repo` volumes.
 

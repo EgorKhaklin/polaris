@@ -20,11 +20,12 @@
  the same individual. This spec models both layers and shows that C3
  holds under interleaved concurrent operations.
 
- What this spec is NOT: maintained verification infrastructure. Per the
- Sanctum (sanctum/2026-05-15-big-mission.md §II High #1), this is a
- one-time demonstrator showing the technique. The Anti-Architect
- contested the broader TLA+/Lean proposal on AP7 grounds; this single
- spec is the scoped-down result.
+ What this spec is NOT: maintained verification infrastructure. It is a
+ one-time demonstrator of the technique, kept because C3 is the constraint
+ whose failure mode is hardest to reason about informally. A standing TLA+
+ or Lean effort was considered and refused: a model that drifts from the
+ schema it claims to describe is worse than no model, and nothing here
+ re-checks it on a change.
 
  What this spec DOES verify (when checked with TLC):
    - Safety: ¬∃ t1 ≠ t2 : (t1.status = ACTIVE) ∧ (t2.status = ACTIVE)

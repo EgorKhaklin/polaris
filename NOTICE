@@ -5,6 +5,12 @@ This product is licensed under the Apache License, Version 2.0 (see the
 LICENSE file at the root of this repository, or
 http://www.apache.org/licenses/LICENSE-2.0).
 
+The license text is carried once, at the repository root. The four packages
+(polaris_sql, polaris_web, polaris_cli, polaris_zk) are parts of this one work,
+not separately distributed projects, so none carries its own copy; polaris_zk
+declares `license = "Apache-2.0"` in its Cargo manifest, which is what a Rust
+consumer reads.
+
 ================================================================================
 About this work
 ================================================================================

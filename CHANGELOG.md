@@ -5,6 +5,44 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.221 — 2026-09-04 (P1.16 ship 1: delete what nothing calls, and prove the one property a deleted script was carrying)
+
+Subtractive, with one addition: the schema loader's idempotency claim moves
+from a script nobody ran into the CI job that already builds the database.
+
+- **The d3 globe is gone from the tree.** `atlas-globe.js` was replaced by the
+  MapLibre renderer and has been unreachable since; with it go the three
+  vendored assets it alone used, 395 KB of d3, topojson and a world topology
+  file. The four documents that described the page as a WebGL globe with
+  reticles now describe the map that ships, including the end-to-end test's
+  own docstring.
+- **Four scripts are deleted.** `ai-bootstrap.sh` was a session-start helper
+  for an agent, which is not an operational surface.
+  `polaris-concurrency-harness.sh` measured a property the threaded product
+  tests already assert. `polaris-doctor.sh` was a one-line wrapper around the
+  macOS launcher, sitting in the operator directory and naming a caller that
+  does not exist; the runbooks now point at `/api/health` and at the
+  launcher's own subcommand. `polaris-idempotency-test.sh` is deleted only
+  because its property is now asserted on every push.
+- **The loader's idempotency is a CI assertion.** After the schema loads and
+  the migrations apply, CI reloads the schema, re-applies the migrations, and
+  fails if the table, trigger or seed-row counts moved. The measurement caught
+  the nuance the script's name obscured: a reload *without* re-migrating drops
+  the migration-created tables by design, so the assertion covers the
+  documented path, not the loader alone.
+- **`nginx.conf.example` is deleted.** The native nginx path was retired at
+  v9.176 for bypassing the container hardening, the pgbouncer and postgres TLS
+  hops, pgBackRest and the secrets layout. A committed sample of it was a live
+  route to an insecure deployment; its two referrers now name the Caddy edge.
+- **One copy of the license.** The Apache text was carried three times, byte
+  identical. The packages are parts of one work rather than separately
+  distributed projects, so the root copy is the only one, `polaris_zk`
+  declares the SPDX field its consumers read, and NOTICE states the rule.
+- **The agent settings file is untracked**, its hook target having been
+  deleted deliberately at an earlier pass, and a stray host-named coverage
+  artifact is removed. The `.gitignore` and TLA+ comments that cited removed
+  apparatus now state their own reasoning.
+
 ## v9.220 — 2026-09-04 (the System Dashboard was blank, and the stylesheet stops carrying a renderer that no longer exists)
 
 **The dashboard rendered nothing.** v9.211 deleted the post-login boot overlay

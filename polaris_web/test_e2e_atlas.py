@@ -1,45 +1,15 @@
-"""polaris_web/test_e2e_atlas.py — Atlas-globe end-to-end smoke tests.
+"""polaris_web/test_e2e_atlas.py — Atlas end-to-end smoke tests.
 
-v9.33 / first post-freeze measurement ship per MISSION.md §"From v9.32
-forward, (b) Measurement". Closes the follow-up commitment from
-`a recorded decision` (Option A bundle).
-
-**Why E2E for the Atlas globe.** The Atlas (`/atlas`) is the operational
-investigation surface — a WebGL globe rendered by `atlas-globe.js` with
-viewport-aware decimation, reticles on every verification event, click-
-through into token records. None of that surface is exercised by the
-structural-invariant suite (which reads source). It is also not exercised
-by the route-test suite (which only confirms the page renders 200). Real
-defects in the globe (CSS-class drift, JS-module load failures, JSON
-data-island parse errors, CSP violations against new sources) only
-appear in a browser.
-
-**Why graceful skip.** Playwright + a headless browser is a 250MB+
-dependency. Most operators (and CI in many environments) won't have it
-installed. The test class therefore SKIPs (not fails) when either the
-Playwright package OR the browser binary is unavailable, AND when no
-Polaris app is reachable on port 2222. Activation is operator-side:
-
-    cd polaris_web
-    pip install playwright
-    playwright install chromium          # one-time, ~250MB
-    cd ..
-    ./polaris_mac_launch.sh up --detach  # app on port 2222
-    python3 -m unittest polaris_web.test_e2e_atlas
-
-**Why POLARIS_E2E_REQUIRE=1 exists (v9.160 / P0.2).** Graceful skip is
-correct for operators and fatal for CI: this suite sat wired to nothing
-for months, silently skipping, while the v9.146 MapLibre rewrite renamed
-every element it selected. The suite rotted precisely because it never
-ran. With the env var set, an unavailable app or browser is a hard
-FAILURE, not a skip; CI sets it so "the e2e suite ran zero tests" can
-never again read as green.
-
-**Why `wait_until="domcontentloaded"`** (NOT `"networkidle"`).
-Per CLAUDE.md pre-known-gotchas #6: the Polaris page fires a heartbeat
-POST every ~10s (browser-presence beacon for the launcher), so
-`networkidle` never resolves. `domcontentloaded` is the right wait
-condition for our surface.
+**Why end-to-end for the Atlas.** The Atlas (`/atlas`) is the operational
+investigation surface: a MapLibre map rendered by `atlas-map.js`, with
+server-side clustering, individual event markers at high zoom, and
+click-through into token records. None of that is exercised by the
+structural-invariant suite, which reads source, or by the route tests, which
+only confirm the page returns 200. The defects that reach this surface are
+CSS-class drift, script load failures, JSON data-island parse errors and CSP
+violations against a new source, and every one of them needs a real browser to
+see. Playwright drives Chromium against a live server; the tests skip, rather
+than fail, when Playwright or its browser is not installed.
 """
 
 import os

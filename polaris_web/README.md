@@ -98,8 +98,10 @@ default. Generate a real key with:
 python3 -c 'import secrets; print(secrets.token_hex(32))'
 ```
 
-For TLS termination, see `nginx.conf.example` for a Mozilla-intermediate-style
-nginx reverse-proxy configuration.
+TLS terminates at the Caddy edge (`Caddyfile`, `Dockerfile.caddy`), which
+provisions its own certificate and negotiates the post-quantum X25519MLKEM768
+key exchange. See [DEPLOYMENT.md](../docs/operator/DEPLOYMENT.md) and
+[LINUX-SERVER.md](../docs/operator/LINUX-SERVER.md).
 
 ## Route Map
 
@@ -192,8 +194,8 @@ The SQL console is hardened against abuse:
 ## Atlas: God's-eye View
 
 The `/atlas` page is the operational investigation surface: an
-intelligence-report aesthetic over a live globe (`atlas-globe.js`,
-viewport-aware d3 rendering over topojson countries):
+intelligence-report aesthetic over a live map (`atlas-map.js`, viewport-aware
+MapLibre rendering over a dark basemap):
 
 1. **Two-band toolbar** (v8.2-v8.3): operational chrome (view/modifier/
    context pickers) on top, temporal lens (time-window selector +
@@ -407,10 +409,9 @@ polaris_web/
 ├── gunicorn.conf.py             Production WSGI config
 ├── templates/                   Jinja2 templates (35 files, incl. atlas.html)
 └── static/
-    ├── polaris.css              Hand-written stylesheet, navy/gold (~3,460 lines)
-    ├── atlas-globe.js           Viewport-aware d3 globe (~1,318 lines)
-    ├── data/                    countries-110m.json topojson
-    └── vendor/                  d3, topojson: no CDN dependency
+    ├── polaris.css              Hand-written stylesheet, navy/gold
+    ├── atlas-map.js             Viewport-aware MapLibre map
+    └── vendor/                  maplibre-gl: no CDN dependency
 ```
 
 ## Visual Design
@@ -432,7 +433,7 @@ For real production:
 
 1. Generate a real `POLARIS_SECRET_KEY` (32 bytes hex)
 2. Set strong database credentials and revoke the dev defaults
-3. Run gunicorn behind nginx (sample config in `nginx.conf.example`)
+3. Run gunicorn behind the Caddy edge (`Caddyfile`, `Dockerfile.caddy`)
 4. Use Let's Encrypt for TLS certificates
 5. Monitor `/` (returns 200 if DB reachable; Dockerfile wires this into HEALTHCHECK)
 6. Add `pg_stat_statements` and real APM for query performance under load

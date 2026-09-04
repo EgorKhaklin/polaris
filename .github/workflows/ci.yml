@@ -114,6 +114,40 @@ jobs:
             psql -h localhost -U postgres -d polaris_test -v ON_ERROR_STOP=1 -f "$f"
           done
 
+      # The loader's header has claimed since v6 that every file is idempotent,
+      # so the documented recovery path (reload the schema, re-apply the
+      # migrations) is safe to repeat. scripts/polaris-idempotency-test.sh
+      # proved that by hand and nothing ran it, so the property lands here, on
+      # the database CI has already built. Reloading WITHOUT re-migrating drops
+      # the migration-created tables by design, which is why this asserts the
+      # whole documented path rather than the loader alone.
+      - name: The schema reload plus re-migrate path is idempotent
+        run: |
+          set -e
+          count() {
+            psql -h localhost -U postgres -d polaris_test -tAX -c "
+              SELECT (SELECT count(*) FROM information_schema.tables
+                       WHERE table_schema='public' AND table_type='BASE TABLE')
+                  || '/' || (SELECT count(*) FROM information_schema.triggers
+                       WHERE trigger_schema='public')
+                  || '/' || (SELECT count(*) FROM Individual)
+                  || '/' || (SELECT count(*) FROM IdentityToken)
+                  || '/' || (SELECT count(*) FROM VerificationEvent)"
+          }
+          before=$(count)
+          cd polaris_sql
+          psql -h localhost -U postgres -d polaris_test -v ON_ERROR_STOP=1 -f 00_load_all.sql > /tmp/reload.log 2>&1 \
+            || { echo "::error::the schema loader failed on a second run"; tail -30 /tmp/reload.log; exit 1; }
+          for f in $(ls migrations/*.up.sql | sort); do
+            psql -h localhost -U postgres -d polaris_test -v ON_ERROR_STOP=1 -f "$f" >> /tmp/reload.log 2>&1 \
+              || { echo "::error::migration $f failed on the reloaded schema"; tail -30 /tmp/reload.log; exit 1; }
+          done
+          cd ..
+          after=$(count)
+          echo "tables/triggers/individuals/tokens/verifications: $before -> $after"
+          [ "$before" = "$after" ] \
+            || { echo "::error::reload plus re-migrate changed the database state"; exit 1; }
+
       - name: Bash syntax check
         run: for f in scripts/*.sh; do bash -n "$f" || exit 1; done
 

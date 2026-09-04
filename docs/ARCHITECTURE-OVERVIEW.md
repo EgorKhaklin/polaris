@@ -169,7 +169,6 @@ full usage in its header. Among them:
 - `polaris-secrets.sh` and `polaris-rotate-secret.sh`: the sealed secrets store and rotation
 - `polaris-archive.sh` and `polaris-purge.sh`: archive-bound retention for audit rows
 - `polaris-create-operator.sh` and `polaris-recover-admin.sh`: the first admin, and the locked-out one
-- `polaris-doctor.sh`: a one-command health read of a running deployment
 
 ---
 

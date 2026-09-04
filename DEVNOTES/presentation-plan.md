@@ -79,7 +79,7 @@ is a format decision the project has not taken.
 | P1.15 | 2. The site structure pass | [x] v9.217 (What Polaris is, What this is not with the ledger link, the four run paths, the Evaluate it row, masthead and skip link and landmarks, the UC-kicker and duplicate removals, the head, robots.txt and 404.html) |
 | P1.15 | 3. Assets and tokens | [x] v9.218 (one copy in site/ rather than assets/ with a Pages copy step, see the ruling below; the logo re-exported 942 KB to 44 KB; explicit dimensions and fetch priority; site/tokens.css under the application's token names, pinned by check_site_tokens_match_app) |
 | P1.15 | 4. The site gate | [x] v9.219 (ai-link-check.sh reads href/src and blob URLs; pages.yml gains a verify job and loses its path filter; the strong lede restored. check_stated_counts already covered site/index.html) |
-| P1.16 | 1. Deletions | [ ] |
+| P1.16 | 1. Deletions | [x] v9.221 (atlas-globe.js with its 395 KB of vendored d3/topojson and the four documents that described it; ai-bootstrap.sh, polaris-concurrency-harness.sh, polaris-doctor.sh and polaris-idempotency-test.sh, whose property became a CI assertion; nginx.conf.example; two duplicate LICENSE copies with the rule in NOTICE; .claude/settings.json untracked; the stray coverage artifact. ai-authz-audit.sh and ai_authz_audit.py were KEPT: they work and docs/RED-TEAM-SCOPE.md points an assessor at them, so they are renamed in ship 3 instead) |
 | P1.16 | 2. Asset de-duplication | [x] v9.218 (landed with P1.15 ship 3; assets/ deleted, site/README.md replaces assets/README.md and lists every file with its consumer) |
 | P1.16 | 3. Script rename and index | [ ] |
 | P1.16 | 4. Missing READMEs (deploy/, polaris_checks/, site/) | [ ] |

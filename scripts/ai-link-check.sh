@@ -101,9 +101,6 @@ SELF_REFERENTIAL = {'ai-link-check.sh'}
 
 for dirpath, dirs, files in os.walk(root):
     dirs[:] = [d for d in dirs if d not in SKIP_DIRS and not d.startswith('.')]
-    # Don't walk into journal/ — historical entries reference old paths
-    if dirpath.endswith('/journal') or '/journal/' in dirpath:
-        continue
     for fname in files:
         if not fname.endswith(SCAN_EXTS):
             continue

@@ -1043,7 +1043,7 @@ doctor() {
         "$WEB_DIR/security.py:exec=no" \
         "$WEB_DIR/templates/atlas.html:exec=no" \
         "$WEB_DIR/templates/dashboard.html:exec=no" \
-        "$WEB_DIR/static/atlas-globe.js:exec=no" \
+        "$WEB_DIR/static/atlas-map.js:exec=no" \
         "$WEB_DIR/static/polaris.css:exec=no" \
         "$SCRIPT_DIR/polaris_mac_launch.sh:exec=yes" \
         "$SCRIPT_DIR/Polaris.command:exec=yes" \

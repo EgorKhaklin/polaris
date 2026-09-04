@@ -18,7 +18,7 @@ client switches to fetching individual points.
 
 ```
 viewport rotation/zoom changes in browser
-  → atlas-globe.js scheduleFetch() (debounced 220ms)
+  → atlas-map.js scheduleFetch() (debounced 220ms)
     → currentBbox() derives [min_lat, min_lon, max_lat, max_lon]
     → chooseGrid(zoom) maps zoom level to grid cell size in degrees
     → GET /api/atlas/clusters?bbox=…&grid=…&kind=…
