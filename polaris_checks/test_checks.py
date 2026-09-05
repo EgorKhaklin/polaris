@@ -3318,7 +3318,8 @@ def test_ha_automation_check_discriminates(tmp_path):
     ENTRY = ("failsafe_mode: false\nuse_pg_rewind: true\nttl: 20\n"
              "post_init: /usr/local/bin/polaris-patroni-post-init.sh\nexec patroni \"$CONF\"\n")
     DRILL = ("docker network disconnect\nnot_primary() { :; }\nreplica_streaming() { :; }\npatronictl switchover\n"
-             "crash polaris-etcd1\nCEIL_FAILOVER=60\nCEIL_DEMOTE=45\nCEIL_SWITCHOVER=30\nCREATE TABLE ha_marker\n")
+             "crash polaris-etcd1\nCEIL_FAILOVER=60\nCEIL_DEMOTE=45\nCEIL_SWITCHOVER=30\nCREATE TABLE ha_marker\n"
+             "no_lost_write() { :; }\nreplica_current() { :; }\n")
     CI = ("run: docker compose -f docker-compose.ha.yml up -d\nrun: bash scripts/polaris-failover-drill.sh\n"
           "for img in polaris-postgres:cve polaris-etcd:cve; do\n")
     good = {

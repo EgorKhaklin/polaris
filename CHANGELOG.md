@@ -32,9 +32,9 @@ times a second. Local reference run at v9.243:
 
 | Induced | Held | Measured |
 |---|---|---|
-| the leader node lost (killed, kept down) | the replica takes the lease; the old node rejoins on start | promoted at 17 s; 18.2 s write outage, no insert failed; rejoined 3 s after start |
-| the leader cut off from the lease store, clients still reaching it | it demotes itself; the other member takes the lease | demoted at 7 s; lease moved at 10 s; 13.3 s write outage, no insert failed |
-| a planned switchover | the candidate leads; the old leader follows | 3.2 s write outage, no insert failed; followed at 3 s |
+| the leader node lost (killed, kept down) | the replica takes the lease; the old node rejoins on start | promoted at 19 s; 20.0 s write outage, no insert failed; rejoined 4 s after start |
+| the leader cut off from the lease store, clients still reaching it | it demotes itself; the other member takes the lease | demoted at 9 s; lease moved at 10 s; 12.3 s write outage, no insert failed |
+| a planned switchover | the candidate leads; the old leader follows | 3.4 s write outage, no insert failed; followed at 2 s |
 | one etcd member crashed | the quorum carries the lease; the leader does not change | 0.3 s longest stall, no insert failed |
 
 **What the first runs found.**
@@ -51,7 +51,20 @@ times a second. Local reference run at v9.243:
    first scenario is a lost node (killed and kept down), not a process crash.
 3. Queued writes stall rather than fail, so a failed-insert count alone
    reported a 19 s outage as zero; the drill reports the longest stall and
-   asserts on the larger of the two.
+   asserts on the larger of the two, stamping each insert with its
+   completion time (a start-time stamp made a 20 s queue wait look like a
+   0.3 s one).
+4. The partition scenario has a second honest outcome, found by the first
+   CI run: when the surviving member is a few WAL records behind (the
+   demoting leader's final records never reached it), Patroni will not
+   promote it while the member that is ahead is reachable, and that member
+   cannot take the lease without the store. Nobody holds the lease until the
+   partition heals; integrity is kept, availability is not. The drill
+   settles to zero lag before every scenario, accepts both outcomes,
+   asserts that no insert was acknowledged while nobody held the lease, and
+   after every scenario asserts that every insert acknowledged since it
+   began is present on the leader. FAILOVER.md's analysis carries the
+   outcome and the operator's override.
 
 **Also.** The Patroni entrypoint starts as root and drops to `postgres`
 with gosu, like the stock one: the superuser password is a root-only 0600

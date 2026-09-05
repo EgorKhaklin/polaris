@@ -4448,11 +4448,12 @@ def check_ha_automation(root: pathlib.Path) -> list[Finding]:
             return _fail("ha_automation", f"haproxy-pg.cfg lacks {needle!r}: route on Patroni's role endpoints, cut sessions "
                          "to a demoted node, follow Docker DNS")
     for needle in ("docker network disconnect", "not_primary", "switchover", "crash polaris-etcd1", "replica_streaming",
-                   "CEIL_FAILOVER", "CEIL_DEMOTE", "CEIL_SWITCHOVER", "ha_marker"):
+                   "CEIL_FAILOVER", "CEIL_DEMOTE", "CEIL_SWITCHOVER", "ha_marker", "no_lost_write", "replica_current"):
         if needle not in drill:
             return _fail("ha_automation", f"polaris-failover-drill.sh lacks {needle!r}: a leader crash, a leader cut from "
                          "the lease store that must demote, a switchover, an etcd crash, each against a ceiling, "
-                         "under a live write stream")
+                         "under a live write stream, settled to zero lag first, with every acknowledged insert "
+                         "asserted present afterwards")
     if "docker-compose.ha.yml" not in ci or "polaris-failover-drill.sh" not in ci:
         return _fail("ha_automation", "ci.yml must boot the HA profile and run scripts/polaris-failover-drill.sh")
     if "polaris-etcd:cve" not in ci:

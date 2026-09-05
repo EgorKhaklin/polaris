@@ -51,7 +51,9 @@ stack):**
   every half second, cutting sessions to a member the moment it is marked
   down. pgbouncer dials `pg-router`; the application is unchanged.
 - The failover drill, [`scripts/polaris-failover-drill.sh`](../../scripts/polaris-failover-drill.sh),
-  run on every push (the `ha-failover` CI job) against the ceilings in §3.
+  run on every push (the `ha-failover` CI job) against the ceilings in §3,
+  asserting after every scenario that each insert acknowledged since the
+  drill began is present on the leader: no acknowledged write is lost.
 - `check_ha_automation`, which fails the build if the lease semantics, the
   routing, the drill or this analysis change out from under each other.
 
@@ -122,9 +124,9 @@ asserts on the right:
 
 | Induced failure | What the supervisor did | Write outage | Rejoin | Ceiling |
 |---|---|---|---|---|
-| The leader node is lost (killed, kept down) | the replica acquired the lease and promoted 17 s later | 18.2 s, no insert failed: the pooler queued them | the old node was streaming again 3 s after it was started | 60 s |
-| The leader is cut off from the lease store; its clients can still reach it | it demoted itself after 7 s; the other member took the lease after 10 s | 13.3 s, no insert failed | streaming 1 s after reconnecting | 45 s to demote, 60 s |
-| A planned switchover (`patronictl switchover`) | the candidate was leader within a second | 3.2 s, no insert failed | the old leader followed after 3 s | 30 s |
+| The leader node is lost (killed, kept down) | the replica acquired the lease and promoted 19 s later | 20.0 s, no insert failed: the pooler queued them | the old node was streaming again 4 s after it was started | 60 s |
+| The leader is cut off from the lease store; its clients and the other member can still reach it | it demoted itself after 9 s; the other member, current, took the lease after 10 s | 12.3 s, no insert failed | streaming as soon as it reconnected | 45 s to demote, 60 s |
+| A planned switchover (`patronictl switchover`) | the candidate was leader within a second | 3.4 s, no insert failed | the old leader followed after 2 s | 30 s |
 | One etcd member crashes | nothing: the leader kept the lease on the remaining quorum | 0.3 s longest stall, no insert failed | the member restarted on its own | 5 s, no failure |
 
 Two things the numbers say. The write outage of a lost leader is the lease:
@@ -136,14 +138,18 @@ its lease is not a failover: Patroni restarts it in place and keeps the
 lease, which is what a supervisor should do; the chaos drill measures that
 case on the single-node stack.
 
-The first runs of the drill found two things the numbers now include. A
+The drill starts a scenario only when the replica is streaming with zero
+lag, because the partition scenario has a second outcome (§4) when it is not.
+The first runs of the drill found three things the numbers now include. A
 pooler connect that started in the two seconds before HAProxy marked the
 old leader down hung for PgBouncer's default 15 s `server_connect_timeout`
 with every client queued behind it; the pooler now abandons a connect after
 3 s (`PGBOUNCER_SERVER_CONNECT_TIMEOUT`) and HAProxy redispatches a failed
 backend connect to another member. And the write stream stalls rather than
 fails while the pooler queues, so the drill reports the longest stall as
-well as the failed inserts, and asserts on the larger of the two.
+well as the failed inserts, and asserts on the larger of the two; and it
+stamps each insert with its completion time, since an insert that waited
+twenty seconds in the queue is a twenty-second stall, not a fast one.
 
 ---
 
@@ -170,8 +176,22 @@ time.
   `retry_timeout` to stand down. The windows are ordered by construction
   (`ttl` > `loop_wait` + 2 × `retry_timeout`; the entrypoint refuses a
   configuration that breaks the ordering). This is the case the drill
-  exercises: the cut-off member demoted 7 s in, the lease moved at 10 s, and
+  exercises: the cut-off member demoted 9 s in, the lease moved at 10 s, and
   the cut-off member never took a write after its demotion.
+- *The same partition, with the other member a few records behind.* The
+  first CI run found this outcome. A fast shutdown writes a final WAL record
+  or two, and if the replica's walreceiver was not attached at that instant
+  it never gets them. Patroni will not promote a member while a reachable
+  member reports a position ahead of it, and the member that is ahead cannot
+  take the lease without the store, so nobody holds it: the cluster is
+  read-only everywhere until the partition heals, after which the member
+  that is ahead takes the lease back (its lease and registration have
+  expired, it is still ahead, and it can now reach the store). Integrity is
+  kept at the price of availability, and the drill accepts this outcome,
+  asserting that no insert was acknowledged while nobody held the lease.
+  The operator's override, if the partition will not heal, is
+  `patronictl failover --candidate <survivor>`, which promotes the member
+  that is behind and gives up the records it never received.
 - *The leader loses its clients but not etcd.* It keeps the lease and the
   role; no write reaches any member (HAProxy sees one primary, unreachable)
   until the partition heals or you intervene with a switchover. This is an
@@ -240,7 +260,7 @@ $P reinit postgres2                                      # force a fresh clone o
 
 ## 6. RPO and RTO
 
-- **RTO** for a lost host is the lease plus routing: 18 s measured (§3), against [`DR.md`](DR.md)'s 4 h target for the case where no replica
+- **RTO** for a lost host is the lease plus routing: 20 s measured (§3), against [`DR.md`](DR.md)'s 4 h target for the case where no replica
   survives.
 - **RPO** is whatever the replica had not received: usually milliseconds on
   a healthy link, zero with `synchronous_mode` at the cost above. The 300 s
