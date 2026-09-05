@@ -46,6 +46,7 @@ spec:
             # a half-second database crash measured as a 16.2 s outage on that default).
             - {name: PGBOUNCER_SERVER_LOGIN_RETRY, value: "1"}
             - {name: PGBOUNCER_DNS_NXDOMAIN_TTL, value: "1"}
+            - {name: PGBOUNCER_SERVER_CONNECT_TIMEOUT, value: "3"}
             - {name: PGBOUNCER_SERVER_TLS_SSLMODE, value: verify-ca}
             - {name: PGBOUNCER_SERVER_TLS_CA_FILE, value: /etc/polaris-pg-certs/postgres.crt}
             - {name: PGBOUNCER_CLIENT_TLS_SSLMODE, value: require}

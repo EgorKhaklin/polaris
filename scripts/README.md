@@ -44,6 +44,7 @@ block after the shebang is its documentation, and `--help` prints it.
 | `polaris-offsite-drill.sh` | The S3 backup and restore path, end to end | `ci.yml` |
 | `polaris-rolling-drill.sh` | A rolling deploy drops zero requests | `ci.yml` |
 | `polaris-window-drill.sh` | An edge configuration reload drops nothing; edge and database recreation windows measured against ceilings | `ci.yml` |
+| `polaris-failover-drill.sh` | The HA profile under induced failures: the leader crashed, cut off from the lease store, switched over, an etcd member crashed, each measured under a live write stream against a ceiling | `ci.yml` |
 | `polaris-helm-drill.sh` | The Kubernetes profile boots healthy with policies enforced | `ci.yml` |
 | `polaris-page-drill.sh` | A duress event reaches the pager webhook | `ci.yml` |
 | `polaris-chaos-drill.sh` | Induced failures against the booted stack under traffic: one colour killed, both stopped until the outage pages, redis and postgres killed, pgbouncer partitioned, every recovery measured against a ceiling | `chaos.yml`, weekly and on demand |

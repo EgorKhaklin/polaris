@@ -121,5 +121,7 @@ privileged pod rejected by the API server, the real secrets as a Secret,
 database, redis, zk_binary, and custody healthy, a probe pod outside the
 topology denied by policy on postgres, pgbouncer, and app, and a rolling
 restart that keeps the edge healthy. Stated limits: single-node kind, one
-postgres replica, `tls: internal`; HA PostgreSQL, multi-node placement, and
-ACME are P2 and operator-environment concerns.
+postgres replica, `tls: internal`; multi-node placement and ACME are
+operator-environment concerns. Automated database failover ships for the
+compose stack ([FAILOVER.md](FAILOVER.md), v9.243); bringing the same Patroni
+topology to the chart is roadmap P2.13.

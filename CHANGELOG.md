@@ -5,6 +5,67 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.243 — 2026-09-05 (automated database failover: the HA profile)
+
+Roadmap P2.7, and the database half of the one engineering limit the
+readiness ledger carried. Until now the standby and the promotion were the
+operator's: a runbook with `pg_basebackup` and `pg_promote`, and "Patroni or
+repmgr stay operator choices". The choice is made and shipped.
+
+**The HA profile**, `polaris_web/docker-compose.ha.yml` on top of the
+production stack: the same database image run by Patroni (pinned in
+`requirements-patroni.txt`, installed by `Dockerfile.postgres`; a container
+started with `postgres` never touches the layer), two members, a leader
+lease in a three-member etcd self-built from Alpine's package
+(`Dockerfile.etcd`, non-root, on an internal network only the members join),
+and HAProxy (`pg-router`, digest-pinned) forwarding 5432 to whichever member
+answers Patroni's `/primary`. pgbouncer dials `pg-router`; the application
+is unchanged. Patroni's `post_init` hook runs the same `docker-init.sh` the
+single node runs, in a managed mode that leaves TLS, replication and
+archiving to Patroni's parameters, so a fresh database is the same on both
+profiles. `failsafe_mode` is off: a leader that cannot renew its lease
+demotes itself, which is the property the split-brain analysis relies on.
+
+**The drill**, `scripts/polaris-failover-drill.sh`, on every push (job
+`ha-failover`), under a writer inserting through the real client path four
+times a second. Local reference run at v9.243:
+
+| Induced | Held | Measured |
+|---|---|---|
+| the leader node lost (killed, kept down) | the replica takes the lease; the old node rejoins on start | promoted at 18 s; 19.6 s write outage, no insert failed; rejoined 4 s after start |
+| the leader cut off from the lease store, clients still reaching it | it demotes itself; the other member takes the lease | demoted at 6 s; lease moved at 10 s; 12.4 s write outage, no insert failed |
+| a planned switchover | the candidate leads; the old leader follows | 4.4 s write outage, 16 inserts failed; followed at 2 s |
+| one etcd member crashed | the quorum carries the lease; the leader does not change | 0.3 s longest stall, no insert failed |
+
+**What the first runs found.**
+
+1. A pooler connect that started in the two seconds before HAProxy marked
+   the old leader down hung for PgBouncer's default 15 s
+   `server_connect_timeout`, every client queued behind it. The pooler now
+   abandons a backend connect after 3 s (`PGBOUNCER_SERVER_CONNECT_TIMEOUT`,
+   compose and chart), HAProxy redispatches a failed backend connect to
+   another member and checks every half second; `check_pgbouncer_self_built`
+   fails a default above 5 s.
+2. A leader whose process crashes and restarts inside its lease is not a
+   failover: Patroni restarts it in place and keeps the lease. The drill's
+   first scenario is a lost node (killed and kept down), not a process crash.
+3. Queued writes stall rather than fail, so a failed-insert count alone
+   reported a 19 s outage as zero; the drill reports the longest stall and
+   asserts on the larger of the two.
+
+**Also.** `FAILOVER.md` is rewritten around the supervisor: what ships, what
+is placement, the measured table, the split-brain analysis partition by
+partition, `patronictl` operations. `check_ha_automation` pins the lease
+semantics, the routing, the drill's scenarios and ceilings, the CI job and
+the analysis; `check_replication_scaffolding` now asks for the lease-based
+promotion instead of `pg_promote`. The SBOM and the image CVE scan cover the
+fifth self-built image. The readiness ledger carries the database half of
+the window limit as closed; the edge half (a 0.3 s recreation window)
+remains, and is placement. The Helm chart still runs one postgres replica:
+roadmap P2.13. SECURITY.md re-read and restamped. 121 checks, 15 CI jobs.
+
+---
+
 ## v9.242 — 2026-09-05 (the standing chaos program, and what its first run found)
 
 Roadmap P2.11 asked for scheduled chaos runs with paging verified and

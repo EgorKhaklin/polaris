@@ -63,7 +63,8 @@ initial report, extended for Critical findings as the patch warrants.
 - The Rust ZK prover and verifier (`polaris_zk/`) and the Python second witness
 - The invariant-check layer (`polaris_checks/`)
 - Every script under `scripts/` (all now `polaris-*`: operator tools, the CI drills and the contributor gates)
-- The Dockerfiles, the compose files, the Helm chart and the Linux installer
+- The Dockerfiles, the compose files (the HA profile's Patroni, etcd and HAProxy
+  configuration included), the Helm chart and the Linux installer
 - The macOS launcher
 - The migration framework
 - The documentation, where an error would lead to an insecure deployment
@@ -82,15 +83,15 @@ initial report, extended for Critical findings as the patch warrants.
   deployment you operate are in scope; reports against example domains are
   not.
 - **Upstream vulnerabilities in third-party dependencies** not yet pinned in
-  `polaris_web/requirements.txt`. Report those upstream; they are picked up
-  by the dependency policy below.
+  the `polaris_web/requirements*.txt` files. Report those upstream; they are
+  picked up by the dependency policy below.
 
 ---
 
 ## Verifying a release (supply chain)
 
 Every published release carries an SPDX 2.3 SBOM for each artifact (the
-Python runtime surface and the four self-built images), and each SBOM carries
+Python runtime surface and the five self-built images), and each SBOM carries
 a signed SLSA build-provenance attestation. The attestation is keyless: it is
 signed through GitHub's OIDC identity via Sigstore (Fulcio certificate, Rekor
 transparency log), so there is no long-lived signing key to leak.
@@ -150,5 +151,5 @@ policy.
 ---
 
 *Maintainer: Egor Khaklin (VANTA)*
-*Last updated: 2026-09-04 (v9.222)*
+*Last updated: 2026-09-05 (v9.243)*
 *Machine-readable: the live `/.well-known/security.txt` route (RFC 9116)*

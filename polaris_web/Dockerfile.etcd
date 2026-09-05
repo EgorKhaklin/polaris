@@ -1,0 +1,34 @@
+# syntax=docker/dockerfile:1
+# ============================================================================
+# Dockerfile.etcd — the distributed configuration store of the HA profile
+# (v9.243, roadmap P2.7).
+#
+# Patroni keeps the leader lease in etcd: a node that cannot renew its lease
+# stops being the primary, which is the property that makes automated failover
+# safe. Self-built from Alpine's signed etcd package on the same digest-pinned
+# base as the pooler: the third-party etcd images run as root and live on
+# registries the rest of the stack does not use, while this one runs as a
+# dedicated user, is rebuilt by scripts/polaris-image-build.sh with every other
+# image, and is scanned by the same CVE job. Only the HA profile
+# (docker-compose.ha.yml) uses it.
+# ============================================================================
+FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
+LABEL org.opencontainers.image.title="Polaris (etcd)"
+LABEL org.opencontainers.image.description="etcd for the Polaris HA profile: Patroni's leader lease and cluster state"
+LABEL org.opencontainers.image.source="https://github.com/EgorKhaklin/polaris-id"
+LABEL org.opencontainers.image.licenses="Apache-2.0"
+ARG POLARIS_VERSION=0.0-unstamped
+LABEL org.opencontainers.image.version="${POLARIS_VERSION}"
+RUN apk upgrade --no-cache \
+    && apk add --no-cache etcd etcd-ctl \
+    && (id etcd >/dev/null 2>&1 || adduser -D -H -s /sbin/nologin etcd) \
+    && mkdir -p /var/lib/etcd \
+    && chown etcd:etcd /var/lib/etcd \
+    && chmod 0700 /var/lib/etcd \
+    && etcd --version | head -1 && etcdctl version | head -1 \
+    && rm -rf /var/cache/apk/*
+USER etcd
+VOLUME /var/lib/etcd
+EXPOSE 2379 2380
+ENTRYPOINT ["/usr/bin/etcd"]
+CMD ["--data-dir", "/var/lib/etcd"]

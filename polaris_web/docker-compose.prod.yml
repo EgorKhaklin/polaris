@@ -297,6 +297,9 @@ services:
       # caching a failed name lookup); at 1 s each it measures 1.9 s.
       PGBOUNCER_SERVER_LOGIN_RETRY: '1'
       PGBOUNCER_DNS_NXDOMAIN_TTL: '1'
+      # v9.243 — a backend connect not complete in 3 s is a dead or demoted peer
+      # (the failover drill found a 15 s stall on PgBouncer's default).
+      PGBOUNCER_SERVER_CONNECT_TIMEOUT: '3'
       # v9.121/v9.131 — TLS + VERIFICATION on both hops. server_tls verify-ca
       # pins postgres's self-signed cert (server_tls_ca_file); client_tls presents
       # pgbouncer's STABLE self-signed cert (mounted, so the app can pin it) and

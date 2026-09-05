@@ -23,7 +23,7 @@ fails otherwise.
 | [`DR.md`](DR.md) | Disaster recovery: the targets (RPO 300 s, RTO 4 h), the procedures by failure class, WAL archiving and the off-site repository |
 | [`DR-DRILLS.md`](DR-DRILLS.md) | The drill ledger, machine-appended: every measured RPO and RTO, locally and from the monthly CI run |
 | [`CHAOS-DRILLS.md`](CHAOS-DRILLS.md) | The chaos ledger, machine-appended: the standing program, its five induced failures with their recovery ceilings, and every weekly run's measured recoveries and page delivery |
-| [`FAILOVER.md`](FAILOVER.md) | Streaming replication, the hot standby and its promotion; the high-availability complement to DR.md |
+| [`FAILOVER.md`](FAILOVER.md) | The HA profile: Patroni-managed automated failover with its measured drill numbers and the split-brain analysis; the high-availability complement to DR.md |
 | [`SLOS.md`](SLOS.md) | The reference service objectives (availability, request latency, database latency) and the error budget, grounded in exposed metrics |
 | [`RUNBOOKS.md`](RUNBOOKS.md) | One response runbook per shipped alert: trigger, diagnosis, remediation; and the pager wiring |
 

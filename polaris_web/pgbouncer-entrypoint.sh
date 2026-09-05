@@ -63,6 +63,11 @@ MAX_DB_CONNECTIONS="${PGBOUNCER_MAX_DB_CONNECTIONS:-50}"
 # back in half a second; with these two at 1 s it measures 1.9 s.
 SERVER_LOGIN_RETRY="${PGBOUNCER_SERVER_LOGIN_RETRY:-1}"
 DNS_NXDOMAIN_TTL="${PGBOUNCER_DNS_NXDOMAIN_TTL:-1}"
+# v9.243 — a backend connect that has not completed in three seconds is a dead
+# or demoted peer, not a slow one: on the HA profile the failover drill found a
+# connect that started in the two seconds before HAProxy marked the old leader
+# down hanging for PgBouncer's 15 s default while every client queued behind it.
+SERVER_CONNECT_TIMEOUT="${PGBOUNCER_SERVER_CONNECT_TIMEOUT:-3}"
 
 # The settings above are interpolated unquoted into pgbouncer.ini, so validate
 # them: numerics must be all-digits, the pool mode must be one of the three
@@ -77,7 +82,8 @@ for _nv in "POLARIS_DB_PORT=$DB_PORT" "PGBOUNCER_LISTEN_PORT=$LISTEN_PORT" \
            "PGBOUNCER_RESERVE_POOL_SIZE=$RESERVE_POOL_SIZE" \
            "PGBOUNCER_MAX_DB_CONNECTIONS=$MAX_DB_CONNECTIONS" \
            "PGBOUNCER_SERVER_LOGIN_RETRY=$SERVER_LOGIN_RETRY" \
-           "PGBOUNCER_DNS_NXDOMAIN_TTL=$DNS_NXDOMAIN_TTL"; do
+           "PGBOUNCER_DNS_NXDOMAIN_TTL=$DNS_NXDOMAIN_TTL" \
+           "PGBOUNCER_SERVER_CONNECT_TIMEOUT=$SERVER_CONNECT_TIMEOUT"; do
     case "${_nv#*=}" in
         ''|*[!0-9]*) echo "pgbouncer: ${_nv%%=*} must be a positive integer (got '${_nv#*=}')" >&2; exit 1 ;;
     esac
@@ -218,6 +224,7 @@ max_db_connections = $MAX_DB_CONNECTIONS
 # do not cache a failed name lookup while the database container restarts.
 server_login_retry = $SERVER_LOGIN_RETRY
 dns_nxdomain_ttl = $DNS_NXDOMAIN_TTL
+server_connect_timeout = $SERVER_CONNECT_TIMEOUT
 # psycopg2 sends extra_float_digits; pgbouncer must tolerate it in transaction mode.
 ignore_startup_parameters = extra_float_digits
 # TLS (v9.121): server_tls encrypts the postgres hop, client_tls the app hop.

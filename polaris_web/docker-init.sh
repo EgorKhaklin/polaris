@@ -12,6 +12,14 @@
 
 set -e
 
+# v9.243 (roadmap P2.7) — under the HA profile Patroni owns the server
+# configuration: TLS, the replication role and pg_hba, and WAL archiving are
+# cluster parameters written by patroni-entrypoint.sh, and this script is run
+# by Patroni's post_init hook for what is the same on both profiles (the
+# schema, the migrations, the application role, the production lock). The
+# three ALTER SYSTEM blocks below are skipped in that mode.
+MANAGED="${POLARIS_INIT_MANAGED_BY:-}"
+
 echo "Loading Polaris SQL package..."
 
 # 00_load_all.sql uses \i with relative paths, so we cd into the SQL directory
@@ -30,7 +38,9 @@ psql -v ON_ERROR_STOP=1 \
 # after init comes up with TLS. Idempotent / optional: no cert -> no TLS.
 PG_CERT_SRC=/etc/polaris-pg-certs
 PG_DATA_DIR="${PGDATA:-/var/lib/postgresql/data}"
-if [ -f "$PG_CERT_SRC/server.crt" ] && [ -f "$PG_CERT_SRC/server.key" ]; then
+if [ "$MANAGED" = "patroni" ]; then
+    echo "TLS, replication and archiving are Patroni parameters under the HA profile; skipping ALTER SYSTEM."
+elif [ -f "$PG_CERT_SRC/server.crt" ] && [ -f "$PG_CERT_SRC/server.key" ]; then
     echo "Enabling Postgres TLS from the mounted cert..."
     cp "$PG_CERT_SRC/server.crt" "$PG_DATA_DIR/server.crt"
     cp "$PG_CERT_SRC/server.key" "$PG_DATA_DIR/server.key"
@@ -147,7 +157,7 @@ fi
 # bootstrapped with `pg_basebackup -R` per docs/operator/FAILOVER.md. Optional:
 # with no replicator secret, this is a single node and nothing is touched.
 REPL_PWFILE="${POLARIS_REPLICATOR_PASSWORD_FILE:-}"
-if [ -n "$REPL_PWFILE" ] && [ -r "$REPL_PWFILE" ]; then
+if [ "$MANAGED" != "patroni" ] && [ -n "$REPL_PWFILE" ] && [ -r "$REPL_PWFILE" ]; then
     REPL_PW="$(cat "$REPL_PWFILE")"
     if [ ${#REPL_PW} -lt 16 ]; then
         echo "FATAL: the replication password must be at least 16 characters." >&2
@@ -188,7 +198,7 @@ fi
 # block) + the archive_command that pushes WAL through the stanza config mounted
 # at /etc/pgbackrest/pgbackrest.conf. The stanza-create + scheduled backups are
 # the operator's steps (docs/operator/DR.md); the CI round-trip proves the path.
-if [ "${POLARIS_PGBACKREST_ENABLED:-0}" = "1" ]; then
+if [ "$MANAGED" != "patroni" ] && [ "${POLARIS_PGBACKREST_ENABLED:-0}" = "1" ]; then
     echo "Enabling continuous WAL archiving via pgBackRest (archive_mode=on)..."
     psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" >/dev/null \
         -c "ALTER SYSTEM SET archive_mode = on;" \

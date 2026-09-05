@@ -777,6 +777,7 @@ deployments.
 | `PGBOUNCER_MAX_DB_CONNECTIONS` | 50 | Must stay below Postgres `max_connections` minus admin headroom (~10) |
 | `PGBOUNCER_SERVER_LOGIN_RETRY` | 1 | Never above a few seconds. PgBouncer's own default is 15 s, and on it the chaos drill measured a half-second Postgres crash as a 16.2 s outage for the application (v9.242); at 1 s it measures 1.9 s |
 | `PGBOUNCER_DNS_NXDOMAIN_TTL` | 1 | Docker unregisters a container's name while it restarts; PgBouncer's 15 s default caches that failure for 15 s (v9.242) |
+| `PGBOUNCER_SERVER_CONNECT_TIMEOUT` | 3 | Never above a few seconds: a connect that has not completed in 3 s is a dead or demoted peer. On the 15 s default the failover drill measured a connect started just before HAProxy marked the old leader down stalling every client for 15 s (v9.243) |
 
 **Operator commands:**
 
@@ -832,9 +833,35 @@ sync worker class. The default is 4 (suitable for 2-vCPU hosts). On an
 **Inflection:** the atlas API (`/api/atlas/*`) dominates request volume AND
 p99 latency is above 200ms.
 
-**Status:** a streaming standby ships ([FAILOVER.md](FAILOVER.md)); routing
-`/api/atlas/*` reads to it does not. Until it does, scale Postgres vertically
+**Status:** the HA profile keeps a streaming replica behind `pg-router:5433`
+([FAILOVER.md](FAILOVER.md)); routing `/api/atlas/*` reads to it does not
+(roadmap P2.2). Until it does, scale Postgres vertically
 (more vCPU + SSD IO).
+
+### The HA profile: living with Patroni
+
+Under [`docker-compose.ha.yml`](../../polaris_web/docker-compose.ha.yml)
+([DEPLOYMENT.md](DEPLOYMENT.md#automated-database-failover-ha-profile)) the
+database is two Patroni members behind `pg-router`. The day-2 surface is
+`patronictl`, run inside either member:
+
+```bash
+P="docker compose -f polaris_web/docker-compose.prod.yml -f polaris_web/docker-compose.ha.yml exec postgres patronictl -c /var/lib/postgresql/patroni.yml"
+$P list                                   # members, roles, timeline, lag
+$P switchover --primary postgres --candidate postgres2   # planned; asks to confirm
+$P history                                # every timeline change and why
+$P show-config                            # the cluster parameters in the DCS
+$P edit-config                            # change them (Patroni restarts what needs a restart)
+```
+
+A planned switchover is the way to restart or upgrade the leader's host:
+switch the lease to the other member, work on the idle one, switch back. A
+lost member rebuilds itself when it starts again (`pg_rewind`, or a fresh
+clone if rewind cannot apply); `$P reinit postgres2` forces a fresh clone.
+Never edit `postgresql.conf` on a member: Patroni owns it. The stack-level
+proof that this holds under a leader loss, a lease partition, a switchover
+and an etcd crash is [`scripts/polaris-failover-drill.sh`](../../scripts/polaris-failover-drill.sh),
+run on every push; the measured numbers are in [FAILOVER.md](FAILOVER.md).
 
 ### Redis cluster: for high-QPS rate limiting
 

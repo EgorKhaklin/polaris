@@ -36,6 +36,7 @@ polaris/
 │   ├── Dockerfile / docker-compose.yml            ← dev image and dev stack
 │   ├── Dockerfile.prod / docker-compose.prod.yml  ← prod image and the five-service stack
 │   ├── docker-compose.bluegreen.yml               ← the zero-downtime profile
+│   ├── docker-compose.ha.yml                      ← the HA profile: Patroni, etcd, HAProxy (patroni-entrypoint.sh, Dockerfile.etcd, haproxy-pg.cfg)
 │   ├── Dockerfile.caddy / Caddyfile               ← self-built TLS edge (rate_limit compiled in)
 │   ├── Dockerfile.pgbouncer / pgbouncer-entrypoint.sh ← self-built connection pooler (config generated at start)
 │   ├── Dockerfile.postgres / pgbackrest.conf      ← database image with WAL archiving
@@ -60,7 +61,7 @@ polaris/
 ├── scripts/            ← every shell tool (polaris-*): deploys, drills, gates, checks
 ├── site/               ← the published project page (GitHub Pages), its logo and the Atlas captures
 │
-├── .github/workflows/  ← ci.yml (14 jobs), dr-drill.yml (monthly), chaos.yml (weekly), sbom.yml (per release), pages.yml (the site)
+├── .github/workflows/  ← ci.yml (15 jobs), dr-drill.yml (monthly), chaos.yml (weekly), sbom.yml (per release), pages.yml (the site)
 ├── .github/dependabot.yml, .pre-commit-config.yaml, .gitignore, .coveragerc, .trivyignore
 ```
 
@@ -75,6 +76,7 @@ polaris/
 - `linux-install`: the Linux server install, systemd on the runner plus Debian 12 and Rocky 9 package stages.
 - `custody-pkcs11`: key custody through PKCS#11 (Kryoptic token, ML-DSA-65 in-token, two-witness verified).
 - `rolling-deploy`: a rolling deploy under traffic drops zero requests (blue-green profile and control).
+- `ha-failover`: the HA profile (Patroni, etcd, HAProxy) under a leader loss, a lease partition, a switchover and an etcd crash, measured under a live write stream.
 - `helm-kind`: the Kubernetes reference profile boots to healthy on kind with Calico-enforced policies and restricted PSS.
 - `pqc-real`: real ML-DSA-65 sign and verify (liboqs), cross-checked by the cryptography second witness.
 - `cve-scan`: dependency CVE audit (pip-audit) plus SAST (bandit).

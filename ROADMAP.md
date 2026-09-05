@@ -44,8 +44,8 @@ RPO and RTO; a retention engine that holds the retention decision as data with
 a floor no configuration reaches, per class and per jurisdiction, enforced by
 the purge and drilled end to end in CI; a sealed secrets store; opt-in
 distributed tracing with dashboards as code; SBOMs and SLSA provenance on every
-release; CVE gates on dependencies and images; a coverage floor; 120 invariant
-checks (v9.242) each with a detection test; eighteen operator runbooks and ledgers; and the bound on
+release; CVE gates on dependencies and images; a coverage floor; 121 invariant
+checks (v9.243) each with a detection test; eighteen operator runbooks and ledgers; and the bound on
 every claim in [docs/PRODUCTION-READINESS.md](docs/PRODUCTION-READINESS.md).
 
 **Do not have:** hardware tokens (the physical artifact is modeled, not built);
@@ -165,7 +165,8 @@ server-side; 99.95% availability.
 | [ ] P2.4 | Bulk enrollment pipeline | L | med | P2.1 | COPY-based batch issuance for authority migrations, benchmarked; every imported row still passes the full constraint set |
 | [ ] P2.5 | Epoch pipeline at scale | L | high | P0.7 | Incremental Merkle maintenance, parallel proving, witness parity at production depth; an epoch cadence spec published |
 | [ ] P2.6 | Status distribution v1 | L | high | P2.5 | Signed, versioned, short-lived status artifacts (revocation and validity) distributable via CDN and verifiable offline; freshness rules specified; this is the backbone of P3.6 |
-| [ ] P2.7 | HA automation | L | high | P1.10 | Supervisor-managed automated failover replaces the manual runbook; an induced-failure drill passes; the split-brain analysis is documented |
+| [x] P2.7 | HA automation (v9.243) | L | high | P1.10 | The HA profile (`docker-compose.ha.yml`) runs the database under Patroni with a leader lease in a three-member etcd and HAProxy routing on the role endpoints; `polaris-failover-drill.sh` loses the leader, cuts it off from the lease store, switches over and crashes an etcd member under a live write stream on every push; [FAILOVER.md](docs/operator/FAILOVER.md) carries the measured numbers and the split-brain analysis. The member hosts are the operator's placement. Pinned by `check_ha_automation` |
+| [ ] P2.13 | HA on Kubernetes | M | med | P2.7 | The Helm reference profile runs the same Patroni topology with the Kubernetes API as the lease store (no etcd), or delegates the database to an operator by a recorded decision; the failover drill passes on kind |
 | [ ] P2.8 | Multi-region DR | L | med | P2.7 | An async standby region and a region-evacuation drill with measured RTO/RPO |
 | [ ] P2.9 | 10M-profile load certification | L | med | P2.1-P2.7 | The published harness drives the planning targets above against the HA topology during a rolling deploy and one induced failover; the numbers are committed |
 | [ ] P2.10 | Cost model | S | low | P2.9 | Infrastructure cost per 1M persons per year, derived from P2.9, committed |

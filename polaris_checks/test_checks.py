@@ -777,7 +777,7 @@ def test_sbom_workflow_check_discriminates(tmp_path):
                     "      - run: docker build -t polaris-app:sbom .\n"
                     "      - run: echo sbom-python\n")
     assert checks.check_sbom_workflow(tmp_path)[0].level == "FAIL", \
-        "must FAIL when not all four images are covered"
+        "must FAIL when not all five images are covered"
 
     sbom.write_text("on:\n  release:\n    types: [published]\n"
                     "jobs:\n  sbom:\n    steps:\n"
@@ -787,9 +787,10 @@ def test_sbom_workflow_check_discriminates(tmp_path):
                     "          docker build -t polaris-caddy:sbom .\n"
                     "          docker build -t polaris-pgbouncer:sbom .\n"
                     "          docker build -t polaris-postgres:sbom .\n"
+                    "          docker build -t polaris-etcd:sbom .\n"
                     "      - run: gh release upload \"$TAG\" sbom/*.spdx.json\n")
     assert checks.check_sbom_workflow(tmp_path)[0].level == "OK", \
-        "must PASS with release trigger, SPDX, all four images, python, and upload"
+        "must PASS with release trigger, SPDX, all five images, python, and upload"
 
 
 def test_sbom_trivy_match_check_discriminates(tmp_path):
@@ -1348,7 +1349,9 @@ def test_pgbouncer_self_built_check_discriminates(tmp_path):
                     "      dockerfile: Dockerfile.pgbouncer\n    image: polaris-pgbouncer:prod\n")
     GOOD_ENTRY = ("#!/bin/sh\nPWFILE=\"${POLARIS_DB_PASSWORD_FILE:-/run/secrets/x}\"\n"
                   "SERVER_LOGIN_RETRY=\"${PGBOUNCER_SERVER_LOGIN_RETRY:-1}\"\nDNS_NXDOMAIN_TTL=\"${PGBOUNCER_DNS_NXDOMAIN_TTL:-1}\"\n"
-                  "cat > ini <<EOF\nserver_login_retry = $SERVER_LOGIN_RETRY\ndns_nxdomain_ttl = $DNS_NXDOMAIN_TTL\nEOF\n")
+                  "SERVER_CONNECT_TIMEOUT=\"${PGBOUNCER_SERVER_CONNECT_TIMEOUT:-3}\"\n"
+                  "cat > ini <<EOF\nserver_login_retry = $SERVER_LOGIN_RETRY\ndns_nxdomain_ttl = $DNS_NXDOMAIN_TTL\n"
+                  "server_connect_timeout = $SERVER_CONNECT_TIMEOUT\nEOF\n")
     gh = tmp_path / ".github" / "workflows"
     gh.mkdir(parents=True)
     (gh / "ci.yml").write_text("jobs:\n  d:\n    steps:\n      run: docker build -f polaris_web/Dockerfile.pgbouncer .\n")
@@ -1408,6 +1411,10 @@ def test_pgbouncer_self_built_check_discriminates(tmp_path):
     write(entry=GOOD_ENTRY.replace("PGBOUNCER_SERVER_LOGIN_RETRY:-1", "PGBOUNCER_SERVER_LOGIN_RETRY:-15"))
     assert checks.check_pgbouncer_self_built(tmp_path)[0].level == "FAIL", \
         "must FAIL when the retry default is 15 seconds"
+    # 8b. v9.243: a hung backend connect left at PgBouncer's 15 s default -> FAIL.
+    write(entry=GOOD_ENTRY.replace("PGBOUNCER_SERVER_CONNECT_TIMEOUT:-3", "PGBOUNCER_SERVER_CONNECT_TIMEOUT:-15"))
+    assert checks.check_pgbouncer_self_built(tmp_path)[0].level == "FAIL", \
+        "must FAIL when a hung backend connect is allowed 15 seconds"
     # 9. The knob is read but never written into the ini -> FAIL.
     write(entry=GOOD_ENTRY.replace("server_login_retry = $SERVER_LOGIN_RETRY\n", ""))
     assert checks.check_pgbouncer_self_built(tmp_path)[0].level == "FAIL", \
@@ -2088,8 +2095,8 @@ def test_replication_scaffolding_check_discriminates(tmp_path):
                     "      POLARIS_REPLICATOR_PASSWORD_FILE: /run/secrets/polaris_replicator_password\n"
                     "    secrets:\n      - polaris_replicator_password\n")
     GOOD_SECRETS = "write_secret_if_missing polaris_replicator_password 24\n"
-    GOOD_DOC = ("# failover\nStandby is operator-supplied and operator-gated.\n"
-                "Bootstrap with pg_basebackup -R; promote with pg_promote().\n")
+    GOOD_DOC = ("# failover\nStandby is operator-supplied and placement.\n"
+                "Bootstrap with pg_basebackup -R; promote with lease().\n")
     GOOD_CI = "docker run pg_basebackup ...\npsql -c 'SELECT * FROM pg_stat_replication'\n"
 
     def write(init=GOOD_INIT, compose=GOOD_COMPOSE, secrets=GOOD_SECRETS, doc=GOOD_DOC, ci=GOOD_CI):
@@ -2125,13 +2132,13 @@ def test_replication_scaffolding_check_discriminates(tmp_path):
         "must FAIL when the prod compose does not mount the replicator secret"
 
     # 6. doc does not document the bootstrap/promotion -> FAIL.
-    write(doc="# failover\nStandby is operator-supplied and operator-gated.\nSomehow promote it.\n")
+    write(doc="# failover\nStandby is operator-supplied and placement.\nSomehow promote it.\n")
     assert checks.check_replication_scaffolding(tmp_path)[0].level == "FAIL", \
-        "must FAIL when FAILOVER.md omits pg_basebackup/pg_promote"
+        "must FAIL when FAILOVER.md omits pg_basebackup/lease"
 
     # 7. doc overclaims (not honest about operator-supplied standby) -> FAIL.
     write(doc="# failover\nA running standby ships out of the box.\n"
-              "Bootstrap with pg_basebackup -R; promote with pg_promote().\n")
+              "Bootstrap with pg_basebackup -R; promote with lease().\n")
     assert checks.check_replication_scaffolding(tmp_path)[0].level == "FAIL", \
         "must FAIL when FAILOVER.md does not say the standby host is operator-supplied"
 
@@ -3302,6 +3309,63 @@ def test_chaos_program_check_discriminates(tmp_path):
     # The weekly row spending a full CI run.
     write({".github/workflows/ci.yml": CI.replace("    paths-ignore:\n      - docs/operator/CHAOS-DRILLS.md\n", "")})
     assert checks.check_chaos_program(tmp_path)[0].level == "FAIL", "must FAIL when CI does not ignore the ledger path"
+
+
+def test_ha_automation_check_discriminates(tmp_path):
+    OVERLAY = ("services:\n  postgres:\n    command: [\"/usr/local/bin/polaris-patroni-entrypoint.sh\"]\n  postgres2:\n"
+               "  etcd1:\n  etcd2:\n  etcd3:\n  pg-router:\n    image: haproxy:3.1-alpine@sha256:" + "a" * 64 + "\n"
+               "  pgbouncer:\n    environment:\n      POLARIS_DB_HOST: pg-router\nnetworks:\n  polaris-dcs:\n    internal: true\n")
+    ENTRY = ("failsafe_mode: false\nuse_pg_rewind: true\nttl: 20\n"
+             "post_init: /usr/local/bin/polaris-patroni-post-init.sh\nexec patroni \"$CONF\"\n")
+    DRILL = ("docker network disconnect\nnot_primary() { :; }\nreplica_streaming() { :; }\npatronictl switchover\n"
+             "crash polaris-etcd1\nCEIL_FAILOVER=60\nCEIL_DEMOTE=45\nCEIL_SWITCHOVER=30\nCREATE TABLE ha_marker\n")
+    CI = ("run: docker compose -f docker-compose.ha.yml up -d\nrun: bash scripts/polaris-failover-drill.sh\n"
+          "for img in polaris-postgres:cve polaris-etcd:cve; do\n")
+    good = {
+        "polaris_web/docker-compose.ha.yml": OVERLAY,
+        "polaris_web/patroni-entrypoint.sh": ENTRY,
+        "polaris_web/patroni-post-init.sh": "export POLARIS_INIT_MANAGED_BY=patroni\nexec bash /docker-entrypoint-initdb.d/00-init.sh\n",
+        "polaris_web/docker-init.sh": "MANAGED=\"${POLARIS_INIT_MANAGED_BY:-}\"\n",
+        "polaris_web/Dockerfile.postgres": "COPY polaris_web/requirements-patroni.txt /tmp/r.txt\nRUN pip3 install -r /tmp/r.txt && patroni --version\n",
+        "polaris_web/requirements-patroni.txt": "patroni[etcd3]==4.1.5\n",
+        "polaris_web/Dockerfile.etcd": "FROM alpine:3.24@sha256:" + "b" * 64 + "\nRUN apk add etcd\nUSER etcd\n",
+        "polaris_web/haproxy-pg.cfg": "resolvers docker\noption httpchk GET /primary\noption httpchk GET /replica\ndefault-server on-marked-down shutdown-sessions\n",
+        "scripts/polaris-failover-drill.sh": DRILL,
+        "scripts/polaris-image-build.sh": "build_one polaris_web/Dockerfile.etcd polaris-etcd:x polaris_web\n",
+        ".github/workflows/ci.yml": CI,
+        "docs/operator/FAILOVER.md": "## split-brain\nfailsafe_mode is off.\n`patronictl switchover`\nscripts/polaris-failover-drill.sh\n",
+    }
+
+    def write(overrides=None):
+        files = dict(good); files.update(overrides or {})
+        for rel, body in files.items():
+            f = tmp_path / rel
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text(body)
+
+    write()
+    assert checks.check_ha_automation(tmp_path)[0].level == "OK", "must PASS on the good fixture"
+    # A leader allowed to keep the primary role without its lease.
+    write({"polaris_web/patroni-entrypoint.sh": ENTRY.replace("failsafe_mode: false", "failsafe_mode: true")})
+    assert checks.check_ha_automation(tmp_path)[0].level == "FAIL", "must FAIL when failsafe_mode lets a leader keep writes without the lease"
+    # The pooler still dialling one member by name: a failover moves nothing.
+    write({"polaris_web/docker-compose.ha.yml": OVERLAY.replace("POLARIS_DB_HOST: pg-router", "POLARIS_DB_HOST: postgres")})
+    assert checks.check_ha_automation(tmp_path)[0].level == "FAIL", "must FAIL when pgbouncer does not dial the router"
+    # An unpinned HAProxy image.
+    write({"polaris_web/docker-compose.ha.yml": OVERLAY.replace("@sha256:" + "a" * 64, "")})
+    assert checks.check_ha_automation(tmp_path)[0].level == "FAIL", "must FAIL when the haproxy image is not digest-pinned"
+    # A drill that never cuts the leader from the lease store.
+    write({"scripts/polaris-failover-drill.sh": DRILL.replace("docker network disconnect\n", "")})
+    assert checks.check_ha_automation(tmp_path)[0].level == "FAIL", "must FAIL when the split-brain guard is not exercised"
+    # A bootstrap that loads a different schema path than the single node.
+    write({"polaris_web/patroni-post-init.sh": "psql -f /some/other/schema.sql\n"})
+    assert checks.check_ha_automation(tmp_path)[0].level == "FAIL", "must FAIL when post_init does not reuse docker-init.sh"
+    # CI that never runs the drill.
+    write({".github/workflows/ci.yml": CI.replace("run: bash scripts/polaris-failover-drill.sh\n", "")})
+    assert checks.check_ha_automation(tmp_path)[0].level == "FAIL", "must FAIL when CI does not run the failover drill"
+    # The analysis missing from the runbook.
+    write({"docs/operator/FAILOVER.md": "`patronictl switchover`\nscripts/polaris-failover-drill.sh\n"})
+    assert checks.check_ha_automation(tmp_path)[0].level == "FAIL", "must FAIL when FAILOVER.md has no split-brain analysis"
 
 
 def test_helm_reference_profile_check_discriminates(tmp_path):

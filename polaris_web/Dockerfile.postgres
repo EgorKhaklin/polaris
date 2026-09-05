@@ -46,6 +46,24 @@ RUN apk upgrade --no-cache \
     && chown -R postgres:postgres /var/lib/pgbackrest /etc/pgbackrest /var/log/pgbackrest \
     && rm -rf /var/cache/apk/*
 
+# v9.243 (roadmap P2.7) — the HA supervisor lives in this image, so the HA
+# profile (docker-compose.ha.yml) runs the SAME database image with a different
+# command: polaris-patroni-entrypoint.sh renders Patroni's configuration from
+# the compose environment and the file-mounted secrets and execs Patroni, which
+# then owns initdb, replication, failover and pg_rewind. Python comes from the
+# distro; Patroni and its client library are pinned in requirements-patroni.txt
+# (Dependabot's pip ecosystem bumps them); pip leaves the image after the
+# install. A container started with `postgres` (the default command, the
+# single-node stack) never touches this layer.
+COPY polaris_web/requirements-patroni.txt /tmp/requirements-patroni.txt
+RUN apk add --no-cache python3 \
+    && apk add --no-cache --virtual .pip py3-pip \
+    && pip3 install --no-cache-dir --break-system-packages -r /tmp/requirements-patroni.txt \
+    && apk del .pip \
+    && rm -f /tmp/requirements-patroni.txt \
+    && patroni --version
+COPY --chmod=0755 polaris_web/patroni-entrypoint.sh /usr/local/bin/polaris-patroni-entrypoint.sh
+COPY --chmod=0755 polaris_web/patroni-post-init.sh  /usr/local/bin/polaris-patroni-post-init.sh
 # v9.173 (P0.9) — the repo-fragment renderer + the entrypoint wrapper that runs
 # it on every start. conf.d is postgres-owned above so the renderer can write
 # there whether the container starts as root (stock) or as postgres (restore).

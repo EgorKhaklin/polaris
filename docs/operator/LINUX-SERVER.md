@@ -95,6 +95,12 @@ key pair in `polaris_web/secrets/pgbackrest_repo_creds.conf`, set
 `polaris-deploy.sh prod` rolls the two app colours behind Caddy without dropping
 requests ([`OPERATIONS.md`](OPERATIONS.md), "Zero-downtime deploys").
 
+**Automated database failover**: add `-f docker-compose.ha.yml` as well and the
+database runs as two Patroni members with a leader lease in etcd behind
+HAProxy; a lost leader is replaced within the lease and a returning one
+rejoins as a replica ([`FAILOVER.md`](FAILOVER.md)). On one host this proves
+the mechanism; the members belong on separate hosts, which is your placement.
+
 **Sealed secrets**: set `POLARIS_SECRETS_BACKEND=age` (or `awskms`) plus the
 identity/recipients (or key id) lines in `polaris.env`; `polaris.service`
 unseals into a tmpfs at `/run/polaris/secrets` before every start and the

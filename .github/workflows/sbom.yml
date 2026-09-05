@@ -16,13 +16,13 @@
 # OIDC identity through Sigstore (Fulcio cert + Rekor transparency log). No
 # long-lived key exists to leak or rotate; the signer identity is the workflow
 # itself. Scope note: this attests the RELEASE ARTIFACTS (the SBOMs). Signing
-# the four container images at a registry digest is deferred until the images
+# the five container images at a registry digest is deferred until the images
 # are actually published to a registry, which is a separate decision paired
 # with the P1.5 Kubernetes/registry work; there is nothing at a registry ref
 # to sign today.
 #
 # Five artifacts: the Python runtime surface (requirements.txt) and the four
-# self-built images (app, caddy, pgbouncer, postgres). Image SBOMs require the
+# self-built images (app, caddy, pgbouncer, postgres, etcd). Image SBOMs require the
 # built image, so this rebuilds them at the release tag; that is release-cadence
 # work, not per-push, so the cost is acceptable.
 # ============================================================================
@@ -78,13 +78,13 @@ jobs:
             --output /out/sbom-python.spdx.json /src/requirements.txt
           test -s sbom/sbom-python.spdx.json || { echo "::error::python SBOM empty"; exit 1; }
 
-      - name: Build the four self-built images
+      - name: Build the five self-built images
         run: |
           bash scripts/polaris-image-build.sh --stack sbom
 
       - name: Image SBOMs (SPDX)
         run: |
-          for name in app caddy pgbouncer postgres; do
+          for name in app caddy pgbouncer postgres etcd; do
             docker run --rm \
               -v /var/run/docker.sock:/var/run/docker.sock \
               -v "$PWD/sbom:/out" \

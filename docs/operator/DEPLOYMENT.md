@@ -127,6 +127,26 @@ the `rolling-deploy` job in [`ci.yml`](../../.github/workflows/ci.yml) and
 [`scripts/polaris-rolling-drill.sh`](../../scripts/polaris-rolling-drill.sh)
 has the CI proof and the local drill.
 
+### Automated database failover (HA profile)
+
+```bash
+export POLARIS_COMPOSE_EXTRA="-f docker-compose.bluegreen.yml -f docker-compose.ha.yml"
+./scripts/polaris-deploy.sh prod
+```
+
+[`polaris_web/docker-compose.ha.yml`](../../polaris_web/docker-compose.ha.yml)
+runs the same database image under Patroni: two members (`postgres` and
+`postgres2`), a leader lease in a three-member etcd on an internal network,
+and HAProxy (`pg-router`) forwarding 5432 to whichever member answers
+Patroni's `/primary`. pgbouncer dials `pg-router`, so the application does
+not know there are two databases. Patroni bootstraps one member, clones the
+other with `pg_basebackup`, promotes the replica when the leader's lease
+lapses, and rejoins a returning old leader with `pg_rewind`; a leader that
+cannot renew its lease demotes itself. How each failure plays out, measured,
+and the split-brain analysis are in [FAILOVER.md](FAILOVER.md). On one host
+the profile proves the mechanism; the hosts for the members are the
+operator's placement, and the same file applies with the real addresses.
+
 ### Manual compose invocation
 
 ```bash

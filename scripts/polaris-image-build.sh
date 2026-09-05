@@ -15,7 +15,7 @@
 # Usage:
 #   polaris-image-build.sh <dockerfile> <tag> [context]   one image
 #   polaris-image-build.sh --stack <tag-suffix>           app + caddy +
-#                                                         pgbouncer + postgres,
+#                                                         pgbouncer + postgres + etcd,
 #                                                         each tagged
 #                                                         polaris-<name>:<suffix>
 #
@@ -79,6 +79,7 @@ case "${1:-}" in
         build_one polaris_web/Dockerfile.caddy     "polaris-caddy:${suffix}"     polaris_web
         build_one polaris_web/Dockerfile.pgbouncer "polaris-pgbouncer:${suffix}" polaris_web
         build_one polaris_web/Dockerfile.postgres  "polaris-postgres:${suffix}"  .
+        build_one polaris_web/Dockerfile.etcd      "polaris-etcd:${suffix}"      polaris_web
         ;;
     ""|-h|--help)
         sed -n '3,30p' "$0" | sed 's/^# \{0,1\}//'

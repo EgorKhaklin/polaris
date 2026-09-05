@@ -24,7 +24,7 @@ recorded as made for a named deployment.
 |---|---|---|
 | **Legal basis, DPIA, regulator approval** | Nothing; this is not an engineering task. | A named controller, the jurisdiction, a counsel-drafted DPIA, regulatory sign-off. |
 | **Signing-key custody** | `polaris_web/custody.py` with `file`, `pkcs11` (proven in CI against a Kryoptic token) and `kms` drivers; [KEY-CEREMONY.md](operator/KEY-CEREMONY.md). | Which custody driver, the HSM or KMS itself, who holds the key, and the rotation authority. |
-| **Postgres HA topology** | Streaming replication readiness (v9.126), [FAILOVER.md](operator/FAILOVER.md) with the standby bootstrap and promotion runbook, a replication round trip in CI. The Helm profile runs one postgres replica; HA automation is roadmap P2. | The standby host and the promotion policy. |
+| **Postgres HA topology** | The HA profile (v9.243): the database under Patroni with a leader lease in etcd and HAProxy routing, automated failover drilled on every push under a live write stream, the split-brain analysis in [FAILOVER.md](operator/FAILOVER.md). The Helm profile still runs one postgres replica (roadmap P2.13). | The hosts the two members and the three etcd members run on, and whether to trade commit latency for zero data loss (synchronous replication). |
 | **Encryption at rest** | [ENCRYPTION-AT-REST.md](operator/ENCRYPTION-AT-REST.md) names the plaintext surfaces; backups and every transit hop are encrypted. | The host volume encryption (LUKS, TDE or fscrypt) and its key custodian. |
 | **Offsite backup target** | pgBackRest to an S3-compatible bucket by environment variable (v9.173); the monthly DR drill (v9.192) measures RPO and RTO against the 300 s and 4 h targets in [DR-DRILLS.md](operator/DR-DRILLS.md). | The bucket, its retention, and the schedule. |
 | **Alerting backend and on-call** | Alert rules, Alertmanager routing with the duress page at no delay, a pager webhook read from a secret file, a CI drill that proves a duress event reaches the webhook (v9.175), and a weekly chaos drill that stops both app colours until the outage page reaches it (v9.242, [CHAOS-DRILLS.md](operator/CHAOS-DRILLS.md)). | The pager product and its URL, and the named rotation, including who receives the duress page. |
@@ -32,18 +32,21 @@ recorded as made for a named deployment.
 | **Retention schedule** | The engine: `RetentionPolicy` holds the decision per table class and jurisdiction with a 365-day CHECK floor, append-only with one-way supersession, and `uc_archive_purge` refuses a cutoff inside the window (v9.234, [retention.md](design/retention.md)). Ships at five years for every class. | The days each class is kept in this jurisdiction, and the counsel who says the number satisfies the statute. Polaris records the decision and its justification; it does not know the law. |
 | **Independent penetration test and threat-model sign-off** | The readiness pack in [RED-TEAM-SCOPE.md](RED-TEAM-SCOPE.md); roadmap row P1.12. | The firm, the funding, and an accountable human signature. |
 
-One engineering limit is carried openly rather than closed, and it is now
-bounded: recreating the edge or restarting the database on a single host is
-not a zero-downtime operation, but `scripts/polaris-window-drill.sh` measures
-both under traffic on every push against hard ceilings (30 s and 60 s), and at
-v9.240 they measure as a 0.3 s gap and as latency the pooler absorbs with no
-failed request. A database crash, as opposed to a restart, measures as a
-0.6 s window under the weekly chaos drill (v9.242), after the drill's first
-run found the pooler's defaults stretching it to 16 s. An edge configuration
-change is no longer a window at all: it is a live reload. Closing the limit itself means a hot standby with automated
-failover, which is roadmap P2.7. The other limit the ledger carried, a Caddy
-edge that ran as root with `NET_BIND_SERVICE`, closed at v9.239: the edge runs
-as uid 1000 with no capability on every substrate, and
+One engineering limit is carried openly, and since v9.243 only its edge half
+remains: recreating the edge on a single host is a 0.3 s window, measured
+under traffic on every push by `scripts/polaris-window-drill.sh` against a
+30 s ceiling (v9.240), and an edge configuration change is a live reload
+with no window at all. The database half closed with the HA profile
+(v9.243, [FAILOVER.md](operator/FAILOVER.md)): under Patroni a lost leader
+is replaced within its 20 s lease with no insert failed (19.6 s measured), a
+planned switchover is a 4.4 s outage, and a leader that loses its lease
+store stands down in 6 s; the hosts the members run on are the operator's
+placement. A single-host database restart without the profile remains
+latency the pooler absorbs (v9.240), and a database crash a 0.6 s window
+(v9.242). Closing the edge half means a second edge with an address that
+moves, which is placement and DNS, not code. The other limit the ledger
+carried, a Caddy edge that ran as root with `NET_BIND_SERVICE`, closed at
+v9.239: the edge runs as uid 1000 with no capability on every substrate, and
 `check_container_hardening` fails the build if a capability or a root user
 comes back.
 
@@ -148,6 +151,7 @@ CHANGELOG entry for the version carries the detail.
 | Edge configuration changes are live reloads; edge and database recreation windows are measured against ceilings on every push | v9.240 | `check_zero_downtime_deploy` |
 | The SLIs and the error budget are recorded series, unit-tested, and on the overview dashboard | v9.241 | `check_alert_rules` |
 | The fail-closed harness runs on every push; a weekly drill kills one colour, stops both until the outage pages through real Prometheus and Alertmanager, kills redis and postgres, partitions pgbouncer, and commits every recovery time to a ledger | v9.242 | `check_chaos_program` |
+| The HA profile runs the database under Patroni with a leader lease in etcd and HAProxy routing on the role endpoints; the failover drill loses the leader, cuts it off from the lease store, switches over and crashes an etcd member under a live write stream against ceilings on every push; the split-brain analysis is written | v9.243 | `check_ha_automation` |
 
 ---
 

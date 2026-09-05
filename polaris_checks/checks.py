@@ -1408,14 +1408,16 @@ def check_replication_scaffolding(root: pathlib.Path) -> list[Finding]:
         return _fail("replication",
                      "the prod compose must mount the polaris_replicator_password secret + "
                      "POLARIS_REPLICATOR_PASSWORD_FILE")
-    # The runbook documents the bootstrap + promotion and stays honest.
-    if "pg_basebackup" not in doc or "pg_promote" not in doc:
+    # The runbook documents the clone and the promotion and stays honest about
+    # placement. v9.243: promotion is the lease changing hands under Patroni
+    # (FAILOVER.md), no longer a pg_promote the operator issues.
+    if "pg_basebackup" not in doc or "lease" not in doc:
         return _fail("replication",
-                     "FAILOVER.md must document the pg_basebackup standby bootstrap and pg_promote")
-    if "operator-gated" not in doc.lower() or "operator-supplied" not in doc.lower():
+                     "FAILOVER.md must document the pg_basebackup clone and the lease-based promotion")
+    if "operator-supplied" not in doc.lower() or "placement" not in doc.lower():
         return _fail("replication",
-                     "FAILOVER.md must state the standby host is operator-supplied (no overclaiming a "
-                     "running standby)")
+                     "FAILOVER.md must state that the hosts (placement) are operator-supplied (no overclaiming "
+                     "a multi-host deployment)")
     # A CI round-trip proves the config produces a working hot standby.
     if "pg_basebackup" not in ci or "pg_stat_replication" not in ci:
         return _fail("replication",
@@ -1423,8 +1425,8 @@ def check_replication_scaffolding(root: pathlib.Path) -> list[Finding]:
                      "pg_stat_replication assertion)")
     return _ok("replication",
                "replication readiness ships: primary is wal_level=replica with a least-privilege "
-               "REPLICATION role + pg_hba; the bootstrap/promotion are documented (FAILOVER.md) and a "
-               "CI round-trip proves a working hot standby; the standby host stays operator-supplied")
+               "REPLICATION role + pg_hba; the clone and the lease-based promotion are documented "
+               "(FAILOVER.md) and a CI round-trip proves a working hot standby; placement stays operator-supplied")
 
 
 # ---------------------------------------------------------------------------
@@ -1548,12 +1550,14 @@ def check_pgbouncer_self_built(root: pathlib.Path) -> list[Finding]:
     # for 15 s; the chaos drill measured a half-second Postgres crash as a
     # 16.2 s outage for the application. The generated ini must set both to a
     # second or two, from the entrypoint's own defaults.
-    for key, var in (("server_login_retry", "SERVER_LOGIN_RETRY"), ("dns_nxdomain_ttl", "DNS_NXDOMAIN_TTL")):
+    for key, var, cap in (("server_login_retry", "SERVER_LOGIN_RETRY", 2), ("dns_nxdomain_ttl", "DNS_NXDOMAIN_TTL", 2),
+                          ("server_connect_timeout", "SERVER_CONNECT_TIMEOUT", 5)):
         m = re.search(r'(?m)^%s="\$\{PGBOUNCER_%s:-(\d+)\}"' % (var, var), entry)
-        if not m or int(m.group(1)) > 2:
+        if not m or int(m.group(1)) > cap:
             return _fail("pgbouncer_image",
-                         f"pgbouncer-entrypoint.sh must default PGBOUNCER_{var} to at most 2 seconds: on PgBouncer's "
-                         f"15 s default a half-second database crash is a 16 s outage for the application")
+                         f"pgbouncer-entrypoint.sh must default PGBOUNCER_{var} to at most {cap} seconds: on PgBouncer's "
+                         f"15 s defaults a half-second database crash is a 16 s outage for the application, and a "
+                         f"connect started just before a failover stalls every client for 15 s")
         if not re.search(r"(?m)^%s = \$%s$" % (key, var), entry):
             return _fail("pgbouncer_image", f"pgbouncer-entrypoint.sh must write `{key} = ${var}` into the generated ini")
     if (root / "polaris_web" / "pgbouncer.ini").exists():
@@ -1563,7 +1567,7 @@ def check_pgbouncer_self_built(root: pathlib.Path) -> list[Finding]:
     return _ok("pgbouncer_image",
                "pgbouncer is self-built from Dockerfile.pgbouncer (no third-party catalog), reads "
                "the file-mounted DB secret (scram on both hops), retries a failed backend connect within "
-               "two seconds, and is round-tripped in CI")
+               "two seconds and abandons a hung one within five, and is round-tripped in CI")
 
 
 # ---------------------------------------------------------------------------
@@ -3181,7 +3185,7 @@ def check_rotate_secret_preserves_mode(root: pathlib.Path) -> list[Finding]:
 
 
 # P0.5 — every release ships an SPDX SBOM for each artifact. The workflow must
-# exist, trigger on release, cover the Python surface plus all four self-built
+# exist, trigger on release, cover the Python surface plus all five self-built
 # images, and attach the documents to the release. A release whose contents
 # cannot be enumerated from a bill of materials is a supply-chain blind spot.
 def check_sbom_workflow(root: pathlib.Path) -> list[Finding]:
@@ -3192,12 +3196,12 @@ def check_sbom_workflow(root: pathlib.Path) -> list[Finding]:
         return _fail("sbom", "sbom.yml is not triggered on release")
     if "spdx-json" not in wf:
         return _fail("sbom", "sbom.yml does not generate SPDX-format SBOMs")
-    # All four images plus the python surface must be covered. The images are
+    # All five images plus the python surface must be covered. The images are
     # built through scripts/polaris-image-build.sh (which builds the whole set)
-    # and scanned by a loop over the four names, so neither step spells the
+    # and scanned by a loop over the five names, so neither step spells the
     # tags out any more.
     builds_all = "polaris-image-build.sh --stack sbom" in wf
-    for img in ("app", "caddy", "pgbouncer", "postgres"):
+    for img in ("app", "caddy", "pgbouncer", "postgres", "etcd"):
         built = builds_all or f"polaris-{img}:sbom" in wf
         scanned = f"polaris-{img}:sbom" in wf or re.search(
             r"for name in[^\n]*\b" + img + r"\b", wf) is not None
@@ -3208,7 +3212,7 @@ def check_sbom_workflow(root: pathlib.Path) -> list[Finding]:
     if "gh release upload" not in wf:
         return _fail("sbom", "sbom.yml does not attach the SBOMs to the release")
     return _ok("sbom",
-               "every release generates SPDX SBOMs for the Python surface + all four "
+               "every release generates SPDX SBOMs for the Python surface + all five "
                "self-built images and attaches them to the release")
 
 
@@ -4387,6 +4391,83 @@ def check_chaos_program(root: pathlib.Path) -> list[Finding]:
                "ceiling, and commits the row to the ledger")
 
 
+def check_ha_automation(root: pathlib.Path) -> list[Finding]:
+    """Roadmap P2.7 (v9.243): supervisor-managed automated failover for the
+    database. The HA profile runs the same database image under Patroni with
+    a leader lease in etcd and HAProxy routing on Patroni's role endpoints;
+    the failover drill crashes the leader, cuts it off from the lease store,
+    switches over and crashes an etcd member, each against a ceiling; and
+    FAILOVER.md carries the split-brain analysis. A leader that could keep
+    the primary role without its lease (failsafe_mode) is the property the
+    analysis relies on NOT having."""
+    overlay = _read(root, "polaris_web/docker-compose.ha.yml")
+    entry = _read(root, "polaris_web/patroni-entrypoint.sh")
+    post = _read(root, "polaris_web/patroni-post-init.sh")
+    init = _read(root, "polaris_web/docker-init.sh")
+    df = _read(root, "polaris_web/Dockerfile.postgres")
+    reqs = _read(root, "polaris_web/requirements-patroni.txt")
+    etcd = _read(root, "polaris_web/Dockerfile.etcd")
+    hap = _read(root, "polaris_web/haproxy-pg.cfg")
+    drill = _read(root, "scripts/polaris-failover-drill.sh")
+    ci = _read(root, ".github/workflows/ci.yml")
+    doc = _read(root, "docs/operator/FAILOVER.md")
+    build = _read(root, "scripts/polaris-image-build.sh")
+    if not all((overlay, entry, post, init, df, reqs, etcd, hap, drill, ci, doc, build)):
+        return _fail("ha_automation", "an HA-profile file is missing (docker-compose.ha.yml, patroni-entrypoint.sh, "
+                     "patroni-post-init.sh, docker-init.sh, Dockerfile.postgres, requirements-patroni.txt, "
+                     "Dockerfile.etcd, haproxy-pg.cfg, polaris-failover-drill.sh, ci.yml, FAILOVER.md, "
+                     "polaris-image-build.sh)")
+    for needle in ("polaris-patroni-entrypoint.sh", "postgres2:", "etcd1:", "etcd2:", "etcd3:", "pg-router:",
+                   "POLARIS_DB_HOST: pg-router", "internal: true"):
+        if needle not in overlay:
+            return _fail("ha_automation", f"docker-compose.ha.yml lacks {needle!r}: two Patroni members, a three-member "
+                         "etcd on an internal network, HAProxy as the pooler's target")
+    if not re.search(r"image:\s*haproxy:[^\s@]+@sha256:[0-9a-f]{64}", overlay):
+        return _fail("ha_automation", "docker-compose.ha.yml must pin the haproxy image by digest")
+    if not re.search(r"(?m)^\s*failsafe_mode:\s*false", entry):
+        return _fail("ha_automation", "patroni-entrypoint.sh must set failsafe_mode: false: a leader that cannot renew "
+                     "its lease must demote itself, or the split-brain guard FAILOVER.md describes does not exist")
+    for needle in ("use_pg_rewind: true", "post_init: /usr/local/bin/polaris-patroni-post-init.sh", "ttl:", "exec patroni"):
+        if needle not in entry:
+            return _fail("ha_automation", f"patroni-entrypoint.sh lacks {needle!r}")
+    if "POLARIS_INIT_MANAGED_BY=patroni" not in post or "00-init.sh" not in post:
+        return _fail("ha_automation", "patroni-post-init.sh must run the same docker-init.sh in its Patroni-managed mode, "
+                     "so both profiles load the same schema")
+    if "POLARIS_INIT_MANAGED_BY" not in init:
+        return _fail("ha_automation", "docker-init.sh must honour POLARIS_INIT_MANAGED_BY (skip ALTER SYSTEM under Patroni)")
+    if "requirements-patroni.txt" not in df or "patroni --version" not in df:
+        return _fail("ha_automation", "Dockerfile.postgres must install the pinned requirements-patroni.txt and verify patroni")
+    if not re.search(r"(?m)^patroni\[etcd3\]==\d", reqs):
+        return _fail("ha_automation", "requirements-patroni.txt must pin patroni[etcd3]==<version>")
+    if not re.search(r"(?m)^FROM \S+@sha256:[0-9a-f]{64}", etcd) or not re.search(r"(?m)^USER etcd", etcd):
+        return _fail("ha_automation", "Dockerfile.etcd must build from a digest-pinned base and run as the etcd user")
+    if "Dockerfile.etcd" not in build:
+        return _fail("ha_automation", "polaris-image-build.sh must build Dockerfile.etcd with the stack")
+    for needle in ("GET /primary", "GET /replica", "on-marked-down shutdown-sessions", "resolvers"):
+        if needle not in hap:
+            return _fail("ha_automation", f"haproxy-pg.cfg lacks {needle!r}: route on Patroni's role endpoints, cut sessions "
+                         "to a demoted node, follow Docker DNS")
+    for needle in ("docker network disconnect", "not_primary", "switchover", "crash polaris-etcd1", "replica_streaming",
+                   "CEIL_FAILOVER", "CEIL_DEMOTE", "CEIL_SWITCHOVER", "ha_marker"):
+        if needle not in drill:
+            return _fail("ha_automation", f"polaris-failover-drill.sh lacks {needle!r}: a leader crash, a leader cut from "
+                         "the lease store that must demote, a switchover, an etcd crash, each against a ceiling, "
+                         "under a live write stream")
+    if "docker-compose.ha.yml" not in ci or "polaris-failover-drill.sh" not in ci:
+        return _fail("ha_automation", "ci.yml must boot the HA profile and run scripts/polaris-failover-drill.sh")
+    if "polaris-etcd:cve" not in ci:
+        return _fail("ha_automation", "the image CVE scan must include the self-built etcd image")
+    for needle in ("split-brain", "failsafe_mode", "patronictl switchover", "polaris-failover-drill.sh"):
+        if needle not in doc:
+            return _fail("ha_automation", f"FAILOVER.md lacks {needle!r}: the split-brain analysis, the failsafe decision, "
+                         "the switchover procedure and the drill")
+    return _ok("ha_automation",
+               "P2.7: the HA profile runs the database under Patroni with a leader lease in a three-member etcd and "
+               "HAProxy routing on the role endpoints; a leader without its lease demotes itself (failsafe off); the "
+               "drill crashes the leader, partitions it from the lease store, switches over and crashes an etcd member "
+               "under a live write stream against ceilings on every push; FAILOVER.md carries the split-brain analysis")
+
+
 # ---------------------------------------------------------------------------
 # Image builds — every container image CI builds goes through
 # scripts/polaris-image-build.sh, which retries a build that failed on someone
@@ -4893,6 +4974,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_performance_baseline,
     check_dr_drill_scheduled,
     check_chaos_program,
+    check_ha_automation,
     check_stated_counts,
     check_c1c10_objects_resolve,
     check_helm_chart_version_current,
