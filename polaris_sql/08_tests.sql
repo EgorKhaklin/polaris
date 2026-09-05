@@ -1427,6 +1427,167 @@ BEGIN
 END $$;
 
 -- ============================================================================
+-- Section S: the retention engine (roadmap P1.11)
+--
+-- The engine's whole job is to make the retention decision data, bounded and
+-- append-only, and to make the purge obey it. Each test here is one of those
+-- properties.
+-- ============================================================================
+
+-- S.1: with nothing configured the resolver still answers, at the floor.
+DO $$
+DECLARE v_days INTEGER;
+BEGIN
+    SELECT retention_days_for('VERIFICATION', 'US-NOTSET') INTO v_days;
+    PERFORM _record('S.1: retention_days_for falls back to the schema floor',
+        v_days >= 365, 'got ' || v_days);
+END $$;
+
+-- S.2: the floor is enforced in the schema, not only in the procedure.
+DO $$
+BEGIN
+    BEGIN
+        INSERT INTO RetentionPolicy
+            (table_class, jurisdiction, retention_days, justification, set_by_user_id)
+        VALUES ('VERIFICATION', 'US-TEST-S2', 30,
+                'attempting to keep verification events for one month only', 1);
+        PERFORM _record('S.2: retention below the 365-day floor is refused',
+            FALSE, 'a 30-day retention was accepted');
+    EXCEPTION WHEN check_violation THEN
+        PERFORM _record('S.2: retention below the 365-day floor is refused', TRUE, NULL);
+    END;
+END $$;
+
+-- S.3: a policy row cannot be edited, only superseded.
+DO $$
+DECLARE v_id BIGINT;
+BEGIN
+    INSERT INTO RetentionPolicy
+        (table_class, jurisdiction, retention_days, justification, set_by_user_id)
+    VALUES ('AUTH_AUDIT', 'US-TEST-S3', 900,
+            'a jurisdiction policy recorded for the immutability test', 1)
+    RETURNING policy_id INTO v_id;
+    BEGIN
+        UPDATE RetentionPolicy SET retention_days = 400 WHERE policy_id = v_id;
+        PERFORM _record('S.3: RetentionPolicy.retention_days is immutable',
+            FALSE, 'the number was edited in place');
+    EXCEPTION WHEN insufficient_privilege THEN
+        PERFORM _record('S.3: RetentionPolicy.retention_days is immutable', TRUE, NULL);
+    END;
+END $$;
+
+-- S.4: supersession is one way.
+DO $$
+DECLARE v_id BIGINT;
+BEGIN
+    SELECT policy_id INTO v_id FROM RetentionPolicy
+     WHERE jurisdiction = 'US-TEST-S3' AND superseded_at IS NULL LIMIT 1;
+    UPDATE RetentionPolicy SET superseded_at = now() WHERE policy_id = v_id;
+    BEGIN
+        UPDATE RetentionPolicy SET superseded_at = NULL WHERE policy_id = v_id;
+        PERFORM _record('S.4: a superseded policy cannot be un-superseded',
+            FALSE, 'superseded_at was cleared');
+    EXCEPTION WHEN insufficient_privilege THEN
+        PERFORM _record('S.4: a superseded policy cannot be un-superseded', TRUE, NULL);
+    END;
+END $$;
+
+-- S.5: one effective policy per class and jurisdiction.
+DO $$
+BEGIN
+    INSERT INTO RetentionPolicy
+        (table_class, jurisdiction, retention_days, justification, set_by_user_id)
+    VALUES ('ENROLLMENT', 'US-TEST-S5', 800,
+            'the first effective policy for this test jurisdiction', 1);
+    BEGIN
+        INSERT INTO RetentionPolicy
+            (table_class, jurisdiction, retention_days, justification, set_by_user_id)
+        VALUES ('ENROLLMENT', 'US-TEST-S5', 900,
+                'a second effective policy for the same class and jurisdiction', 1);
+        PERFORM _record('S.5: only one effective policy per class and jurisdiction',
+            FALSE, 'a second effective row was accepted');
+    EXCEPTION WHEN unique_violation THEN
+        PERFORM _record('S.5: only one effective policy per class and jurisdiction',
+            TRUE, NULL);
+    END;
+END $$;
+
+-- S.6: the purge refuses a cutoff inside the retention window.
+DO $$
+DECLARE v_cp BIGINT;
+BEGIN
+    BEGIN
+        CALL uc_archive_purge(
+            p_cutoff_timestamp := now() - INTERVAL '10 days',
+            p_archive_uri      := 'file:///tmp/retention-test.tar.gz',
+            p_archive_sha256   := repeat('b', 64),
+            p_actor_user_id    := 1,
+            checkpoint_id_out  := v_cp);
+        PERFORM _record('S.6: uc_archive_purge refuses a cutoff inside the window',
+            FALSE, 'a ten-day cutoff was accepted');
+    EXCEPTION WHEN check_violation THEN
+        PERFORM _record('S.6: uc_archive_purge refuses a cutoff inside the window',
+            TRUE, NULL);
+    END;
+END $$;
+
+-- S.7: the template applies four classes and supersedes what it replaces.
+DO $$
+DECLARE v_effective INTEGER; v_superseded INTEGER;
+BEGIN
+    CALL uc_apply_retention_template('MINIMIZED', 'US-TEST-S7', 1);
+    CALL uc_apply_retention_template('STANDARD-5Y', 'US-TEST-S7', 1);
+    SELECT count(*) INTO v_effective FROM RetentionPolicy
+     WHERE jurisdiction = 'US-TEST-S7' AND superseded_at IS NULL;
+    SELECT count(*) INTO v_superseded FROM RetentionPolicy
+     WHERE jurisdiction = 'US-TEST-S7' AND superseded_at IS NOT NULL;
+    PERFORM _record('S.7: applying a template supersedes the previous one',
+        v_effective = 4 AND v_superseded = 4,
+        'effective=' || v_effective || ' superseded=' || v_superseded);
+END $$;
+
+-- S.8: a non-admin cannot apply a template.
+DO $$
+DECLARE v_uid INTEGER;
+BEGIN
+    SELECT user_id INTO v_uid FROM AppUser WHERE role <> 'admin' LIMIT 1;
+    IF v_uid IS NULL THEN
+        PERFORM _record('S.8: a non-admin cannot apply a retention template',
+            TRUE, 'skipped: no non-admin AppUser in the sample data');
+    ELSE
+        BEGIN
+            CALL uc_apply_retention_template('MINIMIZED', 'US-TEST-S8', v_uid);
+            PERFORM _record('S.8: a non-admin cannot apply a retention template',
+                FALSE, 'a non-admin applied a template');
+        EXCEPTION WHEN insufficient_privilege THEN
+            PERFORM _record('S.8: a non-admin cannot apply a retention template',
+                TRUE, NULL);
+        END;
+    END IF;
+END $$;
+
+-- S.9: the section retires the policies it created, so a loaded database
+-- carries only the shipped defaults as effective. Retiring rather than
+-- deleting is the point: a retention decision cannot be erased, so the test
+-- rows stay visible as superseded history.
+DO $$
+DECLARE v_effective INTEGER;
+BEGIN
+    UPDATE RetentionPolicy
+       SET superseded_at = now()
+     WHERE jurisdiction LIKE 'US-TEST-%'
+       AND superseded_at IS NULL;
+
+    SELECT count(*) INTO v_effective
+      FROM RetentionPolicy
+     WHERE superseded_at IS NULL
+       AND jurisdiction IS NOT NULL;
+
+    PERFORM _record('S.9: test policies retire, leaving only shipped defaults effective',
+        v_effective = 0, v_effective || ' jurisdiction-scoped policies still effective');
+END $$;
+
+-- ============================================================================
 -- TEST SUITE SUMMARY
 -- ============================================================================
 

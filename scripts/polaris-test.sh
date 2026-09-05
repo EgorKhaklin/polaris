@@ -17,7 +17,8 @@
 # pid file behind.
 #
 # Usage:
-#     scripts/polaris-test.sh                       # full suite
+#     scripts/polaris-test.sh                       # the polaris_web suites CI runs
+#     scripts/polaris-test.sh app                   # test_app.py alone
 #     scripts/polaris-test.sh quick                 # skip the slow tests
 #     scripts/polaris-test.sh CursorPaginationTokensTests   # single class
 #     scripts/polaris-test.sh CursorPaginationTokensTests.test_cursor_walks_full_set_with_no_dupes_or_skips
@@ -75,6 +76,15 @@ case "$SELECTOR" in
         EXCLUDE_PATTERN="ConcurrencyTests|HypothesisProperties"
         ;;
     "")
+        # The same polaris_web modules CI runs under scripts/polaris-coverage.sh.
+        # Before v9.234 this was test_app.py alone, while the preflight told the
+        # operator it covered five suites: a broken test in test_check_constraints
+        # passed here and would have failed in CI.
+        PYTEST_ARGS=(-m unittest test_app test_check_constraints
+                     test_invariants_property test_redaction_property)
+        EXCLUDE_PATTERN=""
+        ;;
+    app)
         PYTEST_ARGS=(test_app.py)
         EXCLUDE_PATTERN=""
         ;;

@@ -774,3 +774,72 @@ COMMENT ON FUNCTION enforce_agency_quota IS
 --   16. enforce_agency_quota('revoke')         (BEFORE UPDATE OF status on IdentityToken — v9.190 / P1.8)
 --   17. enforce_agency_quota('verify')         (BEFORE INSERT on VerificationEvent — v9.190 / P1.8)
 -- ============================================================================
+
+-- ----------------------------------------------------------------------------
+-- enforce_retention_policy_immutability (roadmap P1.11)
+--
+-- RetentionPolicy is an audit of record: it holds what an operator decided
+-- about how long audit history is kept, and when. Editing that decision in
+-- place would erase the thing it exists to prove.
+--
+--   DELETE forbidden outright.
+--   UPDATE confined to superseded_at.
+--   superseded_at moves NULL -> timestamp once. It cannot return to NULL (that
+--   would resurrect a superseded policy silently) and it cannot move earlier
+--   (that would backdate when a decision stopped applying).
+--
+-- Changing a retention decision therefore appends a row, which is what
+-- uc_apply_retention_template does.
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION enforce_retention_policy_immutability()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        RAISE EXCEPTION
+            'RetentionPolicy is append-only: DELETE is refused. A retention '
+            'decision is an audit of record; supersede it instead.'
+            USING ERRCODE = 'insufficient_privilege';
+    END IF;
+
+    IF NEW.policy_id      IS DISTINCT FROM OLD.policy_id
+       OR NEW.table_class    IS DISTINCT FROM OLD.table_class
+       OR NEW.jurisdiction   IS DISTINCT FROM OLD.jurisdiction
+       OR NEW.retention_days IS DISTINCT FROM OLD.retention_days
+       OR NEW.justification  IS DISTINCT FROM OLD.justification
+       OR NEW.set_by_user_id IS DISTINCT FROM OLD.set_by_user_id
+       OR NEW.effective_from IS DISTINCT FROM OLD.effective_from THEN
+        RAISE EXCEPTION
+            'RetentionPolicy is append-only: only superseded_at may change. '
+            'Append a new policy row instead of editing this one.'
+            USING ERRCODE = 'insufficient_privilege';
+    END IF;
+
+    IF OLD.superseded_at IS NOT NULL THEN
+        IF NEW.superseded_at IS NULL THEN
+            RAISE EXCEPTION
+                'RetentionPolicy: superseded_at cannot be un-set; a superseded '
+                'policy stays superseded.'
+                USING ERRCODE = 'insufficient_privilege';
+        END IF;
+        IF NEW.superseded_at < OLD.superseded_at THEN
+            RAISE EXCEPTION
+                'RetentionPolicy: superseded_at cannot move earlier (% -> %); '
+                'backdating when a decision stopped applying is refused.',
+                OLD.superseded_at, NEW.superseded_at
+                USING ERRCODE = 'insufficient_privilege';
+        END IF;
+    END IF;
+
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_retention_policy_immutable ON RetentionPolicy;
+CREATE TRIGGER trg_retention_policy_immutable
+    BEFORE UPDATE OR DELETE ON RetentionPolicy
+    FOR EACH ROW EXECUTE FUNCTION enforce_retention_policy_immutability();
+
+COMMENT ON FUNCTION enforce_retention_policy_immutability IS
+    'RetentionPolicy is append-only with one-way supersession (P1.11): no '
+    'DELETE, no UPDATE except superseded_at, and superseded_at moves NULL to a '
+    'timestamp once, never back and never earlier.';

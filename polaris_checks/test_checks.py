@@ -4034,3 +4034,78 @@ def test_paper_pdf_is_current_check_fails_when_the_source_moves(tmp_path):
     (paper / "report.pdf").unlink()
     assert checks.check_paper_pdf_is_current(tmp_path)[0].level == "FAIL", \
         "must FAIL when the source ships without its rendered output"
+
+
+def test_retention_engine_check_fails_when_the_floor_or_the_guard_goes(tmp_path):
+    sql = tmp_path / "polaris_sql"
+    sql.mkdir(parents=True)
+    schema = """
+CREATE TABLE RetentionPolicy (
+    policy_id      BIGSERIAL PRIMARY KEY,
+    retention_days INTEGER NOT NULL,
+    CONSTRAINT retention_floor CHECK (retention_days >= 365)
+);
+"""
+    (sql / "01_schema.sql").write_text(schema)
+    (sql / "09_grants.sql").write_text("REVOKE UPDATE, DELETE ON RetentionPolicy FROM polaris_app;\n")
+    (sql / "06_triggers.sql").write_text(
+        "CREATE TRIGGER trg_retention_policy_immutable BEFORE UPDATE OR DELETE ON RetentionPolicy\n"
+        "  FOR EACH ROW EXECUTE FUNCTION enforce_retention_policy_immutability();\n")
+    (sql / "02_indexes.sql").write_text(
+        "CREATE UNIQUE INDEX uq_effective_retention_policy ON RetentionPolicy (table_class);\n")
+    good_proc = """
+CREATE OR REPLACE FUNCTION retention_days_for(p_c VARCHAR) RETURNS INTEGER
+LANGUAGE sql STABLE AS $$ SELECT 365; $$;
+CREATE OR REPLACE FUNCTION retention_cutoff(p_c VARCHAR) RETURNS TIMESTAMPTZ
+LANGUAGE sql STABLE AS $$ SELECT now(); $$;
+CREATE OR REPLACE PROCEDURE uc_archive_purge(p_cutoff TIMESTAMPTZ)
+LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN
+    IF p_cutoff > now() - make_interval(days => retention_days_for('VERIFICATION')) THEN
+        RAISE EXCEPTION 'cutoff is inside the retention window';
+    END IF;
+END;
+$$;
+"""
+    (sql / "05_procedures.sql").write_text(good_proc)
+    assert checks.check_retention_engine(tmp_path)[0].level == "OK", \
+        "must PASS when the floor, the boundary, the trigger and the guard are all present"
+
+    (sql / "01_schema.sql").write_text(
+        schema.replace("retention_days >= 365", "retention_days >= 7"))
+    assert checks.check_retention_engine(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the floor is lowered below a year"
+
+    (sql / "01_schema.sql").write_text(
+        schema.replace("    CONSTRAINT retention_floor CHECK (retention_days >= 365)\n", ""))
+    assert checks.check_retention_engine(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the floor is removed entirely"
+
+    (sql / "01_schema.sql").write_text(schema)
+    (sql / "05_procedures.sql").write_text(
+        good_proc.replace("retention_days_for('VERIFICATION')", "1825"))
+    assert checks.check_retention_engine(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the purge stops consulting the policy and hardcodes a window"
+
+    (sql / "05_procedures.sql").write_text(
+        good_proc.replace("RAISE EXCEPTION 'cutoff is inside the retention window';",
+                          "p_cutoff := now() - interval '1825 days';"))
+    assert checks.check_retention_engine(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the purge reads the policy but silently narrows instead of refusing"
+
+    (sql / "05_procedures.sql").write_text(good_proc)
+    (sql / "06_triggers.sql").write_text("-- no immutability trigger\n")
+    assert checks.check_retention_engine(tmp_path)[0].level == "FAIL", \
+        "must FAIL when a retention decision can be edited in place"
+
+    (sql / "06_triggers.sql").write_text(
+        "CREATE TRIGGER trg_retention_policy_immutable BEFORE UPDATE OR DELETE ON RetentionPolicy\n"
+        "  FOR EACH ROW EXECUTE FUNCTION enforce_retention_policy_immutability();\n")
+    (sql / "09_grants.sql").write_text("GRANT SELECT ON SomethingElse TO polaris_app;\n")
+    assert checks.check_retention_engine(tmp_path)[0].level == "FAIL", \
+        "must FAIL when RetentionPolicy is outside the append-only privilege boundary"
+
+    (sql / "09_grants.sql").write_text("REVOKE UPDATE, DELETE ON RetentionPolicy FROM polaris_app;\n")
+    (sql / "02_indexes.sql").write_text("-- no uniqueness on the effective policy\n")
+    assert checks.check_retention_engine(tmp_path)[0].level == "FAIL", \
+        "must FAIL when two effective policies could disagree for one table class"

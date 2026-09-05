@@ -5,8 +5,8 @@ holds and which invariant guards it. **Job:** every table in the schema
 and its migrations, grouped, with the constraint that makes each
 guarantee true.
 
-The Polaris schema is **29 tables** in `01_schema.sql` (v9.194), organized
-into six functional groups. A migrated deployment holds **33 tables**: those,
+The Polaris schema is **30 tables** in `01_schema.sql` (v9.234), organized
+into six functional groups. A migrated deployment holds **34 tables**: those,
 the `schema_version` migration registry that `00_migrations_table.sql`
 creates, and the three tables the migrations under `polaris_sql/migrations/`
 add to a running database (`OperatorWebauthnCredential`, `OperatorSession`,
@@ -569,6 +569,46 @@ deletion carve-out.
 **Privacy claim preserved** (`docs/operator/PRIVACY.md` §
 Append-only audit): any purge produces an append-only checkpoint
 row, so attempted tidying still leaves a permanent record.
+
+### `RetentionPolicy` (constraint C1: append-only)
+
+The retention decision, as data. One effective row per
+(`table_class`, `jurisdiction`); a NULL jurisdiction is the deployment
+default. Before v9.234 the retention window was whatever the operator
+typed at the purge, and nothing recorded who decided it or why.
+
+```
+policy_id        BIGSERIAL   PRIMARY KEY
+table_class      VARCHAR(24) NOT NULL   -- TOKEN_LIFECYCLE | VERIFICATION | ENROLLMENT | AUTH_AUDIT
+jurisdiction     VARCHAR(10)            -- NULL is the deployment default
+retention_days   INTEGER     NOT NULL
+justification    TEXT        NOT NULL
+set_by_user_id   INTEGER     NOT NULL   -- AppUser.user_id
+effective_from   TIMESTAMPTZ NOT NULL DEFAULT now()
+superseded_at    TIMESTAMPTZ            -- NULL while the decision is in force
+
+CHECK (retention_days >= 365)           -- retention_floor
+CHECK (length(justification) >= 20)     -- retention_justified
+CHECK (superseded_at IS NULL OR superseded_at >= effective_from)
+UNIQUE (table_class, COALESCE(jurisdiction, '')) WHERE superseded_at IS NULL
+```
+
+**The floor is a schema constraint, not a setting.** `retention_days >= 365`
+means no configuration can purge an audit row younger than a year. Shortening
+that is a schema change, and a vocation question, rather than a policy edit.
+
+**Append-only with one-way supersession.** `trg_retention_policy_immutable`
+refuses DELETE, permits only `superseded_at` to change, and refuses to un-set
+or backdate it. Changing a retention decision appends a row and marks the old
+one superseded, so what was decided when survives.
+
+**Read by the purge.** `retention_days_for(class, jurisdiction)` resolves the
+jurisdiction-scoped policy, then the deployment default, then the 365-day
+floor, so there is always an answer. `uc_archive_purge` refuses any cutoff
+inside the window of a class it would delete from, rather than narrowing the
+cutoff silently.
+
+---
 
 ---
 

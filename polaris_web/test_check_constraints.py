@@ -973,6 +973,8 @@ class TestC1PrivilegeBoundary(unittest.TestCase):
         "TokenLifecycleEvent", "VerificationEvent", "EnrollmentStatusEvent",
         "AnchorBatch", "TokenStateEpochLeaf", "DuressEvent", "AuthAuditLog",
         "AuditAccessLog",
+        # v9.234: a retention decision is an audit of record like any other.
+        "RetentionPolicy",
     )
 
     def _app_conn(self):
@@ -1031,7 +1033,8 @@ class TestC1PrivilegeBoundary(unittest.TestCase):
     def test_archive_purge_still_deletes_via_security_definer(self):
         """The legitimate purge path still works for polaris_app: uc_archive_purge
         is SECURITY DEFINER, so it deletes with the owner's rights despite the
-        REVOKE. The whole exercise rolls back."""
+        REVOKE. The cutoff is older than the shipped five-year retention, since
+        v9.234 the purge refuses anything younger. The whole exercise rolls back."""
         conn = self._app_conn()
         with conn.cursor() as cur:
             cur.execute("SELECT user_id FROM AppUser WHERE role = 'admin' LIMIT 1")
@@ -1041,15 +1044,15 @@ class TestC1PrivilegeBoundary(unittest.TestCase):
             admin_id = admin["user_id"]
             cur.execute(
                 "INSERT INTO TokenLifecycleEvent (token_id, event_type, event_timestamp, reason_code) "
-                "VALUES (1, 'ISSUED', now() - INTERVAL '400 days', 'PURGE_DEFINER_TEST')")
-            cutoff = "now() - INTERVAL '365 days'"
+                "VALUES (1, 'ISSUED', now() - INTERVAL '2200 days', 'PURGE_DEFINER_TEST')")
+            cutoff = "now() - INTERVAL '2000 days'"
             cur.execute(
                 f"SELECT count(*) AS n FROM TokenLifecycleEvent WHERE event_timestamp < {cutoff}")
             before = cur.fetchone()["n"]
             self.assertGreaterEqual(before, 1)
             cur.execute(
-                "CALL uc_archive_purge((now() - INTERVAL '365 days')::timestamptz, "
-                "%s, %s, %s, NULL)",
+                "CALL uc_archive_purge((now() - INTERVAL '2000 days')::timestamptz, "
+                "%s, %s, %s, NULL, NULL)",
                 ("s3://polaris-archive/definer-test.tar.zst", "a" * 64, admin_id))
             cur.execute(
                 f"SELECT count(*) AS n FROM TokenLifecycleEvent WHERE event_timestamp < {cutoff}")
@@ -1057,6 +1060,83 @@ class TestC1PrivilegeBoundary(unittest.TestCase):
             self.assertEqual(after, 0,
                              "uc_archive_purge (SECURITY DEFINER) must still purge old audit rows")
         conn.rollback()
+
+
+class TestRetentionEngine(_CheckBase):
+    """The retention decision is data, floored, and the purge obeys it (P1.11).
+
+    Before v9.234 the cutoff was whatever the operator typed: the database
+    accepted a purge at "older than one hour" as readily as one at five years,
+    and nothing recorded who decided the retention or why. These tests hold the
+    three properties that fixed it: the floor cannot be configured away, the
+    decision cannot be edited after the fact, and a purge inside the window is
+    refused rather than quietly narrowed.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self.cur = self.conn.cursor()
+        self.addCleanup(self.cur.close)
+
+    def test_retention_floor_refuses_a_short_policy(self):
+        with self.assertRaises(pg_errors.CheckViolation):
+            self.cur.execute(
+                "INSERT INTO RetentionPolicy (table_class, jurisdiction, retention_days, "
+                "justification, set_by_user_id) VALUES ('VERIFICATION', 'US-PY1', 30, "
+                "'a month is not long enough to be an audit of record', 1)")
+
+    def test_a_policy_must_say_why(self):
+        with self.assertRaises(pg_errors.CheckViolation):
+            self.cur.execute(
+                "INSERT INTO RetentionPolicy (table_class, jurisdiction, retention_days, "
+                "justification, set_by_user_id) VALUES ('VERIFICATION', 'US-PY2', 1825, "
+                "'because', 1)")
+
+    def test_resolver_answers_for_an_unconfigured_jurisdiction(self):
+        self.cur.execute("SELECT retention_days_for('VERIFICATION', 'US-NONE') AS d")
+        self.assertGreaterEqual(self.cur.fetchone()["d"], 365,
+                                "an unconfigured jurisdiction must still resolve, at or above the floor")
+
+    def test_a_recorded_decision_cannot_be_edited(self):
+        self.cur.execute(
+            "INSERT INTO RetentionPolicy (table_class, jurisdiction, retention_days, "
+            "justification, set_by_user_id) VALUES ('AUTH_AUDIT', 'US-PY4', 1825, "
+            "'a decision recorded so the test can try to rewrite it', 1) RETURNING policy_id")
+        pid = self.cur.fetchone()["policy_id"]
+        with self.assertRaises(pg_errors.InsufficientPrivilege):
+            self.cur.execute(
+                "UPDATE RetentionPolicy SET retention_days = 400 WHERE policy_id = %s", (pid,))
+
+    def test_a_recorded_decision_cannot_be_deleted(self):
+        self.cur.execute(
+            "INSERT INTO RetentionPolicy (table_class, jurisdiction, retention_days, "
+            "justification, set_by_user_id) VALUES ('AUTH_AUDIT', 'US-PY5', 1825, "
+            "'a decision recorded so the test can try to delete it', 1) RETURNING policy_id")
+        pid = self.cur.fetchone()["policy_id"]
+        with self.assertRaises(pg_errors.InsufficientPrivilege):
+            self.cur.execute("DELETE FROM RetentionPolicy WHERE policy_id = %s", (pid,))
+
+    def test_two_policies_cannot_be_effective_at_once(self):
+        for _ in range(2):
+            try:
+                self.cur.execute(
+                    "INSERT INTO RetentionPolicy (table_class, jurisdiction, retention_days, "
+                    "justification, set_by_user_id) VALUES ('ENROLLMENT', 'US-PY6', 1825, "
+                    "'two effective policies for one class would disagree', 1)")
+            except pg_errors.UniqueViolation:
+                return
+        self.fail("a second effective policy for the same class was accepted")
+
+    def test_purge_refuses_a_cutoff_inside_the_retention_window(self):
+        self.cur.execute("SELECT user_id FROM AppUser WHERE role = 'admin' LIMIT 1")
+        admin = self.cur.fetchone()
+        if admin is None:
+            self.skipTest("no admin user to authorize the purge")
+        with self.assertRaises(pg_errors.CheckViolation):
+            self.cur.execute(
+                "CALL uc_archive_purge((now() - INTERVAL '10 days')::timestamptz, %s, %s, %s, "
+                "NULL, NULL)",
+                ("file:///tmp/inside-window.tar.zst", "b" * 64, admin["user_id"]))
 
 
 if __name__ == '__main__':

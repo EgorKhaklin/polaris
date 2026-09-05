@@ -497,6 +497,35 @@ FROM IdentityToken t
 ORDER BY t.token_id;
 
 -- ============================================================================
+-- ----------------------------------------------------------------------------
+-- Retention policy (roadmap P1.11): the shipped default, so a fresh database
+-- has a recorded, justified retention decision rather than none. Five years
+-- for every class, which is the floor the operator runbook documents. An
+-- operator replaces it with `uc_apply_retention_template` or a policy row of
+-- their own; both append, so this row survives as the starting point.
+-- ----------------------------------------------------------------------------
+-- Guarded, so that re-running this file (the test harness reloads it between
+-- tests) leaves an existing decision alone. A retention decision is an audit
+-- of record: sample data must not overwrite one.
+INSERT INTO RetentionPolicy
+    (table_class, jurisdiction, retention_days, justification, set_by_user_id)
+SELECT c.class, NULL, 1825, c.why, 1
+  FROM (VALUES
+    ('TOKEN_LIFECYCLE',
+     'Shipped default (STANDARD-5Y): the token lifecycle is the civic record and is kept five years.'),
+    ('ENROLLMENT',
+     'Shipped default (STANDARD-5Y): enrolment status is the civic record and is kept five years.'),
+    ('VERIFICATION',
+     'Shipped default (STANDARD-5Y): five years, replaceable by a decision recorded for the jurisdiction.'),
+    ('AUTH_AUDIT',
+     'Shipped default (STANDARD-5Y): five years, replaceable by a decision recorded for the jurisdiction.')
+  ) AS c(class, why)
+ WHERE NOT EXISTS (
+        SELECT 1 FROM RetentionPolicy rp
+         WHERE rp.table_class = c.class
+           AND rp.jurisdiction IS NULL
+           AND rp.superseded_at IS NULL);
+
 -- END OF 04_data.sql
 -- Row totals at clean load:
 --   8+6+5+7+5+9+8+5+2+1+9+11+3+2+3 = 84 rows across the 15 INSERT-ing

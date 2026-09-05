@@ -28,7 +28,8 @@ recorded as made for a named deployment.
 | **Encryption at rest** | [ENCRYPTION-AT-REST.md](operator/ENCRYPTION-AT-REST.md) names the plaintext surfaces; backups and every transit hop are encrypted. | The host volume encryption (LUKS, TDE or fscrypt) and its key custodian. |
 | **Offsite backup target** | pgBackRest to an S3-compatible bucket by environment variable (v9.173); the monthly DR drill (v9.192) measures RPO and RTO against the 300 s and 4 h targets in [DR-DRILLS.md](operator/DR-DRILLS.md). | The bucket, its retention, and the schedule. |
 | **Alerting backend and on-call** | Alert rules, Alertmanager routing with the duress page at no delay, a pager webhook read from a secret file, and a CI drill that proves a duress event reaches the webhook (v9.175). | The pager product and its URL, and the named rotation, including who receives the duress page. |
-| **Right-to-erasure policy** | The pseudonymization mechanism: `uc_pseudonymize_individual` and the append-only `IndividualErasureEvent` (v9.125). | Which erasures to honor, the retention floor, and crypto-shred versus pseudonymize against the append-only audit. |
+| **Right-to-erasure policy** | The pseudonymization mechanism: `uc_pseudonymize_individual` and the append-only `IndividualErasureEvent` (v9.125). | Which erasures to honor and crypto-shred versus pseudonymize against the append-only audit. |
+| **Retention schedule** | The engine: `RetentionPolicy` holds the decision per table class and jurisdiction with a 365-day CHECK floor, append-only with one-way supersession, and `uc_archive_purge` refuses a cutoff inside the window (v9.234, [retention.md](design/retention.md)). Ships at five years for every class. | The days each class is kept in this jurisdiction, and the counsel who says the number satisfies the statute. Polaris records the decision and its justification; it does not know the law. |
 | **Independent penetration test and threat-model sign-off** | The readiness pack in [RED-TEAM-SCOPE.md](RED-TEAM-SCOPE.md); roadmap row P1.12. | The firm, the funding, and an accountable human signature. |
 
 Two engineering limits are carried openly rather than closed: the Caddy edge
@@ -41,8 +42,8 @@ deploy (roadmap P1.4).
 ## Deployment-scale gaps
 
 This ledger tracks one authority on one host or one cluster. Everything
-beyond that is in [ROADMAP.md](../ROADMAP.md): the retention engine (P1.11),
-the external penetration test (P1.12), partitioning and HA automation and
+beyond that is in [ROADMAP.md](../ROADMAP.md): the external penetration
+test (P1.12), partitioning and HA automation and
 multi-region (P2), the relying-party API and federation protocol (P3), the
 hardware token and enrollment kit (P4), pilots (P5), certification (P6) and
 national rollout (P7). Do not read a closed ledger here as readiness for those.

@@ -2062,7 +2062,7 @@ def _health_check_database():
         if latency_ms > 500:
             status = 'degraded'
         if table_count < 20:
-            # 01_schema.sql creates 29 tables (32 once migrations apply); anything below 20
+            # 01_schema.sql creates 30 tables (34 once migrations apply); anything below 20
             # suggests a partial / broken load.
             status = 'unhealthy' if table_count == 0 else 'degraded'
         return {

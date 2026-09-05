@@ -100,7 +100,13 @@ DECLARE
         -- v9.125: the right-to-erasure log. polaris_app INSERTs an erasure
         -- record (via uc_pseudonymize_individual) but must not edit or remove
         -- one, or the erasure log could be made to lie about what happened.
-        'individualerasureevent'
+        'individualerasureevent',
+        -- P1.11: the retention policy. Appending a policy is INSERT and stays
+        -- available; superseding one is an UPDATE and belongs to
+        -- uc_apply_retention_template, which is SECURITY DEFINER and
+        -- admin-gated. A role that could UPDATE this table directly could
+        -- retire a retention decision without recording who did it.
+        'retentionpolicy'
     ];
 BEGIN
     FOREACH v_tbl IN ARRAY v_append_only_tables LOOP

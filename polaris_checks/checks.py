@@ -4504,6 +4504,71 @@ def check_paper_pdf_is_current(root: pathlib.Path) -> list[Finding]:
                f"the rendered report matches the source it was rendered from ({len(tex)} file)")
 
 
+# ---------------------------------------------------------------------------
+# Vocation - retention is bounded, and the bound is data with a floor.
+# ---------------------------------------------------------------------------
+def check_retention_engine(root: pathlib.Path) -> list[Finding]:
+    """The retention decision is data, floored, append-only, and the purge obeys it.
+
+    Unbounded retention is refused by the vocation; so is the opposite abuse,
+    a retention short enough to erase the record. Both are held by the same
+    apparatus: RetentionPolicy carries the decision, the CHECK carries the
+    floor, and uc_archive_purge refuses a cutoff inside the window.
+    """
+    schema = _read(root, "polaris_sql/01_schema.sql")
+    if not re.search(r"CREATE\s+TABLE\s+RetentionPolicy\b", schema, re.I):
+        return _fail("retention", "RetentionPolicy is missing from 01_schema.sql: the "
+                                  "retention decision must be data, not a constant")
+    floor = re.search(r"CONSTRAINT\s+retention_floor\s+CHECK\s*\(\s*retention_days\s*>=\s*(\d+)",
+                      schema, re.I)
+    if not floor:
+        return _fail("retention", "RetentionPolicy has no retention_floor CHECK: a configured "
+                                  "retention could then be short enough to erase the record")
+    if int(floor.group(1)) < 365:
+        return _fail("retention",
+                     f"the retention floor is {floor.group(1)} days; it must be at least 365. "
+                     "Shortening the floor is a schema change and a vocation question, not a "
+                     "policy edit")
+
+    grants = _read(root, "polaris_sql/09_grants.sql")
+    if "retentionpolicy" not in grants.lower():
+        return _fail("retention", "09_grants.sql must revoke UPDATE, DELETE on RetentionPolicy "
+                                  "from polaris_app: a retention decision is an audit of record")
+
+    triggers = _read(root, "polaris_sql/06_triggers.sql")
+    if not re.search(r"CREATE\s+TRIGGER\s+trg_retention_policy_immutable\b", triggers, re.I):
+        return _fail("retention", "trg_retention_policy_immutable is missing from 06_triggers.sql: "
+                                  "a retention decision could be edited in place, losing the history "
+                                  "of what was decided when")
+
+    idx = _read(root, "polaris_sql/02_indexes.sql")
+    if not re.search(r"uq_effective_retention_policy", idx, re.I):
+        return _fail("retention", "uq_effective_retention_policy is missing from 02_indexes.sql: "
+                                  "two effective policies could disagree for the same class")
+
+    proc = _read(root, "polaris_sql/05_procedures.sql")
+    for fn in ("retention_days_for", "retention_cutoff"):
+        if not re.search(rf"CREATE\s+OR\s+REPLACE\s+FUNCTION\s+{fn}\b", proc, re.I):
+            return _fail("retention", f"{fn}() is missing from 05_procedures.sql: nothing resolves "
+                                      "the effective retention for a table class")
+    m = re.search(r"CREATE\s+OR\s+REPLACE\s+PROCEDURE\s+uc_archive_purge\b.*?\n\$\$;",
+                  proc, re.I | re.S)
+    if not m:
+        return _fail("retention", "uc_archive_purge procedure not found in 05_procedures.sql")
+    body = m.group(0)
+    if "retention_days_for" not in body:
+        return _fail("retention",
+                     "uc_archive_purge does not consult retention_days_for: the purge would accept "
+                     "any cutoff, including one inside the retention window")
+    if not re.search(r"RAISE\s+EXCEPTION", body, re.I):
+        return _fail("retention",
+                     "uc_archive_purge reads the retention policy but never refuses: a cutoff "
+                     "inside the window must raise, not silently narrow")
+    return _ok("retention",
+               f"retention is data with a {floor.group(1)}-day floor, append-only, one effective "
+               "policy per class, and the purge refuses a cutoff inside the window")
+
+
 CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_csp_forbids_unsafe_inline,
     check_one_active_token_index,
@@ -4623,6 +4688,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_css_animations_resolve,
     check_system_map_covers_the_tree,
     check_paper_pdf_is_current,
+    check_retention_engine,
 ]
 
 

@@ -40,8 +40,9 @@ else
 fi
 
 # 3. Reminder for the DB-backed product suites (need Postgres + the venv).
-echo "  · DB suites: confirm via 'scripts/polaris-test.sh' (test_check_constraints,"
-echo "    test_invariants_property, test_redaction_property, test_app, test_cli)"
+echo "  · DB suites: confirm via 'scripts/polaris-test.sh' (test_app,"
+echo "    test_check_constraints, test_invariants_property, test_redaction_property);"
+echo "    test_cli runs from polaris_cli/ and rides along in CI via polaris-coverage.sh"
 
 echo
 if [ "$fails" -eq 0 ]; then

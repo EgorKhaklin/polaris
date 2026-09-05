@@ -62,6 +62,7 @@ DROP TABLE IF EXISTS AuditAccessLog         CASCADE;
 DROP TABLE IF EXISTS IndividualErasureEvent CASCADE;
 DROP TABLE IF EXISTS OperatorSession         CASCADE;
 DROP TABLE IF EXISTS OperatorWebauthnCredential CASCADE;
+DROP TABLE IF EXISTS RetentionPolicy        CASCADE;
 DROP TABLE IF EXISTS LifecycleArchiveCheckpoint CASCADE;
 DROP TABLE IF EXISTS DuressEvent            CASCADE;
 DROP TABLE IF EXISTS TokenStateEpochLeaf    CASCADE;
@@ -1340,3 +1341,74 @@ COMMENT ON TABLE LifecycleArchiveCheckpoint IS
     'Each row records the cutoff + archive SHA-256 + operator. Combined with '
     'the offline archive tarball, preserves non-repudiation across the '
     'deletion boundary. Constitutional carve-out: a recorded decision.';
+
+-- ----------------------------------------------------------------------------
+-- RetentionPolicy: how long each class of audit row is kept, as data.
+--
+-- Before this table the retention decision lived in whichever number an
+-- operator typed into polaris-archive.sh, and nothing recorded it, justified
+-- it or bounded it. A purge at "older than one week" was accepted by the
+-- database as readily as one at five years. That is the wrong shape for the
+-- one operation permitted to delete audit rows.
+--
+-- One row per (table class, jurisdiction). A NULL jurisdiction is the
+-- deployment default; a jurisdiction-scoped row overrides it for a deployment
+-- serving that jurisdiction. Jurisdiction here selects WHICH POLICY APPLIES TO
+-- THIS DEPLOYMENT; it is not a per-row classification of the audit data, which
+-- carries no jurisdiction column.
+--
+-- Append-only with a one-way supersession, like TokenSignature: a retention
+-- decision is exactly the kind of thing that must not be quietly edited, so
+-- changing it appends a new row and marks the old one superseded. The history
+-- of what an operator decided, and when, survives.
+--
+-- retention_days >= 365 is a hard floor in the schema. No configuration can
+-- purge an audit row younger than a year; shortening that is a schema change,
+-- which is a much louder act than a policy edit. The shipped default is five
+-- years for every class (uc_apply_retention_template 'STANDARD-5Y'), which is
+-- the floor the operator runbook has always documented.
+-- ----------------------------------------------------------------------------
+CREATE TABLE RetentionPolicy (
+    policy_id        BIGSERIAL    PRIMARY KEY,
+
+    -- The class of audit row this policy governs. Named for what the rows
+    -- hold rather than for a table, so a future table joining a class does
+    -- not need a new class.
+    table_class      VARCHAR(24)  NOT NULL
+        CHECK (table_class IN ('TOKEN_LIFECYCLE',   -- TokenLifecycleEvent
+                               'VERIFICATION',      -- VerificationEvent
+                               'ENROLLMENT',        -- EnrollmentStatusEvent
+                               'AUTH_AUDIT')),      -- AuthAuditLog
+
+    -- NULL = the deployment default. A jurisdiction code selects a policy set
+    -- for a deployment serving that jurisdiction.
+    jurisdiction     VARCHAR(10),
+
+    retention_days   INTEGER      NOT NULL,
+
+    -- Why this number. Read by whoever inherits the deployment.
+    justification    TEXT         NOT NULL,
+
+    set_by_user_id   INTEGER      NOT NULL,
+    effective_from   TIMESTAMPTZ  NOT NULL DEFAULT now(),
+
+    -- NULL while this policy is the effective one. Set once, one way, when a
+    -- later policy supersedes it.
+    superseded_at    TIMESTAMPTZ,
+
+    CONSTRAINT retention_floor CHECK (retention_days >= 365),
+    CONSTRAINT retention_justified CHECK (length(justification) >= 20),
+    CONSTRAINT superseded_after_effective CHECK (
+        superseded_at IS NULL OR superseded_at >= effective_from
+    )
+);
+
+COMMENT ON TABLE RetentionPolicy IS
+    'Per-table-class retention, as data (roadmap P1.11). One effective row per '
+    '(table_class, jurisdiction); a NULL jurisdiction is the deployment '
+    'default. Append-only with one-way supersession: changing a retention '
+    'decision appends a row and marks the old one superseded, so the history '
+    'of the decision survives. retention_days >= 365 is a hard floor: no '
+    'configuration can purge an audit row younger than a year. Read by '
+    'retention_cutoff() and enforced by uc_archive_purge, which refuses a '
+    'cutoff younger than any affected class allows.';

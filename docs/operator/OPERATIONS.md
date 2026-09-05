@@ -111,6 +111,7 @@ Volumes:
 | Restore dry-run | Monthly | `./scripts/polaris-restore.sh <latest> --dry-run` (manifest-verify only) |
 | RPO/RTO drill | Monthly (automated) | `./scripts/polaris-dr-drill.sh --record`; ledger in [DR-DRILLS.md](DR-DRILLS.md) |
 | Audit-log archive | Yearly | `./scripts/polaris-archive.sh --cutoff-days=1825` (C1-preserving export at the 5y retention floor) |
+| Retention review | Yearly, or when a jurisdiction's schedule changes | `SELECT * FROM RetentionPolicy WHERE superseded_at IS NULL` (the purge refuses any cutoff inside these windows) |
 | Verify archive integrity | Quarterly | `./scripts/polaris-archive.sh --verify-latest --dest=DIR` |
 | Audit-log purge | Operator-driven, after archive verify | `./scripts/polaris-purge.sh --archive=TARBALL --actor-user-id=N` |
 | Certificate transparency check | Daily (cron) | `./scripts/polaris-ct-monitor.sh`: alerts on unexpected cert issuance for `${POLARIS_DOMAIN}`; see [Certificate transparency monitoring](#certificate-transparency-monitoring) |
@@ -554,6 +555,58 @@ quote a number that is not in [DR-DRILLS.md](DR-DRILLS.md).
 - `secrets/`: sealed outside the backup tarball; generate fresh via
   `scripts/polaris-generate-secrets.sh` and use the same DB password as the
   restore source, OR rotate everything after restore (preferred)
+
+### Retention policy
+
+How long each class of audit row is kept is a decision recorded in the
+database, not a number typed at the purge. `RetentionPolicy` holds one
+effective row per (table class, jurisdiction) with the retention in days, a
+justification, and the operator who set it. A fresh deployment ships with five
+years for every class.
+
+```bash
+# What is in force right now.
+psql -d polaris -c "
+    SELECT table_class, COALESCE(jurisdiction, '(default)') AS jurisdiction,
+           retention_days, set_by_user_id, effective_from
+    FROM RetentionPolicy
+    WHERE superseded_at IS NULL
+    ORDER BY table_class, jurisdiction NULLS FIRST"
+
+# What the purge will use for one class.
+psql -d polaris -c "SELECT retention_days_for('VERIFICATION'), retention_cutoff('VERIFICATION')"
+
+# Adopt a named profile for a jurisdiction. STANDARD-5Y is 1825 days for every
+# class; MINIMIZED keeps the civic record at 1825 and holds operational
+# history for 730. Admin only; both are engineering defaults, not legal
+# determinations.
+psql -d polaris -c "CALL uc_apply_retention_template('MINIMIZED', 'US-CA', <admin user_id>)"
+
+# Or record a decision of your own. The justification is required and must be
+# at least twenty characters: it is what an assessor reads.
+psql -d polaris -c "
+    INSERT INTO RetentionPolicy (table_class, jurisdiction, retention_days,
+                                 justification, set_by_user_id)
+    VALUES ('AUTH_AUDIT', 'US-CA', 1095,
+            'State retention schedule 4.2 for operator access records.', 7)"
+```
+
+**Three things the database will refuse.**
+
+- A retention shorter than 365 days. The floor is a CHECK constraint, so no
+  configuration reaches below it. Lowering it is a schema change.
+- Editing or deleting a policy row. Only `superseded_at` may change, and only
+  forward. Replacing a decision appends a row; the previous decision and its
+  justification stay readable.
+- A purge inside the window. `uc_archive_purge` resolves the retention for
+  every class it would delete from and raises if the cutoff is younger,
+  naming the class and the earliest cutoff it would accept. It refuses rather
+  than quietly purging less than asked.
+
+If a purge fails with "cutoff is inside the retention window", the cutoff is
+wrong or the policy is: either purge at an older cutoff, or record a shorter
+retention first and say why. The design record is
+[docs/design/retention.md](../design/retention.md).
 
 ### Audit-log archive + purge
 

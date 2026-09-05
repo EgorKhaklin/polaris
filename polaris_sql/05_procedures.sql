@@ -1556,11 +1556,18 @@ COMMENT ON PROCEDURE uc12_record_duress(INTEGER, INTEGER, INTEGER, VARCHAR) IS
 -- materialized referent.
 -- ============================================================================
 
+-- P1.11: p_jurisdiction is a new parameter, so the previous five-argument
+-- signature must be dropped rather than replaced. CREATE OR REPLACE alone
+-- would leave both versions installed, and a named-argument call would then be
+-- ambiguous. DEFAULT NULL keeps every existing caller working unchanged.
+DROP PROCEDURE IF EXISTS uc_archive_purge(
+    timestamptz, varchar, varchar, integer, bigint);
 CREATE OR REPLACE PROCEDURE uc_archive_purge(
     p_cutoff_timestamp  TIMESTAMPTZ,
     p_archive_uri       VARCHAR(512),
     p_archive_sha256    VARCHAR(64),
     p_actor_user_id     INTEGER,
+    p_jurisdiction      VARCHAR(10) DEFAULT NULL,
     INOUT  checkpoint_id_out  BIGINT DEFAULT NULL
 )
 LANGUAGE plpgsql
@@ -1585,6 +1592,8 @@ DECLARE
     v_attestation_purged INTEGER := 0;
     v_duress_purged      INTEGER := 0;
     v_total_purged       INTEGER := 0;
+    v_class              VARCHAR(24);
+    v_class_cutoff       TIMESTAMPTZ;
 BEGIN
     -- 1. Validate cutoff is in the past.
     IF p_cutoff_timestamp > now() THEN
@@ -1592,6 +1601,28 @@ BEGIN
             p_cutoff_timestamp
             USING ERRCODE = 'check_violation';
     END IF;
+
+    -- 1b. Validate the cutoff against the retention policy (P1.11). Every
+    -- class this procedure deletes from has an effective retention; a cutoff
+    -- younger than any of them would delete rows still inside their window.
+    -- Absent any configured policy the resolver returns the 365-day schema
+    -- floor, so this refuses a recent-history purge even on a deployment that
+    -- has recorded no decision. The check runs BEFORE the carve-out opens.
+    FOR v_class, v_class_cutoff IN
+        SELECT c, retention_cutoff(c, p_jurisdiction)
+          FROM unnest(ARRAY['TOKEN_LIFECYCLE','VERIFICATION',
+                            'ENROLLMENT','AUTH_AUDIT']::VARCHAR(24)[]) AS c
+    LOOP
+        IF p_cutoff_timestamp > v_class_cutoff THEN
+            RAISE EXCEPTION
+                'uc_archive_purge: cutoff % is inside the retention window for % '
+                '(% days, purgeable only before %). Set a shorter retention with '
+                'uc_apply_retention_template, or purge at an older cutoff.',
+                p_cutoff_timestamp, v_class,
+                retention_days_for(v_class, p_jurisdiction), v_class_cutoff
+                USING ERRCODE = 'check_violation';
+        END IF;
+    END LOOP;
 
     -- 2. Validate SHA-256 format.
     IF p_archive_sha256 IS NULL OR length(p_archive_sha256) <> 64
@@ -1805,3 +1836,158 @@ COMMENT ON PROCEDURE uc_pseudonymize_individual IS
     'Individual.legal_name to PSEUDONYMIZED-<id> and records the act in the '
     'append-only IndividualErasureEvent. Admin-gated by parameter; issues no '
     'DELETE; the row and all audit/token references survive (non-repudiation).';
+
+-- ============================================================================
+-- Retention engine (roadmap P1.11)
+--
+-- retention_cutoff() answers one question: what is the newest timestamp whose
+-- rows this deployment is permitted to purge, for a given class? Everything
+-- else in the chain reads that answer. polaris-archive.sh uses it to choose a
+-- cutoff, and uc_archive_purge refuses any cutoff younger than it.
+--
+-- Resolution order: the jurisdiction-scoped effective policy, then the
+-- deployment default (jurisdiction IS NULL), then the schema floor. There is
+-- always an answer, and the answer is never younger than 365 days, so a
+-- deployment that has recorded no decision at all still cannot purge a recent
+-- audit row.
+-- ============================================================================
+CREATE OR REPLACE FUNCTION retention_days_for(
+    p_table_class  VARCHAR(24),
+    p_jurisdiction VARCHAR(10) DEFAULT NULL
+)
+RETURNS INTEGER
+LANGUAGE sql STABLE AS $$
+    SELECT COALESCE(
+        (SELECT rp.retention_days
+           FROM RetentionPolicy rp
+          WHERE rp.table_class = p_table_class
+            AND rp.jurisdiction IS NOT DISTINCT FROM p_jurisdiction
+            AND rp.superseded_at IS NULL
+          ORDER BY rp.effective_from DESC
+          LIMIT 1),
+        (SELECT rp.retention_days
+           FROM RetentionPolicy rp
+          WHERE rp.table_class = p_table_class
+            AND rp.jurisdiction IS NULL
+            AND rp.superseded_at IS NULL
+          ORDER BY rp.effective_from DESC
+          LIMIT 1),
+        365   -- the schema floor, when nothing is configured at all
+    );
+$$;
+
+COMMENT ON FUNCTION retention_days_for IS
+    'How many days rows of this class are kept: the jurisdiction-scoped '
+    'effective policy, else the deployment default, else the 365-day schema '
+    'floor. Never returns NULL and never returns below the floor.';
+
+CREATE OR REPLACE FUNCTION retention_cutoff(
+    p_table_class  VARCHAR(24),
+    p_jurisdiction VARCHAR(10) DEFAULT NULL
+)
+RETURNS TIMESTAMPTZ
+LANGUAGE sql STABLE AS $$
+    SELECT now() - make_interval(days => retention_days_for(p_table_class, p_jurisdiction));
+$$;
+
+COMMENT ON FUNCTION retention_cutoff IS
+    'The newest timestamp whose rows may be purged for this class: now() minus '
+    'the effective retention. A row younger than this is inside the retention '
+    'window and uc_archive_purge refuses to delete it.';
+
+-- ----------------------------------------------------------------------------
+-- uc_apply_retention_template — adopt a named profile for a jurisdiction.
+--
+-- Two profiles ship. Both are ENGINEERING DEFAULTS, not legal determinations:
+-- what a jurisdiction actually requires comes from its counsel, and choosing
+-- it is one of the operator decisions in docs/PRODUCTION-READINESS.md. The
+-- templates exist so that a deployment starts from a stated, justified number
+-- rather than from whatever someone types into a script.
+--
+--   STANDARD-5Y  five years for every class. The floor the operator runbook
+--                has documented since the archive chain shipped, applied
+--                uniformly. The shipped default.
+--   MINIMIZED    five years for the civic record (token lifecycle, enrolment)
+--                and two for the two classes that are both highest-volume and
+--                most privacy-sensitive (verification events, operator
+--                authentication). Data minimisation where it costs the least.
+--
+-- Applying a template supersedes the current effective rows for that
+-- jurisdiction and appends new ones. Nothing is edited or deleted.
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE PROCEDURE uc_apply_retention_template(
+    p_template       VARCHAR(24),
+    p_jurisdiction   VARCHAR(10),
+    p_actor_user_id  INTEGER
+)
+LANGUAGE plpgsql
+-- SECURITY DEFINER for the same reason uc_archive_purge is: superseding a
+-- policy is an UPDATE on an append-only table, and polaris_app is revoked
+-- UPDATE there (09_grants.sql). The admin gate is the p_actor_user_id
+-- parameter checked against AppUser.role below, never current_user, so
+-- running as the owner does not weaken it. search_path is pinned so the
+-- elevated body cannot be redirected.
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+    v_role      VARCHAR(20);
+    v_class     VARCHAR(24);
+    v_days      INTEGER;
+    v_reason    TEXT;
+    v_applied   INTEGER := 0;
+BEGIN
+    IF p_template NOT IN ('STANDARD-5Y', 'MINIMIZED') THEN
+        RAISE EXCEPTION 'uc_apply_retention_template: unknown template %; expected STANDARD-5Y or MINIMIZED',
+            p_template USING ERRCODE = 'invalid_parameter_value';
+    END IF;
+
+    SELECT role INTO v_role FROM AppUser WHERE user_id = p_actor_user_id;
+    IF v_role IS NULL THEN
+        RAISE EXCEPTION 'uc_apply_retention_template: actor_user_id (%) does not exist.',
+            p_actor_user_id USING ERRCODE = 'foreign_key_violation';
+    END IF;
+    IF v_role <> 'admin' THEN
+        RAISE EXCEPTION 'uc_apply_retention_template: actor_user_id (%) has role %, must be admin.',
+            p_actor_user_id, v_role USING ERRCODE = 'insufficient_privilege';
+    END IF;
+
+    -- Supersede whatever is effective for this jurisdiction, then append.
+    FOR v_class, v_days, v_reason IN
+        SELECT t.class, t.days, t.reason
+          FROM (VALUES
+            ('TOKEN_LIFECYCLE', CASE WHEN p_template = 'MINIMIZED' THEN 1825 ELSE 1825 END,
+             'Template ' || p_template || ': the token''s own history is the civic record and is kept five years.'),
+            ('ENROLLMENT',      CASE WHEN p_template = 'MINIMIZED' THEN 1825 ELSE 1825 END,
+             'Template ' || p_template || ': enrolment status is the civic record and is kept five years.'),
+            ('VERIFICATION',    CASE WHEN p_template = 'MINIMIZED' THEN 730  ELSE 1825 END,
+             'Template ' || p_template || ': verification events are the most privacy-sensitive class; this is an engineering default, not a legal determination.'),
+            ('AUTH_AUDIT',      CASE WHEN p_template = 'MINIMIZED' THEN 730  ELSE 1825 END,
+             'Template ' || p_template || ': operator authentication events; this is an engineering default, not a legal determination.')
+          ) AS t(class, days, reason)
+    LOOP
+        UPDATE RetentionPolicy
+           SET superseded_at = now()
+         WHERE table_class = v_class
+           AND jurisdiction IS NOT DISTINCT FROM p_jurisdiction
+           AND superseded_at IS NULL;
+
+        INSERT INTO RetentionPolicy
+            (table_class, jurisdiction, retention_days, justification, set_by_user_id)
+        VALUES
+            (v_class, p_jurisdiction, v_days, v_reason, p_actor_user_id);
+
+        v_applied := v_applied + 1;
+    END LOOP;
+
+    RAISE NOTICE 'uc_apply_retention_template: % applied to % class(es) for jurisdiction %',
+        p_template, v_applied, COALESCE(p_jurisdiction, '(deployment default)');
+END;
+$$;
+
+COMMENT ON PROCEDURE uc_apply_retention_template IS
+    'Adopt a named retention profile (STANDARD-5Y or MINIMIZED) for a '
+    'jurisdiction, or for the deployment default when the jurisdiction is '
+    'NULL. Admin only. Supersedes the current effective rows and appends new '
+    'ones; nothing is edited or deleted. Both templates are engineering '
+    'defaults, not legal determinations.';

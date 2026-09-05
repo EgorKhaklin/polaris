@@ -5,6 +5,57 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.234 — 2026-09-05 (retention becomes a recorded decision with a floor)
+
+Roadmap P1.11, first of three ships. The archive-then-purge chain has been
+audited since v8.87 in every part except the number that mattered: the cutoff
+was whatever the operator typed. The database accepted a purge at "older than
+one hour" as readily as one at five years, and nothing recorded who had decided
+the retention window or why. That is a coercion vector, and the same vocation
+that refuses unbounded retention refuses retention short enough to erase the
+record.
+
+**The decision is data.** `RetentionPolicy` (the 30th table) holds one
+effective row per (table class, jurisdiction): the days, a justification of at
+least twenty characters, the operator, and when it took effect. A partial
+unique index keeps two effective policies from disagreeing about one class.
+
+**The floor is a constraint.** `CHECK (retention_days >= 365)`. No
+configuration path reaches below a year; lowering it means editing the schema
+and answering for it. `check_retention_engine` (invariant 119) fails the build
+if the floor is lowered or removed, if the purge stops consulting the policy,
+or if it reads the policy and narrows silently instead of refusing.
+
+**The purge obeys it.** `uc_archive_purge` gains a `p_jurisdiction` parameter,
+resolves the effective retention for every class it would delete from, and
+raises if the cutoff is inside any of those windows, naming the class and the
+earliest cutoff it would accept.
+
+**The decision is append-only.** `trg_retention_policy_immutable` refuses
+DELETE, permits only `superseded_at` to change, and refuses to un-set or
+backdate it. `polaris_app` is revoked UPDATE and DELETE, the same privilege
+boundary the other append-only tables have. Changing a retention decision
+appends a row; the previous decision and its justification stay readable.
+
+`uc_apply_retention_template` adopts `STANDARD-5Y` or `MINIMIZED` for a
+jurisdiction in one admin-gated transaction. A fresh database ships with five
+years for every class, and the migration seeds the same for an existing
+deployment, so nothing runs unbounded while waiting for an operator.
+
+Proven: nine SQL self-tests (Section S, suite now 87), seven DB-backed tests in
+`TestRetentionEngine`, the privilege boundary asserted for the new table from a
+real `polaris_app` connection, and the upgrade path rehearsed on a database
+loaded from the previous schema and migrated forward. Documented in
+[docs/design/retention.md](docs/design/retention.md), the DATA-MODEL entry, and
+a runbook section in OPERATIONS.md. Table counts restamped 29 to 30 (33 to 34
+migrated) across every surface that states them; the procedure count in
+`polaris_sql/README.md` was stale at 15 against 16 and is now 18, measured.
+
+Ships 2 and 3 of P1.11 remain: per-class cutoffs driven end to end from the
+archive script, and the operator CLI surface.
+
+---
+
 ## v9.233 — 2026-09-05 (the design index says what the pass found, and the last three stamps are re-verified)
 
 Closing the voice pass. The index's note said a voice pass was recorded as

@@ -276,3 +276,16 @@ CREATE INDEX idx_token_agency_issued
 DROP INDEX IF EXISTS idx_verification_agency_time;
 CREATE INDEX idx_verification_agency_time
     ON VerificationEvent (requesting_agency_id, event_timestamp DESC);
+
+-- ----------------------------------------------------------------------------
+-- One effective retention policy per (class, jurisdiction) (roadmap P1.11).
+--
+-- COALESCE on the jurisdiction is load-bearing: a plain partial unique index
+-- over a nullable column treats every NULL as distinct, so two effective
+-- deployment-default policies for the same class would both be accepted and
+-- the resolver's answer would depend on insertion order.
+-- ----------------------------------------------------------------------------
+DROP INDEX IF EXISTS uq_effective_retention_policy;
+CREATE UNIQUE INDEX uq_effective_retention_policy
+    ON RetentionPolicy (table_class, COALESCE(jurisdiction, ''))
+    WHERE superseded_at IS NULL;

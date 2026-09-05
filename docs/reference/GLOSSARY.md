@@ -223,7 +223,7 @@ Canonicalized in `docs/design/audit-of-record.md`. The schema instances:
 `AgencyTrustAttestation`, `TokenStateEpoch`, `DuressEvent`.
 
 **CHECK constraint**: a row-level invariant declared in the
-schema. Polaris has 75 CHECK constraints across its 29 tables; they
+schema. Polaris has 82 CHECK constraints across its 30 tables (v9.234); they
 enforce things like "`disclosure_level = 'ZERO_KNOWLEDGE'` implies
 `token_id IS NULL`."
 
