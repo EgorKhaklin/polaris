@@ -2,165 +2,134 @@
 
 **Reader:** an engineer or an assessor. **Job:** The evidence tiers behind an issued token.
 
----
+A national identity system that has only two states, holds a token or does
+not, forces every person outside it into one undifferentiated absence. That
+absence is then trivially weaponised: build the list of everyone who is not in
+it. This layer gives enrolment a vocabulary instead, so that not holding a
+token has a stated reason rather than being an inference from silence.
 
-## What this is
+## The five states
 
-A first-class vocabulary for enrollment state. Every `Individual` row
-has a current enrollment status drawn from a five-value enum:
+Every `Individual` has a current enrolment status drawn from a five-value set:
 
 | Status | Meaning |
 |---|---|
-| `NOT_ENROLLED` | Default. The absence of enrollment, materialized via the seed trigger. Newborns, undocumented residents, the unhoused. |
-| `PENDING_ENROLLMENT` | Enrollment process initiated; biometrics or documentation in progress. |
-| `ENROLLED` | Holds at least one non-terminal IdentityToken (RESERVE or ACTIVE). Recorded as a *policy event*, never auto-derived from token state. |
-| `EXEMPT` | Civic-policy recognition of non-token participation: biometric incompatibility, religious exemption, conscientious objection, an alternative-path participant. |
-| `LAPSED` | Was ENROLLED, now isn't, by policy event. Distinct from NOT_ENROLLED. |
+| `NOT_ENROLLED` | The default, seeded by trigger when the row is created: a newborn, an undocumented resident, someone unhoused. |
+| `PENDING_ENROLLMENT` | Enrolment has begun; biometrics or documentation are in progress. |
+| `ENROLLED` | Holds at least one non-terminal token, RESERVE or ACTIVE. Recorded as a policy event, never derived from token state. |
+| `EXEMPT` | Civic-policy recognition of participation without a token: biometric incompatibility, religious exemption, conscientious objection, an alternative path. |
+| `LAPSED` | Was enrolled and is not now, by policy event. Distinct from never having been enrolled. |
 
-Transitions are recorded in `EnrollmentStatusEvent` (append-only). The
-`IndividualCurrentEnrollment` view returns the latest event's status
-per individual, falling back to `NOT_ENROLLED` via `COALESCE` if no
-events exist. implements the schema's answer to the PDF §9 second clause:
-*"an accepted path for unregistered persons to participate in civic
-life without tokens."* `EXEMPT` is that path made first-class.
+Transitions land in `EnrollmentStatusEvent`, which is append-only. The
+`IndividualCurrentEnrollment` view returns the most recent event per
+individual, falling back to `NOT_ENROLLED` when there is none. Together they
+are the schema's answer to the requirement that a person can take part in
+civic life without a token: `EXEMPT` is that path, made first-class rather
+than left as an absence.
 
-## What this is NOT is **not Polaris deciding who counts.** It adds *vocabulary*
-for policy state, never *decisions* about which state a person
-should be in. The MISSION constraint *"Polaris is NOT an authority"*
-is the central sensitivity here; the design is calibrated against
-overreach in three places:
+## The constraint this is calibrated against
 
-1. **`NOT_ENROLLED` is the default**, not a positive flag. The
-   absence of enrollment is materialized only so it can be
-   transitioned out of cleanly.
-2. **No auto-derivation from token state.** A person with no ACTIVE
-   token may be ENROLLED (RESERVE), EXEMPT, or LAPSED — these are
-   different policy events with different meanings, and auto-deriving
+Polaris is not an authority. This layer adds vocabulary for a policy state and
+never decides which state a person should be in. Three choices keep it on that
+side of the line:
+
+1. **`NOT_ENROLLED` is a default, not a flag.** The absence of enrolment is
+   materialised only so that it can be transitioned out of cleanly.
+2. **Nothing is derived from token state.** A person with no active token may
+   be enrolled with a reserve token, exempt, or lapsed. Those are different
+   policy events with different meanings, and deriving one from token state
    would collapse the distinction.
-3. **No trigger-enforced state machine.** Sequencing checks belong
-   with policy code; the schema records what policy claims. Same
-   posture as `TokenLifecycleEvent`.
+3. **No trigger-enforced state machine.** Sequencing belongs to the policy
+   that owns it; the schema records what that policy claims, the same posture
+   `TokenLifecycleEvent` takes.
 
-## The asymmetric design
+## The asymmetry, which is the whole design
 
-The hardest design choice in is the *asymmetry between EXEMPT
-and NOT_ENROLLED*. They look superficially similar — both are "no
-token" — but they're treated differently on purpose.
+`EXEMPT` and `NOT_ENROLLED` both mean no token, and they are deliberately not
+symmetric.
 
-**EXEMPT is frictionless.** Recording an individual as EXEMPT is a
-single `INSERT INTO EnrollmentStatusEvent`. The vocabulary exists,
-the route exists in the UI roadmap, the audit row is a positive
-recognition event. The PDF's "accepted path without tokens" gets
-first-class affordance.
+Recording someone as exempt is a single insert into `EnrollmentStatusEvent`. It
+is one row, it is a positive recognition, and the audit trail reads as one.
 
-**Mass enumeration of NOT_ENROLLED is deliberate.** The civic-query
-function `civic_enrollment_summary(jurisdiction)` returns *counts
-only*, by (jurisdiction, status). Per-individual enumeration is
-possible — an admin can write the join against
-`IndividualCurrentEnrollment` directly — but it is NOT exposed as a
-function and shows up in `AuthAuditLog` when an admin runs it.
+Enumerating the not-enrolled is possible and deliberately unhelped.
+`civic_enrollment_summary(jurisdiction)` returns counts by jurisdiction and
+status, and nothing else. An admin can join `IndividualCurrentEnrollment`
+directly and get names, but no function offers it, and the access appears in
+`AuthAuditLog` when they do.
 
-Why this matters: the second-best attack against (after the
-primary vocabulary defense holds) is to *weaponize NOT_ENROLLED as a
-surveillance marker*. "Build me a list of everyone in this
-jurisdiction who hasn't enrolled." The asymmetry says: that query is
-*possible* but it is *named, deliberate, and audit-visible* — not
-inferred via implicit-from-absence, the way the pre- schema
-forced you to write the query.
+The attack this anticipates is not the obvious one. Once a system has a
+first-class exempt state, the next move is to treat `NOT_ENROLLED` as a
+positive marker: build the list of everyone in this jurisdiction who has not
+enrolled. The asymmetry does not prevent that query. It makes it a named,
+deliberate act against a named state, rather than something inferred from the
+absence of a row.
 
-The schema cannot prevent the misuse. It can make the misuse named.
-Naming is the precondition for governance catching it.
+The schema cannot stop the misuse. It can stop the misuse from being
+accidental, and naming is the precondition for governance noticing.
 
-## Adversary walk
+## Where an adversary ends up
 
-1. **Defender's claim:** The schema accommodates non-enrolled
-   persons as first-class entities. `Individual` rows exist
-   indefinitely without `IdentityToken` rows. Civic queries answer
-   "is this person known" without requiring enrollment.
+- **The claim.** Non-enrolled people are first-class rows. `Individual` exists
+  without any token, indefinitely, and civic queries can answer whether a
+  person is known without requiring enrolment.
+- **The strongest attack.** Make non-enrolment civically impossible from
+  outside: no token, no healthcare; no token, no school. That converts an
+  opt-in layer into an opt-out one through policy gradient rather than through
+  anything in the schema.
+- **Where it settles.** The schema records enrolment state without privileging
+  any value of it, and `EXEMPT` gives the non-token path a recognised name, so
+  the gradient is at least contested rather than uncontested.
+- **The next attack.** Treat `NOT_ENROLLED` as a marker and enumerate it.
+- **The answer.** The asymmetry above: exemption is easy, enumeration is
+  explicit and audited.
+- **What it costs.** Legitimate uses also need to enumerate the unenrolled: a
+  vaccination outreach, a voter-registration drive. Those are not prevented.
+  They are made explicit rather than implicit.
 
-2. **Attacker's optimal response:** Coerce enrollment by making
-   non-enrollment civically incompatible — "no token, no
-   healthcare; no token, no schooling." Convert an opt-in identity
-   layer into an opt-out one through external policy gradient.
+This is the least technical and most sociotechnical part of the system, and
+the contribution it makes is visibility rather than prevention.
 
-3. **Equilibrium:** The schema records enrollment state without
-   privileging any value of it. External civic policy decides what
-   services require tokens; just makes the policy's input
-   legible. `EXEMPT` provides a recognized non-token path so
-   coercion doesn't have an uncontested gradient.
+## Why nothing is auto-derived
 
-4. **Second-best attack:** Treat `NOT_ENROLLED` as a positive
-   marker — "build a list of everyone who hasn't enrolled."
+The temptation is to emit `ENROLLED` when a person gains a non-terminal token
+and `LAPSED` when their last one goes terminal. It would save hand-recording,
+and it is rejected for three reasons:
 
-5. **Defender's response:** The asymmetric design above. EXEMPT
-   easy, mass-NOT_ENROLLED-enumeration deliberate.
+1. A person can be exempt regardless of token state. Someone recognised under
+   an alternative path may still hold a historical token, and derivation would
+   overwrite their exemption.
+2. `PENDING_ENROLLMENT` is a real state between being known to the system and
+   holding a token. Derivation would skip it entirely.
+3. `LAPSED` is a policy event with a reason. Deriving "the tokens went
+   terminal, therefore civic enrolment ended" is exactly the conflation this
+   schema refuses: an administrative revocation is not a person leaving civic
+   life.
 
-6. **Defender's cost:** Some legitimate civic uses (vaccination
-   outreach, voter-registration drives) do need to enumerate the
-   unenrolled. doesn't prevent this; it makes it *explicit*,
-   not implicit-via-omission.
+The cost is that a human records the transition. The benefit is that the
+schema does not make policy decisions on their behalf.
 
-7. **Mechanism-design note:** This is the sociotechnically
-   hardest item in the v2 list. The PDF flags it honestly. The
-   contribution is *visibility* — the misuse becomes a deliberate
-   query against a named state.
+## The seed trigger
 
-## Why "no auto-derivation" matters
+`trg_seed_default_enrollment_status` fires `AFTER INSERT ON Individual` and
+writes a `NOT_ENROLLED` event with the reason `INDIVIDUAL_ROW_CREATED` and no
+recording agency, which marks it as a system event. It is an AFTER trigger
+because `individual_id` is a `SERIAL`: a BEFORE trigger would see NULL.
 
-The temptation is real: emit `ENROLLED` automatically when an
-individual gets a non-terminal token, emit `LAPSED` automatically
-when their last non-terminal token goes terminal. It would save
-hand-recording. deliberately rejects this. Three reasons:
+It fires for every insert, including the sample data. That is correct: the
+seeded individuals all begin in the default state, and `04_data.sql` then
+layers the real events on top.
 
-1. **A person can be EXEMPT regardless of token state.** Someone
-   recognized as a civic participant under an alternative path
-   might still have a historical token; auto-deriving from token
-   state would clobber their EXEMPT marker.
-2. **PENDING_ENROLLMENT is a real state** that exists between
-   "person known to the system" and "person holds a token." It
-   describes the biometric-intake window. Auto-derivation would
-   skip it.
-3. **LAPSED is a policy event with a reason.** Auto-deriving
-   "tokens went terminal therefore civic enrollment ended" is
-   exactly the conflation the schema should not make. A token
-   being administratively revoked is not the same as the
-   individual being civically un-enrolled.
+An import from a predecessor system that carries its own enrolment history can
+disable the trigger for the duration with `ALTER TABLE … DISABLE TRIGGER
+trg_seed_default_enrollment_status`. That needs table-owner privileges, which
+`polaris_app` does not have, so it is a database-administrator operation and
+not something the application can do to itself.
 
-The cost is hand-recording. The benefit is the schema doesn't
-make policy decisions.
+## Related
 
-## Where the seed trigger fires
-
-`trg_seed_default_enrollment_status` is an `AFTER INSERT ON
-Individual` trigger that inserts a `NOT_ENROLLED` event with
-`transition_reason='INDIVIDUAL_ROW_CREATED'` and
-`recorded_by_agency_id=NULL` (SYSTEM event).
-
-It fires AFTER INSERT specifically so `individual_id` (a `SERIAL`)
-is populated by the time the trigger runs. A BEFORE INSERT trigger
-would see `NULL`.
-
-The trigger fires for *every* Individual INSERT, including the v1
-sample data when loaded fresh. This is correct: the seeded sample
-individuals all begin in the default state, and the 04_data.sql
-load then layers on additional events (ENROLLED for the token
-holders, LAPSED for David's case, etc.) on top of the seed events.
-
-If a future migration needs to insert Individual rows WITHOUT the
-default event (e.g., importing pre-existing enrollment data from a
-predecessor system), the trigger can be disabled with `ALTER TABLE
-… DISABLE TRIGGER trg_seed_default_enrollment_status` for the
-duration of the import. Requires table-owner privileges; `polaris_app`
-doesn't have them, so this is a DBA operation.
-
-## Cross-references
-
-- PDF §9 "Population coverage" — original problem statement.
-- `MISSION.md` *Polaris is NOT an authority* — the constraint calibrates against.
-- `proposals/-tiered-enrollment.md` — the original proposal
-  with the alignment audit.
-- `docs/operator/PRIVACY.md` — Population-coverage subsection citing this
-  document.
-- / `docs/design/issuer-discretion.md` — the *exit* leg of the
-  "schema doesn't weaponize itself against the holder" triad; is the *entry* leg., when shipped, will be the
-  *recovery* leg.)
+- [issuer-discretion.md](issuer-discretion.md) bounds the exit from the system,
+  where this bounds the entry.
+- [recovery-ceremony.md](recovery-ceremony.md) covers the third leg, returning
+  after a loss.
+- `docs/operator/PRIVACY.md` states the population-coverage posture an
+  operator has to hold up.

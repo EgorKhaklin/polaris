@@ -1,211 +1,95 @@
-# Runtime application self-protection
+# Runtime self-protection
 
 **Reader:** an engineer or an assessor. **Job:** The runtime self-protection rules, which are implemented and which are gaps.
 
----
+Runtime application self-protection is a marketing category for a set of
+techniques with one thing in common: detect anomalous behaviour while the
+system is running, and answer with something more precise than dropping the
+request. This document takes the techniques and leaves the category. It lists
+concrete rules, where each is enforced, and which ones are not built.
 
-## Framing
+The rules fall into three layers: bounds on rate, signals on pattern, and what
+the edge refuses before a request reaches the application.
 
-"RASP" is a vendor marketing term for a cluster of techniques that all
-boil down to: detect anomalous behavior at runtime, and respond with
-something more granular than "drop the request". This document refuses
-the framework framing and instead catalogs the *concrete rules* and their
-implementation status.
+## Rate bounds
 
-Three rule classes:
+| Rule | Where it is enforced | The bound |
+|---|---|---|
+| Per-IP, on authentication | `security.py`, through the Redis limiter | Ten requests a minute on `/login` and the WebAuthn assertion endpoints |
+| Per-IP, on read paths | `security.py` | Sixty requests a minute on the verification and Atlas endpoints |
+| Per-IP, at the edge | The Caddy `rate_limit` zone `polaris_global` | Two hundred requests a minute, before anything reaches the application |
+| Per-agency, per kind | `enforce_agency_quota`, a database trigger | Operator-configured caps on issuance, revocation and verification in a rolling window |
+| Per-agency revocation share | `enforce_revocation_velocity_bound`, a database trigger | A share of the agency's outstanding tokens per window, above which a co-signature is required |
 
-1. **Rate-limit rules**: bound the rate at which a principal can take
-   an action
-2. **Anomaly rules**: detect deviation from baseline and emit a HYDRA
-   finding
-3. **Edge rules**: Caddy-layer protections that run before requests
-   reach the app
+The per-IP limits and the edge limit are defence in depth against brute force
+and scraping. The two database triggers are the ones that bound an
+*authorised* party, which is the harder problem and the one
+[abuse-controls.md](abuse-controls.md) and
+[issuer-discretion.md](issuer-discretion.md) cover in full.
 
----
+**The gap.** There is no bound on how often one agency may verify one
+individual. The quotas are per agency and per kind, so an agency inside its
+cap can direct all of it at a single person. A cap on the pair, enforced in
+the same transaction as the verification insert, would close it. This is the
+single highest-value rule not built, because bulk attestation aimed at one
+holder is a coercion pattern rather than a load pattern.
 
-## Rate-limit rules
+## Pattern signals
 
-### R-RL-1: per-IP rate limit on auth endpoints
-**Surface:** `/login`, `/auth/webauthn/assert/*`
-**Limit:** 10 requests / minute / IP
-**Backend:** Redis atomic INCR + EXPIRE)
-**Gap:** none
+Detection is separate from enforcement on purpose: a bound refuses, a signal
+tells a human something is happening. All of these are Prometheus alert rules
+in `deploy/observability/polaris-alerts.yml`, each with a runbook section that
+`check_alert_runbooks` keeps in step.
 
-### R-RL-2: per-IP rate limit on verification endpoints
-**Surface:** `/verifications`, `/api/atlas/*`
-**Limit:** 60 requests / minute / IP
-**Backend:** Redis
-**Gap:** none
+| Signal | What it watches |
+|---|---|
+| `PolarisDuressEvent` | Any duress code matching, at severity one with no delay |
+| `PolarisIssuanceVelocity` | An agency issuing far above its own trailing week, over an absolute floor |
+| `PolarisRevocationVelocity` | The same, for revocations |
+| `PolarisVerificationVelocity` | The same, for verifications, which is the closest thing to a bulk-attestation signal today |
+| `PolarisQuotaRefusals` | A cap actually refusing writes, which is as often a misconfiguration as an attack |
+| `PolarisHigh5xx`, `PolarisHighRequestLatency`, `PolarisHighDBLatency` | The service degrading |
+| `PolarisAppDown`, `PolarisAppInfoAbsent` | The service gone |
 
-### R-RL-3: per-(agency, individual) rate limit on verification
-**Status:** ⚠️ GAP, exists at app layer; not at DB layer
-**Surface:** verification recording in `uc_record_verification`
-**Limit (proposed):** 30 verifications / hour / (agency_id, individual_id)
-**Backend:** PostgreSQL advisory locks + ring-buffer; alternative is
-Redis with a composite key
-**Vocation:** ANTI-COERCION-DIRECT, caps the rate at which a
-single agency can verify a single individual, preventing coercer-driven
-bulk-attestation patterns
-**Implementation note:** see `polaris_sql/05_procedures.sql`
-`uc_record_verification` for the insertion path; the new rate-check
-would run inside the same transaction so race conditions are sealed.
+**The gaps.** Two signals do not exist. Failed authentications are counted, in
+`auth_failures_per_minute`, but no alert rule fires on a spike from a single
+address, so the counter is visible on a dashboard and pages nobody. And no
+signal watches an individual receiving an unusual number of verifications,
+which is the detection half of the missing rate bound above.
 
-### R-RL-4: per-issuer revocation-rate cap
-**Status:** ✅ IMPLEMENTED (v8.15, issuer-discretion bounds)
-**Surface:** `uc8_revoke_token`
-**Limit:** policy-configurable in `IssuerDiscretionPolicy`
-**Mechanism:** trigger-enforced; row insertion in
-`TokenLifecycleEvent` cross-checks against the policy
-**Gap:** none
+## What the edge and the headers refuse
 
----
+Security headers are set by `apply_security_headers` in `security.py`, on
+every response:
 
-## Anomaly rules
+- `Content-Security-Policy` with `script-src 'self'`, which is C5 and is
+  checked per route.
+- `X-Frame-Options: DENY` and `X-Content-Type-Options: nosniff`.
+- `Referrer-Policy: strict-origin-when-cross-origin`.
+- `Permissions-Policy` denying camera, microphone, geolocation, payment, USB,
+  Bluetooth and the advertising-topics interfaces.
+- `Cross-Origin-Opener-Policy` and `Cross-Origin-Resource-Policy`, both
+  `same-origin`.
+- `Strict-Transport-Security`, in production only.
+- The `Server` header removed at the edge.
 
-### R-AN-1: unusually high verification volume per individual
-**Status:** ⚠️ GAP, adversary_watcher emits NO finding for this
-**Surface:** HYDRA's adversary_watcher
-**Trigger (proposed):** if any individual receives >50 verifications in
-the last hour, emit `{node_id: "adversary:high-verify-rate", level:
-"WARN", individual_id: ...}`, does NOT block, just surfaces
-**Implementation:** add channel to `polaris_hydra/watchers/adversary_watcher.py`;
-reads `VerificationEvent` GROUP BY individual_id WHERE created_at >
-now() - INTERVAL '1 hour'
+TLS terminates at Caddy, which provisions its own certificate and negotiates
+the X25519MLKEM768 hybrid key exchange, proven against a real certificate in
+CI on every push.
 
-### R-AN-2: failed-login spike from a single IP
-**Status:** ⚠️ GAP, security_watcher counts globally, not per-IP
-**Trigger (proposed):** if any IP produces >20 failed-logins in
-10 minutes, emit `{node_id: "adversary:auth-spike", level: "WARN",
-src_ip: ...}`. Distinct from R-RL-1 (which throttles), this signals
-*pattern*, not enforces *throughput*.
+**The gap.** There is no web application firewall, and none is planned. The
+SQL boundary is parameterised throughout, so injection is structurally
+prevented rather than filtered, and a firewall in front is a deployment
+decision an operator makes with their own provider. It is listed here so that
+its absence is a stated choice rather than an oversight.
 
-### R-AN-3: enrollment-event burst from a single agency
-**Status:** ⚠️ GAP
-**Trigger (proposed):** if a single agency produces >5 enrollment
-events in 5 minutes, emit a HYDRA finding. Vocation: anti-coercion:
-coerced bulk enrollment is detectable.
+## The open list, in order
 
-### R-AN-4: ZK-disclosure-level downgrade attempts
-**Status:** ✅ IMPLEMENTED, the C2 CHECK constraint (`chk_disclosure_token_consistency`) refuses at DB level; logged
-in `TokenLifecycleEvent` as REJECTED operation
-**Trigger:** any verification request with disclosure-level FULL on
-a token whose policy is ZERO_KNOWLEDGE, C6 server-side enforcement
-**Watcher coverage:** security_watcher channel 3 (v8.x) scans for
-REJECTED rows
-**Gap:** none (this is constitutionally enforced)
+1. **A per-agency-per-individual verification bound**, enforced in the
+   verification transaction. Anti-coercion, and the largest gap.
+2. **An alert on that pattern**, so the bound has a detection half.
+3. **An alert on authentication-failure spikes per address**, using the
+   counter that already exists.
 
-### R-AN-5: foresight category drift
-**Status:** ⚠️ GAP, foresight surface (v9.12) has no off-mission
-detection
-**Trigger (proposed):** if `_acceptance_log.json` shows >2 FS-XXXXXXXX
-candidates with `vocation_alignment != anti-coercion-*`, emit
-WARN: the foresight surface is drifting from its constitutional
-purpose
-**Implementation:** new channel in adversary_watcher or extend
-foresight promotion to refuse non-anti-coercion candidates outright
-(Anti-Architect would likely prefer the refuse path; this is a
-non-decided sub-question)
-
----
-
-## Edge rules (Caddy layer)
-
-The Caddy proxy serves TLS and forwards to the gunicorn upstream. Beyond
-TLS, Caddy can enforce:
-
-### R-ED-1: HTTP security headers
-**Status:** ✅ IMPLEMENTED at app layer (v9.13)
-**Surface:** `polaris_web/security.py:apply_security_headers`
-- Strict-Transport-Security: max-age=31536000; includeSubDomains; preload
-- Content-Security-Policy: default-src 'self'; script-src 'self';
-  style-src 'self' 'sha256-{...}'; img-src 'self' data: blob:;
-  upgrade-insecure-requests (v9.13)
-- X-Content-Type-Options: nosniff
-- X-Frame-Options: DENY
-- Referrer-Policy: same-origin
-- Cross-Origin-Opener-Policy: same-origin (v9.13)
-- Cross-Origin-Resource-Policy: same-origin (v9.13)
-- Permissions-Policy: camera=(), microphone=(), geolocation=(),
-  payment=(), usb=(), bluetooth=(), interest-cohort=() (v9.13),
-  browsing-topics=() (v9.13)
-- Server: scrubbed (v9.13)
-**Gap:** none
-
-### R-ED-2: connection-rate limit at Caddy
-**Status:** ⚠️ GAP, Caddy can apply `rate_limit` directive but the
-Caddyfile in `polaris_web/deploy/` does not include one
-**Proposed:**
-```caddy
-{
-    order rate_limit before reverse_proxy
-}
-polaris.example.com {
-    rate_limit {
-        zone auth_zone {
-            key {remote_host}
-            events 30
-            window 1m
-        }
-        zone api_zone {
-            key {remote_host}
-            events 300
-            window 1m
-        }
-        path /login /auth/* @auth_zone
-        path /api/* @api_zone
-    }
-    reverse_proxy localhost:5000
-}
-```
-Caddy's `rate_limit` is an additional defense-in-depth layer; the app
-Redis rate-limiter is the primary. Both should be enabled in
-production.
-
-### R-ED-3: WAF rule for common injection patterns
-**Status:** ⚠️ GAP, Caddy does not ship a WAF; commercial WAFs
-(Cloudflare, AWS WAF) can be in front but are deployment-specific
-**Note:** the app is parameterized-SQL throughout (psycopg2 bind
-parameters); injection at the SQL boundary is structurally impossible.
-A WAF would catch upstream attempts pre-app, but the structural
-defense is the primary line.
-
-### R-ED-4: TLS configuration
-**Status:** ✅ IMPLEMENTED, Caddy handles Let's Encrypt + modern
-TLS suite by default; no `tls_min_version` override needed
-**Gap:** none
-
----
-
-## Implementation cadence
-
-This document is a catalog, not a one-shot implementation list. It does
-NOT in-line a new framework for all gaps. Each gap (R-RL-3, R-AN-1,
-R-AN-2, R-AN-3, R-AN-5, R-ED-2, R-ED-3) is a candidate for a future
-incremental ship; operator priority + vocation alignment determines order.
-
-Recommended order (vocation-weighted):
-1. R-RL-3 (per-agency-individual rate limit): anti-coercion direct
-2. R-AN-1 (high-verify-rate finding): anti-coercion-indirect
-3. R-AN-3 (enrollment burst): anti-coercion-indirect
-4. R-ED-2 (Caddy rate-limit): anti-coercion-indirect (DoS defense)
-5. R-AN-2 (auth-spike finding): security hardening
-6. R-AN-5 (foresight drift detection): constitutional self-monitoring
-7. R-ED-3 (WAF in front): deployment-specific; operator decision
-
----
-
-## Vocation alignment summary
-
-7 of 12 rules in this catalog are ANTI-COERCION-DIRECT or
-ANTI-COERCION-INDIRECT (R-RL-3, R-RL-4, R-AN-1, R-AN-3, R-AN-4,
-R-AN-5, R-ED-2). 5 are infrastructure-hardening (R-RL-1, R-RL-2,
-R-AN-2, R-ED-1, R-ED-3, R-ED-4). Zero are anti-coercion-negative.
-
-The RASP rule-set as a whole strengthens the anti-coercion vocation
-by making coercion-shaped patterns (bulk verification, burst
-enrollment, downgraded-disclosure attempts) detectable and rate-
-limited.
-
----
-
-*Rule status as of v9.23.*
+Everything else in this document is either built and named above, or
+deliberately out of scope.

@@ -2,225 +2,147 @@
 
 **Reader:** an engineer or an assessor. **Job:** Why the audit tables are append-only at the database, and what that costs.
 
----
-
 ## The principle
 
-An **audit-of-record** is a schema element (table, document, or
-event) whose own state: combined with append-only or strictly-bounded
-mutation invariants on that state: fully reconstructs the history of
-the operation it records, **without requiring a separate event-log
-table**.
+An audit of record is a schema element whose own state, combined with
+append-only or narrowly bounded mutation rules on that state, reconstructs the
+full history of the operation it records, without a separate event-log table.
 
-In other words: the artifact and its audit trail are the same object.
-The row's immutability is the audit. There is no "X happened" event
-that lives alongside the row; the row's existence and its
-constrained-mutation rules together *are* the record that X happened.
+The artifact and its audit trail are the same object. The row's immutability
+is the audit. There is no separate "this happened" event beside the row; the
+row's existence and the rules that constrain its change are the record that it
+happened.
 
-## Why the principle exists
+## Why it is worth naming
 
-Polaris tracks several kinds of operations that need full
-reconstruct-ability: token lifecycle transitions, signature
-migrations, recovery ceremonies, strategic consultations. The naive
-design for each is "primary table + event-log table" (e.g.,
-`Recovery + RecoveryEvent`). This double-records state and creates
-drift opportunities: the primary table can disagree with the event
-log; one can be edited while the other is locked; one can be deleted
-while the other persists.
+Several operations here need to be reconstructable after the fact: token
+lifecycle transitions, signature migrations, recovery ceremonies, operator
+authentication. The obvious design for each is a primary table plus an event
+log, `RecoveryRequest` beside a `RecoveryEvent`. That records the same state
+twice and creates a way for the two to disagree: one can be edited while the
+other is locked, one can be deleted while the other survives, and the reader
+has no way to know which is authoritative.
 
-The audit-of-record principle collapses the redundancy. If the
-primary table is *itself* append-only-with-bounded-mutation, no
-parallel event log is needed. The primary table IS the event log.
+Making the primary table itself append-only, with a bounded mutation surface,
+removes the second copy. The primary table is the event log.
 
-This is not a discovery. It's a design pattern. Polaris just happens
-to apply it consistently enough that giving it a name is worth more
-than leaving the term informal across several different files.
+The pattern is not novel. It is named here because the schema applies it in
+thirteen places, and a rule applied thirteen times without a name gets applied
+inconsistently the fourteenth.
 
-## Required properties
+## What qualifies
 
-A schema element qualifies as an audit-of-record if and only if:
+1. **A bounded mutation surface.** The permitted updates are enumerable and
+   narrow. No updates at all qualifies. Any update to any column does not. One
+   mutable field is the usual shape: `deprecation_date` on `TokenSignature`,
+   the decision fields on `RecoveryRequest`.
+2. **No deletes.** History accumulates even when its content becomes stale or
+   wrong. Corrections are new rows, not edits to old ones.
+3. **Enforced by trigger or constraint, not by convention.** Application-level
+   discipline is not enforcement: a motivated insider with a database
+   connection must not be able to step around it.
+4. **One-way transitions** on whatever is mutable. If `deprecation_date` can
+   move from NULL to a timestamp, it cannot move back, and it cannot move
+   earlier.
+5. **Reconstruction without external context.** Reading the table alone
+   answers what happened to an entity, in what order, recorded by whom, and
+   when. If that needs a join to a separate event log, it is not an audit of
+   record.
 
-1. **Bounded mutation surface.** The set of allowed UPDATEs is
-   enumerable and *narrow*. "No UPDATEs allowed" qualifies; "any
-   UPDATE to any column" disqualifies. A single mutable field is
-   the typical shape (e.g., `deprecation_date` on `TokenSignature`,
-   or `decided_at` + `decided_by_user_id` on `RecoveryRequest`).
+## The thirteen instances
 
-2. **DELETE forbidden.** Rows cannot be removed. The history must
-   accumulate even when its content becomes stale or wrong.
-   Corrections happen by *adding new rows*, not by mutating or
-   deleting old ones.
+| Element | What it records | Bounded mutation | Enforcement |
+|---|---|---|---|
+| `TokenLifecycleEvent` | Token state transitions | None; fully append-only | `trg_lifecycle_append_only` |
+| `VerificationEvent` | Verification outcomes per token and context | None; fully append-only | `trg_verification_append_only` |
+| `EnrollmentStatusEvent` | Civic enrolment transitions | None; fully append-only | `trg_enrollment_event_append_only` |
+| `TokenSignature` | Signatures added, and optionally deprecated | `deprecation_date` only, one way | `trg_token_signature_immutable` |
+| `AgencyTrustAttestation` | The federation trust graph | The revocation date and its reason, together, one way | `trg_attestation_immutable` |
+| `TokenStateEpoch` | Per-epoch Merkle commitment of the active set | None after closure | `trg_epoch_immutable` |
+| `TokenStateEpochLeaf` | The leaves under each epoch commitment | None; fully append-only | `trg_epoch_leaf_append_only` |
+| `AnchorBatch` | Per-batch Merkle commitments of anchor leaves | None; fully append-only | `trg_anchor_batch_append_only` |
+| `DuressEvent` | Detected compulsion signals | `oob_notified_at`, set once when a responder acknowledges | `trg_duress_event_append_only` |
+| `AuthAuditLog` | Operator authentication events | None; fully append-only | `trg_authaudit_append_only` |
+| `IndividualErasureEvent` | Right-to-erasure ceremonies | None; fully append-only | `trg_erasure_append_only` |
+| `LifecycleArchiveCheckpoint` | The watermarks that bound every purge | None; fully append-only | `trg_checkpoint_append_only` |
+| `AuditAccessLog` | Who read which audit surface, and when | None; fully append-only | `trg_audit_access_append_only`, added by migration |
+| `RecoveryRequest` | Catastrophic-loss recovery ceremonies | The decision fields, written by `uc9_complete_recovery` | Partial: see below |
 
-3. **Trigger-enforced, not convention.** The append-only and bounded-
-   mutation invariants are enforced by trigger or schema constraint,
-   not by application code. A sufficiently-motivated insider with
-   direct DB access must not be able to bypass the audit.
+Every trigger above raises `insufficient_privilege`, and
+`check_aor_append_only_triggers` fails the build if that stops being true.
 
-4. **One-way state transitions** for the mutable fields. If
-   `deprecation_date` can be set NULL → timestamp, it cannot then
-   transition back to NULL or earlier. State accumulates; it does
-   not reverse.
+## The one that is not fully enforced
 
-5. **Reconstruction without external context.** Reading the table
-   in isolation must answer: "What happened to entity X, in what
-   order, recorded by whom, when?" If the answer requires joining
-   to a separate event-log table, the element is not an
-   audit-of-record.
+`RecoveryRequest` is the exception, and it is named rather than glossed. A
+partial unique index prevents a second pending request for an individual while
+one is open, and `uc9_complete_recovery` is the only sanctioned path that
+writes the decision. A raw UPDATE from a database session is not refused at
+the schema level. Closing that gap means a trigger in the shape of
+`enforce_token_signature_immutability`, and until it exists the honest
+statement is that this instance rests on procedure discipline rather than on
+the schema.
 
-## The current instances (9 schema tables)
+## What the principle is not
 
-Count corrected in v8.32 maintenance pass (8 → 10), then settled
-at the nine schema tables below once the non-schema candidates were
-reclassified as derived caches (they reconstruct from the schema and
-source code, so they fail the AoR criterion "fully reconstructs
-operation history without joining elsewhere").
+- **Not all or nothing.** Conformance is a spectrum, and the instances sit at
+  different points on it. What matters is that the position is stated.
+- **Not unique to this project.** A decision-record process is the same
+  pattern; a blockchain transaction log is its extreme, with mutation
+  forbidden absolutely rather than bounded.
+- **Not a substitute for event sourcing.** A question that spans entities,
+  what the whole system looked like at a moment, still wants a separate
+  layer. This collapses the per-entity redundancy only.
+- **Not append-only in the strict sense everywhere.** Append-only means no
+  update and no delete. An audit of record allows a bounded update, usually
+  one one-way field, because that bound is what makes the row a living record
+  rather than a snapshot. The surface has to be narrow enough that the row's
+  future is predictable from its present plus the permitted transitions.
 
-The instances are listed in the order the principle was applied. The
-first nine are the original set; rows 10 to 13 were added after this note
-was first written (thirteen surfaces at v9.194).
+## Deciding whether a new table qualifies
 
-| # | Element | Operation it records | Bounded mutation | DELETE rule |
-|---|---|---|---|---|
-| 1 | **`TokenLifecycleEvent`** | Token state transitions (RESERVE → ACTIVE → REVOKED etc.) | None, fully append-only | Forbidden by `reject_audit_modification` trigger |
-| 2 | **`VerificationEvent`** | Verification outcomes per token × context | None, fully append-only | Forbidden by `reject_audit_modification` trigger |
-| 3 | **`EnrollmentStatusEvent`** | Civic-enrollment status transitions (NOT_ENROLLED → ENROLLED → LAPSED → EXEMPT) | None, fully append-only | Forbidden by `trg_enrollment_event_append_only` trigger |
-| 4 | **`RecoveryRequest`** | Catastrophic-loss recovery ceremonies (PENDING → APPROVED/REJECTED/EXPIRED) | `decided_at`, `decided_by_user_id`, `decision_reason`, `resulting_token_id`, `status`: only as part of `uc9_complete_recovery` | Not enforced by trigger; partial unique index `uq_one_pending_recovery_per_individual` prevents new PENDING during open one |
-| 5 | **`TokenSignature`** | Algorithm migrations (signature added, optionally deprecated) | Only `deprecation_date`, one-way NULL → timestamp | Forbidden by `enforce_token_signature_immutability` trigger |
-| 6 | **`AnchorBatch`** (v8.21 / | Per-batch Merkle commitments of `BlockchainAnchor` leaves | None, fully append-only (operator-set `committed_to_chain` / `external_chain` are out-of-scope future-fields, NOT yet wired) | Forbidden by `reject_audit_modification` trigger |
-| 7 | **`AgencyTrustAttestation`** (v8.22 / | Federation trust graph (cross-agency mutual recognition per context) | `revocation_date` + `revocation_reason` pair: one-way NULL → timestamp + non-NULL reason ≥ 8 chars | Forbidden by `enforce_attestation_immutability` trigger |
-| 8 | **`TokenStateEpoch`** (v8.23 / | Per-epoch Merkle commitment of the active-token set (ZK-SNARK base) | None, fully append-only after closure | Forbidden by `enforce_epoch_immutability` trigger |
-| 9 | **`DuressEvent`** (v8.24 / | Detected compulsion signals (silent OOB alert for verifier under coercion) | `oob_notified_at` only: set once when a responder acknowledges (forward-only) | Forbidden by `reject_audit_modification` trigger |
+When a new element records an operation, four questions settle it. Is there a
+natural primary entity? Does the operation have a small, enumerable set of
+transitions? Would a parallel event log be mostly a denormalisation of that
+entity's own state changes? Can append-only or bounded mutation be enforced in
+the schema? Two yeses to the last two make it an audit of record. A no to
+either makes a separate event log the better shape. The principle is not a
+hammer.
 
-| 10 | **`AuthAuditLog`** | Operator authentication events (logins, lockouts, session revocations) | None, fully append-only | Forbidden by `reject_audit_modification` trigger (`trg_authaudit_append_only`) |
-| 11 | **`IndividualErasureEvent`** (v9.125) | Right-to-erasure pseudonymization ceremonies | None, fully append-only | Forbidden by `reject_audit_modification` trigger (`trg_erasure_append_only`) |
-| 12 | **`LifecycleArchiveCheckpoint`** | Archive watermarks that bound every purge | None, fully append-only | Forbidden by `reject_checkpoint_modification` trigger (`trg_checkpoint_append_only`) |
-| 13 | **`AuditAccessLog`** (v9.20, migration-added) | Who read which audit surface, and when | None, fully append-only | Forbidden by `reject_audit_modification` trigger (`trg_audit_access_append_only`) |
+## The corollary: no cascade, anywhere
 
-### Conformance grading
+No foreign key in any schema file uses `ON DELETE CASCADE` or
+`ON UPDATE CASCADE`. Every one either omits the clause, which defaults to
+`NO ACTION`, or says `NO ACTION` or `RESTRICT`.
 
-**Twelve of the thirteen instances are fully trigger-enforced**
-(`TokenLifecycleEvent`, `VerificationEvent`, `EnrollmentStatusEvent`,
-`TokenSignature`, `AnchorBatch`, `AgencyTrustAttestation`,
-`TokenStateEpoch`, `DuressEvent`, `AuthAuditLog`, `IndividualErasureEvent`,
-`LifecycleArchiveCheckpoint`, `AuditAccessLog`). `RecoveryRequest` has
-partial enforcement via partial unique index + procedure discipline.
-This asymmetry is honest, not aspirational:
+A cascade on a parent delete would silently propagate into the audit tables:
+the lifecycle events of a deleted token would vanish with the token, leaving
+no trace the lifecycle existed. `NO ACTION` is the right semantic. The parent
+delete fails while any dependent row exists, so an operator either transitions
+the dependent state explicitly, recording that transition, or accepts that the
+parent is undeletable. Both outcomes keep the trail.
 
-- `RecoveryRequest` could be tightened with a dedicated trigger
-  similar to `enforce_token_signature_immutability`, a future
-  hardening pass. The procedure `uc9_complete_recovery` is the
-  only sanctioned mutation path today, but raw UPDATEs are not
-  refused at the schema level.
+The same rule holds for the non-audit tables, for consistency: a principal
+referenced by any audit row is effectively undeletable, which is correct.
+Deleting the agency that issued a verification would erase what the event
+means.
 
-## What the principle is NOT
+`check_no_fk_cascade` scans every file under `polaris_sql/` for both cascade
+forms and fails on a match. There is no allowlist: a schema that genuinely
+needed cascade semantics would be amending this principle, not exempting one
+file from it.
 
-- **Not all-or-nothing.** Conformance is a spectrum. The instances
-  above are in different positions on it; that's OK
-  as long as the position is named honestly.
-- **Not unique to Polaris.** ADR/RFC processes are also
-  audit-of-record patterns. Block-chain transaction logs are an
-  extreme version (mutation forbidden absolutely, not just bounded).
-  The principle is being named here because Polaris applies it
-  consistently; not claiming originality.
-- **Not a substitute for application-level event sourcing.** If a
-  use case genuinely needs *cross-entity* event reconstruction
-  (e.g., "what was the full state of the system at 3pm on Tuesday?"),
-  a separate event-sourcing layer might still be warranted. The
-  audit-of-record collapses *per-entity* redundancy; it doesn't
-  replace cross-cutting audit.
-- **Not append-only in the strict sense for every instance.**
-  Append-only means "no UPDATE, no DELETE." Audit-of-record allows
-  *bounded* UPDATE, typically a single one-way field, because the
-  bound is what makes the row a *living state record* rather than
-  an immutable snapshot. The mutation surface must be narrow enough
-  that the row's future state is fully predictable from its
-  current state plus the allowed transitions.
+The rule names cascade specifically. It does not ban application-level
+cascading: `uc8_revoke_token` records a revocation and marks dependent rows in
+one transaction, which is an explicit, audited cascade in code.
+`ON DELETE SET NULL` also destroys evidence, since it loses which parent was
+referenced, but it remains a convention rather than a checked rule.
 
-## When to apply the principle
+## Reading the code
 
-When designing a new schema element that records an operation, ask:
-
-1. Is there a natural "primary entity" for this operation? (yes →
-   maybe audit-of-record applies)
-2. Does the operation have a small, enumerable set of state
-   transitions? (yes → audit-of-record applies)
-3. Would the parallel event-log table be largely a denormalization
-   of the primary table's state-change history? (yes →
-   audit-of-record is strictly cleaner)
-4. Can append-only / bounded-mutation be enforced at the schema
-   layer? (yes → ship it as audit-of-record)
-
-If the answers are "no" to #2 or #4, consider a separate event-log
-table instead. The principle is not a hammer.
-
-## No FK CASCADE: ever (v8.50)
-
-A corollary of the principle, codified after the v8.45 schema-scan
-agent surfaced it as an implicit-but-unnamed rule:
-
-**No foreign-key relationship in any Polaris schema file uses
-`ON DELETE CASCADE` or `ON UPDATE CASCADE`.** Every FK either omits
-the action clause entirely (defaulting to `NO ACTION` in PostgreSQL)
-or explicitly says `NO ACTION` / `RESTRICT`.
-
-### Why
-
-CASCADE on a parent row's delete would silently propagate the
-delete to dependent rows in audit-of-record tables. That violates
-the principle's *appendOnly* property at the same row level:
-`TokenLifecycleEvent` rows for a deleted token would vanish along
-with the token, leaving no trace the lifecycle existed.
-
-The default `NO ACTION` semantic is exactly the right answer:
-the parent DELETE fails if any dependent row exists. The operator
-must either (a) explicitly transition the dependent state (e.g.,
-revoke the token, recording the revocation event) before the
-parent can be deleted, or (b) accept that the parent is
-effectively undeletable. Both paths preserve the audit trail.
-
-For non-AoR tables (e.g., `Individual`, `Agency`, `CryptographicAlgorithm`,
-`VerificationContext`), the same rule applies for consistency:
-referenced principals are effectively undeletable once their
-identifiers appear in any audit row. That's *correct*: deleting
-the issuing agency of a verification event would erase
-information needed to interpret the event later.
-
-### How the rule is enforced
-
-- **Convention** at code-review time. Every `FOREIGN KEY` clause
-  in `polaris_sql/*.sql` is reviewed for absence of CASCADE.
-- **Structural-invariant check** at CI time (added v8.50): scans
-  every `.sql` file under `polaris_sql/` for the substrings
-  `ON DELETE CASCADE` and `ON UPDATE CASCADE`. Fails if any match.
-  See `check_no_fk_cascade` in `polaris_checks/checks.py`.
-- **No allowlist mechanism.** If a future schema genuinely needs
-  CASCADE semantics (very unlikely, since Polaris's identity model
-  rejects it constitutionally), the right path is an amendment to
-  this principle, not a per-file bypass.
-
-### What the rule is NOT
-
-- Not a ban on application-level cascading. The `uc8_revoke_token`
-  procedure can record a revocation event AND mark dependent rows
-  REVOKED in one transaction; that's an explicit, audited
-  cascade in code, not a silent FK cascade.
-- Not a ban on `ON DELETE SET NULL`. The rule names CASCADE
-  specifically because SET NULL also destroys evidence
-  (information about WHICH parent the dependent referenced is
-  lost). But the structural test guards CASCADE only, leaving
-  SET NULL as a convention-level concern. Add it to the check if a
-  future ship needs to lock it down.
-
-## Cross-references
-
-- `polaris_sql/01_schema.sql`: TokenLifecycleEvent, RecoveryRequest,
-  TokenSignature definitions.
-- `polaris_sql/06_triggers.sql`: `reject_audit_modification`,
-  `enforce_token_signature_immutability`, the trigger enforcement
-  layer.
-- `polaris_checks/checks.py`: `check_no_fk_cascade`, the
-  machine-checked enforcement of the no-CASCADE corollary.
-- `docs/design/concurrency.md`: adjacent principle: per-entity
-  advisory locks are the concurrency complement to audit-of-record.
-- v8.19 self-audit: the audit that named this principle as
-  load-bearing-but-undefined vocabulary.
+- `polaris_sql/01_schema.sql` for the table definitions.
+- `polaris_sql/06_triggers.sql` for `reject_audit_modification` and the
+  per-table enforcement above.
+- `polaris_checks/checks.py` for `check_aor_append_only_triggers`,
+  `check_aor_privilege_boundary` and `check_no_fk_cascade`.
+- [concurrency.md](concurrency.md) for the complement: per-entity advisory
+  locks, which is how these tables stay correct under concurrent writers.

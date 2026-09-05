@@ -2,203 +2,128 @@
 
 **Reader:** an engineer or an assessor. **Job:** How a batch of audit rows is committed to an external anchor, and what that does and does not prove.
 
-This file is the canonical write-up for Polaris's DID anchoring layer:
-how Merkle batches are computed, where the substrate enforcement lives,
-and what the schema does versus what the operator decides.
+An audit trail held by one operator asks everyone to trust that operator not
+to rewrite it. Anchoring answers that without moving the system onto a ledger:
+the schema stays the audit of record, and a periodic Merkle commitment lets an
+outside verifier prove the history at that point has not been revised since.
 
----
+The commitment is what leaves; the data does not.
 
-## What implements
+## How a batch closes
 
-PDF §9 "Centralized trust assumption" names DID anchoring as the
-substrate alternative to the relational schema as a sole trust root.
-Polaris's posture: the schema remains the *primary* audit-of-record,
-and the anchoring layer is a periodic, signed off-chain commitment
-that lets external verifiers reconstruct the same audit without
-trusting the Polaris operator.
+1. Each `BlockchainAnchor` row carries a per-token identifier and a commitment
+   hash.
+2. `close_anchor_batch(algorithm_id, root, proofs)` groups the pending anchors
+   by signature algorithm, records a new `AnchorBatch` row with the Merkle
+   root, and writes each leaf's inclusion proof back to its anchor row.
+3. The operator publishes the root, with per-leaf proofs, to whatever external
+   ledger they have chosen. When and where is their decision; the schema
+   records that it happened.
 
-Concretely:
+## The Merkle maths runs in Python, not in the database
 
-1. Each `BlockchainAnchor` row carries a per-token DID + commitment
-   hash (added in v1).
-2. A `close_anchor_batch(algorithm_id, root, proofs)` procedure groups
-   pending `BlockchainAnchor` rows by signature algorithm, computes a
-   Merkle root over them, and records a new `AnchorBatch` row.
-3. The Merkle root + per-leaf inclusion proof is what gets committed
-   to an external PQ-capable ledger (operator-discretion when, and
-   which ledger).
+`polaris_web/anchoring.py` computes the root and the proofs, and the procedure
+takes them as parameters. That keeps the schema portable: requiring
+`plpython3u` would tie every deployment to a PostgreSQL build with the trusted
+language installed, which many managed providers do not offer.
 
-The Polaris schema is the audit-of-record. The external ledger is the
-trust-anchor — every batch the operator pushes there is a public
-commitment that the schema's history at that point cannot be
-silently revised.
+The cost is that a compromised helper could hand the procedure a root that
+does not match its leaves. The answer is that nothing trusts the helper: every
+verifier, the route and any external auditor's script alike, recomputes the
+root from the stored commitment hashes and compares. A lie told at batch-close
+is detectable on the next verification.
 
-## Architecture choice: Python helper, not plpython3u
+## Leaves are ordered, and the order is part of the defence
 
-The Merkle math runs in Python (`polaris_web/anchoring.py`). The SQL
-procedure consumes pre-computed root + proofs as parameters. This
-keeps the substrate portable — no `plpython3u` dependency, which would
-otherwise lock Polaris to a Postgres build with the trusted-language
-extension installed.
+The helper sorts leaves by anchor identifier before hashing, and the procedure
+selects them in the same order. Without a deterministic order an attacker can
+produce two different roots from one leaf set, show each to a different
+auditor, and call both canonical. One order means one root.
 
-The cost: a determined attacker who controls the Python helper could
-hand the procedure inconsistent (root, proofs) data. Defense: every
-*verifier* (the Flask route, external auditor scripts) recomputes the
-Merkle root from `BlockchainAnchor.commitment_hash` and compares. If
-the helper lied to the procedure at batch-close, the lie is
-detectable on the very next verification call.
+## The hash is operator policy
 
-## Leaf ordering: sort by anchor_id ascending
+`SUPPORTED_HASHES` offers SHA3-256, which is the default and FIPS 202,
+SHA3-512 for a higher target, and a BLAKE3 entry that falls back to SHA3-256
+when the library is absent.
 
-The Python helper sorts `(anchor_id, commitment_hash)` tuples by
-`anchor_id` ascending before computing leaves. This defeats the
-"publish-then-fork" attack:
+The `CryptographicAlgorithm` table records signature algorithms, not hash
+functions, so the hash used for a batch is a property of the helper at batch
+time rather than a column. Changing it later is a new entry in
+`SUPPORTED_HASHES` and an operator policy decision, not a schema migration.
 
-> If an attacker can re-order leaves arbitrarily, they can produce
-> two different Merkle roots from the same leaf set — one to show
-> auditor A, one to show auditor B — and claim each is the canonical
-> batch.
+## One batch at a time, per algorithm
 
-Deterministic ordering forces a single root per leaf set. The same
-ordering is implicit in the SQL procedure (the `ORDER BY a.anchor_id`
-on the SELECT inside `close_anchor_batch` is the schema-side mirror).
+`close_anchor_batch` takes a transaction-scoped advisory lock keyed on the
+algorithm. Two calls for the same algorithm serialise; two calls for different
+algorithms do not. It is the same shape as the per-agency lock on revocation,
+the per-individual lock on recovery and the per-token lock on migration, and
+[concurrency.md](concurrency.md) holds the catalogue.
 
-## Hash algorithm: SHA3-256 default, operator-policy
+Without it, two callers can see the same pending leaves, both insert a batch,
+and split or duplicate the leaves between them, breaking the property that a
+leaf belongs to exactly one batch.
+`ConcurrencyTests.test_close_anchor_batch_concurrent` races them.
 
-`SUPPORTED_HASHES` in `anchoring.py`:
+## Three things the schema deliberately does not do
 
-- `SHA3-256` — default, FIPS 202, post-quantum-comfortable
-- `SHA3-512` — for batches with higher security-level targets
-- `BLAKE3-256` — falls back to SHA3-256 if blake3 not installed
+- **It does not mark a batch as committed.** `committed_to_chain` exists and
+  no trigger sets it. Publishing to a ledger is an operator action, and the
+  schema records the fact rather than performing it.
+- **It ships no procedure for recording the publication.** A tooling layer
+  could add one that takes a batch, a chain and a transaction identifier and
+  sets the flag. Until an operator has chosen a ledger there is nothing to
+  design it against.
+- **It does not store the hash function.** Which function closed a given batch
+  is answered by this document and by the proof geometry, not by a column.
 
-The algorithm choice is operator policy. The `CryptographicAlgorithm`
-table records *signature* algorithms (ML-DSA, SLH-DSA, etc.), not
-hash functions; the hash function is implicit in the helper at batch
-time and recorded only in this file. If the hash needs to change in
-the future, that's a new entry in `SUPPORTED_HASHES` plus an
-operator-policy update — not a schema migration.
+The three future fields, `committed_to_chain`, `external_chain` and
+`external_chain_tx`, move together under the `batch_chain_consistency` check,
+so a transaction identifier cannot appear while the flag is false. Nothing
+writes them yet. They are here so that the relationship between the off-chain
+batch and the on-chain commitment is documented in the schema before the
+on-chain side exists, and so that wiring it later is not a migration.
 
-## Per-algorithm advisory-lock (C9)
+## The ten-thousand-leaf cap
 
-`close_anchor_batch` holds `pg_advisory_xact_lock(hashtext(
-'polaris.anchor.close-batch.' || algorithm_id::TEXT))`. Two parallel
-calls for the same algorithm serialize; two parallel calls for
-different algorithms run in parallel. This is the same shape as the
-per-agency lock (UC-8), per-individual lock (UC-9), and per-token
-lock (UC-6) — the fourth entry in Polaris's per-entity advisory-lock
-catalog. See `docs/design/concurrency.md`.
+`close_anchor_batch` refuses a larger batch. A SHA3-256 tree over ten thousand
+leaves is fourteen levels deep, so an inclusion proof is fourteen sibling
+hashes, a few hundred bytes, which is a reasonable thing to hand a verifier.
+Ten thousand anchors an hour is a population-scale rate. Beyond that, proofs
+grow into the kilobytes and the verifier's client pays for it.
 
-The lock protects against the phantom-batch race: without it, two
-threads could each see the same pending leaf set, both INSERT an
-`AnchorBatch` row, and split or duplicate the leaves between the two
-batches — either way breaking the audit-of-record's
-"one-batch-per-leaf" property.
+The cap is an engineering bound, not a security one. Raising it is fine if a
+deployment needs it, since proof size grows logarithmically.
 
-## Schema decisions and what they're NOT
+## Where an adversary ends up
 
-Three deliberate non-choices, each named here to keep the operator
-discretion visible:
+- **The claim.** A closed batch fixes a Merkle root, and an inclusion proof
+  for any leaf is unforgeable under SHA3-256. Anyone holding the root, the
+  leaf and the proof can confirm the leaf was in the batch at close time.
+- **The direct attack.** Find a pre-image that hashes into an existing root.
+  SHA3-256 offers 256-bit pre-image resistance against a classical attacker
+  and half of that against Grover, which is still out of reach. The
+  cryptographic layer is not where this gets attacked.
+- **So the attack moves up.** The remaining targets are the batch-closing
+  procedure, the lock that decides which leaves are eligible, and the
+  immutability trigger on the batch row.
+- **The best of those.** Race two closes against the same algorithm to compose
+  a leaf set before the lock is taken. The advisory lock defeats it: the
+  second caller waits, then finds the first caller's rows already assigned to
+  a batch and no eligible leaves left.
+- **What it costs.** Per-algorithm scoping means one tree cannot mix
+  algorithms. A global anchor would need a differently scoped lock. That is
+  accepted, because algorithm scoping is what keeps a signature algorithm
+  substitutable rather than load-bearing for the whole history.
 
-1. **`committed_to_chain` is not auto-derived.** The column exists,
-   but no trigger flips it to TRUE just because an `AnchorBatch` row
-   was created. Pushing the batch to an external ledger is an
-   operator action; the schema records the fact of the push but does
-   not perform the push.
+## Reading the code
 
-2. **No `close_anchor_batch_chain` procedure.** A future tooling
-   layer might add a procedure that takes (batch_id, external_chain,
-   external_chain_tx) and flips `committed_to_chain = TRUE`.
-   deliberately ships without it.
-
-3. **Hash algorithm is not in the schema.** As above, it's an
-   operator-policy choice recorded in this DEVNOTES file. If you want
-   to query "which hash function was used for batch N", you read this
-   file. The Merkle proof format itself encodes the hash function
-   implicitly via the proof geometry.
-
-## 10,000 leaf hard cap
-
-`close_anchor_batch` rejects batches larger than 10,000 leaves with a
-clear message. Rationale:
-
-- A SHA3-256 Merkle tree of 10k leaves is ~14 levels deep; proofs are
-  14 sibling-hashes (~448 bytes). Acceptable inclusion-proof size.
-- 10k anchors per batch at one batch/hour is 240k anchors/day —
-  enough for a population-scale issuer.
-- Larger batches would push proof size into the kilobyte range,
-  which is a UX problem for verifier clients.
-
-The cap is a soft engineering bound, not a security bound. Bumping it
-to 100k is fine if the use case warrants; the proof-size growth is
-logarithmic.
-
-## The `committed_to_chain` future-fields
-
-`AnchorBatch` ships with `committed_to_chain`, `external_chain`,
-`external_chain_tx` columns that are *operator-set future-fields*.
-The `batch_chain_consistency` CHECK constraint enforces that they
-move together (you can't have `external_chain_tx` filled while
-`committed_to_chain = FALSE`), but no code-path in v8.21 writes to
-them. They're a placeholder for the eventual external-ledger
-integration.
-
-This is intentional: the schema documents the relationship between
-the off-chain batch and the on-chain commitment *before* the on-chain
-side is wired. When that integration ships, the schema doesn't need
-to change.
-
-## Adversary walk
-
-1. **Defender's claim:** Every closed `AnchorBatch` produces an
-   immutable Merkle root; the inclusion proof for any leaf
-   (`token_id`, `commitment_hash`) is forge-proof under SHA3-256
-   collision resistance. A verifier given (root, leaf, proof) can
-   independently confirm the leaf was in the batch at close time.
-2. **Attacker's optimal response:** Pre-image search on SHA3-256 to
-   forge a leaf that hashes into an existing root. SHA3-256 has
-   256-bit pre-image resistance; the attacker reduces to brute
-   force against a hash family selected post-quantum-comfortable.
-   Game over for the attacker at the cryptographic layer.
-3. **Equilibrium:** The Merkle layer is computationally infeasible
-   to forge; the attacker must move *up the stack* to attack
-   (a) the batch-construction procedure (`close_anchor_batch`),
-   (b) the per-algorithm advisory lock that scopes which leaves
-   are eligible for a batch, or (c) the post-close immutability
-   trigger (`trg_anchor_batch_append_only`).
-4. **Second-best attack:** Race two concurrent batch-close calls
-   against the same algorithm to compose a malicious leaf set
-   before the lock acquires. Defeated by the per-algorithm
-   `pg_advisory_xact_lock(algorithm_id)` (4th catalog entry in
-   `docs/design/concurrency.md`): the second caller waits, then sees
-   the first caller's `batch_id IS NOT NULL` rows and finds no
-   eligible leaves. Tested by
-   `ConcurrencyTests.test_close_anchor_batch_concurrent`.
-5. **Defender's cost:** Per-algorithm scoping means batches with
-   mixed algorithms can't co-exist in one Merkle tree. A future
-   "global anchor" would require a separate procedure with a
-   weaker (or differently-scoped) lock. Accepted: the algorithm-
-   scope is a feature, not a bug — it preserves cryptographic
-   substitutability per the v8.30 principle.
-6. **Mechanism-design note:** The 10,000-leaf hard cap is a
-   Schelling-point choice balancing proof-size (logarithmic in
-   batch size) against operator-pace (one batch = one ledger
-   transaction = one operator approval). Lowering the cap
-   tightens batch latency; raising it amortizes more leaves per
-   ledger tx. The choice is operator-policy, not constitutional.
-
-## Cross-references
-
-- `polaris_web/anchoring.py` — the Merkle helper (compute_batch,
-  leaf_hash, merkle_root, inclusion_proof, verify_proof).
-- `polaris_sql/01_schema.sql` — `AnchorBatch` table, extended
-  `BlockchainAnchor` with `batch_id` + `merkle_proof`.
-- `polaris_sql/05_procedures.sql` — `close_anchor_batch` procedure.
-- `polaris_sql/06_triggers.sql` — `trg_anchor_batch_append_only`.
-- `polaris_sql/08_tests.sql` — Section O (5 self-tests).
-- `polaris_web/test_app.py` — `AnchorBatchTests` (15 tests),
-  `ConcurrencyTests.test_close_anchor_batch_*` (2 tests).
-- `docs/design/audit-of-record.md` — `AnchorBatch` is the 5th instance
-  of the principle.
-- `docs/design/concurrency.md` — per-algorithm advisory-lock is the
-  4th entry in the catalog.
-- `MISSION.md` — marked ✅ in the v2 done-list.
+- `polaris_web/anchoring.py`: `compute_batch`, `leaf_hash`, `merkle_root`,
+  `inclusion_proof`, `verify_proof`.
+- `polaris_sql/01_schema.sql`: `AnchorBatch`, and `BlockchainAnchor` with its
+  batch reference and proof column.
+- `polaris_sql/05_procedures.sql`: `close_anchor_batch`.
+- `polaris_sql/06_triggers.sql`: `trg_anchor_batch_append_only`.
+- `polaris_web/test_app.py`: `AnchorBatchTests`, and the concurrency tests
+  named above.
+- [audit-of-record.md](audit-of-record.md): `AnchorBatch` is one of the
+  thirteen instances of the principle.

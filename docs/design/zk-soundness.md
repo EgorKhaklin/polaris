@@ -2,27 +2,25 @@
 
 **Reader:** an engineer or an assessor. **Job:** What the words proof and zero-knowledge mean here, precisely.
 
-Polaris's `polaris_zk` crate uses the words *proof*, *zero-knowledge*, and
-*post-quantum*. This is the honest ledger: which of those claims are rigorous,
-which are still limited, and exactly where the edges are. It is modeled on Glass's
-`docs/soundness.md` and was added in v9.44 as the documentation half of the
-Glass bounded-integration decision.
+The `polaris_zk` crate uses the words proof, zero-knowledge and post-quantum.
+This is the ledger that says which of those claims are rigorous, which are
+limited, and exactly where the edges are. A layer that cannot state its own
+limits precisely should not be trusted with the thing it protects.
 
 The short version, up front:
 
 > **The ZK layer is an educational Merkle-inclusion SNARK built on the audited
-> `plonky2` 1.x crate (bumped from 0.2 in v9.170; Merkle roots verified
-> bit-identical across the major). The membership statement and its verdict are
+> `plonky2` 1.x crate (Merkle roots were verified bit-identical across the
+> major-version bump). The membership statement and its verdict are
 > two-witnessed by an independent implementation. The tree depth is
 > runtime-parameterized (`POLARIS_ZK_TREE_DEPTH`, default 14 = 16,384 leaves),
 > which covers the schema's 10,000-leaf epoch cap, so the default anonymity set
-> is a full epoch; prove/verify/size are now measured (below). The
-> token-signing PQC path is a deterministic placeholder by default, and none of
+> is a full epoch; prove, verify and proof size are measured below. None of
 > this has had an external cryptographic audit. Do not protect real identities
 > with it as shipped.**
 
-There are two different kinds of guarantee here. Conflating them is the main way
-to be misled. Keep them separate.
+There are two different kinds of guarantee here, and conflating them is the
+main way to be misled by this layer.
 
 ---
 
@@ -32,13 +30,13 @@ This is the guarantee Polaris now delivers rigorously, and it is not itself a
 cryptographic claim. It is a correctness claim about the implementation.
 
 The verdict of the Rust verifier (`polaris_zk::verify`) is **two-witnessed**: an
-independent, from-scratch re-implementation of the same field, hash, and Merkle
+independent, from-scratch re-implementation of the same field, hash and Merkle
 semantics (`polaris_zk/witness2/`, pure Python, plain `int mod p` rather than the
-Rust crate's limbs, sharing no code with the crate or with Glass) re-derives the
-membership fact and the public-input binding and must agree ACCEPT / REJECT on
-every honest and adversarial case.
+Rust crate's limbs, sharing no code with it) re-derives the membership fact and
+the public-input binding, and must agree on ACCEPT or REJECT in every honest and
+adversarial case.
 
-What is checked, and how hard you can lean on it:
+What is checked:
 
 - **Root computation** is bit-for-bit identical between the Rust crate
   (`compute-root`) and the Python witness across every cohort size 1..16
@@ -53,10 +51,9 @@ What is checked, and how hard you can lean on it:
   multi-field replay) through both verifiers; both ACCEPT the honest case and both
   REJECT every tamper.
 
-This is the part you can lean on hardest. It says: the membership statement
-Polaris's verifier accepts is the statement an independent implementation also
-accepts, and the bindings it rejects are the bindings an independent
-implementation also rejects.
+This is the strongest claim in the document. The membership statement Polaris's
+verifier accepts is the statement an independent implementation also accepts,
+and the bindings it rejects are the ones that implementation also rejects.
 
 ---
 
@@ -69,12 +66,12 @@ it. The honest caveats:
 
 | Component | What is real | The honest caveat |
 |---|---|---|
-| **Proof system** | The audited, widely-used `plonky2` 1.x crate (transparent setup, FRI-based, no trusted ceremony, no elliptic-curve assumption); bumped from 0.2 in v9.170 with roots verified bit-identical and the two-witness differential re-passing. | Polaris ships a thin circuit over it. The *crate* is mature; *Polaris's use of it* has had no external review. |
+| **Proof system** | The audited, widely used `plonky2` 1.x crate: transparent setup, FRI-based, no trusted ceremony, no elliptic-curve assumption. The major-version bump was taken with roots verified bit-identical and the two-witness differential re-passing. | Polaris ships a thin circuit over it. The crate is mature; Polaris's use of it has had no external review. |
 | **Statement** | "I know a leaf `L` and a path `P` such that `L` hashes up to the public root `R`, bound to `(epoch_id, context_id, nonce)`." Correct and now two-witnessed. | The binding fields are registered as public inputs but not otherwise constrained (see the public-input registration in `lib.rs`); they prevent proof *substitution* by commitment, not by an in-circuit predicate, and do not by themselves prevent bundle replay (the single-use nonce store is deferred, threat-model T-T2). |
 | **Tree size** | Depth is runtime-parameterized (P0.7): `POLARIS_ZK_TREE_DEPTH`, default 14 (16,384 leaves), settable 4..=32. | The default covers the schema's 10,000-leaf epoch cap, so the anonymity set is a full epoch, not a 16-leaf demo. Plonky2 is transparent, so a depth change is a config change, not a ceremony. Larger anonymity sets are viable for verify/size but bounded by prover cost (see benchmarks). |
 | **Hash** | Poseidon over Goldilocks, Plonky2-native, vector-matched. | Standard primitive, but the in-circuit security margin is Plonky2's default config, not a parameter set audited for this deployment. |
 | **FRI parameters** | `CircuitConfig::standard_recursion_config()` defaults. | The concrete bit-security of the shipped config is **still not independently derived here** (it depends on the FRI rate + query count, which this ledger does not re-derive); treat any specific bit number as aspirational. What IS now measured is the *performance* profile below. |
-| **Token-signing PQC** | Integration scaffold for real ML-DSA via liboqs (`pqc_signing.py`, `POLARIS_USE_REAL_PQC`). | **Off by default**: `token_value` is a deterministic placeholder so property tests stay reproducible. Activation is operator-side. This is a separate primitive from the Merkle SNARK above; do not conflate them. |
+| **Token-signing PQC** | Real ML-DSA-65 through liboqs (`pqc_signing.py`, `POLARIS_USE_REAL_PQC`), two-witnessed on the verify path, and set by both shipped production paths. | The code default is off, so a development run signs a labelled deterministic placeholder and property tests stay reproducible. This is a separate primitive from the Merkle SNARK above; the two are often conflated and should not be. |
 
 ### Measured performance (P0.7, v9.169)
 
@@ -127,26 +124,30 @@ differential records this explicitly
 corruption the Rust side rejects and the witness, seeing an intact statement,
 abstains rather than bluffs.
 
-This is the same honest boundary Glass's Pentecost verifier names for itself: a
-second witness catches implementation divergence on the statement, not a shared
-misreading of the spec, and never substitutes for an external audit.
+That is the boundary every two-witness claim has: it catches implementation
+divergence on the statement, not a shared misreading of the specification, and
+it never substitutes for an external audit.
 
 ---
 
 ## Bottom line for an operator
 
-- The **engine** invariants (C1-C10) are real and enforced in Postgres. This
-  ledger is **only** about the optional ZK layer.
-- The ZK layer is good **tooling and teaching**: a transparent-setup,
-  post-quantum-comfortable membership proof whose verdict is now independently
-  two-witnessed.
-- It is **not** audited cryptography: the FRI config's concrete bit-security is
-  unmeasured here, and PQC signing is a placeholder by default. The README's
-  framing as a real identity system is, correctly, labeled notional.
+The constitutional invariants, C1 to C10, are enforced in PostgreSQL and are
+not what this ledger is about. This is only the optional ZK layer, and for
+that layer the position is:
+
+- The membership proof is transparent-setup, post-quantum-comfortable, and its
+  verdict is independently two-witnessed. That part is solid, and it is good
+  tooling to learn from and to build on.
+- It is not audited cryptography. The concrete bit-security of the shipped FRI
+  configuration is not derived here, and Polaris's circuit over `plonky2` has
+  had no external review.
+- The README's framing of the whole system as notional is the correct one, and
+  this layer is a reason for it rather than an exception to it.
 
 | Question | Read |
 |---|---|
-| The independent witness | `polaris_zk/witness2/` (+ `test_witness2.py`) |
+| The independent witness | `polaris_zk/witness2/`, with `test_witness2.py` |
 | The verdict differential | `polaris_web/test_zk_second_witness.py` |
-| The two-witness principle | [`docs/design/two-witness-principle.md`](two-witness-principle.md) |
-| Per-ship ZK reference | [`docs/design/zk-snark.md`](zk-snark.md) |
+| The two-witness principle | [two-witness-principle.md](two-witness-principle.md) |
+| What the circuit proves | [zk-snark.md](zk-snark.md) |

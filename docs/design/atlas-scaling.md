@@ -2,39 +2,36 @@
 
 **Reader:** an engineer or an assessor. **Job:** How the map stays bounded as the event log grows.
 
-The scaling story in 60 lines. Full treatment in `docs/reference/SCALING.md`.
-
----
+The short version. The measured numbers and the full treatment are in
+[../reference/SCALING.md](../reference/SCALING.md).
 
 ## Why the architecture is what it is
 
-Atlas at 1M+ events cannot send the data to the browser: payload is
-gigabytes. The fix is server-side spatial aggregation: the browser
-sends the visible bounding box, the server returns at most a few
-hundred cluster summaries (centroid + counts), the browser renders
-those instead of individual events. When the user zooms close enough
-that the cluster count drops to a renderable handful (≤ 30), the
-client switches to fetching individual points.
+At a million events the map cannot be sent to the browser: the payload is
+gigabytes. So the aggregation happens in the database. The browser sends the
+visible bounding box, the server returns at most a few hundred cluster
+summaries, each a centroid and its counts, and the browser draws those instead
+of the events. When a zoom brings the count in view down to a handful, the
+client fetches the individual events instead.
 
 ## Data path
 
 ```
-viewport rotation/zoom changes in browser
-  → atlas-map.js scheduleFetch() (debounced 220ms)
+a pan or zoom in the browser
+  → atlas-map.js scheduleFetch(), debounced at 220 ms
     → currentBbox() derives [min_lat, min_lon, max_lat, max_lon]
-    → chooseGrid(zoom) maps zoom level to grid cell size in degrees
+    → chooseGrid(zoom) maps the zoom level to a grid cell size in degrees
     → GET /api/atlas/clusters?bbox=…&grid=…&kind=…
-      → Flask app.py validates + caps
-        → SQL atlas_clusters_verifications(...)
-          → uses idx_verificationevent_geo for bbox filter
+      → app.py validates the bbox and applies the cap
+        → atlas_clusters_verifications(...) in SQL
+          → the geo index serves the bbox filter
           → GROUP BY floor(lat/grid), floor(lon/grid)
-          → returns ≤ 5000 rows
-      → JSON response
-    → renderNodes() updates d3 selection (enter/update/exit)
-    → if count ≤ 30 and zoom ≥ 2:
-        → second fetch: GET /api/atlas/points
-        → renderNodes() with individual reticle ornaments
-  → HUD signals updated from /api/atlas/stats (parallel fetch)
+          → at most 5000 rows
+      → JSON
+    → the GeoJSON source is replaced and MapLibre redraws its layers
+    → if the count is at most 30 and the zoom is at least 5:
+        → a second fetch of GET /api/atlas/points, drawn as individual markers
+  → the corner readouts update from /api/atlas/stats, fetched in parallel
 ```
 
 ## What's in 11_atlas.sql
@@ -60,9 +57,9 @@ All four `/api/atlas/*` endpoints:
 - Return JSON: `{ kind, bbox, count, [clusters|points|events] }`
 - Hard-capped: clusters ≤ 5000, points ≤ 2000, events ≤ 500
 
-## Antimeridian (supported as of v7)
+## Crossing the antimeridian
 
-`_parse_bbox()` accepts bboxes where `min_lon > max_lon`. Atlas SQL
+`_parse_bbox()` accepts a bbox where `min_lon > max_lon`. The atlas SQL
 functions use a wrap-aware predicate of the form:
 
 ```sql
@@ -74,23 +71,21 @@ PostgreSQL's planner uses bitmap OR over the partial geo indexes, so
 performance is comparable to non-wrapping bboxes.
 
 
-## What NOT to change without measuring first
+## Four constants that were tuned, not chosen
 
-1. **The grid sliding scale in `chooseGrid(zoom)`.** It was tuned by
-   eyeball against real distributions; smaller grids = more clusters =
-   more rendering work. Don't make it finer without checking pan/zoom
-   responsiveness.
+Each of these was set against a real distribution, and changing one without
+measuring undoes that.
 
-2. **The cluster→point switchover thresholds (count ≤ 30 AND zoom ≥ 2).**
-   Switching too early shows hundreds of point reticles which is
-   slower than clusters.
-
-3. **The 220ms debounce.** Below 150ms the API gets hammered during a
-   smooth pan. Above 400ms feels laggy.
-
-4. **The hard caps (5000 / 2000 / 500).** They're not arbitrary:
-   above these, JSON serialization and DOM updates begin to dominate
-   render time.
+1. **The grid scale in `chooseGrid(zoom)`.** A finer grid means more clusters
+   and more work per frame. Changing it needs a check on pan and zoom
+   responsiveness at a realistic event count.
+2. **The switch to individual events**, at a count of thirty or fewer and a
+   zoom of five or greater. Switching earlier puts hundreds of individual
+   markers on screen, which costs more than the clusters they replaced.
+3. **The 220 millisecond debounce.** Below about 150 the API takes a request
+   per frame during a smooth pan; above about 400 the map feels late.
+4. **The caps: 5000 clusters, 2000 points, 500 events.** Past those, JSON
+   serialisation and the redraw dominate the response.
 
 ## Performance regression checks
 
@@ -117,7 +112,7 @@ If any are 2× off, run `EXPLAIN ANALYZE` and check whether an index
 got dropped or whether the planner picked a seq scan when an index
 scan was expected.
 
-## PostGIS-optional scaling path (v8.88 /
+## The optional PostGIS path
 
 The default schema uses composite B-tree indexes on
 `(latitude, longitude)` for atlas spatial queries. B-tree starts to
@@ -125,8 +120,8 @@ break down past ~10M events because the index doesn't model
 2-dimensional proximity natively: a bbox query degrades toward a
 range scan over one dimension.
 
-**v8.88 ships an optional PostGIS migration** (`polaris_sql/13_postgis.sql`)
-that, when the `postgis` extension is available, adds a generated
+An optional migration, `polaris_sql/13_postgis.sql`, adds, when the `postgis`
+extension is available, a generated
 `geography(Point, 4326)` column to `VerificationEvent` and
 `TokenLifecycleEvent` plus a GiST index on each. GiST models 2D
 proximity correctly; bbox + radius queries return a logarithmic
@@ -152,12 +147,11 @@ changes.
 
 ### Sample GiST-aware query (operator-side)
 
-The application-layer atlas functions (`atlas_clusters_*`,
-`atlas_points_*`, etc.) still use the B-tree path until a v8.x
-follow-up ship rewrites them: that rewrite is gated on a
-PostGIS-enabled environment plus a 10M-event benchmark dataset
-where the ≥3× acceptance criterion can be measured. Until
-then, operators can hand-query the GiST index:
+The atlas functions still take the B-tree path. Rewriting them to use the
+GiST index is gated on two things that do not exist yet: a PostGIS-enabled
+environment to develop against, and a ten-million-event dataset to measure the
+threefold improvement the rewrite would have to show. Until then an operator
+can query the GiST index directly:
 
 ```sql
 -- All verifications within 50km of Pittsburgh
@@ -171,21 +165,18 @@ WHERE geo IS NOT NULL
       );
 ```
 
-### When NOT to enable PostGIS
+### When to leave it off
 
-- The extension is ~50MB and gated behind paid tiers on some
-  managed Postgres providers (RDS Free Tier, some Aiven plans,
-  etc.). The B-tree fallback is operationally complete for
-  deployments below ~5M events.
-- If the operator has a non-superuser deployment role and no path
-  to run `CREATE EXTENSION postgis` once, the v8.88 script emits a
-  NOTICE and falls back to B-tree gracefully.
+The extension is around fifty megabytes and sits behind a paid tier on some
+managed PostgreSQL providers. Below roughly five million events the B-tree
+path is operationally complete, so there is nothing to gain. A deployment
+whose role cannot run `CREATE EXTENSION postgis` once gets a notice from the
+migration and keeps the B-tree path.
 
-### Phase 2 (deferred, v8.x)
+### What the rewrite would look like
 
-The atlas SQL functions will gain a CASE branch on
-`EXISTS(SELECT 1 FROM pg_extension WHERE extname='postgis')` and
-emit either the GiST or B-tree path at function-call time. The
-acceptance criterion (≥3× improvement at 10M+ events) is verified
-by running `scripts/polaris-load-test.sh` against the rewritten
-functions in both modes. Phase 2.
+The atlas functions would branch on whether the extension is present and emit
+either the GiST or the B-tree query at call time. The acceptance criterion is
+a threefold improvement at ten million events or more, measured with
+`scripts/polaris-load-test.sh` against both modes. Until that is measured the
+branch is not worth its complexity.

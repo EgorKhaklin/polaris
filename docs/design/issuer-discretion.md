@@ -2,65 +2,57 @@
 
 **Reader:** an engineer or an assessor. **Job:** The limits on what an issuing agency can do at scale, and where they bind.
 
----
+An identity system's worst failure is not a forged token. It is the authority
+that issued a population's tokens revoking them at scale, which is
+denaturalisation carried out with a database. This is the schema-level bound on
+that: a ceiling on how fast one agency can revoke its own tokens, above which a
+co-signer from a different agency is required.
 
-## What this is
+It is one of three answers to issuer trust concentration. The other two are
+cryptographic diversity, covered in
+[multi-sig-migration.md](multi-sig-migration.md), and federation without
+transitive trust, covered in [federation.md](federation.md).
 
-A schema-level cap on how fast a single issuing agency can revoke its own
-tokens. Above the cap, a co-signer from a different agency holding `BOTH`
-on the token's algorithm is required. The cap is per-agency and rolling.
+The bound does not make Polaris an authority over the holder. The agency still
+makes every revocation decision. What is constrained is the shape of agency
+behaviour at volume, the same category as C3, which constrains issuance, and
+C7, which constrains what an agency may sign with.
 
-The PDF's §9 "Issuer trust concentration" names three production-system
-requirements: cryptographic diversity, federation, and
-*constitutional limits on issuer discretion*. is the third leg.
+## The two numbers
 
-## What it is NOT is **not** Polaris becoming an authority over the holder. The
-agency still makes the revocation decision. Polaris only constrains the
-*shape* of agency behavior — the same category as C3 (one ACTIVE per
-individual: a constraint on issuance behavior) and C7 (algorithm
-metadata via table: a constraint on what an agency may sign with).
-
-## N and W: the policy choices
-
-System defaults:
-
-| Knob | Default | Rationale |
+| Setting | Default | Why |
 |---|---|---|
-| `polaris.default_max_revoke_percent` | **5.00** | Caps a single agency at ~60% of its outstanding population per year if revocations are spread evenly. Below this, denaturalization-style mass revocation is impossible without co-sign; at this level, slow long-tail abuse is still operationally observable through audit. |
-| `polaris.default_window_days` | **30** | Matches monthly operational reporting cadence. A 30-day rolling window is short enough to catch a coordinated mass-revocation campaign within useful time horizon, long enough to absorb legitimate-but-bursty hardware recall workflows. |
+| `polaris.default_max_revoke_percent` | 5.00 | At an even spread this still allows roughly sixty percent of an agency's outstanding population in a year, so it does not stop slow abuse. What it stops is the surprise: mass revocation in a day is impossible without a co-signer, and the slow version is an observable trend. |
+| `polaris.default_window_days` | 30 | Short enough to catch a coordinated campaign inside a useful horizon, long enough to absorb a legitimate bursty workflow such as a hardware recall. |
 
-Per-agency overrides live in `IssuerDiscretionPolicy`. Absence of a row
-inherits the system default. The sample data ships with two overrides
-demonstrating both directions:
+Per-agency overrides live in `IssuerDiscretionPolicy`; an agency with no row
+inherits the system default. The sample data carries one override in each
+direction: a federal agency loosened to seven percent to accommodate
+coordinated recalls, and a county authority tightened to three. The
+`justification` column has a twenty-character floor, so a loosening cannot be
+recorded without a stated reason.
 
-- Agency 1 (US National Identity Service, FEDERAL) → 7.00% / 30d, looser
-  to accommodate coordinated federal-scale hardware recall workflows.
-- Agency 6 (Allegheny County Health Auth., COUNTY) → 3.00% / 30d,
-  tighter as a defense-in-depth measure against sub-state mass action.
+Both numbers are policy, and the defaults are a Schelling point rather than a
+derivation: a lower ceiling or a shorter window is a stronger bound and more
+friction on legitimate work. These defaults prefer resistance to mass
+revocation over operational latitude.
 
-Tuning is operator policy. The `justification` field has a 20-character
-length floor so any loosening is auditable from the row alone.
+## Who may co-sign
 
-## Co-signer eligibility
+A co-signer must differ from the acting agency, and must hold `BOTH`
+authorisation on the token's algorithm through `AgencyAlgorithmAuth`.
 
-A co-signer must:
+Eligibility is a set rather than one named authority on purpose. Once the rate
+bound holds, the next attack is to compromise the co-signer; against a set, an
+attacker has to compromise every candidate, which scales badly for them. The
+co-signer's identity is recorded in the lifecycle event's `reason_code` as
+`[COSIGN:<agency_id>]`, so an auditor can see one co-signer appearing again and
+again across mass-revocation events.
 
-1. Differ from the actor agency.
-2. Hold `BOTH` authorization on the token's algorithm (via
-   `AgencyAlgorithmAuth`).
+## Serialising the check
 
-This is *broader* than naming a single fixed co-signer authority. The
-second-best attack (after the rate-limit equilibrium holds) is to
-compromise the co-signer. A *set* of eligible co-signers means an
-attacker must compromise *all* candidate co-signers, which scales
-poorly. The co-signer's identity is recorded in the lifecycle event's
-`reason_code` as `[COSIGN:<agency_id>]` — a third-party auditor can
-detect a single co-signer appearing repeatedly across mass-revocation
-events.
-
-## Advisory-lock rationale (C9)
-
-The procedure opens with:
+`uc8_revoke_token` opens with a transaction-scoped advisory lock keyed on the
+issuing agency:
 
 ```sql
 PERFORM pg_advisory_xact_lock(
@@ -68,107 +60,82 @@ PERFORM pg_advisory_xact_lock(
         (SELECT issuing_agency_id::TEXT FROM IdentityToken WHERE token_id = p_token_id)));
 ```
 
-This serializes concurrent revocations *by the same agency* so the
-read-then-write rate check is atomic. Two threads racing the (N+1)th
-revocation block each other on this lock; the loser sees the winner's
-row when its rate read runs and gets the bound-exceeded error.
+That makes the read-then-write rate check atomic for a single agency. Two
+transactions racing the revocation that would cross the bound block on the
+lock, and the loser sees the winner's row when its own rate query runs.
 
-Chosen over alternatives:
+The alternatives were considered and rejected. `SERIALIZABLE` isolation would
+push retry logic on serialisation failures into the application and change the
+isolation level for everything else. `SELECT … FOR UPDATE` has no single row to
+take: the rate query joins `TokenLifecycleEvent` against `IdentityToken` across
+many rows, so the natural granularity is a derived key. A global lock would
+serialise unrelated agencies, and
+`ConcurrencyTests.test_uc8_cross_agency_revocations_do_not_block` asserts that
+two agencies do not block each other. The lock is transaction-scoped, so it
+releases at commit or rollback with nothing to unlock by hand.
 
-- **`SERIALIZABLE` isolation:** would require application-side retry
-  logic on serialization failures (40001 errcode). The advisory lock
-  keeps the rest of the schema in READ COMMITTED.
-- **`SELECT … FOR UPDATE` on a row:** there is no single row to lock —
-  the rate query joins TokenLifecycleEvent ⨝ IdentityToken across many
-  rows. An advisory lock on a derived key (the agency id) is the
-  natural granularity.
-- **A global lock:** would block cross-agency revocations needlessly.
-  The current key is `hashtext('polaris.revoke.' || agency_id)`, so two
-  different agencies do not serialize. `ConcurrencyTests
-  .test_uc8_cross_agency_revocations_do_not_block` asserts this.
+## Revocation and the published list
 
-The lock is transaction-scoped (`_xact_` in the function name) — it
-releases automatically at COMMIT or ROLLBACK with no application-side
-unlock required.
+`uc8_revoke_token` sets `IdentityToken.status` to `REVOKED` and inserts into
+`RevocationList` in the same transaction. Without that second write a
+verifier's freshness check would not see the revocation, and the token's state
+would diverge from the published list.
 
-## RevocationList integration
+The two `reason_code` columns are deliberately different.
+`RevocationList.reason_code` is constrained to the canonical vocabulary:
+`COMPROMISED`, `LOST`, `STOLEN`, `SUPERSEDED`, `ADMINISTRATIVE`, `DEATH`. The
+lifecycle event's is wider and undomained, which is where the co-signer tag
+lives. The verifier-facing list stays canonical; the audit trail carries the
+procedural detail.
 
-`uc8_revoke_token` mirrors the UC-4 pattern: it updates
-`IdentityToken.status='REVOKED'` *and* inserts into `RevocationList` in
-the same transaction. Without the CRL row, verifier-side freshness
-checks would not see the revocation; the token state would diverge
-from the published CRL.
+## Making the procedure the only path
 
-The `RevocationList.reason_code` column is `VARCHAR(40)` with a CHECK
-constraint over the canonical vocabulary
-(`COMPROMISED`/`LOST`/`STOLEN`/`SUPERSEDED`/`ADMINISTRATIVE`/`DEATH`).
-The co-signer tag lives in the lifecycle event's `reason_code` only,
-which is `VARCHAR(60)` and not domain-checked. This keeps the
-verifier-facing CRL canonical while the audit trail carries the
-procedural metadata.
+`enforce_revocation_velocity_bound` is a BEFORE UPDATE trigger on
+`IdentityToken`. It refuses any transition to `REVOKED` unless
+`uc8_revoke_token` has set the per-transaction setting
+`polaris.revoke_check_done`.
 
-## Belt-and-suspenders trigger
+The trigger does not repeat the rate arithmetic. Its job is to close every
+other door: a direct UPDATE from psql, from the SQL console, or from
+application code that skipped the procedure is refused with
+`insufficient_privilege`.
 
-`enforce_revocation_velocity_bound` is a BEFORE-UPDATE trigger on
-`IdentityToken.status`. It refuses any UPDATE that transitions a token
-to `REVOKED` unless the per-transaction GUC `polaris.revoke_check_done`
-was set by `uc8_revoke_token`.
+## Where an adversary ends up
 
-The trigger does NOT re-do the rate math. Its job is to make
-`uc8_revoke_token` the *only* path. Direct UPDATEs from `psql`, the
-SQL Console, or app code that bypassed the procedure all get rejected
-with an `insufficient_privilege` error.
+- **The claim.** No agency can revoke more than the configured share of its
+  outstanding tokens in a window without a co-signer from another agency.
+- **The strongest attack.** Stay just under the ceiling indefinitely. At the
+  default that is still most of a population inside a year, so the bound
+  converts a surprise into a trend.
+- **Where it settles.** Mass revocation needs either a co-signature, which
+  names two agencies in the audit trail instead of one, or a slow burn that
+  downstream reporting can see before it completes.
+- **The next attack.** Compromise the co-signer, which the eligibility set and
+  the recorded co-signer identity are there to make expensive and visible.
+- **What it costs.** The bound can refuse a legitimate bulk revocation, which
+  the per-agency override and the co-signature exist to absorb.
 
-## Adversary walk
+## What it does not protect against
 
-1. **Defender's claim:** No single agency can revoke more than N% of
-   its outstanding issued tokens in any W-day window without a
-   higher-authority co-signer.
-2. **Attacker's optimal response:** Spread revocations evenly to stay
-   just under N% per window indefinitely. At N=5% / W=30 days, an
-   agency can still revoke ~60% of its outstanding population per year
-   slowly. The bound shifts the attack from a surprise to an
-   observable trend.
-3. **Equilibrium:** Mass revocation requires either co-sign (traceable
-   to two agencies, not one) or rate-limited slow-burn (catchable by
-   downstream audit and reporting before completion).
-4. **Second-best attack:** Compromise the co-signer. Mitigated by
-   making co-signer eligibility a *set* (any BOTH agency ≠ actor) and
-   recording the co-signer in the audit row so repeated patterns are
-   detectable.
-5. **Defender's cost:** The bound can reject legitimate bulk
-   revocations (e.g., a coordinated hardware recall). Mitigated by
-   per-agency policy override (`IssuerDiscretionPolicy`) and by the
-   co-signer escape hatch.
-6. **Mechanism-design note:** N and W are Schelling-point choices.
-   Lower N or shorter W = stronger bound but more friction on
-   legitimate workflows. The chosen defaults (5% / 30 days) prioritize
-   denaturalization resistance over operational latitude.
+- **Slow abuse under the ceiling.** An agency revoking just under the bound
+  every month for a year still reaches most of its population. The counter is
+  audit reporting and public scrutiny of revocation rates, not the schema.
+- **Every agency captured at once.** The leverage of a co-signature ends when
+  there is nobody uncompromised to sign.
+- **`LOST` and `EXPIRED` events**, which are individual-scale transitions
+  rather than bulk operations. If either were used as laundered revocation,
+  extending the bound to cover them would be the answer.
+- **Forgery of the co-signer's identity.** The co-signature is recorded
+  procedurally, not cryptographically. Hardware-attested co-signing would be
+  the next layer, and it is not built.
 
-## What does NOT protect against
+## Related
 
-- **Slow long-tail abuse** under the bound. An agency that revokes
-  4.99% / month for a year still gets ~60%. Counter-mechanism: audit
-  reporting + civic surveillance of revocation rates, not the schema.
-- **System-wide collusion** (every agency captured). The schema's
-  leverage ends when every authorized signer is compromised.
-- **`LOST` and `EXPIRED` events.** These are individual-scale
-  lifecycle transitions, not bulk operational ones. If a real abuse
-  pattern emerged using `LOST` as a laundered revocation, a follow-up
-  would extend the bound there.
-- **Cryptographic forgery** of the co-signer's identity. v1 records
-  the co-signer procedurally, not cryptographically. R12+ can layer
-  hardware-attested signing on top.
-
-## Cross-references
-
-- `meta/redaction-proof.md` —, the other PDF §9 leg already
-  closed (verification-graph redaction proof).
-- `proposals/-multisig-transitional.md` —, the
-  cryptographic-diversity leg.
-- The PDF, §9 "Issuer trust concentration" — original problem
-  statement.
-- `docs/design/concurrency.md` — the advisory-lock pattern added to the
-  catalog there.
-- `MISSION.md` — C5 (audit-trail completeness) and C7 (algorithm
-  metadata via table) are the constraints strengthens.
+- [tiered-enrollment.md](tiered-enrollment.md) bounds the entry to the system,
+  where this bounds the exit.
+- [concurrency.md](concurrency.md) carries the advisory-lock pattern used
+  here, alongside every other lock in the system.
+- `meta/redaction-proof.md` covers the verification-graph redaction proof, the
+  answer to the same class of concentration question on the privacy side.
+- MISSION.md's C1, the append-only audit, and C7, algorithm authority as data,
+  are the constitutional constraints this builds on.

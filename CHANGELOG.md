@@ -5,6 +5,51 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.231 — 2026-09-05 (the voice pass, part two: nine more records, and a rule catalogue that described a system removed at v9.55)
+
+Nine documents rewritten. As in part one, the rereading found claims that had
+quietly stopped being true.
+
+- **`rasp-rules.md` was cataloguing a system that no longer exists.** Its
+  anomaly rules were channels in `polaris_hydra/watchers/`, removed at v9.55,
+  and one of them watched a foresight acceptance log removed with it. It
+  listed the Caddy rate limit as a gap, though the edge has shipped a
+  compiled-in `rate_limit` zone for versions; it counted seven of twelve rules
+  in a list of eleven; and it was stamped as current at v9.23. The rewrite
+  states what enforces each bound today, names the alert rules that carry the
+  detection half, and reduces the open list to three real items, the largest
+  being that nothing bounds how often one agency may verify one individual.
+- **`audit-of-record.md` listed nine instances and then thirteen**, in a table
+  that had split in half and lost its header, with four ship identifiers
+  truncated to `(v8.21 /`. It now lists all fourteen surfaces against the
+  trigger that enforces each, including `TokenStateEpochLeaf`, which it had
+  never mentioned, and states plainly that `RecoveryRequest` is the one
+  instance resting on procedure discipline rather than on the schema.
+- **`multi-sig-migration.md` said signatures were placeholder bytes.** Real
+  ML-DSA-65 signing has been wired into issuance since v9.58 and both
+  production paths use it; the placeholder is the seed-data path, and it
+  labels itself so the two cannot be confused.
+- **`tiered-enrollment.md`, `issuer-discretion.md` and `recovery-ceremony.md`**
+  had lost sentence subjects to the identifier sweep: a heading merged with a
+  sentence, a paragraph beginning "implements the schema's answer", a
+  cross-reference reading "the constraint calibrates against". All three cited
+  `proposals/`, a directory that does not exist, and `issuer-discretion.md`
+  attributed the append-only audit to C5, which is the constraint about inline
+  scripts.
+- **`observability.md` told the operator to write their own exporter.**
+  Prometheus text format, ten alert rules, promtool tests, Alertmanager
+  routing and Grafana dashboards all ship; the document predated every one of
+  them, listed two log events where seven exist, and closed with pseudocode
+  telling an implementer to wire up call sites that have been wired for
+  versions.
+- **`atlas-scaling.md` described the d3 globe** deleted at v9.221, down to the
+  enter-update-exit render path and the reticle ornaments, and carried a
+  truncated heading and two stale roadmap references.
+- **`zk-soundness.md` and `anchoring.md`** are corrected rather than rewritten:
+  both were accurate. The soundness ledger drops its citations to a sibling
+  project a reader cannot open, and states the signing default the way the
+  code actually behaves.
+
 ## v9.230 — 2026-09-05 (the voice pass over the design records, part one of five: five documents, and three claims that had gone false)
 
 The twenty-two design records moved into `docs/design/` at v9.224 with a
