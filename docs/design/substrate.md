@@ -2,13 +2,12 @@
 
 **Reader:** an engineer or an assessor. **Job:** Every primitive Polaris depends on, and which are reserved rather than built.
 
-This is the manifest of every primitive Polaris stands on. The
-architectural argument from Appendix E states that "every higher-level
-property of an identity system is derivative of the primitives it sits on
-top of. Change the primitive and the property changes; compromise the
-primitive and the property has no referent." This document operationalizes
-that argument: for every primitive, what fails if it's compromised, what
-the replacement is, and how Polaris detects the compromise.
+Every higher-level property of an identity system is derivative of the
+primitives it sits on. Change a primitive and the property changes;
+compromise one and the property has no referent. This is the manifest that
+takes that seriously: for every primitive Polaris stands on, what stops being
+true if it is compromised, what the replacement would be, and how the
+compromise would be noticed.
 
 The same manifest is mirrored in SQL as the `SystemDependency` view
 (`polaris_sql/13_substrate.sql`) so the inventory is queryable. The two
@@ -21,7 +20,7 @@ Each row records:
 
 - **Primitive**: the named dependency.
 - **Layer**: `crypto` / `network` / `storage` / `runtime` / `standards`
-  / `hardware` / `human`. Maps to the layered stack in Appendix E.
+  / `hardware` / `human`.
 - **Authority**: who governs this primitive (NIST, IETF, the kernel,
   ourselves, etc.). When the primitive is governed by an external body,
   that body's stance is load-bearing for Polaris.
@@ -82,7 +81,7 @@ Each row records:
 - **Authority:** NIST (legacy)
 - **Role:** Present in `CryptographicAlgorithm` only for migration
   semantics. NEW tokens are not issued under classical algorithms (this
-  is a sovereignty stance, not a technical preference: see Appendix E
+  is a sovereignty stance rather than a technical preference: see the report's
   §3 "second implication").
 - **Fail mode:** Already known to be quantum-broken (Shor 1994). Any
   token issued under classical algorithms is in a latent pre-collapse
@@ -289,7 +288,7 @@ Each row records:
 - **Authority:** NIST (US Department of Commerce)
 - **Role:** The PQ standards that define ML-KEM, ML-DSA, SLH-DSA. The
   schema's commitment to FIPS-finalized primitives is "a sovereignty
-  stance, not a technical preference" (Appendix E §3 implication 2).
+  stance rather than a technical preference.
 - **Fail mode:** Standards withdrawal or revision. NIST's authority
   itself is the load-bearing assumption: if NIST were politically
   captured to mandate adversary-authored algorithms, the sovereignty
@@ -314,13 +313,13 @@ Each row records:
   primitive.
 - **Detection:** W3C-DID working group publications.
 
-#### Merkle tree commitment (in-tree, / v8.21)
+#### Merkle tree commitment (in-tree)
 - **Layer:** crypto
 - **Authority:** in-tree primitive, `polaris_web/anchoring.py`
   (`compute_batch`, `merkle_root`, `inclusion_proof`, `verify_proof`).
 - **Role:** Per-batch commitment to one or more `BlockchainAnchor`
-  leaves under a per-algorithm advisory lock. Realizes PDF §9: the
-  off-chain audit-of-record (5th instance: see `audit-of-record.md`).
+  leaves under a per-algorithm advisory lock. The batch is one of the
+  audit-of-record instances; see [audit-of-record.md](audit-of-record.md).
 - **Fail mode:** Hash-function compromise voids every batch closed
   under that algorithm. Detection is via `GET /api/anchor/verify/<id>`
   (server-side proof reconstruction): a tampered log fails
@@ -334,7 +333,7 @@ Each row records:
   has no known weakness as of 2026 but is on a 20-year radar.
 - **See also:** `docs/design/anchoring.md` for the full write-up.
 
-#### Plonky2 SNARK (in-tree, / v8.23)
+#### Plonky2 SNARK (in-tree)
 - **Layer:** crypto
 - **Authority:** in-tree dependency, `polaris_zk/` Rust crate using
   `plonky2 = "0.2"` from crates.io (upstream: `mir-protocol/plonky2`).
@@ -356,7 +355,7 @@ Each row records:
   scenarios.
 - **See also:** `docs/design/zk-snark.md` for the full write-up.
 
-#### Rust toolchain (assumed but build-required, v8.23)
+#### Rust toolchain (assumed, and required to build)
 - **Layer:** runtime
 - **Authority:** Rust language team + nightly channel.
 - **Role:** Compiles `polaris_zk/` crate. Required at build time;
@@ -410,7 +409,7 @@ Each row records:
 - **Replacement:** Operator policy, secret rotation; HSM custody.
 - **Detection:** Outside Polaris.
 
-### Human / operational substrate (Appendix E §3 implication 3)
+### The human and operational substrate
 
 #### Credentialed operators
 - **Layer:** human
@@ -477,23 +476,25 @@ This manifest must be revisited when:
 - **A primitive moves between layers**: e.g., if hardware-binding
   becomes a software emulation, that's a layer demotion that changes
   the fail-mode analysis.
-- **A new substrate-relevant mission item ships**: (real
-  ZK-SNARK) lands a Groth16 dependency, still pending; (DID
-  anchoring) landed in v8.21 and is recorded above as
-  "Merkle tree commitment (in-tree)".
+- **A new substrate-relevant capability ships.** The ZK layer added Plonky2
+  and the Rust toolchain; the anchoring layer added the Merkle commitment.
+  Both are rows above, added in the change that introduced them.
 
-## Additional dependencies
+## Browser dependencies
 
-- **D3 v7** (`polaris_web/static/vendor/d3.v7.min.js`), JavaScript
-  visualization library; vendored locally (no CDN). Powers the atlas
-  globe. **Required** for the v6 atlas operator UI. Replacement = any
-  D3-API-compatible force-graph library; no equivalent in the standard
-  browser stack.
+- **MapLibre GL** (`polaris_web/static/vendor/maplibre-gl.js` and its
+  stylesheet), vendored rather than loaded from a content delivery network,
+  which is what lets the content security policy stay `script-src 'self'`. It
+  renders the Atlas. A replacement would be any GL map library taking a
+  GeoJSON source; there is no equivalent in the standard browser stack. The
+  basemap tiles it fetches are a separate dependency, on an external tile
+  service, and the Atlas degrades to markers without a basemap rather than
+  failing if that service is unreachable.
 
 ## Cross-references
 
-- **Appendix E** of `docs/paper/polaris_project_report.pdf`: the architectural
-  argument this manifest operationalizes.
+- `docs/paper/polaris_project_report.pdf`: the architectural argument this
+  manifest operationalises, in its appendix on substrate.
 - `MISSION.md` C7: `CryptographicAlgorithm` table is the proximate
   schema-level expression of "primitives are queryable".
 - `docs/design/threat-model.md`: STRIDE threats; this manifest enumerates

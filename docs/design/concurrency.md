@@ -2,26 +2,24 @@
 
 **Reader:** an engineer or an assessor. **Job:** Every race-prone path, the lock that serialises it, and the test that proves it.
 
-<!-- coherence:taxonomy-allowed, hazard inventory + 7 lock-pattern sections (UC-8, UC-9, etc. per use-case) + catalog summary; each pattern is a distinct concurrency hazard with its own lock, test, and rationale -->
+C9 says race-prone paths are tested with real threads rather than asserted in
+prose. This is the inventory behind that: every hazard, the mechanism that
+holds it, and the test that proves the mechanism works. It is the document to
+read before changing anything in `05_procedures.sql`, in
+`security.py::authenticate`, or on any path that touches
+`IdentityToken.status`.
 
-What concurrency hazards exist, what protects against each, and what the
-test for each protection is. Read before changing anything in
-`05_procedures.sql`, `security.py::authenticate`, or any path that
-touches `IdentityToken.status`.
+## The hazards
 
----
-
-## Hazard inventory
-
-| # | Scenario | Pre-v6 outcome | Protection | Test |
+| # | Scenario | Without the protection | Protection | Test |
 |---|----------|----------------|------------|------|
 | 1 | Two parallel UC-1s for the same individual | Both create new Individual rows + tokens. Not really a race; data quality issue. | None needed: UC-1 always creates a fresh Individual | n/a |
 | 2 | Two parallel UC-1s for DIFFERENT individuals | Independent rows, no conflict | None needed | n/a |
 | 3 | Two parallel UC-4s on the same `(lost_token, reserve_token)` pair | Idempotent: both T1 and T2 transition lost→LOST, both UPDATE reserve→ACTIVE. Final state correct; double `RevocationList` entry possible. | `SELECT FOR UPDATE Individual` serializes UC-4 per holder; second observer sees post-T1 state | `ConcurrencyTests.test_partial_unique_index_blocks_double_active` (related) |
-| 4 | Two parallel UC-4s activating DIFFERENT reserves of same holder | Pre-v6: both could win because `activation_sequence=2` was hardcoded. Could leave holder with two ACTIVE tokens *briefly*: partial unique index fired only when both tried final UPDATE. | Same `FOR UPDATE` lock + partial unique index `uq_one_active_per_person` | `test_partial_unique_index_blocks_double_active` |
+| 4 | Two parallel UC-4s activating DIFFERENT reserves of same holder | Both could win, because `activation_sequence=2` was hardcoded. Could leave holder with two ACTIVE tokens *briefly*: partial unique index fired only when both tried final UPDATE. | Same `FOR UPDATE` lock + partial unique index `uq_one_active_per_person` | `test_partial_unique_index_blocks_double_active` |
 | 5 | Manual UPDATE of `IdentityToken.status='ACTIVE'` for a holder who already has one | Allowed → "two active tokens" violation | Partial unique index `uq_one_active_per_person` (DB-level) | `test_partial_unique_index_blocks_double_active` |
-| 6 | Concurrent failed logins for same user | Pre-v6: TOCTOU lost increments; lockout bypassable. | Atomic `UPDATE … SET col = col + 1 RETURNING` | `test_failed_login_count_is_atomic_under_concurrent_load` |
-| 7 | Threshold-crossing concurrent failed logins both apply lockout | Pre-v6: each could write `locked_until = now + lock_min`, doubling the lockout interval | `WHERE locked_until IS NULL` predicate on the lockout UPDATE | covered by atomic-increment test |
+| 6 | Concurrent failed logins for same user | Lost increments through a read-then-write window; the lockout is bypassable. | Atomic `UPDATE … SET col = col + 1 RETURNING` | `test_failed_login_count_is_atomic_under_concurrent_load` |
+| 7 | Threshold-crossing concurrent failed logins both apply lockout | Each writes `locked_until = now + lock_min`, doubling the lockout interval | `WHERE locked_until IS NULL` predicate on the lockout UPDATE | covered by atomic-increment test |
 | 8 | Concurrent INSERTs into `TokenLifecycleEvent` | None: append-only by design, no conflicts | DB-level append-only (no shared row state) | n/a |
 | 9 | Verification event arrives during a token revocation | The verification reads pre-revocation state and succeeds | Acceptable by design: verifications are point-in-time. Token state at verification was valid. | n/a |
 
@@ -114,7 +112,7 @@ post-increment value via `RETURNING`.
 
 ---
 
-## What's NOT protected (and why that's OK)
+## What is deliberately unprotected
 
 - **Verification event ordering** doesn't matter. Two parallel
   verifications can interleave freely; each is an independent
@@ -132,36 +130,36 @@ post-increment value via `RETURNING`.
 - **CSRF token generation** uses `secrets.token_urlsafe(32)` which is
   cryptographically random; collision probability is ignorable.
 
-- **Rate limiter state** is in-memory, single-process. Multi-worker
-  gunicorn deployments would each have independent counters; that's a
-  known limitation documented in `security.py`. For multi-process,
-  swap the in-memory dict for Redis.
+- **Rate limiter state** is shared through Redis in any deployment with more
+  than one worker, which is what the production configuration selects. The
+  in-process backend remains for single-worker development, where its
+  per-process counters are correct. [rate-limiter.md](rate-limiter.md) covers
+  the selection and the atomicity that makes the Redis path exact.
 
 ---
 
-## What to do if you find ANOTHER race
+## Adding a new hazard
 
-1. Add the scenario row to the table at the top of this file.
-2. Decide: optimistic, FOR UPDATE, or SERIALIZABLE.
-3. If FOR UPDATE: lock the SMALLEST row that contains the contested
-   state. (For UC-1/UC-4: the Individual row, not the IdentityToken
-   table.)
-4. Add a test in `ConcurrencyTests` that uses `threading +
-   ThreadPoolExecutor` to actually trigger the race. Don't mock it.
-5. Document the race + fix here AND in the procedure comment.
+A newly found race is added here as a row, then fixed in this order. Decide
+between optimistic concurrency, a row lock, and an advisory lock. If it is a
+row lock, take the smallest row that holds the contested state: for issuance
+and activation that is the individual, not the token table. Then write a test
+in `ConcurrencyTests` that triggers the race with real threads rather than
+mocking the interleaving, and document the race and its fix both here and in
+the procedure's own comment.
 
-Concurrency bugs that aren't in the test suite WILL come back.
+A concurrency bug with no test comes back.
 
 ---
 
-## Advisory-lock pattern: UC-8 / (added v8.15)
+## The per-agency lock: bounded revocation
 
 The bounded-revocation procedure (`uc8_revoke_token`) has a different
 shape of race than the row-level ones above. The rate-limit check
 reads `count(*)` across many `TokenLifecycleEvent` rows joined to
 `IdentityToken`: there is no single row to `FOR UPDATE`. Two threads
-both at the boundary could each read "you're at N revocations, one
-more makes (N+1)" and both write, putting the system at N+2.
+both at the boundary read the same count, each concludes that one more
+revocation is within the bound, and both write, leaving the agency two over.
 
 The fix is a **PostgreSQL transaction-scoped advisory lock** keyed on
 the issuing agency id:
@@ -189,11 +187,10 @@ When to reach for this pattern:
 
 - The contested state is a *derived* count (rate, sum, percentile),
   not a single row.
-- You can map the contention to a natural key (an entity id) that's
-  available at the start of the transaction.
-- You want READ COMMITTED elsewhere in the schema (this is the case
-  in Polaris) but need SERIALIZABLE-like guarantees on a specific
-  procedure.
+- The contention maps to a natural key, an entity identifier available at the
+  start of the transaction.
+- The rest of the schema should stay in read-committed isolation while one
+  procedure needs a stronger guarantee.
 
 Anti-pattern: do not advisory-lock on a hash of the *token id* in
 this case. The bound applies to the *issuing agency*. Two threads
@@ -202,7 +199,7 @@ locking on token_id would let them both pass.
 
 ---
 
-## Per-individual advisory-lock: UC-9 / (added v8.17)
+## The per-individual lock: the recovery ceremony
 
 Same pattern as UC-8, applied to a different shape of contention.
 `uc9_complete_recovery` faces this race: two threads (or two
@@ -233,7 +230,7 @@ succeeds, T-1 fail with "not PENDING".
 
 ---
 
-## Per-token advisory-lock: UC-6 / (added v8.18)
+## The per-token lock: algorithm migration
 
 Third entry in the catalog. Same advisory-lock mechanism as UC-8 and
 UC-9, but the contention is per-token: `uc6_migrate_algorithm` races
@@ -277,7 +274,7 @@ Test `test_uc6_verification_snapshot_consistent_with_migration`
 asserts this contract explicitly so the verification path can rely
 on it.
 
-## Per-algorithm advisory-lock: (added v8.21)
+## The per-algorithm lock: closing an anchor batch
 
 Fourth entry in the catalog. `close_anchor_batch(algorithm_id, root,
 proofs)` groups pending `BlockchainAnchor` rows by their underlying
@@ -304,7 +301,7 @@ held lock duration), not ~0.6s (serialized).
 
 See `docs/design/anchoring.md` for the broader write-up.
 
-## Per-attesting-agency advisory-lock: (added v8.22)
+## The per-attesting-agency lock: federation attestations
 
 Fifth entry in the catalog. `uc10_attest_trust` and
 `uc10_revoke_attestation` both hold
@@ -330,7 +327,7 @@ asserts cross-agency parallelism completes in ~0.3s.
 
 See `docs/design/federation.md` for the broader write-up.
 
-## Per-procedure advisory-lock: (added v8.23)
+## The global lock: closing a ZK epoch
 
 Sixth entry in the catalog. `uc11_close_epoch` holds
 `pg_advisory_xact_lock(hashtext('polaris.zk.close-epoch'))`: a

@@ -34,9 +34,12 @@ Three things were found during the pass that the audit had not:
 Deferred deliberately, each with its reason recorded in the ship that raised
 it:
 
-- **A voice pass over the bodies in `docs/design/`.** The twenty-two records
-  moved into the published set at v9.224 with a reader, a job and no internal
-  identifiers, but their bodies still read as working notes.
+- ~~**A voice pass over the bodies in `docs/design/`.**~~ Done at v9.230 to
+  v9.232, in three ships. It found more than voice: a second witness the
+  documents said did not exist, a table shape that never existed, a rule
+  catalogue describing apparatus removed at v9.55, a dependency manifest
+  listing a library deleted at v9.221, and two stale deferrals for a Redis
+  limiter that ships.
 - **A second image format for the Atlas captures.** Measured at v9.218: WebP
   at quality 92 would cut them by three and a half times. Not applied, because
   the project has not decided to carry two formats for one picture.
@@ -116,7 +119,7 @@ is a format decision the project has not taken.
 | P1.16 | 2. Asset de-duplication | [x] v9.218 (landed with P1.15 ship 3; assets/ deleted, site/README.md replaces assets/README.md and lists every file with its consumer) |
 | P1.16 | 3. Script rename and index | [x] v9.222 (seven renames including polaris-release-notes.sh and the authz pair the plan had marked for deletion; every caller in the same commit; scripts/README.md indexes forty scripts by reader; CONVENTIONS.md §3 rewritten to one rule) |
 | P1.16 | 4. Missing READMEs (deploy/, polaris_checks/, site/) | [x] v9.223 (site/ at v9.218, scripts/ at v9.222, deploy/ and polaris_checks/ here; all eight registered in SYSTEM-MAP.md and docs/README.md) |
-| P1.16 | 5. DEVNOTES split and merges | [x] v9.224 (22 documents into docs/design/ with an index; the redaction-proof and quantum-observer duplicates resolved; headers given a reader and stripped of mission identifiers; DEVNOTES/ kept for the four internal notes. DEFERRED and recorded: a voice pass over the moved bodies, which still read as working notes) |
+| P1.16 | 5. DEVNOTES split and merges | [x] v9.224 (22 documents into docs/design/ with an index; the redaction-proof and quantum-observer duplicates resolved; headers given a reader and stripped of mission identifiers; DEVNOTES/ kept for the four internal notes. The voice pass over the moved bodies followed at v9.230 to v9.232) |
 | P1.16 | 6. The map's coverage check and housekeeping | [x] v9.225 (check_system_map_covers_the_tree with its detection test; .dockerignore added, which the plan had not caught; the paper's status decided as a source-hash stamp plus check_paper_pdf_is_current rather than a LaTeX toolchain in CI; 00_load_all.sql's banner, prefixes and prerequisite corrected; .gitignore rewritten and CONTRIBUTING gains the clean command; docs/operator/SECURITY.md renamed to SECURITY-CONTROLS.md; CONVENTIONS section 1 corrected) |
 | P1.17 | 1. The demo and launcher gates | [x] v9.206 |
 | P1.17 | 2. The identifier and jargon sweep in templates | [x] v9.207 (also the template em-dash sweep, which P1.13 ship 7 left to this row) |

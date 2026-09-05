@@ -5,6 +5,43 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.232 — 2026-09-05 (the voice pass, part three: the last six records, and the substrate manifest stops listing a deleted library)
+
+The six largest records, and the end of the pass. Every one of the
+twenty-two design documents now opens with its reader, states what it
+describes in present tense, and cites only objects that exist.
+
+- **`substrate.md` listed d3 as a required dependency.** The atlas globe it
+  powered was deleted at v9.221, along with the vendored library itself. The
+  row is now MapLibre GL, with the basemap tile service named as the separate
+  external dependency it is, and the note that the Atlas degrades to markers
+  rather than failing when that service is unreachable. Its opening also
+  stopped deferring to an appendix of the report for the argument it is
+  making, and now makes it.
+- **`concurrency.md` said the rate limiter was in-process only**, with a
+  multi-worker deployment as an acknowledged limitation and Redis as future
+  work. Redis is the production backend and has been for versions. Its six
+  lock-pattern headings had lost their subjects to the identifier sweep and
+  read `## Advisory-lock pattern: UC-8 / (added v8.15)`.
+- **`threat-model.md` carried the same stale deferral**, listing the
+  multi-worker rate limit as an open backlog item and rating the residual risk
+  as deferred. That row is removed and the residual risk restated.
+- **`duress-codes.md` referenced a watcher channel** in the apparatus removed
+  at v9.55, and closed with a mission-completion section whose counts, 23
+  tables, 13 procedures, 14 triggers, were each wrong. The rewrite keeps every
+  technical claim and drops the ceremony.
+- **`federation.md` and `zk-snark.md`** were organised around numbered audit
+  refinements, R1 through R9, which meant nothing to a reader who had not seen
+  the audit. Both are reorganised by what the mechanism does, with the
+  refinements folded into the prose that needed them.
+- **The remaining `v1` and `v2` vocabulary is gone.** Those numbers referred
+  to a schema generation, not to any version this repository ships, and a
+  reader had no way to know which.
+
+With this the pass is complete: twenty-two records, four ships, no em-dashes,
+no mission identifiers, and every cited SQL object, test and route verified
+against the tree.
+
 ## v9.231 — 2026-09-05 (the voice pass, part two: nine more records, and a rule catalogue that described a system removed at v9.55)
 
 Nine documents rewritten. As in part one, the rereading found claims that had

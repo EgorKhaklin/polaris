@@ -22,10 +22,6 @@ For each, threats are listed with a short identifier (T-XX), the
 attack scenario, the affected component, and the control(s) that
 address it.
 
-This document closed v1 done-list item 8 (the record is in [`record.md`](../../DEVNOTES/record.md)).
-
----
-
 ## S: Spoofing
 
 ### T-S1: forged signing key issues fake tokens
@@ -88,12 +84,12 @@ malware on the admin's workstation.
 **Affected:** AppUser.password_hash + Flask session
 
 **Impact:** admin role can issue + revoke any token (UC-1 / UC-8),
-trigger `uc_archive_purge` (delete from hot audit tables under v8.87
-carve-out), create new operator accounts, and read every individual's
+trigger `uc_archive_purge`, which deletes from the hot audit tables under the
+archive carve-out, create new operator accounts, and read every individual's
 enrollment-status history. The highest-impact attack surface in the
 system.
 
-**Controls (v8.97 / Position B WebAuthn-MFA):**
+**Controls:**
 - After the 30-day enrollment deadline, admin login REQUIRES a
   verified WebAuthn assertion in addition to a correct password
   (defense-in-depth: the password is the first factor, WebAuthn is
@@ -322,9 +318,10 @@ out, or to crack a weak password.
 - Test: `F03_RateLimitingTests`,
   `ConcurrencyTests.test_failed_login_count_is_atomic_under_concurrent_load`
 
-**Residual risk:** LOW under single-process; **DEFERRED** under
-multi-worker (the in-memory limiter is per-worker; multi-worker needs
-Redis: backlog item.
+**Residual risk:** low. The limiter's Redis backend shares one bucket across
+workers and hosts, and the production configuration selects it; the
+per-process backend remains only for single-worker development, where its
+counters are correct.
 
 ### D-D3: write-amplification via append-only triggers
 
@@ -420,7 +417,7 @@ function-owner's privileges.
 
 ---
 
-## Threats explicitly OUT OF SCOPE
+## Out of scope
 
 | Threat | Reason |
 |---|---|
@@ -432,14 +429,13 @@ function-owner's privileges.
 
 ---
 
-## Threats DEFERRED to backlog (recurring re-evaluation)
+## Deferred, and re-examined each pass
 
 | Threat | Backlog item | Rationale |
 |---|---|---|
-| T-T2 cross-context replay | (property tests for invariants) | Currently relies on context-side enforcement; a nonce table would harden but isn't blocking |
+| T-T2 cross-context replay | A single-use nonce store | Anti-replay currently rests on context-side enforcement and the freshness window; the nonce table would harden it |
 | D-D4 connection-pool exhaustion | docs/operator/OPERATIONS.md | Production deployment concern |
 | I-I4 sensitive data in logs | docs/operator/OPERATIONS.md retention policy | Operational, not architectural |
-| D-D2 multi-worker rate limit | (Redis-backed limiter) | Acknowledged limitation |
 
 ---
 

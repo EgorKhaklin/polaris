@@ -2,270 +2,148 @@
 
 **Reader:** an engineer or an assessor. **Job:** How cross-agency trust is recorded and consulted, with no transitive trust.
 
-This file is the canonical write-up for Polaris's federation layer: how
-cross-agency trust is recorded, how the verification flow consults it, and
-what the schema does versus what the operator decides.
+Every token names the agency that issued it, and without a federation model a
+verifier either trusts all issuers or none of them. Trusting all of them means
+one compromised agency can issue tokens the whole system honours, which is
+issuer trust concentration in its simplest form.
 
----
+The answer here is a declarative trust graph: an explicit, directional,
+per-context statement that one agency accepts another, consulted on every
+cross-agency verification.
 
-## What implements
+## The three pieces
 
-PDF §9.2 names "issuer trust concentration" as an open problem the schema
-does not yet model. Today, every `IdentityToken` carries an
-`issuing_agency_id`, and verification implicitly trusts whichever agency
-issued the token. replaces "implicit trust" with an explicit,
-declarative trust graph:
+1. **`AgencyTrustAttestation`**, whose rows are directed edges. A row says
+   that the attesting agency accepts the attested agency for one verification
+   context.
+2. **`uc10_attest_trust` and `uc10_revoke_attestation`**, admin-only
+   procedures, each holding an advisory lock on the attesting agency.
+3. **The verification flow**, which consults the graph before recording a
+   success. Same-agency verification is implicit and needs no row;
+   cross-agency verification requires an active edge.
 
-1. **`AgencyTrustAttestation` table** — directional edges in the
-   federation trust graph. Each row says "agency V (attesting) accepts
-   agency I (attested) for context C."
-2. **`uc10_attest_trust` / `uc10_revoke_attestation`** — admin-only
-   procedures under a per-attesting-agency advisory lock (the 5th
-   catalog entry).
-3. **Verification flow extension** — when a token is presented at a
-   verifier, the federation check fires before recording SUCCESS:
-   same-agency? implicit trust. Cross-agency? require an active row in
-   the trust graph.
+## No transitive trust
 
-## NO transitive trust (R1 audit refinement)
+An edge from A to B and an edge from B to C do not make an edge from A to C.
+The check looks for exactly one row matching the verifier, the issuer and the
+context. It never recurses and never computes a closure.
 
-A→B + B→C does NOT imply A→C. The verification check looks for *exactly
-one* row in `AgencyTrustAttestation` matching `(attesting=verifier,
-attested=issuer, context)`. It never recurses or computes transitive
-closure.
+This is the same refusal to derive that runs through the schema, and here it
+buys three things. Nothing is granted silently: adding one edge cannot open a
+path the operator did not intend. Cycles stop being a problem, because nothing
+walks the graph. And an operator who wants multi-hop trust declares every hop,
+which means the audit trail contains every decision rather than the inputs to
+an inference.
 
-This is the anti-auto-derivation principle applied to the trust graph:
+The failure it prevents is a federation collapsing into its most permissive
+member: with explicit-only edges, the trust set cannot grow without someone
+acting.
 
-- Transitive trust would be silent magic. Adding A→B could grant trust
-  paths the operator never intended.
-- Cycle handling becomes trivial: no recursion → no cycles to detect at
-  verification time.
-- Operators who *want* multi-hop trust must declare every edge
-  explicitly. The audit trail captures every decision; nothing is
-  inferred.
+## Revocation looks forward
 
-The PDF §9.2 attack this defeats: "the federation collapses into the
-most-permissive agency's trust set." With explicit-only federation,
-every trust edge is operator-attested, and the graph cannot grow
-without explicit action.
+Revoking an attestation sets `revocation_date` and `revocation_reason`
+together, and both are immutable afterwards. Verification consults the live
+state, and the effect is forward-only:
 
-## "Schema records, agencies decide" (R2 audit refinement)
+- Verification events recorded while the edge was active are not invalidated.
+  They happened, and C1 keeps them; the schema does not rewrite history.
+- Verifications after the revocation see the revoked state and fail the check.
+- A verification already in flight sees its own snapshot, which is
+  read-committed semantics doing the right thing.
 
-When an attestation is revoked, the revocation is recorded in
-`AgencyTrustAttestation` (`revocation_date` + `revocation_reason` set
-together, both immutable thereafter). The verification path consults
-the live state.
+## One attestation at a time, per attesting agency
 
-The revocation is **forward-looking only**:
+Both procedures take a transaction-scoped advisory lock keyed on the attesting
+agency. Without it, an attestation and a revocation from the same agency can
+interleave into an ambiguous final state. With it, one agency's changes
+serialise and different agencies proceed in parallel.
 
-- Past `VerificationEvent` rows that occurred while the attestation was
-  active are NOT retroactively invalidated. Those events happened; they
-  remain in the append-only audit log. C1 (append-only) takes
-  precedence — the schema does not rewrite history.
-- New verifications after revocation see the revoked state and fail
-  the federation check.
-- In-flight verifications use READ COMMITTED snapshots: a transaction
-  that started before the revocation commit sees the pre-revocation
-  state; a transaction starting after sees the post-revocation state.
+| Ceremony | Lock key |
+|---|---|
+| Revocation | per agency |
+| Recovery | per individual |
+| Algorithm migration | per token |
+| Anchor batch close | per algorithm |
+| Attestation and its revocation | per attesting agency |
 
-This matches Polaris's broader posture: revocation is a forward-looking
-decision recorded in the audit, not a backwards rewrite.
+[concurrency.md](concurrency.md) holds the catalogue and the reasoning behind
+each granularity.
 
-## Per-attesting-agency advisory-lock (C9, 5th catalog entry)
+## What `signed_by` is, and is not
 
-Both `uc10_attest_trust` and `uc10_revoke_attestation` hold
-`pg_advisory_xact_lock(hashtext('polaris.federation.attest.' ||
-attesting_agency_id::TEXT))` for the duration of the transaction.
+The column records which Polaris operator created the attestation. It is not a
+cryptographic signature from the attesting agency.
 
-| Procedure | Lock granularity | Cross-key parallelism |
-|---|---|---|
-| `uc8_revoke_token` | per-agency | cross-agency parallel |
-| `uc9_complete_recovery` | per-individual | cross-individual parallel |
-| `uc6_migrate_algorithm` | per-token | cross-token parallel |
-| `close_anchor_batch` | per-algorithm | cross-algorithm parallel |
-| `uc10_attest_trust` / `uc10_revoke_attestation` | per-attesting-agency | cross-attesting-agency parallel |
+That is an honest limit rather than an oversight. Operator accounts have no
+link to an agency and no cryptographic standing on an agency's behalf. The
+model assumes Polaris is run by an authority with the standing to record
+attestations, which is true of a reference implementation and would not be
+enough for a production federation.
 
-The lock protects against the attest-revoke race: without it, two
-threads on the same agency could attest+revoke in interleaving order
-such that the final state is ambiguous. With it, same-agency operations
-serialize; cross-agency operations parallelize.
+The upgrade is a migration that adds a nullable signature and its algorithm,
+requires them on new attestations, and leaves existing rows valid and
+queryable. What blocks it is not the schema: it is agency-level signing key
+management, which is its own design problem and one of the operator decisions
+in the readiness ledger.
 
-See `docs/design/concurrency.md` "Per-attesting-agency advisory-lock" for
-the full discussion.
+## Self-attestation is refused
 
-## v1 = operator-logged; v2 path = agency-signed (R4 audit refinement)
+`attestation_no_self_attestation` rejects a row whose attesting and attested
+agencies are the same.
 
-The `signed_by AppUser` field records *which Polaris operator* created
-the attestation. It does NOT carry a cryptographic signature from the
-attesting agency's signing key.
+Accepting them as harmless no-ops was the alternative, and it loses on three
+counts. A graph full of self-edges obscures the cross-agency edges that carry
+meaning. Same-agency verification already short-circuits before the graph is
+consulted, so such a row would be either redundant or misleading. And an
+operator error is better surfaced when the row is written than silently
+ignored when it is read.
 
-This is honest, not aspirational:
+## The seeded graph
 
-- `AppUser` doesn't link to `Agency` today. Polaris operators are
-  Polaris-operator-role users; they are not jurisdiction operators
-  with cryptographic standing.
-- The federation model in v1 assumes Polaris is operated by *some*
-  authority that has the standing to record attestations on behalf of
-  agencies. This is true for a reference implementation; a production
-  deployment would need a richer model.
+The sample data carries six attestations: a federal travel authority accepting
+three issuers for travel, and a bank accepting the same three for banking. No
+healthcare edges exist, because the only healthcare-permitted token in the
+sample verifies at same-agency checkpoints.
 
-The path to v2 is clean:
+The point of seeding it is that the sample verification events become
+explicable through the graph rather than through hard-coded trust.
 
-```sql
-ALTER TABLE AgencyTrustAttestation
-    ADD COLUMN attestation_signature BYTEA,
-    ADD COLUMN attestation_algorithm_id INTEGER
-        REFERENCES CryptographicAlgorithm(algorithm_id);
-```
+## Where an adversary ends up
 
-A future migration would add these columns NULLable (existing rows
-remain valid). New code paths would require the signature for fresh
-attestations; old rows remain queryable in their v1 form. The verifier
-would check the signature against the attesting agency's published
-public key.
+- **The claim.** Trust is explicit only. One agency accepts another for one
+  context if and only if an unrevoked row says so, and no chain of edges
+  implies an edge.
+- **The direct attack.** Compromise an agency that the target already trusts.
+  That works, and federation does not claim otherwise. What it does is confine
+  the blast radius to exactly the explicitly trusted set.
+- **Where it settles.** Each edge has to be attacked on its own. Compromising
+  several agencies buys those edges and not their closure, which is precisely
+  what transitive trust would have given away.
+- **The next attack.** Write an attestation directly in the database.
+  `enforce_attestation_immutability` refuses updates after the row exists, and
+  the procedures are the only sanctioned path in. An attacker with the
+  database owner's shell has larger options than this, and the trigger is not
+  claimed to stop them.
+- **What it costs.** Full pairwise trust among many agencies costs a row per
+  pair. That is accepted: the alternative is inferring relationships nobody
+  declared. A grouping abstraction could amortise the cost later without
+  weakening the no-transitivity rule.
 
-v1 ships without these because the cryptographic surface is the
-bottleneck — adding it requires Agency-level signing key management,
-which is its own design problem.
+The boundary is the same one the whole schema keeps: it records that A
+attested B, and it does not answer whether A should have.
 
-## Self-attestation rejected at schema layer (R5 audit refinement)
+## Reading the code
 
-The CHECK constraint `attestation_no_self_attestation` rejects rows
-where `attesting_agency_id = attested_agency_id`.
-
-Alternative considered: allow them and treat them as no-ops at the
-verification layer. Rejected because:
-
-- **Noise hides signal.** A trust graph populated with self-attestation
-  rows obscures the cross-agency edges that actually matter.
-- **Same-agency verification is already implicit.** The verification
-  flow's same-agency short-circuit (`token.issuing_agency_id ==
-  verifier_agency.agency_id`) handles this without any row. A
-  self-attestation row would be either redundant or misleading.
-- **Operator error surfaces at INSERT time**, not silently-ignored at
-  verification time.
-
-## Seed graph (R6 audit refinement)
-
-Six seed attestations matching the existing demo scenarios:
-
-| # | Attesting | Attested | Context | Why |
-|---|---|---|---|---|
-| 1 | Agency 4 (TSA federal) | Agency 1 (federal NY issuer) | TRAVEL | James's T3 verifies at TSA |
-| 2 | Agency 4 (TSA federal) | Agency 3 (CA issuer) | TRAVEL | Maria's T2 (CA-issued) at TSA |
-| 3 | Agency 4 (TSA federal) | Agency 2 (PA issuer) | TRAVEL | Cross-state TRAVEL |
-| 4 | Agency 5 (bank) | Agency 1 (federal NY issuer) | BANKING | T3 banking verifications |
-| 5 | Agency 5 (bank) | Agency 3 (CA issuer) | BANKING | T2 banking verifications |
-| 6 | Agency 5 (bank) | Agency 2 (PA issuer) | BANKING | Cross-state BANKING |
-
-No HEALTHCARE attestations — Maria's T2 is the only token with
-HEALTHCARE permissions, and HEALTHCARE verifications happen at
-same-agency (CA) checkpoints in the demo data.
-
-This seed makes the existing 8 verification events in sample data
-*explicable through the federation graph* rather than implicit
-hard-coded trust.
-
-## Future extensions (out of v8.22 scope, but path noted)
-
-### Anchoring attestations themselves
-
-Parallel to's `committed_to_chain` future-field on `AnchorBatch`:
-attestations are high-value cryptographic commitments and could
-themselves be batched into a Merkle log for external verifiability.
-
-The path:
-- Add `batch_id INTEGER REFERENCES AttestationBatch(batch_id)` to
-  `AgencyTrustAttestation` (or extend `AnchorBatch` to carry
-  attestation hashes alongside token-anchor hashes).
-- Add a `close_attestation_batch` procedure mirroring
-  `close_anchor_batch`.
-- v1 does NOT ship this; the column-level scaffold is left out
-  entirely so the schema doesn't carry placeholders. A future
-  increment can add it cleanly because the append-only invariant
-  means existing rows are stable across the ALTER TABLE.
-
-### Agency-signed attestations (v2 cryptographic upgrade)
-
-See R4 above. The path is named, the schema is ready, the cryptographic
-signing infrastructure is the bottleneck.
-
-### Trust-graph anchoring proofs
-
-A verifier presented with a token from a foreign agency could request a
-cryptographic proof that the relevant attestation exists. With v2
-agency-signed attestations + Merkle anchoring, this becomes a standard
-inclusion-proof flow.
-
-## Flask routes
-
-| Route | Method | Role | Purpose |
-|---|---|---|---|
-| `POST /api/federation/attest` | POST | admin | Wraps `uc10_attest_trust` |
-| `POST /api/federation/revoke` | POST | admin | Wraps `uc10_revoke_attestation` |
-| `POST /verifications/new` | POST | admin / operator | Federation check fires on SUCCESS outcome |
-
-The JSON routes accept the CSRF token via the `X-CSRFToken` header (v8.22
-added this to `validate_csrf` alongside the existing `csrf_token` form
-field, to support AJAX/JSON callers).
-
-## Adversary walk
-
-1. **Defender's claim:** Federation trust is *explicit only* — agency A
-   trusts agency B if and only if a row in `AgencyTrustAttestation`
-   with status='ACTIVE' exists where `attesting_agency_id=A` and
-   `target_agency_id=B`. There is no transitive trust: A→B→C does
-   NOT imply A→C. Verification gates SUCCESS outcomes on
-   `_federation_trust_holds()` returning true for the (requesting
-   agency, issuing agency) pair.
-2. **Attacker's optimal response:** Compromise an agency the
-   target already trusts directly. The attacker controls that
-   agency's signing surface and can issue/attest as them. This
-   *is* the original threat from PDF §9's "issuer trust
-   concentration" — federation does not eliminate it; federation
-   confines the blast radius to exactly the explicitly-trusted set.
-3. **Equilibrium:** The defender forces the attacker to compromise
-   *each* edge of the trust graph independently. No edge buys the
-   attacker any other edge. Compromising N agencies grants
-   verification authority over N edges, not over the N-clique
-   closure. This is the Schelling-point that PDF §9 names: trust
-   concentration is bounded by the count of explicit attestations,
-   not the transitive reach.
-4. **Second-best attack:** Forge an attestation row directly via
-   compromised database access. Defeated by
-   `enforce_attestation_immutability` trigger (rejects UPDATE post-
-   row; only the canonical procedures `uc10_attest_trust` /
-   `uc10_revoke_attestation` can insert/transition state) and by
-   the per-attesting-agency advisory lock (5th catalog entry) that
-   serializes attestations from a single agency. Tested by
-   `ConcurrencyTests.test_uc10_*`. The shell-access pivot still
-   bypasses the trigger, but at that point the attacker has root
-   and federation is the least of the defender's problems.
-5. **Defender's cost:** Explicit-only trust means new federation
-   relationships require an explicit attestation per pair — N agencies
-   wanting full pairwise trust pay O(N²) attestations. Accepted: this
-   is the *correct* trade for the threat model. A future
-   "trust group" abstraction could amortize the cost
-   without weakening the no-transitivity invariant.
-6. **Mechanism-design note:** The schema records *facts* (this
-   agency attests this target); agencies *decide* what to do with
-   those facts. Polaris does not arbitrate trust policy beyond
-   refusing to assume relationships agencies haven't declared. This
-   is the same boundary discipline as C10 (identity ≠ money):
-   Polaris answers "did A attest B?", not "should A trust B?".
-
-## Cross-references
-
-- `polaris_sql/01_schema.sql` — `AgencyTrustAttestation` table + 3 CHECK constraints.
-- `polaris_sql/02_indexes.sql` — `uq_active_attestation` partial unique index + `idx_attestation_revoked`.
-- `polaris_sql/05_procedures.sql` — `uc10_attest_trust` and `uc10_revoke_attestation`.
-- `polaris_sql/06_triggers.sql` — `enforce_attestation_immutability`.
-- `polaris_sql/08_tests.sql` — Section P (5 self-tests).
-- `polaris_sql/10_auth.sql` — 6-row seed graph.
-- `polaris_web/app.py` — `_federation_trust_holds()` helper +
-  `verifications_new` extension + `/api/federation/*` routes.
-- `polaris_web/test_app.py` — `IssuerFederationTests` (15 tests) +
-  `ConcurrencyTests.test_uc10_*` (2 tests).
-- `docs/design/audit-of-record.md` — `AgencyTrustAttestation` is the 6th instance.
-- `docs/design/concurrency.md` — per-attesting-agency advisory-lock is the 5th catalog entry.
-- `MISSION.md` — marked ✅ in the v2 done-list.
+- `polaris_sql/01_schema.sql`: `AgencyTrustAttestation` and its constraints.
+- `polaris_sql/02_indexes.sql`: the partial unique index over active
+  attestations, and the revocation index.
+- `polaris_sql/05_procedures.sql`: `uc10_attest_trust`,
+  `uc10_revoke_attestation`.
+- `polaris_sql/06_triggers.sql`: `enforce_attestation_immutability`.
+- `polaris_web/app.py`: `_federation_trust_holds`, the verification extension,
+  and the two federation routes, which accept the CSRF token as a header for
+  JSON callers.
+- `polaris_web/test_app.py`: `IssuerFederationTests`, and the concurrency
+  tests for the attest and revoke race.
+- [audit-of-record.md](audit-of-record.md): why an attestation is immutable
+  once written.
