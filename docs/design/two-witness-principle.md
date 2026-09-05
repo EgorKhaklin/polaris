@@ -6,61 +6,58 @@
 > independent implementation. A verdict only one program can produce is a
 > promise, not a proof.
 
-Adopted v9.44 from the Glass language's Pentecost discipline, as the transferable
-half of the 2026-06-03 Glass bounded-integration decision. Glass's own ledger
-states it plainly: a proof you cannot independently check is just a promise, and a
-verifier you trust because it agrees with itself is not a verifier.
+A verifier that agrees with itself has established nothing. The rule below is
+the standing obligation that follows from that, and the table at the end is its
+current state: every verdict Polaris renders, the implementation that renders
+it, and the independent one that checks it.
 
 ## The rule
 
-When Polaris ships a component that renders a cryptographic **verdict** (valid /
-invalid, member / non-member, accept / reject), that verdict must be reproducible
-by a **second witness** that satisfies all of:
+A component that renders a cryptographic verdict, valid or invalid, member or
+non-member, accept or reject, must have that verdict reproduced by a second
+witness meeting all four conditions:
 
-1. **Independent implementation.** Written separately from the primary verifier,
-   ideally in a different language.
-2. **Different representation.** Not a copy with the same number model; e.g.
-   plain `int mod p` against the primary's limb arithmetic. Shared representation
-   hides shared bugs.
-3. **Shares no code** with the primary verifier (and, where the lineage matters,
-   no code with any third system it is meant to cross-check).
-4. **Must agree on the verdict** across the full honest and adversarial corpus,
-   or **ABSTAIN explicitly** on any axis it cannot faithfully model. Silent
-   non-coverage is forbidden: an abstention is logged, not hidden.
+1. **Independently implemented.** Written separately from the primary, ideally
+   in another language.
+2. **Differently represented.** Not the same number model: plain integers
+   modulo p against the primary's limb arithmetic, for instance. A shared
+   representation hides shared bugs.
+3. **Sharing no code** with the primary, nor with any third system the pair is
+   meant to cross-check.
+4. **Agreeing on the verdict** across the honest and adversarial corpus, or
+   abstaining explicitly on any axis it cannot model faithfully. Silent
+   non-coverage is forbidden: an abstention is recorded, not hidden.
 
-## What it buys, and what it does not
+## What it catches, and what it does not
 
-It catches **implementation divergence**: a bug in one verifier that the other
-does not share. It is a differential check, not an audit. It does **not** catch a
-shared misreading of the spec or threat model (both witnesses can be wrong about
-the same thing), and it never substitutes for external review. Name the boundary
-every time, the way `docs/design/zk-soundness.md` and Glass's Pentecost README both
-do.
+It catches implementation divergence: a bug in one verifier that the other does
+not share. It is a differential check, not an audit. It does not catch a shared
+misreading of the specification or the threat model, because both witnesses can
+be wrong in the same way, and it is not a substitute for external review. Every
+document that claims a two-witness result names that boundary, as
+[zk-soundness.md](zk-soundness.md) does.
 
-## Why this fits Polaris
+## Why it belongs here
 
-It is the cryptographic-verifier instance of a discipline Polaris already runs
-elsewhere:
-
-- **C9** requires concurrency hazards to be tested with real threading, not
-  asserted. Same spirit: prove the property, do not claim it.
-
-The two-witness principle extends that posture to the one place it was missing:
-the ZK verdict, which until v9.44 rested on a single Rust verifier.
+Polaris already refuses to assert what it can test. C9 requires concurrency
+hazards to be exercised with real threads rather than asserted in prose. The
+two-witness rule is the same discipline applied to cryptographic verdicts,
+which were the one place it was missing: the ZK verdict rested on a single Rust
+verifier, and the signature verdict on a single liboqs call.
 
 ## Current instances
 
 | Verdict | Primary witness | Second witness | Coverage |
 |---|---|---|---|
-| ZK Merkle-inclusion (membership + binding) | `polaris_zk` Rust crate (`verify`) | `polaris_zk/witness2/` (Python) | Statement-level; abstains on proof-byte integrity (`docs/design/zk-soundness.md`) |
-| PQC signature (ML-DSA-65, `pqc_signing.verify`) | liboqs / `oqs` (single impl) | **ABSTAIN: none yet** | Recorded per rule 4: a lone verifier, acknowledged not hidden. As of v9.58 the signing path is wired into issuance (`uc1_issue` calls `pqc_signing.signature_bytes_for_token`), but the real ML-DSA path is OFF by default (`POLARIS_USE_REAL_PQC`) and the verify path remains a single liboqs implementation, so it renders no production verdict today. Add a second witness (or an explicit ABSTAIN ledger) before it goes live. |
+| ZK Merkle inclusion (membership and binding) | the `polaris_zk` Rust crate's `verify` | `polaris_zk/witness2/`, in Python | Statement level. It abstains on proof-byte integrity, which [zk-soundness.md](zk-soundness.md) states in full. |
+| ML-DSA-65 signature (`pqc_signing.verify_both`) | liboqs, through the `oqs` bindings | `cryptography`'s `MLDSA65PublicKey`, an independent FIPS 204 implementation | Full. The two must agree; where the installed `cryptography` is too old to provide ML-DSA the verdict degrades to the primary alone, so the witness can never weaken the path. `check_pqc_second_witness` pins both functions. |
 
-This is rule 4 in practice: a lone verifier is not silently shipped. The PQC
-row is an ABSTAIN on record so the gap is visible until closed. See the
-ROADMAP §OPEN NOW item for the second-witness / wiring work.
+The signature row was an explicit abstention until an independent
+implementation existed, which is rule 4 working as intended: a lone verifier is
+recorded as one, in the open, until it is not one.
 
 ## The standing obligation
 
-Any future verifier Polaris ships (a wider-tree SNARK, a real PQC signature
-check, a recursive proof) inherits this rule. Shipping a lone verifier is a
+Any verifier Polaris adds later, a wider-tree SNARK, a recursive proof, a
+different signature scheme, inherits this rule. Shipping a lone verifier is a
 finding, not a feature.

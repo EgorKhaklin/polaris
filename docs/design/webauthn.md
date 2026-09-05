@@ -2,102 +2,97 @@
 
 **Reader:** an engineer or an assessor. **Job:** Operator credential registration, how the second factor is enforced, and what the grace period buys.
 
-This file is the canonical write-up for Polaris's WebAuthn-MFA operator
-authentication: how operator credentials are registered, how MFA is
-enforced, what the grace period actually buys, and which surfaces an
-attacker has to break to bypass it.
+Operator accounts are the compulsion surface that matters most: a coerced or
+phished operator password reaches every use case. WebAuthn puts a hardware
+factor in front of that, and does it on a deadline per account rather than a
+switch thrown for everybody at once.
 
----
+## The four states
 
-## What WebAuthn-MFA enforces
+Every `AppUser` row carries a nullable `webauthn_required_after` timestamp.
+Login reads it and lands in one of four states:
 
-Operator login (`/login`) is password-only by default, BUT every
-`AppUser` row has a `webauthn_required_after` timestamp (nullable). Once
-that timestamp passes, the login flow refuses to proceed past password
-verification until the operator presents a valid WebAuthn assertion
-against a credential they previously registered. The flow has three
-states:
-
-| State | Condition | Behavior |
+| State | Condition | Behaviour |
 |---|---|---|
-| **no_mfa** | `webauthn_required_after IS NULL` | Password is sufficient |
-| **grace_period** | NOW < `webauthn_required_after` | Password works; warning banner urges enrollment |
-| **mfa_required** | NOW ≥ `webauthn_required_after` AND credentials registered | Password + WebAuthn assertion both required |
-| **mfa_overdue** | NOW ≥ `webauthn_required_after` AND no credentials | Login REFUSED with admin-recovery instructions |
+| No second factor | `webauthn_required_after IS NULL` | The password is sufficient |
+| Grace period | now is before the deadline | The password works, and the interface asks for enrolment |
+| Second factor required | the deadline has passed and a credential is registered | Password and a WebAuthn assertion, both |
+| Overdue | the deadline has passed and no credential is registered | Login is refused, with the recovery path named |
 
-New operators created via `scripts/polaris-create-operator.sh` get a
-30-day grace period. Existing operators have no deadline unless
-`scripts/polaris-set-webauthn-deadline.sh` sets one.
+The deadline is what makes the rollout tractable: enrolment is asked for
+before it is demanded, and the refusal at the end is unambiguous rather than a
+silent lockout. `scripts/polaris-create-operator.sh` gives a new operator
+thirty days; an existing operator has no deadline until
+`scripts/polaris-set-webauthn-deadline.sh` sets one. Admin accounts are the
+ones the policy targets: the second factor is required for admin, optional for
+operator, and not asked of the read-only auditor role.
 
-## Architecture
+## Where it lives
 
 | File | Role |
 |---|---|
-| `polaris_web/webauthn_auth.py` (~458 lines) | Registration + assertion ceremonies; wraps the Duo Labs `webauthn` Python package |
-| `polaris_web/app.py` | 7 routes: `/auth/webauthn/{register/begin,register/finish,assert/begin,assert/finish}`, `/settings/webauthn`, `/settings/webauthn/credentials/<id>/delete` |
-| `polaris_web/templates/webauthn_assert.html` + `webauthn_settings.html` | UI surfaces |
-| `polaris_web/static/webauthn-{register,assert}.js` | Browser-side ceremony (calls `navigator.credentials.create/get`) |
-| Schema migration `2026-05-14-002-operator-webauthn` | Adds `OperatorWebauthnCredential` table + `AppUser.webauthn_required_after` column + 5 new `AuthAuditLog` event types |
+| `polaris_web/webauthn_auth.py` | The registration and assertion ceremonies, over the `webauthn` package (pinned in `requirements.txt`) |
+| `polaris_web/app.py` | Seven routes: the four ceremony endpoints, the assertion page, the settings page, and credential deletion |
+| `polaris_web/templates/webauthn_assert.html`, `webauthn_settings.html` | The two operator-facing pages |
+| `polaris_web/static/webauthn-register.js`, `webauthn-assert.js` | The browser half, calling `navigator.credentials.create` and `.get` |
+| `polaris_sql/migrations/2026-05-14-002-operator-webauthn` | `OperatorWebauthnCredential`, the `AppUser` deadline column, and five audit event types |
 
-## Test coverage
+## What the policy can require
 
-- `polaris_web/test_app.py::WebAuthnTests` — end-to-end ceremony tests
-  (register → assert → mfa_required state machine)
-- `polaris_web/test_app.py::WebAuthnAdversarialTests` — forged-assertion
-  rejection, register-without-login rejection, begin-without-pending
-  rejection
-- `polaris_web/test_structural_invariants.py` — schema invariants on
-  `OperatorWebauthnCredential` (FK to AppUser, public_key bytes
-  required, transports JSONB)
-- Round-trip drill verified at v8.97 ship-time (10-step manual drill).
+All of it is environment-driven and validated at boot by `validate_policy()`,
+so a malformed policy fails the process rather than silently degrading:
 
-## Operator-recovery path
+- `POLARIS_WEBAUTHN_ATTESTATION` sets the conveyance asked of the browser:
+  none, indirect, direct or enterprise.
+- `POLARIS_WEBAUTHN_REQUIRE_ATTESTATION` refuses a registration whose
+  attestation format is `none`.
+- `POLARIS_WEBAUTHN_ALLOWED_AAGUIDS` restricts enrolment to named
+  authenticator models.
+- `POLARIS_WEBAUTHN_USER_VERIFICATION` set to `required` demands a PIN or
+  biometric on both ceremonies, not just at registration.
+- `POLARIS_WEBAUTHN_HARDWARE_ONLY` refuses platform authenticators.
 
-The single-credential-loss attack is mitigated by a paired-admin
-recovery:
+The relying party offers ML-DSA-65 (COSE algorithm -49) first, so an
+authenticator that implements it enrols a post-quantum credential; every other
+one falls through to ES256, EdDSA or RS256. Replay is bounded by the signature
+counter, which must exceed the stored value, with the documented exception of
+authenticators that report zero throughout.
 
-1. `scripts/polaris-recover-admin.sh` requires TWO admins to be present;
-   one (the locked-out one) cannot recover themselves.
-2. `scripts/polaris-generate-recovery-code.sh` emits a printed mnemonic
-   at operator-creation time. This is the second factor for the
-   recovery ceremony itself.
+## Recovering a locked-out admin
 
-By design, there is NO bypass path. A single-admin deployment with the
-only admin locked out is by-design unrecoverable without restoring from
-backup. The constitutional clause "identity is
-not money" extends here: the operator-auth surface is intentionally
-non-monetary in its blast radius.
+There is no bypass, by design. The recovery path needs two people or a
+pre-issued secret:
 
-## What this primitive does NOT do
+1. `scripts/polaris-recover-admin.sh` requires a second admin to act. The
+   locked-out admin cannot recover themselves.
+2. `scripts/polaris-generate-recovery-code.sh` issues a printed mnemonic at
+   account creation, which is the second factor for the recovery ceremony
+   itself.
 
-- It does NOT cover holder-side authentication (Polaris holders don't
-  log in; they're identified by their `Individual` row + token).
-- It does NOT support U2F (legacy non-WebAuthn). The schema requires a
-  CTAP2 / FIDO2 credential.
-- It does NOT support biometric-only auth — every credential requires
-  a hardware authenticator (resident or roaming key).
-- It does NOT solve the "lost both admins simultaneously" problem
-  (operator-side procedural; out of scope for this primitive).
+A single-admin deployment whose only admin loses their authenticator and their
+recovery code is unrecoverable without a restore from backup. That is the
+intended trade: an operator-side bypass would be a coercion target, and the
+whole point of the surface is that it has none.
 
-## Maintenance posture
+## What is tested
 
-Stable. Three known classes of future work:
-1. **Attestation verification** — currently the server records the
-   attestation statement but does not verify the AAGUID against a
-   metadata service. A future hardening pass could enforce
-   FIDO-Metadata-Service certification.
-2. **Cross-device passkey support** — the current credential schema
-   assumes per-device credentials; syncing platforms (iCloud Keychain,
-   Google Password Manager) work today but the audit log doesn't
-   distinguish them.
-3. **Conditional UI** — using `mediation: 'conditional'` to surface
-   credentials at password-field focus rather than after submit;
-   pure UX improvement.
+- `WebAuthnTests` in `polaris_web/test_app.py` drives the ceremonies end to
+  end, registration through assertion, and asserts the state machine above.
+- `WebAuthnAdversarialTests` covers what an attacker tries: a forged
+  assertion, registration without a session, and a ceremony finished without a
+  pending challenge.
+- `check_session_origin_hardening` pins the policy knobs, the boot-time
+  validation and the ML-DSA-first offer, so a regression fails the build
+  rather than a review.
 
-## Cross-references
+## Boundaries
 
-- `polaris_web/webauthn_auth.py` — the implementation
-- `polaris_sql/migrations/2026-05-14-002-operator-webauthn.up.sql` — the
-  schema migration
-- `MISSION.md` §Vocation — the anti-coercion rationale (operator
-  compulsion resistance)
+- It authenticates operators, not holders. Holders do not log in; they are
+  identified by their `Individual` row and their token.
+- It requires a CTAP2 or FIDO2 credential. Legacy U2F is not accepted.
+- It cannot solve the loss of every admin credential at once. That is a
+  procedural question for the deploying organisation, and it belongs in the
+  same class as the custody decisions in the readiness ledger.
+- Attestation is policy-checked against an allow-list of authenticator models,
+  not against a metadata service. Enforcing FIDO Metadata Service
+  certification would be a further hardening step, not a correction.

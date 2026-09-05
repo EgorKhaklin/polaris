@@ -944,7 +944,11 @@ COMMENT ON TABLE RecoveryRequest IS
 -- concentration triad (alongside R11-6 = constitutional limits ✅ and
 -- M2-8 = federation, open).
 -- ----------------------------------------------------------------------------
--- coverage:exempt — C7 algorithm metadata; partial unique index on token_id; tg_tokensignature_ordering enforces signed_at <= issued_at; see docs/design/token-signature.md
+-- coverage:exempt: C7 algorithm metadata. UNIQUE (token_id, algorithm_id) allows
+-- one signature per algorithm during a migration window; idx_token_signature_active
+-- indexes the non-deprecated rows; enforce_token_has_active_signature and
+-- enforce_token_signature_immutability hold the invariants. See
+-- docs/design/token-signature.md
 CREATE TABLE TokenSignature (
     signature_id       SERIAL       PRIMARY KEY,
     token_id           INTEGER      NOT NULL

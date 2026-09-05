@@ -5,6 +5,42 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.230 — 2026-09-05 (the voice pass over the design records, part one of five: five documents, and three claims that had gone false)
+
+The twenty-two design records moved into `docs/design/` at v9.224 with a
+reader, a job and no mission identifiers. Their bodies still read as working
+notes, and rereading them line by line is finding drift, not just tone.
+
+- **`two-witness-principle.md` said the signature path had no second witness.**
+  It has had one since v9.133: liboqs is cross-checked against
+  `cryptography`'s independent FIPS 204 implementation, and
+  `check_pqc_second_witness` pins both halves. The abstention row is now the
+  history it was, rather than the current state.
+- **`token-signature.md` described a table that does not exist.** It called
+  the relation one to one, cited a partial unique index and a
+  `tg_tokensignature_ordering` trigger that appears nowhere in the schema, and
+  put a 4096-byte ceiling on a `BYTEA` column that has none. What is actually
+  there is one signature per algorithm during a migration window, a partial
+  index over the non-deprecated rows, and two triggers. The record now
+  describes that, including `signing_public_key_hex`, which is why
+  verification survives a key rotation and which the record had never
+  mentioned. The schema comment that named the phantom trigger is corrected in
+  the same commit.
+- **`webauthn.md` said attestation was not checked.** The policy has been
+  environment-driven since v9.189: conveyance, an authenticator allow-list, a
+  refusal of `none` attestation, user verification on both ceremonies, and
+  hardware-only enrolment, all validated at boot. It also counted four states
+  as three, cited a test file that does not exist, and explained the
+  no-bypass recovery path by invoking the constitutional clause about money,
+  which has nothing to do with it.
+- **`rate-limiter.md` and `abuse-controls.md`** carried sentences the v9.207
+  em-dash sweep had broken mid-clause, including one that lost its subject and
+  one that lost a closing parenthesis. Both are rewritten in declarative
+  prose, with the log event renamed to `quota.refused` as v9.210 left it.
+- **The em-dash hook stops exempting a directory that no longer exists.**
+  `DEVNOTES/ships/` was exempt as a verbatim record; its contents are
+  published documentation now, and the exemption went with the directory.
+
 ## v9.229 — 2026-09-05 (the last two indexes stop describing themselves by what they are not)
 
 `meta/README.md` and `meta/tla/README.md` were the two survivors of the

@@ -2,97 +2,102 @@
 
 **Reader:** an engineer or an assessor. **Job:** How a signature is produced, stored and verified across a rotation.
 
-This file is the canonical write-up for Polaris's token-signature primitive:
-where signatures live, how they're verified, and what the
-post-quantum-cryptography scaffold (`POLARIS_USE_REAL_PQC`) actually gates.
+A token is worth nothing without proof that the issuing agency authorised it.
+`TokenSignature` is where that proof lives, and it is shaped by the one
+requirement that outlasts any algorithm: a token issued today must still verify
+after the signing algorithm has been rotated and the signing key replaced.
 
----
-
-## What `TokenSignature` is
-
-`TokenSignature` is the schema-level binding between an `IdentityToken` and
-the cryptographic proof that the issuing agency authorized it. Per C7 (no
-hardcoded cryptography), the algorithm choice is data, not code:
+## The table
 
 ```
-IdentityToken ── 1:1 ── TokenSignature ── N:1 ── CryptographicAlgorithm
+IdentityToken ── 1:N ── TokenSignature ── N:1 ── CryptographicAlgorithm
 ```
 
-Each row in `TokenSignature` records:
-- `token_id` — FK to `IdentityToken`
-- `algorithm_id` — FK to `CryptographicAlgorithm` (the active algorithm at
-  the moment of signing; allows post-issuance algorithm-rotation forensics)
-- `signature_bytes` — the actual signature payload
-- `signed_at` — timestamp; constrained `<=` `IdentityToken.issued_at` by
-  trigger (signatures cannot post-date the tokens they sign)
+The relation is many to one in both directions on purpose. A token carries one
+signature per algorithm, so during a migration window it holds both the
+outgoing and the incoming signature, and `UNIQUE (token_id, algorithm_id)`
+keeps that to one each. Which algorithm signed a given row is data, not code,
+which is C7 in the schema.
 
-The 1:1 relation is enforced by a partial unique index on `token_id`. There
-is no schema path for a token to exist without a signature.
+Each row records:
 
-## Operating modes
+- `token_id` and `algorithm_id`, the foreign keys above. The algorithm is the
+  one active at the moment of signing, which is what makes a rotation
+  reconstructable afterwards.
+- `signature_bytes`, the signature itself.
+- `signing_public_key_hex`, the issuer public key that produced those bytes,
+  stored beside them. This is what makes verification self-contained: it needs
+  no live key-file lookup and it survives key rotation. A NULL here means the
+  row holds a deterministic placeholder rather than a real signature.
+- `signed_at`, and `deprecation_date`, which is NULL while the signature is
+  accepted and a timestamp once it is not.
 
-The primitive runs in one of two modes, gated by `POLARIS_USE_REAL_PQC`:
+Two triggers hold the invariants. `enforce_token_has_active_signature` refuses
+any write that would leave a token with no non-deprecated signature.
+`enforce_token_signature_immutability` makes the row write-once: no deletes, no
+updates except to `deprecation_date`, and that field moves only from NULL to a
+timestamp, never back and never earlier. `idx_token_signature_active`, a
+partial index over the rows where `deprecation_date IS NULL`, keeps
+verification reading the small active set rather than the whole history.
 
-- **Flag off (default).** `polaris_web/pqc_signing.py:sign_token` returns
-  a deterministic string derived from `(token_value, algorithm_name,
-  agency_id)`. NOT post-quantum signed; the value passes the schema's
-  byte-length constraint but is verifiable only against itself.
-- **Flag on.** `pqc_signing.py` imports `oqs` and signs against
-  `liboqs`'s ML-DSA-65 (FIPS 204) implementation. Activation requires
-  liboqs native library installed + `pip install oqs`. Operator-side
-  activation; see `scripts/polaris-pqc-status.sh` for the readiness probe.
+## Two modes, and which one production runs
 
-The flag-off default is intentional: real PQC signatures are only
-load-bearing if the operator has a key-management plan. Until then, the
-deterministic stub preserves the schema's structural invariants (every
-token has a row in TokenSignature) without claiming cryptographic
-guarantees the deployment can't actually provide.
+`POLARIS_USE_REAL_PQC` selects between them:
 
-## Test coverage
+- **Set.** `pqc_signing.py` signs through liboqs with ML-DSA-65 (FIPS 204),
+  and `verify_both` checks the result against an independent implementation
+  before accepting it. Both shipped production paths set it: the production
+  compose file and the Helm chart's `app.realPqc`. CI's `pqc-real` job signs
+  and verifies inside the production image on every push.
+- **Unset.** `sign_token` returns a deterministic SHA3-256 value derived from
+  the token, recorded under the label `DETERMINISTIC-PLACEHOLDER-SHA3-256` so
+  it cannot be mistaken for a signature, and `signing_public_key_hex` stays
+  NULL. This is the development default, and it exists so a developer without
+  liboqs still exercises the schema's structural invariants: every token has a
+  signature row, the triggers fire, the migration path works.
+
+The placeholder is safe because it labels itself. What would not be safe is a
+placeholder that looked like a signature, which is why the label is checked
+rather than assumed.
+
+## What is tested, and where
 
 | Surface | Tests |
 |---|---|
-| Schema (table shape, 1:1 unique index, FK ordering trigger) | `polaris_sql/08_tests.sql` |
-| `pqc_signing.sign_token` deterministic path | `polaris_web/test_app.py::PQCTests` |
-| `pqc_signing.verify_signature` round-trip | `polaris_web/test_app.py::PQCTests` |
-| Structural invariant: every IdentityToken has a TokenSignature row | `polaris_web/test_structural_invariants.py` |
-| Algorithm-rotation forensics (TokenSignature.algorithm_id preserved across UPDATE CryptographicAlgorithm) | `polaris_sql/08_tests.sql` |
+| Table shape, the unique constraint, the immutability and active-signature triggers | `polaris_sql/08_tests.sql` |
+| The placeholder path: determinism, distinctness, and its label | `polaris_web/test_pqc_signing.py` |
+| The real signing path and `verify_both` against the second witness | `polaris_web/test_pqc_signing.py`, and CI's `pqc-real` job inside the production image |
+| Verification surviving key rotation, using the stored public key | `polaris_web/test_app.py` |
+| That the wiring exists at all | `check_pqc_signing_wired`, `check_verify_enforced`, `check_signature_self_contained_verify` |
 
-The PQC-flag-on path is not in CI (no liboqs in the test image). It is
-covered by `scripts/polaris-pqc-status.sh` invoked manually by the
-operator after enabling the flag.
+## Boundaries
 
-## What this primitive does NOT do
+- It binds a token to its issuer's signature, not to a holder's biometric or
+  device. `DeviceBinding` is the separate table for that.
+- It records the signing event, not the token's current standing. Revocation
+  lives in `TokenLifecycleEvent` and the revocation list.
+- It stores no key material. An agency holds its own signing key; Polaris
+  records the resulting signature and the public half needed to check it.
+- Multi-algorithm coexistence is the migration window, not a threshold scheme.
+  [multi-sig-migration.md](multi-sig-migration.md) covers what that window
+  does and does not promise.
 
-- It does NOT bind the signature to the holder's biometric or device
-  (DeviceBinding is a separate table for that).
-- It does NOT support multi-signature schemes (see
-  `docs/design/multi-sig-migration.md` for the transitional state and
-  the deferral of full multi-sig to a future ship).
-- It does NOT prove revocation (see `RevocationList` for that surface;
-  TokenSignature records the original signing event only).
-- It does NOT support delegated signing. Per C10, an agency's signing key
-  is held by the agency itself; Polaris records only the resulting
-  signature, never the key material.
+## Where change would land
 
-## Maintenance posture
+- **Algorithm rotation** adds a row to `CryptographicAlgorithm` and routes new
+  signatures to it. Existing tokens keep the algorithm that signed them and
+  gain a second row during the window.
+- **A larger signature** changes nothing in the schema: `signature_bytes` is a
+  `BYTEA` with no length ceiling, so ML-DSA-87 or a hash-based scheme needs no
+  migration on this table.
+- **A second witness for a new algorithm** is required before it can render a
+  production verdict, under [two-witness-principle.md](two-witness-principle.md).
 
-The primitive is stable. Maintenance work would land in three classes:
-1. **PQC migration** — flipping `POLARIS_USE_REAL_PQC=1` in production
-   once the operator commissions a KMS.
-2. **Algorithm rotation** — adding a new row to `CryptographicAlgorithm`
-   and routing new tokens to it; old tokens keep their original
-   `algorithm_id`.
-3. **Signature-payload size tightening** — current schema constraint is
-   `length(signature_bytes) <= 4096`; ML-DSA-65 produces ~3.3KB
-   signatures, so 4096 is the tight upper bound. A larger algorithm (e.g.
-   ML-DSA-87) would require a schema migration.
+## Reading the code
 
-## Cross-references
-
-- `polaris_web/pqc_signing.py` — the Python signing surface
-- `polaris_sql/01_schema.sql::TokenSignature` — table definition
-- `polaris_sql/06_triggers.sql::tg_token_signature_*` — append-only +
-  ordering triggers
-- `scripts/polaris-pqc-status.sh` — operator readiness probe
-- `MISSION.md` §C7 — the constitutional clause this primitive satisfies
+- `polaris_web/pqc_signing.py`: signing, verification, and the second witness.
+- `polaris_sql/01_schema.sql`: the `TokenSignature` definition.
+- `polaris_sql/06_triggers.sql`: `enforce_token_has_active_signature` and
+  `enforce_token_signature_immutability`.
+- `scripts/polaris-pqc-status.sh`: the operator's readiness probe for real
+  post-quantum signing on a given host.
