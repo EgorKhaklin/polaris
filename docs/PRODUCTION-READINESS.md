@@ -144,6 +144,7 @@ CHANGELOG entry for the version carries the detail.
 | Every base image under the self-built containers is digest-pinned | v9.237 | `check_prod_images_digest_pinned` |
 | The TLS edge runs as a non-root user with no capability on every substrate | v9.239 | `check_container_hardening` |
 | Edge configuration changes are live reloads; edge and database recreation windows are measured against ceilings on every push | v9.240 | `check_zero_downtime_deploy` |
+| The SLIs and the error budget are recorded series, unit-tested, and on the overview dashboard | v9.241 | `check_alert_rules` |
 
 ---
 

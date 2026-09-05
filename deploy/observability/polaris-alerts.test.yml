@@ -7,6 +7,7 @@
 # agency's own trailing baseline; PolarisQuotaRefusals fires on one refusal.
 rule_files:
   - polaris-alerts.yml
+  - polaris-slo.yml
 
 evaluation_interval: 5m
 
@@ -66,3 +67,59 @@ tests:
             exp_annotations:
               summary: "Agency 1 is hitting its verify quota"
               description: "polaris_quota_refusals_total increased: verify writes by agency 1 were refused by an AgencyQuota cap in the last 15 minutes."
+
+  # v9.241 — the SLO recording rules. One thousand requests over the window,
+  # one of them a 5xx: availability 99.9% exactly, the budget exactly spent,
+  # and the p99 of a latency histogram whose 99th request sits on the 1 s
+  # bucket boundary resolves to 1 s. A deployment with no 5xx at all records
+  # 100%, not an empty result.
+  - interval: 5m
+    input_series:
+      - series: 'polaris_requests_total{route="/api/health/live",method="GET",status="200",job="polaris"}'
+        values: '0+999x8640'
+      - series: 'polaris_requests_total{route="/uc1/issue",method="POST",status="500",job="polaris"}'
+        values: '0+1x8640'
+      - series: 'polaris_request_latency_seconds_bucket{route="/api/health/live",le="0.5",job="polaris"}'
+        values: '0+50x8640'
+      - series: 'polaris_request_latency_seconds_bucket{route="/api/health/live",le="1",job="polaris"}'
+        values: '0+99x8640'
+      - series: 'polaris_request_latency_seconds_bucket{route="/api/health/live",le="+Inf",job="polaris"}'
+        values: '0+100x8640'
+    promql_expr_test:
+      - expr: polaris:sli_availability:ratio_30d
+        eval_time: 720h
+        exp_samples:
+          - labels: '{__name__="polaris:sli_availability:ratio_30d"}'
+            value: 0.999
+      - expr: polaris:error_budget_spent:ratio_30d
+        eval_time: 720h
+        exp_samples:
+          - labels: '{__name__="polaris:error_budget_spent:ratio_30d"}'
+            value: 1
+      # The 1h ratio lands a float ulp under 1; round to the budget's own
+      # precision so the test states the number an operator would read.
+      - expr: round(polaris:error_budget_burn_rate:1h, 0.001)
+        eval_time: 720h
+        exp_samples:
+          - labels: '{}'
+            value: 1
+      - expr: polaris:sli_request_latency_p99:30d
+        eval_time: 720h
+        exp_samples:
+          - labels: '{__name__="polaris:sli_request_latency_p99:30d"}'
+            value: 1
+  - interval: 5m
+    input_series:
+      - series: 'polaris_requests_total{route="/api/health/live",method="GET",status="200",job="polaris"}'
+        values: '0+10x8640'
+    promql_expr_test:
+      - expr: polaris:sli_availability:ratio_30d
+        eval_time: 720h
+        exp_samples:
+          - labels: '{__name__="polaris:sli_availability:ratio_30d"}'
+            value: 1
+      - expr: polaris:error_budget_spent:ratio_30d
+        eval_time: 720h
+        exp_samples:
+          - labels: '{__name__="polaris:error_budget_spent:ratio_30d"}'
+            value: 0

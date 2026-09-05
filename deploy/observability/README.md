@@ -11,6 +11,7 @@ reaches the pager webhook. What stays yours: the pager product and its URL.
 |---|---|
 | [`prometheus.yml`](prometheus.yml) | Scrape config (the `polaris` job hitting `/metrics`), `rule_files` loading the alerts, and `alerting` pointing at the Alertmanager below. |
 | [`polaris-alerts.yml`](polaris-alerts.yml) | Ten alerting rules (v9.237), severity-labelled to the `docs/operator/DR.md` SEV ladder: the app down or its info series absent, the duress page, 5xx rate, request and database latency, the three velocity alerts, and quota refusals. |
+| [`polaris-slo.yml`](polaris-slo.yml) | The SLI and error-budget recording rules (v9.241): the 30-day availability ratio, the budget spent, the 1h and 6h burn rates, and the two 30-day p99s, evaluated every five minutes. Loaded by `prometheus.yml`, mounted by the overlay, unit-tested with the alerts, shown on the overview dashboard's SLO row. |
 | [`alertmanager.yml`](alertmanager.yml) | Routing (duress: no wait, re-page every 15m; other SEV-1: immediate; SEV-2/3: batched) and the `pager` webhook receiver, whose URL is read from a mounted secret file. |
 | [`tempo.yml`](tempo.yml) | Tempo trace backend (v9.187 / P1.6): OTLP in on 4318/4317, local storage, 7-day retention. The app's opt-in exporter (`POLARIS_OTEL=1`) points here by default. |
 | [`grafana/`](grafana/) | Dashboards-as-code (v9.187 / P1.6): datasource + dashboard provisioning and the committed dashboard JSONs (`polaris-overview`, `polaris-traces`). Edit the JSON, commit, redeploy: the UI copies are disposable. |

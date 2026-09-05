@@ -10,6 +10,7 @@ global:
 
 rule_files:
   - polaris-alerts.yml
+  - polaris-slo.yml            # SLI and error-budget recording rules (v9.241)
 
 # v9.175 (P0.10): the shipped Alertmanager (alertmanager.yml routes to the
 # pager receiver). `alertmanager:9093` is the service name on the deployment's

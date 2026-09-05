@@ -5,6 +5,43 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.241 — 2026-09-05 (the SLIs and the error budget are recorded series)
+
+The P1 exit gate reads "SLOs met". SLOS.md states three objectives over a
+rolling 30-day window and an error budget, and said the budget was
+"observable on a dashboard". It was not: the overview dashboard had no SLO or
+budget panel, and the SLIs existed only as expressions in the document. The
+same class of claim this readiness work keeps finding, closed the same way.
+
+- `deploy/observability/polaris-slo.yml` records the 30-day availability
+  ratio, the fraction of the month's budget spent, the 1-hour and 6-hour burn
+  rates in multiples of the sustainable pace, and the two 30-day p99s (request
+  latency and the health probe's database round-trip), evaluated every five
+  minutes. A deployment that has never served an error records 100%, not an
+  empty result.
+- `prometheus.yml` loads it, the observability overlay mounts it, the page
+  drill validates it with promtool, and the alert unit-test suite now loads it
+  too: one thousand requests with one 5xx must record 99.9% exactly and a
+  budget exactly spent; a latency histogram whose 99th request sits on the
+  1-second boundary must record a p99 of 1 s; a deployment with no errors
+  must record 100% and nothing spent.
+- The overview dashboard gains an SLO row: the three objectives as stats with
+  their thresholds, the budget spent, and the burn rate over both windows
+  with the line at 1.
+- Polaris still ships no burn-rate alert, because how fast a deployment may
+  spend its budget before someone is paged is the operator's policy. The
+  series to page on are recorded, so SLOS.md now carries the standard
+  multi-window rule as one block to paste.
+- `check_alert_rules` fails the build if the file, any of the five recorded
+  series SLOS.md names, the Prometheus wiring, the overlay mount, the unit
+  tests or the dashboard panel goes missing.
+
+Proven locally with the pinned Prometheus image: `promtool check rules` on
+both files, `promtool check config` loading both, and `promtool test rules`
+green across the alerts and the recording rules.
+
+---
+
 ## v9.240 — 2026-09-05 (edge configuration changes are live reloads; the two remaining windows are measured)
 
 The readiness ledger's last engineering limit read "edge and database

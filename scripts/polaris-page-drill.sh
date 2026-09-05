@@ -70,6 +70,7 @@ for image in "$PROM_IMAGE" "$AM_IMAGE" "$PY_IMAGE"; do pull_with_retry "$image";
 
 echo "== 1. the shipped configs validate (promtool + amtool) =="
 docker run --rm -v "$OBS:/obs:ro" --entrypoint promtool "$PROM_IMAGE" check rules /obs/polaris-alerts.yml
+docker run --rm -v "$OBS:/obs:ro" --entrypoint promtool "$PROM_IMAGE" check rules /obs/polaris-slo.yml
 docker run --rm -v "$OBS:/obs:ro" --entrypoint promtool "$PROM_IMAGE" check config /obs/prometheus.yml
 docker run --rm -v "$OBS:/obs:ro" --entrypoint amtool "$AM_IMAGE" check-config /obs/alertmanager.yml
 

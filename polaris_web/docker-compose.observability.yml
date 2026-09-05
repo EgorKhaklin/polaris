@@ -44,6 +44,7 @@ services:
     volumes:
       - ../deploy/observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ../deploy/observability/polaris-alerts.yml:/etc/prometheus/polaris-alerts.yml:ro
+      - ../deploy/observability/polaris-slo.yml:/etc/prometheus/polaris-slo.yml:ro
       - prometheus_data:/prometheus
     networks:
       - polaris-net

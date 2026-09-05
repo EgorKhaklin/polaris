@@ -1847,9 +1847,16 @@ def test_alert_rules_check_discriminates(tmp_path):
     GOOD_CFG = ("scrape_configs:\n  - job_name: polaris\n    metrics_path: /metrics\n"
                 "rule_files:\n  - polaris-alerts.yml\n")
 
-    def write(rules=GOOD_RULES, cfg=GOOD_CFG):
+    GOOD_CFG = GOOD_CFG.replace("  - polaris-alerts.yml\n", "  - polaris-alerts.yml\n  - polaris-slo.yml\n")
+    GOOD_SLO = ("groups:\n  - name: polaris-slo\n    rules:\n"
+                + "".join(f"      - record: {r}\n        expr: x\n" for r in (
+                    "polaris:sli_availability:ratio_30d", "polaris:error_budget_spent:ratio_30d",
+                    "polaris:error_budget_burn_rate:1h", "polaris:sli_request_latency_p99:30d",
+                    "polaris:sli_db_latency_p99:30d")))
+    def write(rules=GOOD_RULES, cfg=GOOD_CFG, slo=GOOD_SLO):
         (obs / "polaris-alerts.yml").write_text(rules)
         (obs / "prometheus.yml").write_text(cfg)
+        (obs / "polaris-slo.yml").write_text(slo)
 
     # 1. Rules file missing a key alert -> FAIL.
     write(rules="groups:\n  - name: polaris\n    rules:\n      - alert: SomethingElse\n        expr: x\n")
@@ -1865,6 +1872,23 @@ def test_alert_rules_check_discriminates(tmp_path):
     write()
     assert checks.check_alert_rules(tmp_path)[0].level == "OK", \
         "must PASS with shipped rules + a scrape config that loads them"
+
+    # 3b. v9.241: the SLO recording rules.
+    write(slo="groups:\n  - name: polaris-slo\n    rules:\n      - record: polaris:sli_availability:ratio_30d\n        expr: x\n")
+    assert checks.check_alert_rules(tmp_path)[0].level == "FAIL", \
+        "must FAIL when a recorded SLI SLOS.md names is missing"
+    write(cfg="scrape_configs:\n  - job_name: polaris\n    metrics_path: /metrics\nrule_files:\n  - polaris-alerts.yml\n")
+    assert checks.check_alert_rules(tmp_path)[0].level == "FAIL", \
+        "must FAIL when prometheus.yml does not load the SLO rules"
+    write()
+    dash = tmp_path / "deploy" / "observability" / "grafana" / "dashboards"
+    dash.mkdir(parents=True)
+    (dash / "polaris-overview.json").write_text('{"uid": "polaris-overview", "panels": [{"targets": [{"expr": "up"}]}]}')
+    assert checks.check_alert_rules(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the overview dashboard does not show the error budget"
+    (dash / "polaris-overview.json").write_text('{"uid": "polaris-overview", "panels": [{"targets": [{"expr": "polaris:error_budget_spent:ratio_30d"}]}]}')
+    assert checks.check_alert_rules(tmp_path)[0].level == "OK", \
+        "must PASS when the dashboard shows the budget"
 
     # 4. Missing files -> FAIL.
     (obs / "polaris-alerts.yml").unlink()

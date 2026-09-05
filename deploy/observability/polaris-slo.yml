@@ -1,0 +1,66 @@
+# ============================================================================
+# polaris-slo.yml: the service-level indicators and the error budget, as
+# recorded series (v9.241).
+#
+# SLOS.md states three objectives over a rolling 30-day window and an error
+# budget. Until v9.241 they were prose and a suggested query; a dashboard could
+# not show them and an operator could not alert on them without re-deriving
+# the expressions. These recording rules make each one a series Prometheus
+# keeps, evaluated every five minutes because a 30-day range vector is not
+# something to recompute at scrape cadence.
+#
+# Polaris deliberately ships no burn-rate ALERT: how fast a deployment may
+# spend its budget before someone is paged is the operator's policy, not
+# Polaris's. The series an operator would page on are recorded here, and
+# SLOS.md section 5 carries the multi-window rule to paste once that policy
+# exists. The `or vector(0)` on the 5xx terms keeps a deployment that has never
+# served an error at a defined 100% rather than an empty result.
+# ============================================================================
+groups:
+  - name: polaris-slo
+    interval: 5m
+    rules:
+      # Availability SLO (SLOS.md section 2): the 30-day success ratio.
+      - record: polaris:sli_availability:ratio_30d
+        expr: |
+          1 - (
+            (sum(rate(polaris_requests_total{status=~"5.."}[30d])) or vector(0))
+              / sum(rate(polaris_requests_total[30d]))
+          )
+
+      # Error budget (section 5): the fraction of the month's 0.1% budget spent.
+      # 1 means the budget is gone; below 1 is headroom.
+      - record: polaris:error_budget_spent:ratio_30d
+        expr: |
+          (
+            (sum(rate(polaris_requests_total{status=~"5.."}[30d])) or vector(0))
+              / sum(rate(polaris_requests_total[30d]))
+          ) / 0.001
+
+      # Burn rate over short windows, in multiples of the sustainable pace
+      # (1 = spending exactly the month's budget over the month). The standard
+      # multi-window page compares the 1h and 6h rates; both are recorded.
+      - record: polaris:error_budget_burn_rate:1h
+        expr: |
+          (
+            (sum(rate(polaris_requests_total{status=~"5.."}[1h])) or vector(0))
+              / sum(rate(polaris_requests_total[1h]))
+          ) / 0.001
+      - record: polaris:error_budget_burn_rate:6h
+        expr: |
+          (
+            (sum(rate(polaris_requests_total{status=~"5.."}[6h])) or vector(0))
+              / sum(rate(polaris_requests_total[6h]))
+          ) / 0.001
+
+      # Latency SLO (section 3): the 30-day p99 across routes.
+      - record: polaris:sli_request_latency_p99:30d
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(polaris_request_latency_seconds_bucket[30d])) by (le))
+
+      # Database-latency SLO (section 4): the 30-day p99 of the health probe.
+      - record: polaris:sli_db_latency_p99:30d
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(polaris_db_query_latency_seconds_bucket[30d])) by (le))

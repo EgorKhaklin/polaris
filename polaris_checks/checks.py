@@ -1120,8 +1120,33 @@ def check_alert_rules(root: pathlib.Path) -> list[Finding]:
         return _fail("alert_rules",
                      "prometheus.yml must scrape the polaris job and load polaris-alerts.yml "
                      "(rule_files)")
+    # v9.241: the SLIs and the error budget SLOS.md states are recorded
+    # series, not prose. The file must exist with every series the document
+    # names, Prometheus must load it, the overlay must mount it, the unit
+    # tests must cover it, and the overview dashboard must show the budget.
+    slo = _read(root, "deploy/observability/polaris-slo.yml")
+    if not slo:
+        return _fail("alert_rules", "deploy/observability/polaris-slo.yml is missing: the SLIs and the error "
+                                    "budget must be recorded series, not expressions in SLOS.md")
+    for rec in ("polaris:sli_availability:ratio_30d", "polaris:error_budget_spent:ratio_30d",
+                "polaris:error_budget_burn_rate:1h", "polaris:sli_request_latency_p99:30d",
+                "polaris:sli_db_latency_p99:30d"):
+        if f"record: {rec}" not in slo:
+            return _fail("alert_rules", f"polaris-slo.yml must record {rec} (SLOS.md names it)")
+    if "polaris-slo.yml" not in cfg:
+        return _fail("alert_rules", "prometheus.yml must load polaris-slo.yml in rule_files")
+    overlay = _read(root, "polaris_web/docker-compose.observability.yml")
+    if overlay and "polaris-slo.yml" not in overlay:
+        return _fail("alert_rules", "docker-compose.observability.yml must mount polaris-slo.yml into Prometheus")
+    tests = _read(root, "deploy/observability/polaris-alerts.test.yml")
+    if tests and "polaris-slo.yml" not in tests:
+        return _fail("alert_rules", "polaris-alerts.test.yml must load polaris-slo.yml so the recording rules are unit-tested")
+    overview = _read(root, "deploy/observability/grafana/dashboards/polaris-overview.json")
+    if overview and "polaris:error_budget_spent:ratio_30d" not in overview:
+        return _fail("alert_rules", "the overview dashboard must show the error budget "
+                                    "(polaris:error_budget_spent:ratio_30d); SLOS.md says it is observable there")
     return _ok("alert_rules",
-               "shipped Prometheus scrape config + promtool-validated alerting rules "
+               "shipped Prometheus scrape config, promtool-validated alerting rules, and the SLI and error-budget recording rules on the dashboard "
                "(deploy/observability/); the Alertmanager backend stays operator-provided")
 
 

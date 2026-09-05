@@ -6,8 +6,10 @@ designed to meet, the service-level indicators (SLIs) that measure them, and
 the error budget each implies.
 
 These are reference targets for a notional deployment, not a measured
-guarantee. Polaris ships the metrics and the alerting rules that make these
-objectives observable, but it does not ship the measurement backend: the
+guarantee. Polaris ships the metrics, the alerting rules, and since v9.241 the
+recording rules and dashboard panels that make these objectives observable as
+series and numbers rather than as expressions in this document, but it does
+not ship the measurement backend: the
 Prometheus and Alertmanager stack is operator-gated (see
 [`../../deploy/observability/README.md`](../../deploy/observability/README.md)).
 No SLO here is enforced by Polaris at runtime. An operator who wires the stack
@@ -158,14 +160,37 @@ spent):
 ) / 0.001
 ```
 
-A value ≥ 1 means the month's budget is spent. Polaris does **not** ship a
-burn-rate alert (multi-window, multi-burn-rate alerting is an operator policy
-decision, and the alert set is deliberately small). The expression above is a
-dashboard query, not a shipped rule.
+A value ≥ 1 means the month's budget is spent.
+
+**What ships (v9.241).** The three SLIs and the budget are recording rules in
+[`polaris-slo.yml`](../../deploy/observability/polaris-slo.yml), evaluated
+every five minutes, unit-tested by promtool in CI alongside the alerts, and
+shown as the SLO row of the overview dashboard:
+
+| Series | What it is |
+|---|---|
+| `polaris:sli_availability:ratio_30d` | the 30-day success ratio (section 2) |
+| `polaris:error_budget_spent:ratio_30d` | the fraction of the month's budget spent; 1 is gone |
+| `polaris:error_budget_burn_rate:1h`, `:6h` | the burn rate over short windows, in multiples of the sustainable pace |
+| `polaris:sli_request_latency_p99:30d` | the 30-day request p99 (section 3) |
+| `polaris:sli_db_latency_p99:30d` | the 30-day health-probe database p99 (section 4) |
+
+Polaris still ships **no burn-rate alert**: how fast a deployment may spend
+its budget before someone is paged is the operator's policy, and the alert
+set is deliberately small. The series to page on are recorded, so the standard
+multi-window rule is one block in the operator's own rule file:
+
+```yaml
+- alert: PolarisErrorBudgetBurn
+  expr: polaris:error_budget_burn_rate:1h > 14.4 and polaris:error_budget_burn_rate:6h > 6
+  for: 2m
+  labels: {severity: sev2}
+  annotations: {summary: "Error budget burning at 14x: the month's budget goes in about two days at this rate"}
+```
 
 The availability and DB-latency alerts route to a pager only once the operator
-wires Alertmanager. Until then, the budget is observable on a dashboard but not
-actioned automatically. Stating otherwise would overclaim what ships.
+wires Alertmanager. Until then, the budget is a recorded series and a
+dashboard panel, not an action. Stating otherwise would overclaim what ships.
 
 ---
 
@@ -191,6 +216,7 @@ actioned automatically. Stating otherwise would overclaim what ships.
 
 - [`../../deploy/observability/README.md`](../../deploy/observability/README.md): the shipped Prometheus scrape config + alert rules these SLOs are observed through (operator wires the backend).
 - [`../../deploy/observability/polaris-alerts.yml`](../../deploy/observability/polaris-alerts.yml): the alert rules (ten as of v9.190: six service alerts plus the four per-agency velocity and quota alerts); the SLO thresholds match the service alert thresholds (long window vs. alert window).
+- [`../../deploy/observability/polaris-slo.yml`](../../deploy/observability/polaris-slo.yml): the SLI and error-budget recording rules (v9.241), tested with the alerts.
 - [`RUNBOOKS.md`](RUNBOOKS.md): what to do when an alert fires (one section per alert).
 - [`DR.md`](DR.md): the SEV ladder the alert severities map to.
 - [`OPERATIONS.md`](OPERATIONS.md): the day-2 metrics reference.
