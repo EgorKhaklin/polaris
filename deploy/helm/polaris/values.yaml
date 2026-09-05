@@ -8,12 +8,15 @@ images:
   pgbouncer: polaris-pgbouncer:prod
   postgres: polaris-postgres:prod
   redis: redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
+  # The database router (v9.244): the same HAProxy as the compose HA profile.
+  haproxy: haproxy:3.1-alpine@sha256:475863a372c92c3dab3d59eafbbf8019dceebcd0c456594551b160ecdba4bdb9
   # For the four self-built images. The drill sets Never (nothing pulled).
   pullPolicy: IfNotPresent
   # Redis is a digest-pinned upstream image the nodes pull themselves: `kind
   # load` of a digest-referenced manifest list fails on the platforms it does
   # not have ("content digest not found"), found by the first local drill.
   redisPullPolicy: IfNotPresent
+  haproxyPullPolicy: IfNotPresent
 
 # The public hostname Caddy serves. With edge.tls=acme it must resolve to the
 # edge Service's external address before the first start.
@@ -52,6 +55,28 @@ app:
   #  - {name: POLARIS_NETWORK_POLICY_ADMIN, value: "10.20.0.0/16"}
   #  - {name: POLARIS_WEBAUTHN_USER_VERIFICATION, value: required}
 
+# The cluster's DNS domain, for the fully qualified member names the router
+# resolves (HAProxy's resolvers apply no search path).
+clusterDomain: cluster.local
+
+pgRouter:
+  # HAProxy in front of the Patroni members (v9.244): pgbouncer dials it; it
+  # routes 5432 to the member answering /primary and 5433 to a replica, and
+  # cuts sessions to a member the moment it is marked down.
+  replicas: 1
+
+postgres:
+  # Patroni members (v9.244, roadmap P2.13): two is a leader and a streaming
+  # replica with automated failover; one is a single Patroni-managed member.
+  # The lease store is the Kubernetes API (no etcd); the leader Service's
+  # endpoints follow the lease. docs/operator/FAILOVER.md.
+  replicas: 2
+  patroni:
+    # The lease: a leader that cannot renew within ttl seconds demotes itself.
+    ttl: 20
+    loopWait: 5
+    retryTimeout: 5
+
 secrets:
   # An existing Secret holding the files polaris-generate-secrets.sh writes
   # (polaris_secret_key, polaris_db_password, polaris_db_root_password,
@@ -86,6 +111,14 @@ networkPolicy:
   # a CNI that enforces NetworkPolicy (Calico, Cilium, ...); kind's default
   # kindnet does NOT, which is why the drill installs Calico.
   enabled: true
+  # The postgres pods reach the API server for the lease. Empty: the chart
+  # reads the `kubernetes` Endpoints of the default namespace at install time
+  # (the API server's real addresses; NetworkPolicy egress is matched after
+  # the Service DNAT). Set them when that lookup is not available (e.g.
+  # `helm template`) or the cluster fronts its API differently.
+  apiServer:
+    cidrs: []          # e.g. ["10.0.0.5/32"]
+    port: 6443
 
 # Pod Security: every pod satisfies the `restricted` standard. Label the
 # namespace so the API server enforces it:

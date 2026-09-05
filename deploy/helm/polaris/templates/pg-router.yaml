@@ -1,0 +1,135 @@
+{{- $scope := printf "%s-postgres" (include "polaris.fullname" .) -}}
+{{- $router := printf "%s-pg-router" (include "polaris.fullname" .) -}}
+# The database router (v9.244, roadmap P2.13): the same HAProxy as the compose
+# HA profile. It forwards TCP untouched and decides where by asking Patroni's
+# REST on each member every half second; a member that stops answering
+# /primary is marked down and its sessions are cut. That last part is why it
+# exists here: the leader Service's endpoints follow the lease, but nothing
+# else closes the pooler's established connections to a member that has
+# frozen, and a frozen process's kernel keeps acknowledging TCP, so no socket
+# timeout fires. Members are addressed by their stable pod DNS names, fully
+# qualified: HAProxy's resolvers do not apply the search path libc would.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $router }}
+  labels:
+    {{- include "polaris.labels" . | nindent 4 }}
+    app.kubernetes.io/component: pg-router
+data:
+  haproxy.cfg: |
+    global
+        log stdout format raw local0 info
+        maxconn 1000
+
+    defaults
+        mode tcp
+        log global
+        option tcplog
+        retries 3
+        option redispatch
+        timeout connect 3s
+        timeout client 1h
+        timeout server 1h
+        timeout check 2s
+        option srvtcpka
+        srvtcpka-idle 3s
+        srvtcpka-intvl 1s
+        srvtcpka-cnt 3
+        default-server inter 500ms fall 2 rise 2 on-marked-down shutdown-sessions tcp-ut 3000
+
+    resolvers kube
+        parse-resolv-conf
+        resolve_retries 3
+        timeout resolve 1s
+        timeout retry 1s
+        hold valid 5s
+        hold nx 1s
+        hold refused 1s
+        hold timeout 1s
+        hold other 1s
+
+    listen primary
+        bind *:5432
+        option httpchk GET /primary
+        http-check expect status 200
+        {{- range $i := until (int .Values.postgres.replicas) }}
+        server {{ $scope }}-{{ $i }} {{ $scope }}-{{ $i }}.{{ $scope }}-members.{{ $.Release.Namespace }}.svc.{{ $.Values.clusterDomain }}:5432 check port 8008 resolvers kube init-addr none
+        {{- end }}
+
+    listen replicas
+        bind *:5433
+        balance roundrobin
+        option httpchk GET /replica
+        http-check expect status 200
+        {{- range $i := until (int .Values.postgres.replicas) }}
+        server {{ $scope }}-{{ $i }} {{ $scope }}-{{ $i }}.{{ $scope }}-members.{{ $.Release.Namespace }}.svc.{{ $.Values.clusterDomain }}:5432 check port 8008 resolvers kube init-addr none
+        {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $router }}
+  labels:
+    {{- include "polaris.labels" . | nindent 4 }}
+    app.kubernetes.io/component: pg-router
+spec:
+  selector:
+    {{- include "polaris.selector" . | nindent 4 }}
+    app.kubernetes.io/component: pg-router
+  ports:
+    - name: primary
+      port: 5432
+      targetPort: primary
+    - name: replicas
+      port: 5433
+      targetPort: replicas
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $router }}
+  labels:
+    {{- include "polaris.labels" . | nindent 4 }}
+    app.kubernetes.io/component: pg-router
+spec:
+  replicas: {{ .Values.pgRouter.replicas }}
+  selector:
+    matchLabels:
+      {{- include "polaris.selector" . | nindent 6 }}
+      app.kubernetes.io/component: pg-router
+  template:
+    metadata:
+      labels:
+        {{- include "polaris.selector" . | nindent 8 }}
+        app.kubernetes.io/component: pg-router
+      annotations:
+        # The config is a function of the scope, the namespace and the member
+        # count; a change to any of them rolls the router.
+        checksum/config: {{ printf "%s/%s/%d/%s" $scope .Release.Namespace (int .Values.postgres.replicas) .Chart.AppVersion | sha256sum | trunc 16 }}
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "polaris.podSecurity" (dict "uid" 99 "gid" 99) | nindent 8 }}
+      containers:
+        - name: haproxy
+          image: {{ .Values.images.haproxy }}
+          imagePullPolicy: {{ .Values.images.haproxyPullPolicy }}
+          securityContext:
+            {{- include "polaris.containerSecurity" . | nindent 12 }}
+          args: ["-f", "/usr/local/etc/haproxy/haproxy.cfg"]
+          ports:
+            - {name: primary, containerPort: 5432}
+            - {name: replicas, containerPort: 5433}
+          volumeMounts:
+            - {name: config, mountPath: /usr/local/etc/haproxy/haproxy.cfg, subPath: haproxy.cfg, readOnly: true}
+          readinessProbe:
+            tcpSocket: {port: primary}
+            periodSeconds: 5
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {memory: 128Mi}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ $router }}

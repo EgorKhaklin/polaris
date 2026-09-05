@@ -1240,7 +1240,7 @@ jobs:
   # check_helm_reference_profile.
   # --------------------------------------------------------------------------
   helm-kind:
-    name: Kubernetes reference profile boots to healthy on kind (Calico-enforced policies, restricted PSS)
+    name: Kubernetes reference profile boots to healthy on kind (Calico-enforced policies, restricted PSS) and fails the database over
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

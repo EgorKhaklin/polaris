@@ -1,15 +1,105 @@
+{{- $scope := printf "%s-postgres" (include "polaris.fullname" .) -}}
+# The database under Patroni (v9.244, roadmap P2.13): the same image and the
+# same entrypoint as the compose HA profile, with the Kubernetes API as the
+# lease store. Members are the StatefulSet's pods; Patroni keeps the leader
+# lease in the annotations of the Endpoints named after the scope and fills
+# the leader Service's endpoints itself, so pgbouncer dials one Service name
+# and a failover moves the endpoints, not the configuration. The Role below is
+# what Patroni needs for that and nothing else.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $scope }}
+  labels:
+    {{- include "polaris.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ $scope }}-patroni
+  labels:
+    {{- include "polaris.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+rules:
+  # Members are pods: Patroni reads them and labels its own with its role.
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list, patch, update, watch]
+  # The lease and the cluster state live in Endpoints (use_endpoints) and
+  # the <scope>-config ConfigMap; Patroni creates and renews them.
+  - apiGroups: [""]
+    resources: [endpoints, configmaps]
+    verbs: [get, list, patch, update, create, watch, delete]
+  # The <scope>-config Service Patroni creates beside its config Endpoints.
+  - apiGroups: [""]
+    resources: [services]
+    verbs: [create]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ $scope }}-patroni
+  labels:
+    {{- include "polaris.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ $scope }}-patroni
+subjects:
+  - kind: ServiceAccount
+    name: {{ $scope }}
+    namespace: {{ .Release.Namespace }}
+---
+# The leader: no selector, Patroni owns its Endpoints. pgbouncer dials this.
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "polaris.fullname" . }}-postgres
+  name: {{ $scope }}
+  labels:
+    {{- include "polaris.labels" . | nindent 4 }}
+    app.kubernetes.io/component: postgres
+spec:
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+# The members, headless: the StatefulSet's pod DNS and the replication peers.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $scope }}-members
   labels:
     {{- include "polaris.labels" . | nindent 4 }}
     app.kubernetes.io/component: postgres
 spec:
   clusterIP: None
+  publishNotReadyAddresses: true
   selector:
-    {{- include "polaris.selector" . | nindent 4 }}
+    application: polaris-db
+    cluster-name: {{ $scope }}
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+# Streaming replicas, by the role label Patroni maintains (the read path of
+# roadmap P2.2).
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $scope }}-replicas
+  labels:
+    {{- include "polaris.labels" . | nindent 4 }}
     app.kubernetes.io/component: postgres
+spec:
+  selector:
+    application: polaris-db
+    cluster-name: {{ $scope }}
+    role: replica
   ports:
     - name: postgres
       port: 5432
@@ -18,13 +108,15 @@ spec:
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: {{ include "polaris.fullname" . }}-postgres
+  name: {{ $scope }}
   labels:
     {{- include "polaris.labels" . | nindent 4 }}
     app.kubernetes.io/component: postgres
 spec:
-  serviceName: {{ include "polaris.fullname" . }}-postgres
-  replicas: 1
+  serviceName: {{ $scope }}-members
+  replicas: {{ .Values.postgres.replicas }}
+  # Members start together; Patroni decides who bootstraps and who clones.
+  podManagementPolicy: Parallel
   selector:
     matchLabels:
       {{- include "polaris.selector" . | nindent 6 }}
@@ -34,34 +126,45 @@ spec:
       labels:
         {{- include "polaris.selector" . | nindent 8 }}
         app.kubernetes.io/component: postgres
+        # Patroni finds its members by these two; it adds and maintains `role`.
+        application: polaris-db
+        cluster-name: {{ $scope }}
     spec:
-      # No API token (see app.yaml); the projected token mount would collide
-      # with the Secret mounts under /run/secrets.
-      automountServiceAccountToken: false
-      # postgres runs as uid 70 from the start (no root, no gosu): the image's
-      # entrypoint supports it, initdb owns PGDATA (a subdirectory of the
-      # volume, so the fsGroup-owned mount root does not trip initdb's
-      # ownership check), and docker-init.sh only chmods files it copies.
+      serviceAccountName: {{ $scope }}
+      # The one pod of the topology that talks to the API: the lease store.
+      # The projected token lands under /var/run/secrets/kubernetes.io; the
+      # Secret files are single-file mounts under /run/secrets and coexist.
+      automountServiceAccountToken: true
+      # postgres runs as uid 70 from the start (no root, no gosu): the Patroni
+      # entrypoint runs as the user it is started as, the secrets are readable
+      # (defaultMode 0444), and Patroni's initdb owns the data subdirectory.
       securityContext:
         {{- include "polaris.podSecurity" (dict "uid" 70 "gid" 70) | nindent 8 }}
+      terminationGracePeriodSeconds: 60
       containers:
         - name: postgres
           image: {{ .Values.images.postgres }}
           imagePullPolicy: {{ .Values.images.pullPolicy }}
           securityContext:
             {{- include "polaris.containerSecurity" . | nindent 12 }}
-          # No `-c ssl=on` here: docker-init.sh copies the certificate into PGDATA
-          # and turns ssl on itself at init (ALTER SYSTEM). Forcing it as an
-          # argument made the entrypoint's TEMPORARY init server fail on the
-          # not-yet-copied certificate, aborting init half-way; every restart
-          # then skipped init and died on the missing server.crt (first drill).
+          # args, not command: the image ENTRYPOINT (pgBackRest config, then
+          # the stock entrypoint) still runs first, as on compose.
+          args: ["/usr/local/bin/polaris-patroni-entrypoint.sh"]
           env:
-            - {name: PGDATA, value: /var/lib/postgresql/data/pgdata}
+            - {name: POLARIS_PATRONI_DCS, value: kubernetes}
+            - {name: POLARIS_PATRONI_DATA_DIR, value: /var/lib/postgresql/data/pgdata}
+            - {name: POLARIS_PATRONI_SCOPE, value: {{ $scope }}}
+            - name: POLARIS_PATRONI_NAME
+              valueFrom: {fieldRef: {fieldPath: metadata.name}}
+            - name: POLARIS_PATRONI_NAMESPACE
+              valueFrom: {fieldRef: {fieldPath: metadata.namespace}}
+            - name: POLARIS_PATRONI_POD_IP
+              valueFrom: {fieldRef: {fieldPath: status.podIP}}
+            - {name: POLARIS_PATRONI_TTL, value: {{ .Values.postgres.patroni.ttl | quote }}}
+            - {name: POLARIS_PATRONI_LOOP_WAIT, value: {{ .Values.postgres.patroni.loopWait | quote }}}
+            - {name: POLARIS_PATRONI_RETRY_TIMEOUT, value: {{ .Values.postgres.patroni.retryTimeout | quote }}}
             - {name: POSTGRES_DB, value: polaris}
-            - {name: POSTGRES_USER, value: postgres}
             - {name: POSTGRES_PASSWORD_FILE, value: /run/secrets/polaris_db_root_password}
-            - {name: POSTGRES_HOST_AUTH_METHOD, value: scram-sha-256}
-            - {name: POSTGRES_INITDB_ARGS, value: --auth-host=scram-sha-256}
             - {name: POLARIS_ENV, value: production}
             - {name: POLARIS_APP_PASSWORD_FILE, value: /run/secrets/polaris_db_password}
             - {name: POLARIS_REPLICATOR_PASSWORD_FILE, value: /run/secrets/polaris_replicator_password}
@@ -75,6 +178,8 @@ spec:
           ports:
             - name: postgres
               containerPort: 5432
+            - name: patroni
+              containerPort: 8008
           volumeMounts:
             - name: data
               mountPath: /var/lib/postgresql/data
@@ -86,19 +191,23 @@ spec:
             - {name: secrets, mountPath: /etc/polaris-pg-certs/server.crt, subPath: postgres_server.crt, readOnly: true}
             - {name: secrets, mountPath: /etc/polaris-pg-certs/server.key, subPath: postgres_server.key, readOnly: true}
             - {name: secrets, mountPath: /etc/pgbackrest/conf.d/repo-creds.conf, subPath: pgbackrest_repo_creds.conf, readOnly: true}
-          # -h on both probes: only the REAL server listens on TCP; the
-          # entrypoint's temporary init-only server answers the Unix socket
-          # while the schema loads, and Ready must not precede the real server
-          # (v9.188).
+          # Patroni's own answers: /liveness while it runs, /readiness once the
+          # member is the leader or a streaming replica. exec, not httpGet, so
+          # the probes do not depend on what the CNI lets the kubelet reach.
           startupProbe:
             exec:
-              command: ["pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", "polaris"]
+              command: ["wget", "-qO-", "http://127.0.0.1:8008/liveness"]
             periodSeconds: 5
-            failureThreshold: 60
+            failureThreshold: 72
           readinessProbe:
             exec:
-              command: ["pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", "polaris"]
+              command: ["wget", "-qO-", "http://127.0.0.1:8008/readiness"]
             periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["wget", "-qO-", "http://127.0.0.1:8008/liveness"]
+            periodSeconds: 15
+            failureThreshold: 4
           resources:
             requests: {cpu: 250m, memory: 512Mi}
             limits: {memory: 1Gi}

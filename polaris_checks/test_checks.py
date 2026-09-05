@@ -1349,9 +1349,9 @@ def test_pgbouncer_self_built_check_discriminates(tmp_path):
                     "      dockerfile: Dockerfile.pgbouncer\n    image: polaris-pgbouncer:prod\n")
     GOOD_ENTRY = ("#!/bin/sh\nPWFILE=\"${POLARIS_DB_PASSWORD_FILE:-/run/secrets/x}\"\n"
                   "SERVER_LOGIN_RETRY=\"${PGBOUNCER_SERVER_LOGIN_RETRY:-1}\"\nDNS_NXDOMAIN_TTL=\"${PGBOUNCER_DNS_NXDOMAIN_TTL:-1}\"\n"
-                  "SERVER_CONNECT_TIMEOUT=\"${PGBOUNCER_SERVER_CONNECT_TIMEOUT:-3}\"\n"
+                  "SERVER_CONNECT_TIMEOUT=\"${PGBOUNCER_SERVER_CONNECT_TIMEOUT:-3}\"\nTCP_USER_TIMEOUT=\"${PGBOUNCER_TCP_USER_TIMEOUT:-5000}\"\n"
                   "cat > ini <<EOF\nserver_login_retry = $SERVER_LOGIN_RETRY\ndns_nxdomain_ttl = $DNS_NXDOMAIN_TTL\n"
-                  "server_connect_timeout = $SERVER_CONNECT_TIMEOUT\nEOF\n")
+                  "server_connect_timeout = $SERVER_CONNECT_TIMEOUT\ntcp_user_timeout = $TCP_USER_TIMEOUT\nEOF\n")
     gh = tmp_path / ".github" / "workflows"
     gh.mkdir(parents=True)
     (gh / "ci.yml").write_text("jobs:\n  d:\n    steps:\n      run: docker build -f polaris_web/Dockerfile.pgbouncer .\n")
@@ -3330,7 +3330,7 @@ def test_ha_automation_check_discriminates(tmp_path):
         "polaris_web/Dockerfile.postgres": "COPY polaris_web/requirements-patroni.txt /tmp/r.txt\nRUN pip3 install -r /tmp/r.txt && patroni --version\n",
         "polaris_web/requirements-patroni.txt": "patroni[etcd3]==4.1.5\n",
         "polaris_web/Dockerfile.etcd": "FROM alpine:3.24@sha256:" + "b" * 64 + "\nRUN apk add etcd\nUSER etcd\n",
-        "polaris_web/haproxy-pg.cfg": "resolvers docker\noption httpchk GET /primary\noption httpchk GET /replica\ndefault-server on-marked-down shutdown-sessions\n",
+        "polaris_web/haproxy-pg.cfg": "resolvers docker\noption httpchk GET /primary\noption httpchk GET /replica\ndefault-server on-marked-down shutdown-sessions tcp-ut 3000\n",
         "scripts/polaris-failover-drill.sh": DRILL,
         "scripts/polaris-image-build.sh": "build_one polaris_web/Dockerfile.etcd polaris-etcd:x polaris_web\n",
         ".github/workflows/ci.yml": CI,
@@ -3371,18 +3371,27 @@ def test_ha_automation_check_discriminates(tmp_path):
 
 def test_helm_reference_profile_check_discriminates(tmp_path):
     HELPERS = "runAsNonRoot: true\nseccompProfile:\n  type: RuntimeDefault\ncapabilities:\n  drop: [\"ALL\"]\nallowPrivilegeEscalation: false\n"
-    NP = ("name: x-default-deny\npolicyTypes: [Ingress, Egress]\nname: x-allow-dns\n" + "kind: NetworkPolicy\n" * 7)
+    NP = ("name: x-default-deny\npolicyTypes: [Ingress, Egress]\nname: x-allow-dns\n" + "kind: NetworkPolicy\n" * 7
+          + "- {protocol: TCP, port: 8008}\napiServer\n")
     DRILL = ("kubectl apply -f calico.yaml\nkubectl label namespace polaris pod-security.kubernetes.io/enforce=restricted\n"
              "grep -q \"violates PodSecurity\"\nhelm install polaris\ncurl /api/health custody\n"
-             "targets = [(\"polaris-postgres\", 5432)]\nprint(\"REACHED\")\nkubectl rollout restart deploy/polaris-app\n")
+             "targets = [(\"polaris-postgres\", 5432)]\nprint(\"REACHED\")\nkubectl rollout restart deploy/polaris-app\n"
+             "jsonpath='{.metadata.annotations.leader}'\nkubectl delete pod $L0\nctr -n k8s.io task pause\npatronictl switchover\nCREATE TABLE ha_marker\n"
+             "fail \"inserts were acknowledged\"\n")
+    PG = ("automountServiceAccountToken: true\nkind: Role\nkind: RoleBinding\n(dict \"uid\" 70 \"gid\" 70)\n"
+          "value: /var/lib/postgresql/data/pgdata\n- {name: POLARIS_PATRONI_DCS, value: kubernetes}\n"
+          "replicas: {{ .Values.postgres.replicas }}\nargs: [\"/usr/local/bin/polaris-patroni-entrypoint.sh\"]\n"
+          "application: polaris-db\ncluster-name: x\nname: x-postgres-members\nname: x-postgres-replicas\nrole: replica\n")
     good = {
         "deploy/helm/polaris/Chart.yaml": "apiVersion: v2\nname: polaris\nversion: 0.1.0\n",
         "deploy/helm/polaris/values.yaml": "networkPolicy:\n  enabled: true\nsecrets:\n  existingSecret: \"\"\n",
         "deploy/helm/polaris/templates/_helpers.tpl": HELPERS,
         "deploy/helm/polaris/templates/networkpolicy.yaml": NP,
         "deploy/helm/polaris/templates/app.yaml": "automountServiceAccountToken: false\nmaxUnavailable: 0\npath: /api/health/live\nkind: PodDisruptionBudget\n",
-        "deploy/helm/polaris/templates/postgres.yaml": "automountServiceAccountToken: false\n(dict \"uid\" 70 \"gid\" 70)\nvalue: /var/lib/postgresql/data/pgdata\n",
-        "deploy/helm/polaris/templates/caddy.yaml": "automountServiceAccountToken: false\n", "deploy/helm/polaris/templates/pgbouncer.yaml": "automountServiceAccountToken: false\n",
+        "deploy/helm/polaris/templates/postgres.yaml": PG,
+        "deploy/helm/polaris/templates/caddy.yaml": "automountServiceAccountToken: false\n",
+        "deploy/helm/polaris/templates/pgbouncer.yaml": "automountServiceAccountToken: false\n- {name: POLARIS_DB_HOST, value: {{ include \"polaris.fullname\" . }}-pg-router}\n",
+        "deploy/helm/polaris/templates/pg-router.yaml": "option httpchk GET /primary\ncheck port 8008\ndefault-server on-marked-down shutdown-sessions\n",
         "deploy/helm/polaris/templates/redis.yaml": "automountServiceAccountToken: false\n", "deploy/helm/polaris/templates/secret.yaml": "x",
         "polaris_web/Dockerfile.caddy": "COPY caddy\nRUN setcap -r /usr/bin/caddy\n",
         "deploy/helm/polaris/templates/configmap-caddy.yaml": "x",
@@ -3416,8 +3425,19 @@ def test_helm_reference_profile_check_discriminates(tmp_path):
     assert checks.check_helm_reference_profile(tmp_path)[0].level == "FAIL", "must FAIL when the restricted standard is not met"
 
     # Postgres as root.
-    write({"deploy/helm/polaris/templates/postgres.yaml": "automountServiceAccountToken: false\n(dict \"uid\" 0 \"gid\" 0)\n"})
+    write({"deploy/helm/polaris/templates/postgres.yaml": PG.replace("(dict \"uid\" 70 \"gid\" 70)", "(dict \"uid\" 0 \"gid\" 0)")})
     assert checks.check_helm_reference_profile(tmp_path)[0].level == "FAIL", "must FAIL when postgres runs as root"
+    # v9.244: postgres without the lease store (no Patroni, no Role) is one replica with no failover.
+    write({"deploy/helm/polaris/templates/postgres.yaml": PG.replace("- {name: POLARIS_PATRONI_DCS, value: kubernetes}\n", "")})
+    assert checks.check_helm_reference_profile(tmp_path)[0].level == "FAIL", "must FAIL when the database is not under Patroni"
+    write({"deploy/helm/polaris/templates/postgres.yaml": PG.replace("kind: Role\n", "")})
+    assert checks.check_helm_reference_profile(tmp_path)[0].level == "FAIL", "must FAIL when Patroni has no Role"
+    # pgbouncer dialling the leader Service directly: a frozen leader holds its pool.
+    write({"deploy/helm/polaris/templates/pgbouncer.yaml": "automountServiceAccountToken: false\n- {name: POLARIS_DB_HOST, value: {{ include \"polaris.fullname\" . }}-postgres}\n"})
+    assert checks.check_helm_reference_profile(tmp_path)[0].level == "FAIL", "must FAIL when pgbouncer bypasses the router"
+    # A drill that never deletes the leader pod.
+    write({"scripts/polaris-helm-drill.sh": DRILL.replace("kubectl delete pod $L0\n", "")})
+    assert checks.check_helm_reference_profile(tmp_path)[0].level == "FAIL", "must FAIL when the kind drill has no failover"
 
     # A drill with no negative policy probe.
     write({"scripts/polaris-helm-drill.sh": DRILL.replace("print(\"REACHED\")\n", "")})

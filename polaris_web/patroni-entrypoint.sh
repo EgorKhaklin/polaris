@@ -31,13 +31,31 @@ fail() { echo "patroni-entrypoint: $*" >&2; exit 1; }
 
 NAME="${POLARIS_PATRONI_NAME:?POLARIS_PATRONI_NAME is required: the member name, which is also its hostname}"
 SCOPE="${POLARIS_PATRONI_SCOPE:-polaris}"
-HOST="${POLARIS_PATRONI_HOST:-$NAME}"
+# The lease store: etcd3 on the compose profile; the Kubernetes API on the
+# chart (v9.244, roadmap P2.13), where members are pods, the lease lives in
+# the leader Endpoints' annotations, and Patroni fills the leader Service's
+# endpoints itself, so the pooler keeps dialing one Service name.
+DCS="${POLARIS_PATRONI_DCS:-etcd3}"
+case "$DCS" in etcd3|kubernetes) ;; *) fail "POLARIS_PATRONI_DCS must be etcd3 or kubernetes (got '$DCS')" ;; esac
+if [ "$DCS" = "kubernetes" ]; then
+    NAMESPACE="${POLARIS_PATRONI_NAMESPACE:?POLARIS_PATRONI_NAMESPACE is required with the kubernetes lease store}"
+    POD_IP="${POLARIS_PATRONI_POD_IP:?POLARIS_PATRONI_POD_IP is required with the kubernetes lease store}"
+    case "$NAMESPACE" in ''|*[!a-z0-9-]*) fail "POLARIS_PATRONI_NAMESPACE must be a plain namespace (got '$NAMESPACE')" ;; esac
+    case "$POD_IP" in ''|*[!0-9a-fA-F.:]*) fail "POLARIS_PATRONI_POD_IP must be an IP address (got '$POD_IP')" ;; esac
+    HOST="${POLARIS_PATRONI_HOST:-$POD_IP}"
+else
+    HOST="${POLARIS_PATRONI_HOST:-$NAME}"
+fi
 ETCD_HOSTS="${POLARIS_PATRONI_ETCD_HOSTS:-etcd1:2379,etcd2:2379,etcd3:2379}"
 TTL="${POLARIS_PATRONI_TTL:-20}"
 LOOP_WAIT="${POLARIS_PATRONI_LOOP_WAIT:-5}"
 RETRY_TIMEOUT="${POLARIS_PATRONI_RETRY_TIMEOUT:-5}"
 DATA_ROOT="${PGDATA:-/var/lib/postgresql/data}"
-DATA_DIR="$DATA_ROOT/pgdata"
+# A subdirectory of the volume: the mount root is owned by whoever mounted it
+# (root, or the pod's fsGroup) and initdb refuses a data directory it does not
+# own outright.
+DATA_DIR="${POLARIS_PATRONI_DATA_DIR:-$DATA_ROOT/pgdata}"
+case "$DATA_DIR" in /*) ;; *) fail "POLARIS_PATRONI_DATA_DIR must be an absolute path (got '$DATA_DIR')" ;; esac
 CONF=/var/lib/postgresql/patroni.yml
 
 # Everything below is interpolated into YAML unquoted; refuse anything that is
@@ -98,11 +116,31 @@ if [ -d /etc/pgbackrest/conf.d ] && [ -w /etc/pgbackrest/conf.d ]; then
     printf '[polaris]\npg1-path=%s\n' "$DATA_DIR" > /etc/pgbackrest/conf.d/ha.conf
 fi
 
-ETCD_YAML=""
-for h in $(printf '%s' "$ETCD_HOSTS" | tr ',' ' '); do
-    ETCD_YAML="${ETCD_YAML}    - $h
+if [ "$DCS" = "kubernetes" ]; then
+    DCS_YAML="kubernetes:
+  namespace: $NAMESPACE
+  labels:
+    application: polaris-db
+  scope_label: cluster-name
+  role_label: role
+  leader_label_value: primary
+  follower_label_value: replica
+  use_endpoints: true
+  pod_ip: $POD_IP
+  ports:
+    - name: postgres
+      port: 5432
 "
-done
+else
+    ETCD_YAML=""
+    for h in $(printf '%s' "$ETCD_HOSTS" | tr ',' ' '); do
+        ETCD_YAML="${ETCD_YAML}    - $h
+"
+    done
+    DCS_YAML="etcd3:
+  hosts:
+$ETCD_YAML"
+fi
 
 RUN_AS=""
 if [ "$(id -u)" = "0" ]; then
@@ -122,9 +160,7 @@ restapi:
   listen: 0.0.0.0:8008
   connect_address: $HOST:8008
 
-etcd3:
-  hosts:
-$ETCD_YAML
+$DCS_YAML
 bootstrap:
   # Written to the DCS once, by whichever member bootstraps the cluster.
   dcs:
@@ -187,7 +223,8 @@ log:
   level: INFO
 YAML
 
-echo "patroni-entrypoint: member $NAME of scope $SCOPE, DCS $ETCD_HOSTS, lease ttl ${TTL}s (loop ${LOOP_WAIT}s, retry ${RETRY_TIMEOUT}s), data $DATA_DIR" >&2
+if [ "$DCS" = "kubernetes" ]; then DCS_DESC="the Kubernetes API (namespace $NAMESPACE)"; else DCS_DESC="etcd $ETCD_HOSTS"; fi
+echo "patroni-entrypoint: member $NAME of scope $SCOPE at $HOST, lease store $DCS_DESC, ttl ${TTL}s (loop ${LOOP_WAIT}s, retry ${RETRY_TIMEOUT}s), data $DATA_DIR" >&2
 if [ -n "$RUN_AS" ]; then
     chown "$RUN_AS:$RUN_AS" "$CONF"
     exec gosu "$RUN_AS" patroni "$CONF"

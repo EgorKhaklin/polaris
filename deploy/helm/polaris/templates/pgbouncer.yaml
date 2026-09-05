@@ -30,7 +30,7 @@ spec:
           securityContext:
             {{- include "polaris.containerSecurity" . | nindent 12 }}
           env:
-            - {name: POLARIS_DB_HOST, value: {{ include "polaris.fullname" . }}-postgres}
+            - {name: POLARIS_DB_HOST, value: {{ include "polaris.fullname" . }}-pg-router}
             - {name: POLARIS_DB_PORT, value: "5432"}
             - {name: POLARIS_DB_NAME, value: polaris}
             - {name: POLARIS_DB_USER, value: polaris_app}
@@ -47,6 +47,7 @@ spec:
             - {name: PGBOUNCER_SERVER_LOGIN_RETRY, value: "1"}
             - {name: PGBOUNCER_DNS_NXDOMAIN_TTL, value: "1"}
             - {name: PGBOUNCER_SERVER_CONNECT_TIMEOUT, value: "3"}
+            - {name: PGBOUNCER_TCP_USER_TIMEOUT, value: "5000"}
             - {name: PGBOUNCER_SERVER_TLS_SSLMODE, value: verify-ca}
             - {name: PGBOUNCER_SERVER_TLS_CA_FILE, value: /etc/polaris-pg-certs/postgres.crt}
             - {name: PGBOUNCER_CLIENT_TLS_SSLMODE, value: require}

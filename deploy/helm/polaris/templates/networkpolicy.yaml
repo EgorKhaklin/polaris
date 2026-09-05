@@ -2,7 +2,7 @@
 {{- $sel := include "polaris.selector" . }}
 # Default deny, both directions, for every pod of this release. Every allowed
 # edge below is one the topology needs and nothing more:
-#   internet -> caddy (8080/8443) -> app (8000) -> pgbouncer (6432) -> postgres (5432)
+#   internet -> caddy (8080/8443) -> app (8000) -> pgbouncer (6432) -> pg-router (5432) -> postgres (5432)
 #                                   app (8000) -> redis (6379)
 # DNS egress is allowed for all; ACME egress for caddy only when tls=acme;
 # S3 egress for postgres only when pgbackrest is enabled.
@@ -134,10 +134,55 @@ spec:
         - podSelector:
             matchLabels:
               {{- $sel | nindent 14 }}
+              app.kubernetes.io/component: pg-router
+      ports:
+        - {protocol: TCP, port: 5432}
+        - {protocol: TCP, port: 5433}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "polaris.fullname" . }}-pg-router
+  labels:
+    {{- include "polaris.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- $sel | nindent 6 }}
+      app.kubernetes.io/component: pg-router
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- $sel | nindent 14 }}
+              app.kubernetes.io/component: pgbouncer
+      ports:
+        - {protocol: TCP, port: 5432}
+        - {protocol: TCP, port: 5433}
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- $sel | nindent 14 }}
               app.kubernetes.io/component: postgres
       ports:
         - {protocol: TCP, port: 5432}
+        - {protocol: TCP, port: 8008}
 ---
+{{- /* The API server's addresses for the lease store: values, else the
+     `kubernetes` Endpoints of the default namespace at install time. */ -}}
+{{- $apiCidrs := .Values.networkPolicy.apiServer.cidrs -}}
+{{- $apiPort := .Values.networkPolicy.apiServer.port -}}
+{{- if not $apiCidrs -}}
+  {{- $ep := lookup "v1" "Endpoints" "default" "kubernetes" -}}
+  {{- if $ep -}}
+    {{- range $ss := $ep.subsets -}}
+      {{- range $a := $ss.addresses -}}{{- $apiCidrs = append $apiCidrs (printf "%s/32" $a.ip) -}}{{- end -}}
+      {{- range $p := $ss.ports -}}{{- if eq $p.name "https" -}}{{- $apiPort = $p.port -}}{{- end -}}{{- end -}}
+    {{- end -}}
+  {{- end -}}
+{{- end }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -155,11 +200,46 @@ spec:
         - podSelector:
             matchLabels:
               {{- $sel | nindent 14 }}
-              app.kubernetes.io/component: pgbouncer
+              app.kubernetes.io/component: pg-router
       ports:
         - {protocol: TCP, port: 5432}
-  {{- if .Values.pgbackrest.enabled }}
+        - {protocol: TCP, port: 8008}
+    # The members: streaming replication (5432) and Patroni's REST (8008),
+    # which the members use to compare positions during a leader race.
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- $sel | nindent 14 }}
+              app.kubernetes.io/component: postgres
+      ports:
+        - {protocol: TCP, port: 5432}
+        - {protocol: TCP, port: 8008}
   egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- $sel | nindent 14 }}
+              app.kubernetes.io/component: postgres
+      ports:
+        - {protocol: TCP, port: 5432}
+        - {protocol: TCP, port: 8008}
+    # The lease store: the API server.
+    {{- if $apiCidrs }}
+    - to:
+        {{- range $c := $apiCidrs }}
+        - ipBlock:
+            cidr: {{ $c }}
+        {{- end }}
+      ports:
+        - {protocol: TCP, port: {{ $apiPort }}}
+    {{- else }}
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - {protocol: TCP, port: {{ $apiPort }}}
+    {{- end }}
+  {{- if .Values.pgbackrest.enabled }}
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0

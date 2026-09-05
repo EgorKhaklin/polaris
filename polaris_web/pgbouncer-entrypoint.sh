@@ -68,6 +68,16 @@ DNS_NXDOMAIN_TTL="${PGBOUNCER_DNS_NXDOMAIN_TTL:-1}"
 # connect that started in the two seconds before HAProxy marked the old leader
 # down hanging for PgBouncer's 15 s default while every client queued behind it.
 SERVER_CONNECT_TIMEOUT="${PGBOUNCER_SERVER_CONNECT_TIMEOUT:-3}"
+# v9.244 — a backend that stops answering mid-query. On Kubernetes the leader
+# Service's endpoints move to the new leader, but nothing cuts the pooler's
+# established connections to a frozen one (on compose HAProxy does), and a
+# query sent to a frozen peer waits on TCP for minutes. TCP_USER_TIMEOUT
+# bounds unacknowledged data to five seconds; the keepalives retire an idle
+# connection to a dead peer in about eleven.
+TCP_USER_TIMEOUT="${PGBOUNCER_TCP_USER_TIMEOUT:-5000}"
+TCP_KEEPIDLE="${PGBOUNCER_TCP_KEEPIDLE:-5}"
+TCP_KEEPINTVL="${PGBOUNCER_TCP_KEEPINTVL:-2}"
+TCP_KEEPCNT="${PGBOUNCER_TCP_KEEPCNT:-3}"
 
 # The settings above are interpolated unquoted into pgbouncer.ini, so validate
 # them: numerics must be all-digits, the pool mode must be one of the three
@@ -83,7 +93,9 @@ for _nv in "POLARIS_DB_PORT=$DB_PORT" "PGBOUNCER_LISTEN_PORT=$LISTEN_PORT" \
            "PGBOUNCER_MAX_DB_CONNECTIONS=$MAX_DB_CONNECTIONS" \
            "PGBOUNCER_SERVER_LOGIN_RETRY=$SERVER_LOGIN_RETRY" \
            "PGBOUNCER_DNS_NXDOMAIN_TTL=$DNS_NXDOMAIN_TTL" \
-           "PGBOUNCER_SERVER_CONNECT_TIMEOUT=$SERVER_CONNECT_TIMEOUT"; do
+           "PGBOUNCER_SERVER_CONNECT_TIMEOUT=$SERVER_CONNECT_TIMEOUT" \
+           "PGBOUNCER_TCP_USER_TIMEOUT=$TCP_USER_TIMEOUT" "PGBOUNCER_TCP_KEEPIDLE=$TCP_KEEPIDLE" \
+           "PGBOUNCER_TCP_KEEPINTVL=$TCP_KEEPINTVL" "PGBOUNCER_TCP_KEEPCNT=$TCP_KEEPCNT"; do
     case "${_nv#*=}" in
         ''|*[!0-9]*) echo "pgbouncer: ${_nv%%=*} must be a positive integer (got '${_nv#*=}')" >&2; exit 1 ;;
     esac
@@ -225,6 +237,12 @@ max_db_connections = $MAX_DB_CONNECTIONS
 server_login_retry = $SERVER_LOGIN_RETRY
 dns_nxdomain_ttl = $DNS_NXDOMAIN_TTL
 server_connect_timeout = $SERVER_CONNECT_TIMEOUT
+# v9.244: a peer that stops answering is retired in seconds, not minutes.
+tcp_user_timeout = $TCP_USER_TIMEOUT
+tcp_keepalive = 1
+tcp_keepidle = $TCP_KEEPIDLE
+tcp_keepintvl = $TCP_KEEPINTVL
+tcp_keepcnt = $TCP_KEEPCNT
 # psycopg2 sends extra_float_digits; pgbouncer must tolerate it in transaction mode.
 ignore_startup_parameters = extra_float_digits
 # TLS (v9.121): server_tls encrypts the postgres hop, client_tls the app hop.

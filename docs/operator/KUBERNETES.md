@@ -7,7 +7,8 @@ The production topology on a Kubernetes cluster:
 [`deploy/helm/polaris`](../../deploy/helm/polaris). Docker Compose on one Linux
 host ([`LINUX-SERVER.md`](LINUX-SERVER.md)) remains the single-node path; this
 profile is for an authority whose platform is a cluster. It is a reference
-profile, not an operator: one PostgreSQL replica, the cluster's own storage,
+profile, not an operator: the database runs under Patroni with the cluster's
+own API as the lease store (v9.244), on the cluster's own storage, with
 backups through pgBackRest exactly as on compose.
 
 ## What the chart deploys
@@ -17,23 +18,31 @@ backups through pgBackRest exactly as on compose.
 | `caddy` | Deployment | uid 1000 | the TLS edge on 8080/8443 (Service 80/443); `tls: internal` or ACME; 200 req/min/IP; retries onto another app pod for 15s; polls `/api/health/live` every 2s |
 | `app` | Deployment, 2 replicas | uid 1000 | `maxUnavailable: 0`, readiness on `/api/health/live`, PodDisruptionBudget `minAvailable: 1` |
 | `pgbouncer` | Deployment | uid 1000 | transaction pooling, TLS to postgres (verify-ca) and from the app |
-| `postgres` | StatefulSet + PVCs | uid 70 | the self-contained image (schema, migrations, init, pgBackRest config baked in); `PGDATA` in a subdirectory of the volume; TLS on |
+| `pg-router` | Deployment | uid 99 | HAProxy, the same as the compose HA profile: 5432 to the member answering Patroni's `/primary`, 5433 to a replica; sessions to a member marked down are cut, which is what frees the pool from a frozen leader |
+| `postgres` | StatefulSet, 2 members + PVCs | uid 70 | the self-contained image under Patroni ([FAILOVER.md](FAILOVER.md)): the Kubernetes API is the lease store, the leader Service's endpoints follow the lease, a replica Service selects on the `role` label; the data directory in a subdirectory of the volume; TLS on |
 | `redis` | StatefulSet + PVC | uid 999 | sessions and rate-limit state |
 
 Every pod satisfies the **restricted** Pod Security Standard: non-root with a
 numeric uid, `seccompProfile: RuntimeDefault`, all capabilities dropped, no
 privilege escalation. **NetworkPolicies** default-deny both directions for
 every pod, then allow only the topology: internet to caddy, caddy to app, app
-to pgbouncer and redis, pgbouncer to postgres, DNS for all, ACME egress for
-caddy only with `edge.tls=acme`, S3 egress for postgres only with pgBackRest
-enabled.
+to pgbouncer and redis, pgbouncer to the router, the router to the members
+(5432 and Patroni's REST on 8008), the postgres members to each other
+(replication and REST) and to the API server (the lease store), DNS for all, ACME egress for caddy only with `edge.tls=acme`, S3
+egress for postgres only with pgBackRest enabled. The API server's addresses
+are read from the `kubernetes` Endpoints at install time; set
+`networkPolicy.apiServer.cidrs` when your cluster fronts its API elsewhere.
 
 ## Prerequisites
 
 - Kubernetes 1.29+ with a CNI that **enforces** NetworkPolicy (Calico, Cilium,
   Antrea, most managed clusters). kind's default kindnet does not; the drill
   installs Calico.
-- A default StorageClass (three PVCs: postgres data, pgBackRest repo, redis).
+- A default StorageClass (five PVCs: data and a pgBackRest repo per postgres
+  member, redis).
+- Permission to create a Role and RoleBinding in the namespace: Patroni
+  keeps the lease in Endpoints and a ConfigMap and labels its own pod, and
+  the chart grants exactly those verbs to the postgres ServiceAccount.
 - For `edge.tls=acme`: a LoadBalancer Service reachable on 80/443 and the
   domain's DNS pointing at it before the first install.
 - The four images in a registry your nodes can pull from (`images.*` in
@@ -86,6 +95,7 @@ startup probe surfaces. [`HARDENING.md`](HARDENING.md) section 13.
 kubectl -n polaris get pods
 kubectl -n polaris port-forward svc/polaris-caddy 8443:443 &
 curl -k https://localhost:8443/api/health | python3 -m json.tool     # database, redis, zk_binary, custody: healthy
+kubectl -n polaris exec polaris-postgres-0 -- patronictl -c /var/lib/postgresql/patroni.yml list   # one Leader, one streaming Replica
 ```
 
 ## Operate
@@ -103,8 +113,18 @@ curl -k https://localhost:8443/api/health | python3 -m json.tool     # database,
   -o yaml | kubectl apply -f -`), then `kubectl rollout restart` the consumers
   (app, pgbouncer for the DB password; postgres needs the role updated first,
   as `polaris-rotate-secret.sh` does on compose).
+- **Database failover** is automatic: a lost leader pod is replaced by the
+  other member within the lease (`postgres.patroni.ttl`, 20 s), the
+  StatefulSet brings the pod back and Patroni rejoins it as a replica. A
+  planned switchover for node maintenance is
+  `kubectl -n polaris exec polaris-postgres-0 -- patronictl -c /var/lib/postgresql/patroni.yml switchover`.
+  The mechanics, the measured numbers and the split-brain analysis are in
+  [`FAILOVER.md`](FAILOVER.md); on a cluster the two members belong on two
+  nodes (a `topologySpreadConstraints` or anti-affinity of your own, since
+  the chart does not know your zones).
 - **Backups**: `pgbackrest.enabled=true` with the S3 values and the key pair in
-  the Secret's `pgbackrest_repo_creds.conf` ([`DR.md`](DR.md)).
+  the Secret's `pgbackrest_repo_creds.conf` ([`DR.md`](DR.md)); only the
+  leader archives, so the repo follows the lease.
 - **Observability**: `/metrics` is served by the app pods; scrape it from
   inside the cluster (the NetworkPolicy allows ingress to the app only from
   caddy; add a rule for your Prometheus namespace). Alerting and paging:
@@ -119,9 +139,15 @@ the namespace labelled restricted and a
 privileged pod rejected by the API server, the real secrets as a Secret,
 `helm lint` and `helm install --wait`, `/api/health` through the edge with
 database, redis, zk_binary, and custody healthy, a probe pod outside the
-topology denied by policy on postgres, pgbouncer, and app, and a rolling
-restart that keeps the edge healthy. Stated limits: single-node kind, one
-postgres replica, `tls: internal`; multi-node placement and ACME are
-operator-environment concerns. Automated database failover ships for the
-compose stack ([FAILOVER.md](FAILOVER.md), v9.243); bringing the same Patroni
-topology to the chart is roadmap P2.13.
+topology denied by policy on postgres, pgbouncer, and app, a rolling
+restart that keeps the edge healthy, and (v9.244) the database failover
+under a writer with the app's labels inserting through pgbouncer: the leader
+pod deleted (it returns under the same name inside its lease and keeps the
+role, a restart in place: 1.3 s of write outage), the leader's container
+frozen through the node's runtime (a hung node: the other member held the
+lease after 22 s, 23 s of write outage, the thawed leader demoted and
+streaming again 6 s later), a planned switchover (3.6 s), and every
+acknowledged insert present on the leader afterwards; local reference run
+at v9.244, the ceilings 60 s, 60 s and 30 s. Stated limits:
+single-node kind and `tls: internal`; multi-node placement and ACME are
+operator-environment concerns.

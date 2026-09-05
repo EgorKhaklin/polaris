@@ -1551,13 +1551,14 @@ def check_pgbouncer_self_built(root: pathlib.Path) -> list[Finding]:
     # 16.2 s outage for the application. The generated ini must set both to a
     # second or two, from the entrypoint's own defaults.
     for key, var, cap in (("server_login_retry", "SERVER_LOGIN_RETRY", 2), ("dns_nxdomain_ttl", "DNS_NXDOMAIN_TTL", 2),
-                          ("server_connect_timeout", "SERVER_CONNECT_TIMEOUT", 5)):
+                          ("server_connect_timeout", "SERVER_CONNECT_TIMEOUT", 5), ("tcp_user_timeout", "TCP_USER_TIMEOUT", 10000)):
         m = re.search(r'(?m)^%s="\$\{PGBOUNCER_%s:-(\d+)\}"' % (var, var), entry)
         if not m or int(m.group(1)) > cap:
             return _fail("pgbouncer_image",
                          f"pgbouncer-entrypoint.sh must default PGBOUNCER_{var} to at most {cap} seconds: on PgBouncer's "
-                         f"15 s defaults a half-second database crash is a 16 s outage for the application, and a "
-                         f"connect started just before a failover stalls every client for 15 s")
+                         f"15 s defaults a half-second database crash is a 16 s outage for the application, a "
+                         f"connect started just before a failover stalls every client for 15 s, and a frozen leader "
+                         f"holds the pool for minutes")
         if not re.search(r"(?m)^%s = \$%s$" % (key, var), entry):
             return _fail("pgbouncer_image", f"pgbouncer-entrypoint.sh must write `{key} = ${var}` into the generated ini")
     if (root / "polaris_web" / "pgbouncer.ini").exists():
@@ -3790,10 +3791,34 @@ def check_helm_reference_profile(root: pathlib.Path) -> list[Finding]:
             or np.count("kind: NetworkPolicy") < 6:
         return _fail("helm_profile", "networkpolicy.yaml must default-deny ingress+egress for every pod, allow DNS, and "
                      "carry one allow policy per workload")
-    for f in ("app.yaml", "caddy.yaml", "pgbouncer.yaml", "postgres.yaml", "redis.yaml"):
+    for f in ("app.yaml", "caddy.yaml", "pgbouncer.yaml", "redis.yaml"):
         if "automountServiceAccountToken: false" not in _read(root, f"deploy/helm/polaris/templates/{f}"):
-            return _fail("helm_profile", f"{f} must set automountServiceAccountToken: false (no process needs the API; "
-                         "the projected token mount under /var/run/secrets collides with the Secret mount)")
+            return _fail("helm_profile", f"{f} must set automountServiceAccountToken: false (no process there needs the "
+                         "API; the projected token mount under /var/run/secrets collides with the Secret mount)")
+    # v9.244 (roadmap P2.13): the database runs under Patroni with the API as
+    # the lease store, so the postgres pods carry a token bound to a Role that
+    # grants what Patroni needs and nothing else, and the leader Service has
+    # no selector (Patroni fills its endpoints).
+    for needle in ("automountServiceAccountToken: true", "kind: Role\n", "kind: RoleBinding\n",
+                   "POLARIS_PATRONI_DCS, value: kubernetes", "replicas: {{ .Values.postgres.replicas }}",
+                   "polaris-patroni-entrypoint.sh", "application: polaris-db", "-members", "-replicas"):
+        if needle not in pg:
+            return _fail("helm_profile", f"postgres.yaml lacks {needle!r}: the database must run under Patroni with the "
+                         "Kubernetes API as the lease store, a Role for it, a selector-less leader Service, and the "
+                         "member count from values")
+    if "cluster-name" not in pg or "role: replica" not in pg:
+        return _fail("helm_profile", "postgres.yaml must label members for Patroni (cluster-name) and select replicas by "
+                     "the role label it maintains")
+    if "port: 8008" not in np or "apiServer" not in np:
+        return _fail("helm_profile", "networkpolicy.yaml must let the members reach each other's Patroni REST (8008) and "
+                     "the API server (the lease store)")
+    router = _read(root, "deploy/helm/polaris/templates/pg-router.yaml")
+    pgb = _read(root, "deploy/helm/polaris/templates/pgbouncer.yaml")
+    if "on-marked-down shutdown-sessions" not in router or "GET /primary" not in router or "check port 8008" not in router:
+        return _fail("helm_profile", "pg-router.yaml must run HAProxy on Patroni's /primary with sessions cut on a member "
+                     "marked down: nothing else closes the pooler's connections to a frozen leader")
+    if "-pg-router}" not in pgb:
+        return _fail("helm_profile", "pgbouncer must dial the router, not a member or the leader Service")
     caddy_df = _read(root, "polaris_web/Dockerfile.caddy")
     if "setcap -r /usr/bin/caddy" not in caddy_df:
         return _fail("helm_profile", "Dockerfile.caddy must strip the file capability from the caddy binary: a non-root "
@@ -3812,18 +3837,22 @@ def check_helm_reference_profile(root: pathlib.Path) -> list[Finding]:
         return _fail("helm_profile", "the drill must disable kind's default CNI and install Calico: kindnet does not "
                      "enforce NetworkPolicy, so a green run would prove nothing about the policies")
     for needle in ("pod-security.kubernetes.io/enforce=restricted", "violates PodSecurity", "polaris-postgres\", 5432",
-                   "REACHED", "helm install", "/api/health", "rollout restart", "custody"):
+                   "REACHED", "helm install", "/api/health", "rollout restart", "custody",
+                   "annotations.leader", "delete pod", "task pause", "switchover", "ha_marker", "inserts were acknowledged"):
         if needle not in drill:
             return _fail("helm_profile", f"polaris-helm-drill.sh must contain {needle!r} (restricted PSS enforced, a "
-                         "privileged pod rejected, a probe pod denied on postgres, health incl. custody, a rolling restart)")
+                         "privileged pod rejected, a probe pod denied on postgres, health incl. custody, a rolling "
+                         "restart, the leader pod deleted, the leader frozen until the other member holds the lease, "
+                         "a switchover, and every acknowledged insert present afterwards)")
     if "polaris-helm-drill.sh" not in ci or "helm/kind-action@" not in ci:
         return _fail("helm_profile", "ci.yml must install kind (helm/kind-action, pinned) and run scripts/polaris-helm-drill.sh")
     if "docs/operator/KUBERNETES.md" not in readme or "restricted" not in doc or "Calico" not in doc:
         return _fail("helm_profile", "README.md must link docs/operator/KUBERNETES.md, which must state the restricted "
                      "standard and the enforcing-CNI prerequisite")
     return _ok("helm_profile", "Helm reference profile: restricted PSS on every pod, default-deny NetworkPolicies per "
-               "workload, app rolls with maxUnavailable 0, postgres non-root with a self-contained image, and a "
-               "kind+Calico CI drill with PSS rejection, policy denial, health through the edge, and a rolling restart")
+               "workload, app rolls with maxUnavailable 0, postgres non-root under Patroni with the API as the lease "
+               "store, and a kind+Calico CI drill with PSS rejection, policy denial, health through the edge, a rolling "
+               "restart, and an automated database failover under a live write stream")
 
 
 def check_distributed_tracing(root: pathlib.Path) -> list[Finding]:
@@ -4443,10 +4472,10 @@ def check_ha_automation(root: pathlib.Path) -> list[Finding]:
         return _fail("ha_automation", "Dockerfile.etcd must build from a digest-pinned base and run as the etcd user")
     if "Dockerfile.etcd" not in build:
         return _fail("ha_automation", "polaris-image-build.sh must build Dockerfile.etcd with the stack")
-    for needle in ("GET /primary", "GET /replica", "on-marked-down shutdown-sessions", "resolvers"):
+    for needle in ("GET /primary", "GET /replica", "on-marked-down shutdown-sessions", "resolvers", "tcp-ut"):
         if needle not in hap:
             return _fail("ha_automation", f"haproxy-pg.cfg lacks {needle!r}: route on Patroni's role endpoints, cut sessions "
-                         "to a demoted node, follow Docker DNS")
+                         "to a demoted node, close sessions to a vanished address (tcp-ut), follow Docker DNS")
     for needle in ("docker network disconnect", "not_primary", "switchover", "crash polaris-etcd1", "replica_streaming",
                    "CEIL_FAILOVER", "CEIL_DEMOTE", "CEIL_SWITCHOVER", "ha_marker", "no_lost_write", "replica_current"):
         if needle not in drill:

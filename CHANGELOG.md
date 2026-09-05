@@ -5,6 +5,74 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.244 — 2026-09-05 (HA on Kubernetes: the same members, the cluster's API as the lease store)
+
+Roadmap P2.13. The Helm reference profile ran one postgres replica while the
+compose stack had automated failover since v9.243. It now runs the same
+Patroni members under the same entrypoint, with the Kubernetes API as the
+lease store: no etcd of its own, the lease in the annotations of the leader
+Endpoints, the leader Service's endpoints filled by Patroni. A ServiceAccount
+and a Role grant exactly what Patroni needs (pods, endpoints, configmaps, one
+service create). `postgres.replicas` (2) and `postgres.patroni.*` in values;
+a selector-less leader Service, a headless members Service for the
+StatefulSet's pod DNS, a replicas Service on the `role` label Patroni
+maintains; NetworkPolicies for member-to-member replication and REST and for
+the API server, whose addresses the chart reads from the `kubernetes`
+Endpoints at install time (`networkPolicy.apiServer.cidrs` when it cannot).
+The postgres pods are the one workload that mounts a token; every other one
+still does not.
+
+**The router, on Kubernetes too.** pgbouncer dials `pg-router`, the same
+HAProxy as the compose profile, rather than the leader Service, because of
+what the kind drill found: a member whose process is frozen still has a
+kernel that acknowledges TCP, so no socket timeout fires on a query sent to
+it, and the pool's established connections to a frozen leader hung until it
+thawed; only the router's Patroni health check notices, marks the member
+down and cuts the sessions. Member names are fully qualified
+(`clusterDomain`), since HAProxy's resolvers apply no search path.
+
+**The kind drill** (`polaris-helm-drill.sh`, the `helm-kind` job) gained the
+failover under a writer with the app's labels inserting through pgbouncer.
+Local reference run at v9.244:
+
+| Induced | Held | Measured |
+|---|---|---|
+| the leader pod deleted | it returns under the same name inside its lease and keeps the role: a restart in place | 1.3 s write outage; one leader, one streaming replica again in 3 s |
+| the leader's container frozen through the node's runtime (a hung node) | the other member holds the lease; the thawed leader demotes and rejoins | lease moved at 22 s; 23 s write outage; demoted and streaming 6 s after thawing |
+| a planned switchover | the candidate leads; the old leader follows | 3.6 s write outage; followed at 3 s |
+
+and every acknowledged insert present on the leader afterwards.
+
+**What the first runs found.**
+
+1. A deleted StatefulSet pod is not a lost node: it comes back under the
+   same name inside the lease and Patroni treats it as the same member
+   restarting. A lost node on a cluster is a hung one, so the drill freezes
+   the leader's container through the node's runtime; and a frozen pod
+   keeps a stale `role` label, so the drill reads the lease from the
+   Endpoints annotation, never the label.
+2. A recreated pod's old sessions hung under a router that stayed up (the
+   address changed, the check kept passing on the new one) until TCP gave
+   up, minutes later: the router now closes a session whose peer stops
+   acknowledging within 3 s (`tcp-ut`) and probes idle server connections
+   with keepalives (3 s idle, 1 s interval, 3 misses), on both profiles.
+   The pooler got the same two timeouts (`PGBOUNCER_TCP_USER_TIMEOUT` and
+   keepalives, pinned by `check_pgbouncer_self_built`).
+3. The compose profile was measured again under the changed router: a lost
+   leader is promoted at 21 s with a 21.0 s write outage and rejoins 3 s
+   after starting; a leader cut off from the lease store demotes at 5 s and
+   the lease moves at 11 s (13.2 s outage, the pool's queries to the
+   demoting member now failing fast instead of stalling); a switchover is
+   3.3 s; an etcd member crash is a 0.3 s stall. FAILOVER.md carries them.
+
+**Also.** `check_helm_reference_profile` pins the Role, the lease store, the
+router, the member count from values and the three drill scenarios;
+KUBERNETES.md and FAILOVER.md carry the topology, the numbers and the
+Kubernetes placement note; the readiness ledger's Postgres HA row covers
+both substrates. 121 checks, 15 CI jobs.
+
+---
+
 ## v9.243 — 2026-09-05 (automated database failover: the HA profile)
 
 Roadmap P2.7, and the database half of the one engineering limit the

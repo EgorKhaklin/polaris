@@ -65,6 +65,13 @@ stack):**
   of them can share the database hosts). The compose file is the same;
   `POLARIS_PATRONI_HOST` names each member's reachable address and
   `POLARIS_PATRONI_ETCD_HOSTS` the lease store's.
+- **On Kubernetes**, the chart runs the same members under the same entrypoint
+  with the cluster's API as the lease store (v9.244, [KUBERNETES.md](KUBERNETES.md)):
+  no etcd of its own, the lease in the annotations of the leader Endpoints,
+  the leader Service's endpoints filled by Patroni, and the kind drill deletes
+  the leader pod and switches over on every push. Placement is a pod
+  anti-affinity of your own; everything below about the lease holds there
+  as it does here.
 - **Transport security between hosts.** On the single-host profile etcd
   speaks plain HTTP on an internal bridge and Patroni's REST API is plain
   HTTP on the stack network. Across hosts both need TLS (Patroni's `etcd3`
@@ -119,15 +126,24 @@ The drill runs a writer through the real client path (pgbouncer, HAProxy,
 the leader) four times a second and logs every insert, so a scenario's
 write outage is what an application would have seen: a failed insert, or an
 insert that stalled in the pooler's queue. Reads run against the edge as in
-the other drills. Local reference run at v9.243, the ceilings the drill
-asserts on the right:
+the other drills. Local reference run at v9.244 (the router's session
+timeouts changed at v9.244, so the numbers were taken again), the ceilings
+the drill asserts on the right:
 
 | Induced failure | What the supervisor did | Write outage | Rejoin | Ceiling |
 |---|---|---|---|---|
-| The leader node is lost (killed, kept down) | the replica acquired the lease and promoted 19 s later | 20.0 s, no insert failed: the pooler queued them | the old node was streaming again 4 s after it was started | 60 s |
-| The leader is cut off from the lease store; its clients and the other member can still reach it | it demoted itself after 9 s; the other member, current, took the lease after 10 s | 12.3 s, no insert failed | streaming as soon as it reconnected | 45 s to demote, 60 s |
-| A planned switchover (`patronictl switchover`) | the candidate was leader within a second | 3.4 s, no insert failed | the old leader followed after 2 s | 30 s |
-| One etcd member crashes | nothing: the leader kept the lease on the remaining quorum | 0.3 s longest stall, no insert failed | the member restarted on its own | 5 s, no failure |
+| The leader node is lost (killed, kept down) | the replica acquired the lease and promoted 21 s later | 21.0 s, no insert failed: the pooler queued them | the old node was streaming again 3 s after it was started | 60 s |
+| The leader is cut off from the lease store; its clients and the other member can still reach it | it demoted itself after 5 s; the other member, current, took the lease after 11 s | 13.2 s, 49 inserts failed against the demoting member | streaming 4 s after reconnecting | 45 s to demote, 60 s |
+| A planned switchover (`patronictl switchover`) | the candidate was leader within a second | 3.3 s, no insert failed | the old leader followed after 3 s | 30 s |
+| One etcd member crashes | nothing: the leader kept the lease on the remaining quorum | 0.3 s longest stall, no insert failed | the member restarted on its own in 1 s | 5 s, no failure |
+
+On Kubernetes the same members under the chart, drilled on kind by
+`scripts/polaris-helm-drill.sh` (local reference run at v9.244): a deleted
+leader pod returns under the same name inside its lease and keeps the role,
+a restart in place costing 1.3 s of writes; a leader whose container is
+frozen through the node's runtime (a hung node) loses the lease to the other
+member after 22 s, with a 23 s write outage, and demotes and streams again
+6 s after thawing; a planned switchover is 3.6 s.
 
 Two things the numbers say. The write outage of a lost leader is the lease:
 about `ttl` plus one `loop_wait` before the replica can take the key. A
@@ -150,6 +166,18 @@ fails while the pooler queues, so the drill reports the longest stall as
 well as the failed inserts, and asserts on the larger of the two; and it
 stamps each insert with its completion time, since an insert that waited
 twenty seconds in the queue is a twenty-second stall, not a fast one.
+
+The Kubernetes drill (v9.244) found two more, both about sessions the pooler
+already had open. A member whose process is frozen still has a kernel that
+acknowledges TCP, so no socket timeout ever fires on a query sent to it; the
+router's health check is what notices (Patroni stops answering), marks the
+member down, and cuts the sessions, which is why the chart carries the same
+router as this profile rather than pointing the pooler at the leader
+Service. And a member whose address changed under a router that stayed up
+(a recreated pod) left its old sessions hanging until TCP gave up, minutes
+later; the router now closes a session whose peer stops acknowledging within
+3 s (`tcp-ut`). The pooler itself got the same two timeouts
+(`PGBOUNCER_TCP_USER_TIMEOUT` and keepalives) for the hops in front of it.
 
 ---
 
@@ -176,7 +204,7 @@ time.
   `retry_timeout` to stand down. The windows are ordered by construction
   (`ttl` > `loop_wait` + 2 × `retry_timeout`; the entrypoint refuses a
   configuration that breaks the ordering). This is the case the drill
-  exercises: the cut-off member demoted 9 s in, the lease moved at 10 s, and
+  exercises: the cut-off member demoted 5 s in, the lease moved at 11 s, and
   the cut-off member never took a write after its demotion.
 - *The same partition, with the other member a few records behind.* The
   first CI run found this outcome. A fast shutdown writes a final WAL record
@@ -260,7 +288,7 @@ $P reinit postgres2                                      # force a fresh clone o
 
 ## 6. RPO and RTO
 
-- **RTO** for a lost host is the lease plus routing: 20 s measured (§3), against [`DR.md`](DR.md)'s 4 h target for the case where no replica
+- **RTO** for a lost host is the lease plus routing: 21 s measured (§3), against [`DR.md`](DR.md)'s 4 h target for the case where no replica
   survives.
 - **RPO** is whatever the replica had not received: usually milliseconds on
   a healthy link, zero with `synchronous_mode` at the cost above. The 300 s
