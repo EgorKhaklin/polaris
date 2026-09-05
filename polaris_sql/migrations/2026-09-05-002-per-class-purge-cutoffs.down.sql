@@ -2,8 +2,12 @@
 -- 2026-09-05-002-per-class-purge-cutoffs.down.sql
 --
 -- Reverses the v9.235 per-class purge cutoffs. Drops the six checkpoint
--- columns and the two constraints, and drops the seven-parameter procedure so
--- that re-applying 05_procedures.sql from a v9.234 tree leaves no overload.
+-- columns and the two constraints, and DROPS the per-class procedure rather
+-- than restoring the previous one: reverting leaves the database with no purge
+-- procedure until 05_procedures.sql is re-applied from a v9.234 tree, which
+-- installs the six-parameter form. The drop is what makes that re-apply clean,
+-- since the two signatures would otherwise overload. The up.sql's header says
+-- "restores", which is the effect of the two steps together.
 --
 -- What is lost: the record of which cutoff applied to which class on purges
 -- run while this migration was in force. The scalar cutoff_timestamp and every
