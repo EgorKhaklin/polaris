@@ -154,6 +154,7 @@ CHANGELOG entry for the version carries the detail.
 | The fail-closed harness runs on every push; a weekly drill kills one colour, stops both until the outage pages through real Prometheus and Alertmanager, kills redis and postgres, partitions pgbouncer, and commits every recovery time to a ledger | v9.242 | `check_chaos_program` |
 | The HA profile runs the database under Patroni with a leader lease in etcd and HAProxy routing on the role endpoints; the failover drill loses the leader, cuts it off from the lease store, switches over and crashes an etcd member under a live write stream against ceilings on every push; the split-brain analysis is written | v9.243 | `check_ha_automation` |
 | The Helm profile runs the same Patroni members with the cluster's API as the lease store and the same router; the kind drill deletes the leader pod, freezes the leader's container and switches over under a live write stream, and asserts every acknowledged insert present | v9.244 | `check_helm_reference_profile` |
+| The four append-only event tables are monthly range-partitioned; a manager premakes and detaches months (re-adding the append-only trigger so C1 holds across the detach), an online migration converts a pre-v9.245 database in place, and a drill proves append-only across a partition, an attach and a detach on every push | v9.245 | `check_event_table_partitioning` |
 
 ---
 

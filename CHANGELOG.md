@@ -5,6 +5,55 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.245 — 2026-09-05 (event-table partitioning)
+
+Roadmap P2.1, the first of the scale-architecture rows. The four append-only
+event tables grow without bound in a national deployment and C1 forbids
+deleting a row except through the audited retention purge. They are now
+monthly range-partitioned on `event_timestamp`, so an old month detaches in
+O(1) instead of a DELETE scan of millions of rows.
+
+**The tables** (the four the retention engine purges): TokenLifecycleEvent,
+VerificationEvent, EnrollmentStatusEvent, AuthAuditLog. Nothing references them
+by foreign key, which is what makes an in-place conversion possible. Each has a
+composite primary key `(id, event_timestamp)`, monthly partitions, and a
+DEFAULT catch-all so an insert never fails. An INSERT routes automatically; a
+SELECT reads across partitions; the tables are append-only, so there is no
+UPDATE/DELETE path to complicate routing.
+
+**The manager** (`01_schema.sql`, redefined by the migration for existing
+databases): `uc_ensure_event_partitions(months_ahead)` premakes the current
+month plus a buffer, at the end of the schema load (before any row is
+inserted, so the enrollment trigger's `now()` rows land in a monthly
+partition), on every deploy, and monthly via
+`polaris-partition-maintenance.timer`.
+`uc_detach_event_partitions_before(cutoff)` detaches whole old months and
+**re-creates the append-only trigger on each detached table**, because a
+detached partition loses the parent-propagated trigger — the C1-across-detach
+hole the roadmap warned about, closed.
+
+**The online migration** (`2026-09-05-003`) converts a pre-v9.245 database in
+place: it attaches the existing table as the DEFAULT partition (its rows stay
+physically in place, no copy), then re-creates the indexes and the append-only
+trigger on the parent. It is idempotent (a no-op on an already-partitioned
+database, so it is safe on a fresh one) and transparent (the rename is atomic
+inside its transaction). The down migration departitions, preserving every
+row. The one honest cost is stated in [docs/design/partitioning.md](docs/design/partitioning.md):
+the index re-creation on the attached partition is the conversion's only
+non-instant step, and a very large table should build them CONCURRENTLY first.
+
+**Proven.** `scripts/polaris-partition-drill.sh` (the product-test job) shows a
+future row landing in a monthly partition, append-only rejecting UPDATE/DELETE
+on a partition and across an attach and a detach, the online conversion
+preserving rows and the trigger, and the retention DELETE carve-out still
+routing across partitions. `check_event_table_partitioning` pins the schema,
+the manager, the migration, the drill and the standing timer. All 471 app
+tests, the 99 constraint/invariant/redaction tests, the SQL self-tests and the
+retention drill pass unchanged: partitioning is transparent to the whole
+application. 122 checks.
+
+---
+
 ## v9.244 — 2026-09-05 (HA on Kubernetes: the same members, the cluster's API as the lease store)
 
 Roadmap P2.13. The Helm reference profile ran one postgres replica while the

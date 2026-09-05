@@ -217,7 +217,7 @@ COMMENT ON TABLE AppUser IS
 
 -- coverage:exempt — C1 AoR enforced by tg_authauditlog_append_only; schema_watcher verifies the trigger exists
 CREATE TABLE AuthAuditLog (
-    audit_id           SERIAL       PRIMARY KEY,
+    audit_id           SERIAL,
     event_timestamp    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     event_type         VARCHAR(40)  NOT NULL,
     username           VARCHAR(50),
@@ -233,8 +233,15 @@ CREATE TABLE AuthAuditLog (
             'PASSWORD_CHANGED', 'ACCOUNT_CREATED', 'ACCOUNT_DEACTIVATED',
             'CSRF_REJECTED', 'AUTH_REQUIRED', 'AUTHZ_DENIED',
             'RATE_LIMITED'
-        ))
-);
+        )),
+    -- v9.245 (roadmap P2.1): the partition key must be part of the primary key.
+    PRIMARY KEY (audit_id, event_timestamp)
+)
+PARTITION BY RANGE (event_timestamp);
+-- The DEFAULT partition catches historical / out-of-window rows (the seed
+-- data's fixed 2026 timestamps, and any month the manager has not premade).
+-- uc_ensure_event_partitions() premakes the monthly partitions new rows land in.
+CREATE TABLE AuthAuditLog_default PARTITION OF AuthAuditLog DEFAULT;
 
 CREATE INDEX idx_authaudit_timestamp ON AuthAuditLog(event_timestamp DESC);
 CREATE INDEX idx_authaudit_user      ON AuthAuditLog(user_id);
@@ -318,7 +325,7 @@ COMMENT ON COLUMN IdentityToken.predecessor_token_id IS
 
 -- coverage:exempt — C1 AoR enforced by tg_tokenlifecycleevent_append_only; schema_watcher verifies via EXPECTED_AOR_TABLES
 CREATE TABLE TokenLifecycleEvent (
-    event_id        SERIAL    PRIMARY KEY,
+    event_id        SERIAL,
     token_id        INTEGER   NOT NULL REFERENCES IdentityToken(token_id),
     actor_agency_id INTEGER            REFERENCES Agency(agency_id),  -- nullable: device events have no agency actor
     event_type      VARCHAR(20) NOT NULL
@@ -330,8 +337,15 @@ CREATE TABLE TokenLifecycleEvent (
     -- Geographic coordinates of the event. Nullable so legacy events without
     -- recorded location remain valid; cluster aggregation IS NULL-tolerant.
     latitude        DOUBLE PRECISION CHECK (latitude  IS NULL OR (latitude  BETWEEN  -90 AND  90)),
-    longitude       DOUBLE PRECISION CHECK (longitude IS NULL OR (longitude BETWEEN -180 AND 180))
-);
+    longitude       DOUBLE PRECISION CHECK (longitude IS NULL OR (longitude BETWEEN -180 AND 180)),
+    -- v9.245 (roadmap P2.1): the partition key must be part of the primary key.
+    PRIMARY KEY (event_id, event_timestamp)
+)
+PARTITION BY RANGE (event_timestamp);
+-- The DEFAULT partition catches historical / out-of-window rows (the seed
+-- data's fixed 2026 timestamps, and any month the manager has not premade).
+-- uc_ensure_event_partitions() premakes the monthly partitions new rows land in.
+CREATE TABLE TokenLifecycleEvent_default PARTITION OF TokenLifecycleEvent DEFAULT;
 
 COMMENT ON TABLE TokenLifecycleEvent IS
   'Append-only audit trail. actor_agency_id is the agency that performed the '
@@ -340,7 +354,7 @@ COMMENT ON TABLE TokenLifecycleEvent IS
   'is enforced by convention and tooling (see 06_triggers.sql), not storage engine.';
 
 CREATE TABLE VerificationEvent (
-    event_id             SERIAL    PRIMARY KEY,
+    event_id             SERIAL,
     token_id             INTEGER            REFERENCES IdentityToken(token_id),  -- NULLABLE: ZERO_KNOWLEDGE
     requesting_agency_id INTEGER   NOT NULL REFERENCES Agency(agency_id),
     context_id           INTEGER   NOT NULL REFERENCES VerificationContext(context_id),
@@ -383,8 +397,15 @@ CREATE TABLE VerificationEvent (
     CONSTRAINT chk_purpose_text_length CHECK (
         requesting_purpose_text IS NULL
         OR char_length(TRIM(BOTH FROM requesting_purpose_text)) BETWEEN 1 AND 280
-    )
-);
+    ),
+    -- v9.245 (roadmap P2.1): the partition key must be part of the primary key.
+    PRIMARY KEY (event_id, event_timestamp)
+)
+PARTITION BY RANGE (event_timestamp);
+-- The DEFAULT partition catches historical / out-of-window rows (the seed
+-- data's fixed 2026 timestamps, and any month the manager has not premade).
+-- uc_ensure_event_partitions() premakes the monthly partitions new rows land in.
+CREATE TABLE VerificationEvent_default PARTITION OF VerificationEvent DEFAULT;
 
 COMMENT ON TABLE VerificationEvent IS
   'High-volume transactional table. token_id is nullable so ZERO_KNOWLEDGE '
@@ -771,7 +792,7 @@ COMMENT ON TABLE AgencyQuota IS
 -- ----------------------------------------------------------------------------
 -- coverage:exempt — C1 AoR enforced by tg_enrollmentstatusevent_append_only; tested in test_app.py::TieredEnrollmentTests
 CREATE TABLE EnrollmentStatusEvent (
-    event_id              SERIAL    PRIMARY KEY,
+    event_id              SERIAL,
     individual_id         INTEGER   NOT NULL REFERENCES Individual(individual_id),
     status                VARCHAR(20) NOT NULL
         CHECK (status IN ('NOT_ENROLLED',
@@ -782,8 +803,15 @@ CREATE TABLE EnrollmentStatusEvent (
     transition_reason     VARCHAR(60) NOT NULL,
     recorded_by_agency_id INTEGER REFERENCES Agency(agency_id),  -- nullable: SYSTEM seed events
     event_timestamp       TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    notes                 TEXT
-);
+    notes                 TEXT,
+    -- v9.245 (roadmap P2.1): the partition key must be part of the primary key.
+    PRIMARY KEY (event_id, event_timestamp)
+)
+PARTITION BY RANGE (event_timestamp);
+-- The DEFAULT partition catches historical / out-of-window rows (the seed
+-- data's fixed 2026 timestamps, and any month the manager has not premade).
+-- uc_ensure_event_partitions() premakes the monthly partitions new rows land in.
+CREATE TABLE EnrollmentStatusEvent_default PARTITION OF EnrollmentStatusEvent DEFAULT;
 
 COMMENT ON TABLE EnrollmentStatusEvent IS
   'Append-only log of enrollment-state transitions per Individual '
@@ -1436,3 +1464,99 @@ COMMENT ON TABLE RetentionPolicy IS
     'configuration can purge an audit row younger than a year. Read by '
     'retention_cutoff() and enforced by uc_archive_purge, which refuses a '
     'cutoff younger than any affected class allows.';
+
+-- ============================================================================
+-- Event-table partition manager + bootstrap (roadmap P2.1, v9.245)
+-- Defined here, at the end of the schema, so the initial monthly partitions
+-- exist before ANY row is inserted (04_data's seed and the enrollment trigger
+-- that fires during it), so runtime events land in a monthly partition and the
+-- DEFAULT partition holds only out-of-window history.
+-- ============================================================================
+-- ============================================================================
+-- Event-table partition manager (roadmap P2.1, v9.245)
+--
+-- The four event tables (TokenLifecycleEvent, VerificationEvent,
+-- EnrollmentStatusEvent, AuthAuditLog) are monthly range-partitioned on
+-- event_timestamp. New rows land in a monthly partition; anything outside the
+-- premade window (the seed data's fixed timestamps, a late arrival) lands in
+-- the DEFAULT partition. These two procedures are the lifecycle tooling.
+--
+--   uc_ensure_event_partitions(months_ahead)  premake current..+months_ahead
+--   uc_detach_event_partitions_before(cutoff)  detach whole months < cutoff
+--
+-- Append-only (C1) is enforced by the trigger on the partitioned PARENT, which
+-- PostgreSQL propagates to every partition, DEFAULT included; attach and detach
+-- do not open a hole (polaris-partition-drill.sh proves it).
+-- ============================================================================
+CREATE OR REPLACE PROCEDURE uc_ensure_event_partitions(p_months_ahead integer DEFAULT 3)
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_tables text[] := ARRAY['tokenlifecycleevent','verificationevent','enrollmentstatusevent','authauditlog'];
+    v_tbl text; v_from date; v_to date; v_part text; i integer;
+BEGIN
+    IF p_months_ahead < 0 OR p_months_ahead > 60 THEN
+        RAISE EXCEPTION 'uc_ensure_event_partitions: p_months_ahead must be between 0 and 60 (got %)', p_months_ahead;
+    END IF;
+    FOREACH v_tbl IN ARRAY v_tables LOOP
+        FOR i IN 0..p_months_ahead LOOP
+            v_from := (date_trunc('month', now()) + make_interval(months => i))::date;
+            v_to   := (v_from + interval '1 month')::date;
+            v_part := format('%s_%s', v_tbl, to_char(v_from, 'YYYY_MM'));
+            CONTINUE WHEN to_regclass(v_part) IS NOT NULL;
+            BEGIN
+                EXECUTE format('CREATE TABLE %I PARTITION OF %I FOR VALUES FROM (%L) TO (%L)', v_part, v_tbl, v_from, v_to);
+            EXCEPTION WHEN others THEN
+                -- The DEFAULT partition already holds rows for this month (the
+                -- manager fell behind, or the seed spans it): leave them there,
+                -- purged by retention. A missing monthly partition is a
+                -- monitored condition, never silent data loss.
+                RAISE WARNING 'uc_ensure_event_partitions: could not create % (%); rows for that month stay in %_default',
+                    v_part, SQLERRM, v_tbl;
+            END;
+        END LOOP;
+    END LOOP;
+END $$;
+COMMENT ON PROCEDURE uc_ensure_event_partitions(integer) IS
+  'Roadmap P2.1: premake monthly partitions for the four event tables from the '
+  'current month through +months_ahead, idempotently. Run at init and monthly.';
+
+CREATE OR REPLACE PROCEDURE uc_detach_event_partitions_before(
+    p_cutoff timestamptz,
+    INOUT p_detached text[] DEFAULT '{}'
+)
+LANGUAGE plpgsql AS $$
+DECLARE
+    v_rec record; v_upper text;
+BEGIN
+    p_detached := ARRAY[]::text[];
+    FOR v_rec IN
+        SELECT child.relname AS part, parent.relname AS tbl,
+               pg_get_expr(child.relpartbound, child.oid) AS bound
+        FROM pg_inherits i
+        JOIN pg_class child  ON child.oid  = i.inhrelid
+        JOIN pg_class parent ON parent.oid = i.inhparent
+        WHERE parent.relname IN ('tokenlifecycleevent','verificationevent','enrollmentstatusevent','authauditlog')
+          AND pg_get_expr(child.relpartbound, child.oid) <> 'DEFAULT'
+    LOOP
+        -- The upper bound of a monthly range partition: TO ('YYYY-MM-DD ...').
+        -- Detach only when the whole range is at or below the cutoff, so no live
+        -- row is ever detached. The DEFAULT partition is never detached here.
+        v_upper := substring(v_rec.bound from 'TO \(''([^'']+)''\)');
+        IF v_upper IS NOT NULL AND v_upper::timestamptz <= p_cutoff THEN
+            EXECUTE format('ALTER TABLE %I DETACH PARTITION %I', v_rec.tbl, v_rec.part);
+            -- C1 across detach: a detached partition loses the parent-propagated
+            -- append-only trigger, so re-create it on the standalone table. It
+            -- stays immutable until the caller archives then drops it.
+            EXECUTE format('CREATE TRIGGER %I BEFORE UPDATE OR DELETE ON %I FOR EACH ROW EXECUTE FUNCTION reject_audit_modification()',
+                           left(v_rec.part, 55) || '_ao', v_rec.part);
+            p_detached := array_append(p_detached, v_rec.part);
+        END IF;
+    END LOOP;
+END $$;
+COMMENT ON PROCEDURE uc_detach_event_partitions_before(timestamptz, text[]) IS
+  'Roadmap P2.1: detach every monthly event partition whose entire range is at '
+  'or below the cutoff, leaving each as a standalone table for the caller to '
+  'archive then drop. Never touches the DEFAULT partition or a live row.';
+
+-- Bootstrap the initial window (current month + 3) for a fresh database.
+CALL uc_ensure_event_partitions();

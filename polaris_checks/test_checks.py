@@ -3370,6 +3370,65 @@ def test_ha_automation_check_discriminates(tmp_path):
     assert checks.check_ha_automation(tmp_path)[0].level == "FAIL", "must FAIL when FAILOVER.md has no split-brain analysis"
 
 
+def test_event_table_partitioning_check_discriminates(tmp_path):
+    TABLES = ("TokenLifecycleEvent", "VerificationEvent", "EnrollmentStatusEvent", "AuthAuditLog")
+    def schema_block(t, idcol="event_id"):
+        return (f"CREATE TABLE {t} (\n    {idcol} SERIAL,\n    event_timestamp TIMESTAMP NOT NULL,\n"
+                f"    PRIMARY KEY ({idcol}, event_timestamp)\n)\nPARTITION BY RANGE (event_timestamp);\n"
+                f"CREATE TABLE {t}_default PARTITION OF {t} DEFAULT;\n")
+    SCHEMA = "".join(schema_block(t, "audit_id" if t == "AuthAuditLog" else "event_id") for t in TABLES)
+    SCHEMA += ("CREATE OR REPLACE PROCEDURE uc_ensure_event_partitions(p_months_ahead integer DEFAULT 3) LANGUAGE plpgsql AS $$ BEGIN END $$;\n"
+               "CREATE OR REPLACE PROCEDURE uc_detach_event_partitions_before(p_cutoff timestamptz, INOUT p_detached text[] DEFAULT '{}') LANGUAGE plpgsql AS $$ BEGIN END $$;\n"
+               "CALL uc_ensure_event_partitions();\n")
+    MIG = ("uc_convert_event_table_to_partitioned ... already partitioned ...\n"
+           + "".join(f"CALL uc_convert_event_table_to_partitioned('{t.lower()}', 'event_id');\n" for t in TABLES)
+           + "ATTACH PARTITION x DEFAULT\n")
+    DOWN = "CALL uc_departition_event_table('verificationevent','event_id');\n"
+    DRILL = ("uc_ensure_event_partitions\nDETACH PARTITION\ninsufficient_privilege\n"
+             "uc_convert_event_table_to_partitioned\nATTACH PARTITION\n")
+    CI = "run: bash scripts/polaris-partition-drill.sh\n"
+    good = {
+        "polaris_sql/01_schema.sql": SCHEMA,
+        "polaris_sql/migrations/2026-09-05-003-event-table-partitioning.up.sql": MIG,
+        "polaris_sql/migrations/2026-09-05-003-event-table-partitioning.down.sql": DOWN,
+        "scripts/polaris-partition-drill.sh": DRILL,
+        ".github/workflows/ci.yml": CI,
+        "scripts/polaris-partition-maintenance.sh": "uc_ensure_event_partitions\n",
+        "deploy/linux/polaris-partition-maintenance.timer": "OnCalendar=*-*-02 04:00:00 UTC\n",
+        "deploy/linux/install.sh": "systemctl enable polaris-partition-maintenance.timer\n",
+    }
+    def write(overrides=None):
+        files = dict(good); files.update(overrides or {})
+        for rel, body in files.items():
+            f = tmp_path / rel; f.parent.mkdir(parents=True, exist_ok=True); f.write_text(body)
+    write()
+    assert checks.check_event_table_partitioning(tmp_path)[0].level == "OK", "must PASS on the good fixture"
+    # the standing maintenance timer missing
+    write({"deploy/linux/polaris-partition-maintenance.timer": "no calendar here\n"})
+    assert checks.check_event_table_partitioning(tmp_path)[0].level == "FAIL", "must FAIL without the monthly maintenance timer"
+    # a table not partitioned
+    write({"polaris_sql/01_schema.sql": SCHEMA.replace("PARTITION BY RANGE (event_timestamp);\nCREATE TABLE VerificationEvent_default", ";\nCREATE TABLE VerificationEvent_default", 1)})
+    assert checks.check_event_table_partitioning(tmp_path)[0].level == "FAIL", "must FAIL when a table is not partitioned"
+    # a table without its DEFAULT partition
+    write({"polaris_sql/01_schema.sql": SCHEMA.replace("CREATE TABLE AuthAuditLog_default PARTITION OF AuthAuditLog DEFAULT;\n", "")})
+    assert checks.check_event_table_partitioning(tmp_path)[0].level == "FAIL", "must FAIL when a table has no DEFAULT partition"
+    # the manager missing
+    write({"polaris_sql/01_schema.sql": SCHEMA.replace("CREATE OR REPLACE PROCEDURE uc_ensure_event_partitions", "CREATE OR REPLACE PROCEDURE uc_other")})
+    assert checks.check_event_table_partitioning(tmp_path)[0].level == "FAIL", "must FAIL when the manager is absent"
+    # the migration does not convert a table
+    write({"polaris_sql/migrations/2026-09-05-003-event-table-partitioning.up.sql": MIG.replace("CALL uc_convert_event_table_to_partitioned('authauditlog', 'event_id');\n", "")})
+    assert checks.check_event_table_partitioning(tmp_path)[0].level == "FAIL", "must FAIL when the migration skips a table"
+    # the down cannot departition
+    write({"polaris_sql/migrations/2026-09-05-003-event-table-partitioning.down.sql": "DROP TABLE x;\n"})
+    assert checks.check_event_table_partitioning(tmp_path)[0].level == "FAIL", "must FAIL when the down does not departition"
+    # the drill does not detach
+    write({"scripts/polaris-partition-drill.sh": DRILL.replace("DETACH PARTITION\n", "")})
+    assert checks.check_event_table_partitioning(tmp_path)[0].level == "FAIL", "must FAIL when the drill does not detach"
+    # CI does not run the drill
+    write({".github/workflows/ci.yml": "run: echo nope\n"})
+    assert checks.check_event_table_partitioning(tmp_path)[0].level == "FAIL", "must FAIL when CI does not run the drill"
+
+
 def test_helm_reference_profile_check_discriminates(tmp_path):
     HELPERS = "runAsNonRoot: true\nseccompProfile:\n  type: RuntimeDefault\ncapabilities:\n  drop: [\"ALL\"]\nallowPrivilegeEscalation: false\n"
     NP = ("name: x-default-deny\npolicyTypes: [Ingress, Egress]\nname: x-allow-dns\n" + "kind: NetworkPolicy\n" * 7

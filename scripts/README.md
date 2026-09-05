@@ -45,6 +45,8 @@ block after the shebang is its documentation, and `--help` prints it.
 | `polaris-rolling-drill.sh` | A rolling deploy drops zero requests | `ci.yml` |
 | `polaris-window-drill.sh` | An edge configuration reload drops nothing; edge and database recreation windows measured against ceilings | `ci.yml` |
 | `polaris-failover-drill.sh` | The HA profile under induced failures: the leader crashed, cut off from the lease store, switched over, an etcd member crashed, each measured under a live write stream against a ceiling | `ci.yml` |
+| `polaris-partition-drill.sh` | The event tables' partitioning: a future row lands in a monthly partition, append-only holds across a partition/attach/detach, a populated table converts in place, retention routes across partitions | `ci.yml`, on every push |
+| `polaris-partition-maintenance.sh` | Premake the event tables' monthly partitions ahead of time on the running stack | `polaris-partition-maintenance.timer`, monthly |
 | `polaris-helm-drill.sh` | The Kubernetes profile boots healthy with policies enforced | `ci.yml` |
 | `polaris-page-drill.sh` | A duress event reaches the pager webhook | `ci.yml` |
 | `polaris-chaos-drill.sh` | Induced failures against the booted stack under traffic: one colour killed, both stopped until the outage pages, redis and postgres killed, pgbouncer partitioned, every recovery measured against a ceiling | `chaos.yml`, weekly and on demand |

@@ -1,0 +1,12 @@
+# polaris-partition-maintenance.timer: monthly, the 2nd at 04:00 UTC (roadmap
+# P2.1, v9.245). A day after the DR drill so the two never contend.
+[Unit]
+Description=Monthly Polaris event-table partition maintenance
+
+[Timer]
+OnCalendar=*-*-02 04:00:00 UTC
+Persistent=true
+RandomizedDelaySec=30m
+
+[Install]
+WantedBy=timers.target

@@ -830,6 +830,34 @@ sync worker class. The default is 4 (suitable for 2-vCPU hosts). On an
 8-vCPU host raise to 17. Above 16 workers, also raise
 `PGBOUNCER_DEFAULT_POOL_SIZE` proportionally.
 
+### Event-table partitions
+
+The four append-only event tables (TokenLifecycleEvent, VerificationEvent,
+EnrollmentStatusEvent, AuthAuditLog) are monthly range-partitioned on
+`event_timestamp` ([../design/partitioning.md](../design/partitioning.md),
+roadmap P2.1). New rows route to a monthly partition automatically; nothing in
+the application changes.
+
+- **Premaking months.** `uc_ensure_event_partitions(months_ahead)` creates the
+  current month plus a buffer. The deploy calls it on every upgrade, and
+  `polaris-partition-maintenance.timer` runs it monthly (the 2nd at 04:00 UTC).
+  A month with no partition is not data loss (the row lands in the DEFAULT
+  partition) but forfeits fast detach-based purge for that month, so keep the
+  timer running. Run it by hand against the stack with
+  `scripts/polaris-partition-maintenance.sh`.
+- **Fast purge.** `uc_detach_event_partitions_before(cutoff)` detaches every
+  whole month at or below the cutoff in O(1) (metadata only) and re-adds the
+  append-only trigger to each detached table, which stays immutable until you
+  archive and drop it. The retention purge (`uc_archive_purge`) still works by
+  row-level DELETE; detach is the fast complement for whole months.
+- **Inspect.** `\d+ verificationevent` lists the partitions; a row's home is
+  `SELECT tableoid::regclass FROM verificationevent WHERE …`.
+- **Upgrading a large pre-v9.245 deployment.** The migration converts the tables
+  in place (it attaches the existing table as the DEFAULT partition, no copy);
+  its only non-instant step is re-creating the indexes on that partition. On a
+  very large table, build them `CONCURRENTLY` out of band before the migration
+  so it adopts them instead of rebuilding.
+
 ### Read replica: for atlas-dominated read load
 
 **Inflection:** the atlas API (`/api/atlas/*`) dominates request volume AND

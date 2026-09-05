@@ -25,6 +25,7 @@ and the posture documents see [reference/](../reference/README.md).
 | [rate-limiter.md](rate-limiter.md) | The per-IP defence, its backend, and its failure mode |
 | [atlas-scaling.md](atlas-scaling.md) | How the map stays bounded as the event log grows |
 | [retention.md](retention.md) | How long the record is kept, who decided that, and why the purge obeys it |
+| [partitioning.md](partitioning.md) | Why the event tables are monthly-partitioned, how C1 holds across attach and detach, and the online conversion |
 
 ## One mechanism each
 

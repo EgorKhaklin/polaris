@@ -1,5 +1,7 @@
 # DATA-MODEL.md: schema reference
 
+> **Event-table partitioning (v9.245, roadmap P2.1).** The four append-only event tables — TokenLifecycleEvent, VerificationEvent, EnrollmentStatusEvent, AuthAuditLog — are monthly range-partitioned on `event_timestamp` with a composite primary key `(id, event_timestamp)` and a DEFAULT catch-all partition. This is transparent to every query; see [../design/partitioning.md](../design/partitioning.md).
+
 **Reader:** an integrator or reviewer who needs to know what each table
 holds and which invariant guards it. **Job:** every table in the schema
 and its migrations, grouped, with the constraint that makes each

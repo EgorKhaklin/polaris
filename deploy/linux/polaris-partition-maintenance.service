@@ -1,0 +1,14 @@
+# polaris-partition-maintenance.service: premake the event tables' monthly
+# partitions on the running stack (roadmap P2.1, v9.245). Driven by
+# polaris-partition-maintenance.timer (monthly). Touches only partition
+# metadata on the live database; it never moves or deletes a row.
+[Unit]
+Description=Polaris event-table partition maintenance (premake monthly partitions)
+Requires=docker.service
+After=docker.service polaris.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=__INSTALL_DIR__
+EnvironmentFile=__ENV_FILE__
+ExecStart=__INSTALL_DIR__/scripts/polaris-partition-maintenance.sh

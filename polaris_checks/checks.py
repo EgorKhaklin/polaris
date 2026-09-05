@@ -2059,7 +2059,9 @@ def _schema_table_counts(root: pathlib.Path) -> tuple[int, int]:
     The second number adds every table the loader's other files create (the
     schema_version registry from 00_migrations_table.sql) and every table a
     migration adds to a running database."""
-    pat = r"^CREATE TABLE (?:IF NOT EXISTS )?(\w+)"
+    # v9.245: a "CREATE TABLE X PARTITION OF Y" is a partition of Y, not a
+    # logical table of its own; exclude it from the table count.
+    pat = r"^CREATE TABLE (?:IF NOT EXISTS )?(\w+)(?!.*PARTITION OF)"
     base = set(re.findall(pat, _read(root, "polaris_sql/01_schema.sql"), re.M))
     deployed = set(base)
     sql_dir = root / "polaris_sql"
@@ -4152,7 +4154,9 @@ def check_schema_reload_idempotent(root: pathlib.Path) -> list[Finding]:
         sources += [(p.name, p.read_text(encoding="utf-8")) for p in sorted(mig_dir.glob("*.up.sql"))]
     missing = []
     for rel, text in sources:
-        for name in re.findall(r"(?im)^CREATE TABLE(?:\s+IF NOT EXISTS)?\s+(\w+)", text):
+        # v9.245: partitions ("CREATE TABLE X PARTITION OF Y") drop with their
+        # parent (DROP TABLE Y cascades), so they need no drop-list entry.
+        for name in re.findall(r"(?im)^CREATE TABLE(?:\s+IF NOT EXISTS)?\s+(\w+)(?!.*PARTITION OF)", text):
             if name.lower() not in dropped:
                 missing.append(f"{rel}:{name}")
     if missing:
@@ -4497,6 +4501,80 @@ def check_ha_automation(root: pathlib.Path) -> list[Finding]:
                "HAProxy routing on the role endpoints; a leader without its lease demotes itself (failsafe off); the "
                "drill crashes the leader, partitions it from the lease store, switches over and crashes an etcd member "
                "under a live write stream against ceilings on every push; FAILOVER.md carries the split-brain analysis")
+
+
+def check_event_table_partitioning(root: pathlib.Path) -> list[Finding]:
+    """Roadmap P2.1 (v9.245): the four append-only event tables are monthly
+    range-partitioned on event_timestamp, born partitioned in the canonical
+    schema with a manager that premakes months and detaches old ones, an
+    online migration that converts a pre-v9.245 database in place, and a CI
+    drill that proves append-only holds across a partition, an attach, and a
+    detach."""
+    schema = _read(root, "polaris_sql/01_schema.sql")
+    if not schema:
+        return _fail("event_partitioning", "polaris_sql/01_schema.sql is missing")
+    tables = ("TokenLifecycleEvent", "VerificationEvent", "EnrollmentStatusEvent", "AuthAuditLog")
+    for t in tables:
+        # the CREATE TABLE block must declare RANGE partitioning on event_timestamp,
+        # a composite PK including event_timestamp, and a DEFAULT partition.
+        # (?:(?!CREATE TABLE).)*? keeps the match inside this table's own block:
+        # it cannot span to another table's PARTITION BY RANGE, while still
+        # tolerating a ";" that appears inside a column comment.
+        block = re.search(rf"CREATE TABLE {t} \((?:(?!CREATE TABLE).)*?\)\s*PARTITION BY RANGE \(event_timestamp\);", schema, re.S)
+        if not block:
+            return _fail("event_partitioning", f"{t} must be declared PARTITION BY RANGE (event_timestamp) in 01_schema.sql")
+        if not re.search(r"PRIMARY KEY \(\w+, event_timestamp\)", block.group(0)):
+            return _fail("event_partitioning", f"{t} must have a composite PRIMARY KEY (id, event_timestamp)")
+        if f"CREATE TABLE {t}_default PARTITION OF {t} DEFAULT;" not in schema:
+            return _fail("event_partitioning", f"{t} must have a DEFAULT partition ({t}_default) for out-of-window rows")
+    # the manager: premake months + detach old ones, and a bootstrap call
+    for needle in ("PROCEDURE uc_ensure_event_partitions", "PROCEDURE uc_detach_event_partitions_before",
+                   "CALL uc_ensure_event_partitions();"):
+        if needle not in schema:
+            return _fail("event_partitioning", f"01_schema.sql must define/bootstrap the partition manager ({needle!r})")
+    # the online migration converts a pre-v9.245 database in place
+    mig = _read(root, "polaris_sql/migrations/2026-09-05-003-event-table-partitioning.up.sql")
+    down = _read(root, "polaris_sql/migrations/2026-09-05-003-event-table-partitioning.down.sql")
+    if not mig or not down:
+        return _fail("event_partitioning", "the partitioning migration (2026-09-05-003 up + down) is missing")
+    if "uc_convert_event_table_to_partitioned" not in mig or "already partitioned" not in mig:
+        return _fail("event_partitioning", "the up migration must define an idempotent uc_convert_event_table_to_partitioned "
+                     "(a no-op on an already-partitioned table)")
+    for t in ("tokenlifecycleevent", "verificationevent", "enrollmentstatusevent", "authauditlog"):
+        if f"uc_convert_event_table_to_partitioned('{t}'" not in mig:
+            return _fail("event_partitioning", f"the up migration must convert {t}")
+    if "ATTACH PARTITION" not in mig or "DEFAULT" not in mig:
+        return _fail("event_partitioning", "the conversion must attach the existing table as the DEFAULT partition "
+                     "(its rows stay in place; no copy)")
+    if "uc_departition_event_table" not in down:
+        return _fail("event_partitioning", "the down migration must departition (revert to plain tables), preserving rows")
+    # the CI drill
+    drill = _read(root, "scripts/polaris-partition-drill.sh")
+    ci = _read(root, ".github/workflows/ci.yml")
+    if not drill:
+        return _fail("event_partitioning", "scripts/polaris-partition-drill.sh is missing")
+    for needle in ("uc_ensure_event_partitions", "DETACH PARTITION", "insufficient_privilege",
+                   "uc_convert_event_table_to_partitioned", "ATTACH PARTITION"):
+        if needle not in drill:
+            return _fail("event_partitioning", f"polaris-partition-drill.sh must exercise {needle!r}: the manager, a "
+                         "detach, append-only across a partition, and the online conversion")
+    if "polaris-partition-drill.sh" not in ci:
+        return _fail("event_partitioning", "ci.yml must run scripts/polaris-partition-drill.sh")
+    # ongoing premake: a standing monthly job keeps partitions ahead of now()
+    maint = _read(root, "scripts/polaris-partition-maintenance.sh")
+    timer = _read(root, "deploy/linux/polaris-partition-maintenance.timer")
+    install = _read(root, "deploy/linux/install.sh")
+    if not maint or "uc_ensure_event_partitions" not in maint:
+        return _fail("event_partitioning", "scripts/polaris-partition-maintenance.sh must call uc_ensure_event_partitions "
+                     "(the standing job that keeps partitions ahead of now())")
+    if not timer or "OnCalendar" not in timer or "polaris-partition-maintenance.timer" not in install:
+        return _fail("event_partitioning", "the monthly polaris-partition-maintenance.timer must be installed by "
+                     "deploy/linux/install.sh")
+    return _ok("event_partitioning",
+               "the four event tables are monthly range-partitioned (composite PK, DEFAULT catch-all), a manager "
+               "premakes and detaches months, an idempotent online migration converts a pre-v9.245 database by "
+               "attaching its table as DEFAULT (no copy) and reverts by departitioning, and a CI drill proves "
+               "append-only holds across a partition, an attach, and a detach")
 
 
 # ---------------------------------------------------------------------------
@@ -5006,6 +5084,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_dr_drill_scheduled,
     check_chaos_program,
     check_ha_automation,
+    check_event_table_partitioning,
     check_stated_counts,
     check_c1c10_objects_resolve,
     check_helm_chart_version_current,

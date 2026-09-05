@@ -214,6 +214,16 @@ jobs:
       - name: Retention drill (per-class archive + purge, end to end)
         run: bash scripts/polaris-retention-drill.sh
 
+      # v9.245 (roadmap P2.1) — event-table partitioning, exercised. The four
+      # append-only event tables ship monthly range-partitioned; the drill
+      # proves a future row lands in a monthly partition, append-only holds on
+      # a partition and across an attach and a detach (the detach re-adds the
+      # trigger), the online conversion turns a populated non-partitioned table
+      # partitioned in place preserving rows, and the retention DELETE carve-out
+      # still routes across partitions. Pinned by check_event_table_partitioning.
+      - name: Partition drill (monthly partitions + append-only across attach/detach + online conversion)
+        run: bash scripts/polaris-partition-drill.sh
+
       - name: Abuse-controls drill (quota under load + alert unit tests, redis backend)
         env:
           POLARIS_RATE_LIMIT_BACKEND: redis
