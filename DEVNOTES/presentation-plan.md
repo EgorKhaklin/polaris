@@ -43,16 +43,25 @@ it:
 - **A second image format for the Atlas captures.** Measured at v9.218: WebP
   at quality 92 would cut them by three and a half times. Not applied, because
   the project has not decided to carry two formats for one picture.
-- **The remaining Phase 1 rows**, P1.11 (the retention engine) and P1.12 (the
+- ~~**The remaining Phase 1 rows**, P1.11 (the retention engine) and P1.12 (the
   external penetration test), which are engineering and external work rather
-  than presentation.
+  than presentation.~~ P1.11 shipped at v9.234 to v9.236, in three ships: the
+  engine, the per-class purge, and the operator surface. It found two defects
+  the pass had left standing, both in the archive chain rather than in
+  presentation: the purge never verified an archive against its own manifest
+  before deleting, and `scripts/polaris-test.sh` ran one suite while the
+  preflight said it ran five. P1.12 stays open and is gated on funding and a
+  firm.
 
 ## Rulings the critic forced, applied throughout
 
 - QUICKSTART.md is deleted (shipped v9.197); its walkthrough and route table
   live in ARCHITECTURE-OVERVIEW.md. No later ship edits QUICKSTART.
-- The table count is stated once as "29 in `01_schema.sql`, 33 in a migrated
-  deployment"; `check_table_count_matches_doc` accepts exactly those two.
+- The table count is stated once, in one shape, and the check accepts exactly
+  the two current numbers. It was "29 in `01_schema.sql`, 33 in a migrated
+  deployment" through the pass; `RetentionPolicy` (v9.234) and the per-class
+  purge columns made it 30 and 34. The ruling is the discipline, not the
+  digits: one shape, restamped everywhere on the ship that changes it.
 - SLH-DSA is ruled once, on every surface: registered in the algorithm table,
   no signer wired (shipped v9.194).
 - The em-dash sweep is far larger than the plan assumed (docs 298, DEVNOTES
