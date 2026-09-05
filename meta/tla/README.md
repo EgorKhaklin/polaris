@@ -1,84 +1,60 @@
-# `meta/tla/`: formal-verification demonstrator
+# meta/tla/: the formal-verification demonstrator
 
-**Status:** Demonstrator artifact, NOT maintained verification
-infrastructure.
-**Last reviewed:** 2026-05-15 (v9.23)
+**Reader:** an assessor who found a TLA+ spec and wants to know how much weight
+it carries. **Job:** one spec, one constraint, checked once to show the
+technique. This is not maintained verification infrastructure, and nothing in
+CI re-checks it.
 
-## What this directory IS
+## What the spec models
 
-A demonstration of the TLA+ technique applied to ONE Polaris
-constraint (C3: one identity per person). The spec
-`c3-one-active-token.tla` models the schema-level partial unique
-index + the application-layer FOR UPDATE locking, and shows that
-the C3 invariant holds under all interleavings of concurrent
-issue/revoke operations.
+`c3-one-active-token.tla` models C3, one active token per person: the
+schema-level partial unique index and the `FOR UPDATE` locking inside
+`uc1_issue_and_activate`, and shows the invariant holding under every
+interleaving of concurrent issue and revoke operations.
 
-## What this directory is NOT
+- **State:** the `IdentityToken` rows (id, individual, status) and the locks
+  held by the transactions in flight.
+- **Actions:** acquire a lock, issue a token, revoke a token, release a lock.
+- **Invariant:** no two ACTIVE tokens share an individual, in any reachable
+  state.
 
-Ongoing verification infrastructure. The broader scope of "ship TLA+
-specs for C1, C2, C3" is deliberately out of scope: the maintenance
-burden of keeping multiple specs in sync with schema changes
-outweighs the marginal value when:
+It does not model the PostgreSQL implementation of the index itself, which
+`08_tests.sql` exercises against a real database, nor any cryptography, nor the
+other nine constraints.
 
-- Hypothesis property tests (`test_invariants_property.py`) already
-  cover C1, C2, C3 with randomized inputs
-- Schema-level CHECK constraints and partial unique indexes enforce
-  the constraints at the database level
-- The invariant layer (`polaris_checks/checks.py`, one `check_*` per
-  invariant with a detection test) pins the enforcement primitives in place
+## Why there is only one
 
-This single spec is shipped as a demonstrator artifact. If formal
-verification should later become a maintained surface, that's a
-separate ship.
+A standing set of specs would have to be kept in step with the schema on every
+change, and a model that has drifted from the schema it claims to describe is
+worse than no model. Meanwhile the properties are already covered where they
+bind: Hypothesis property tests over C1, C2 and C3 with randomised inputs, the
+CHECK constraints and partial unique indexes in the database, and one
+`check_*` per invariant in the check layer with a detection test.
 
-## Running the spec
+Specs for C1, C2 or C7 would each be a deliberate ship, taken with that
+maintenance cost accepted. The default is to leave this as the one
+demonstrator.
 
-Requires TLA+ Toolbox or TLC command-line. With TLC:
+## Running it
+
+Requires the TLA+ tools (`brew install tla-plus-tools`, or the Toolbox). The
+spec ships without a TLC configuration file; the one it expects is written out
+in a comment at the foot of the spec, so create it first:
 
 ```bash
-# Install TLA+ tools
-brew install tla-plus-tools   # macOS
-# or download from https://lamport.azurewebsites.net/tla/tla.html
-
-# Run TLC with a config file
-tlc -config C3OneActiveToken.cfg C3OneActiveToken.tla
+cd meta/tla
+cat > c3-one-active-token.cfg <<'CFG'
+SPECIFICATION Spec
+CONSTANTS
+    Individuals = {1, 2}
+    MaxTokens = 4
+    MaxOperations = 12
+INVARIANT C3_OneActiveTokenPerIndividual
+INVARIANT TypeOK
+CFG
+tlc -config c3-one-active-token.cfg c3-one-active-token.tla
 ```
 
-Expected output (abbreviated):
-
-```
-TLC2 Version 2.18 ...
-Computing initial states...
-Finished computing initial states: 1 distinct state.
-Progress(N) at ...: 9,847 states generated, 2,103 distinct states.
-...
-Model checking completed. No error has been found.
-```
-
-## What the spec covers
-
-- **State:** the set of `IdentityToken` rows (id, individual_id,
-  status) + the set of FOR UPDATE locks held by active transactions
-- **Actions:** AcquireLock, IssueToken, RevokeToken, ReleaseLock
-- **Invariant:** C3_OneActiveTokenPerIndividual, no two ACTIVE
-  tokens may share an individual_id at any reachable state
-
-## What the spec does NOT cover
-
-- The PostgreSQL-internal implementation of the partial unique
-  index (the spec models the constraint; the implementation is
-  checked in `08_tests.sql`)
-- Cryptographic verification (signing, ZK proofs, anchoring)
-- The application-layer authentication
-- Other constraints C1, C2, C4-C10
-
-## Future specs (NOT planned in v9.23)
-
-Candidates if the scope is ever reopened:
-
-- C1 audit-of-record: state machine of append-only behaviors
-- C2 zero-knowledge: information-flow proof of disclosure separation
-- C7 cryptographic-rotation: state machine of algorithm transitions
-
-Each would require a separate ship. Default action: leave this
-directory as the one demonstrator.
+A passing run reports model checking completed with no error found, after
+generating a few thousand states. The configuration is not committed because
+nothing re-runs it: writing it is part of choosing to check the spec.

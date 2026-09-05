@@ -5,6 +5,21 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.229 — 2026-09-05 (the last two indexes stop describing themselves by what they are not)
+
+`meta/README.md` and `meta/tla/README.md` were the two survivors of the
+"What this directory is NOT" pattern the pass removed everywhere else, and the
+TLA+ index carried a run command for a file that does not exist.
+
+- **Both open with a reader and a job**, list what they hold, and point at
+  `docs/design/` for the mechanism records that moved there, rather than
+  defining themselves against three other directories.
+- **The TLA+ run instructions work.** The spec ships without a TLC
+  configuration; the previous command named a `.cfg` and a `.tla` that are not
+  in the directory. The README now writes the configuration out, from the
+  comment at the foot of the spec, and says why it is not committed: nothing
+  re-runs it, so creating it is part of choosing to check the spec.
+
 ## v9.228 — 2026-09-05 (the README routes a reader to the design records)
 
 The design set moved into the published documentation at v9.224 and the front
