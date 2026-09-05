@@ -9,7 +9,8 @@
 #
 # What it adds:
 #   postgres, postgres2   the same database image, run by Patroni instead of
-#                         the stock entrypoint: Patroni bootstraps one member,
+#                         the stock entrypoint (started as root and dropped to
+#                         postgres, like the stock one): Patroni bootstraps one member,
 #                         clones the other with pg_basebackup, keeps the
 #                         leader lease in etcd, promotes the replica when the
 #                         leader's lease lapses, and rejoins a returning old
@@ -34,7 +35,6 @@
 services:
   postgres:
     command: ["/usr/local/bin/polaris-patroni-entrypoint.sh"]
-    user: postgres
     environment:
       POLARIS_PATRONI_NAME: postgres
       POLARIS_PATRONI_SCOPE: polaris
@@ -66,7 +66,6 @@ services:
       service: postgres
     container_name: polaris-postgres2
     command: ["/usr/local/bin/polaris-patroni-entrypoint.sh"]
-    user: postgres
     environment:
       POLARIS_PATRONI_NAME: postgres2
       POLARIS_PATRONI_SCOPE: polaris

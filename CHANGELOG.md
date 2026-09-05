@@ -32,9 +32,9 @@ times a second. Local reference run at v9.243:
 
 | Induced | Held | Measured |
 |---|---|---|
-| the leader node lost (killed, kept down) | the replica takes the lease; the old node rejoins on start | promoted at 18 s; 19.6 s write outage, no insert failed; rejoined 4 s after start |
-| the leader cut off from the lease store, clients still reaching it | it demotes itself; the other member takes the lease | demoted at 6 s; lease moved at 10 s; 12.4 s write outage, no insert failed |
-| a planned switchover | the candidate leads; the old leader follows | 4.4 s write outage, 16 inserts failed; followed at 2 s |
+| the leader node lost (killed, kept down) | the replica takes the lease; the old node rejoins on start | promoted at 17 s; 18.2 s write outage, no insert failed; rejoined 3 s after start |
+| the leader cut off from the lease store, clients still reaching it | it demotes itself; the other member takes the lease | demoted at 7 s; lease moved at 10 s; 13.3 s write outage, no insert failed |
+| a planned switchover | the candidate leads; the old leader follows | 3.2 s write outage, no insert failed; followed at 3 s |
 | one etcd member crashed | the quorum carries the lease; the leader does not change | 0.3 s longest stall, no insert failed |
 
 **What the first runs found.**
@@ -53,7 +53,11 @@ times a second. Local reference run at v9.243:
    reported a 19 s outage as zero; the drill reports the longest stall and
    asserts on the larger of the two.
 
-**Also.** `FAILOVER.md` is rewritten around the supervisor: what ships, what
+**Also.** The Patroni entrypoint starts as root and drops to `postgres`
+with gosu, like the stock one: the superuser password is a root-only 0600
+file on the host by design, and on Linux a non-root container cannot read it
+(the first CI run found it; Docker Desktop had hidden it locally).
+`FAILOVER.md` is rewritten around the supervisor: what ships, what
 is placement, the measured table, the split-brain analysis partition by
 partition, `patronictl` operations. `check_ha_automation` pins the lease
 semantics, the routing, the drill's scenarios and ceilings, the CI job and

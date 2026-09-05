@@ -1201,7 +1201,7 @@ jobs:
         working-directory: polaris_web
         run: |
           set -e
-          docker compose -f docker-compose.prod.yml $POLARIS_COMPOSE_EXTRA up -d
+          docker compose -f docker-compose.prod.yml $POLARIS_COMPOSE_EXTRA up -d || true   # the wait loop reports
           for i in $(seq 1 90); do
             code=$(curl -sk https://localhost:8443/api/health -o /dev/null -w '%{http_code}' || true)
             [ "$code" = 200 ] && { echo "edge healthy after check $i"; break; }
