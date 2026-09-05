@@ -25,6 +25,10 @@ jobs:
     name: Induced failures against the booted stack
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    env:
+      # Every compose invocation needs the domain, the teardown included.
+      POLARIS_DOMAIN: localhost
+      COMPOSE_FILES: -f docker-compose.prod.yml -f docker-compose.citest.yml -f docker-compose.bluegreen.yml
     steps:
       - uses: actions/checkout@v7
         with:
@@ -35,25 +39,22 @@ jobs:
         run: bash scripts/polaris-image-build.sh --stack prod
 
       - name: Generate secrets and boot the blue-green stack
-        env:
-          POLARIS_DOMAIN: localhost
         run: |
           bash scripts/polaris-generate-secrets.sh
           cd polaris_web
-          docker compose -f docker-compose.prod.yml -f docker-compose.citest.yml -f docker-compose.bluegreen.yml up -d
+          docker compose $COMPOSE_FILES up -d
           for i in $(seq 1 60); do
             if curl -sk -o /dev/null -w '%{http_code}' https://localhost:8443/api/health | grep -q 200; then
               echo "stack healthy after ${i}s"; exit 0
             fi
             sleep 1
           done
-          echo "::error::stack did not become healthy"; docker compose -f docker-compose.prod.yml -f docker-compose.citest.yml -f docker-compose.bluegreen.yml logs --tail=50; exit 1
+          echo "::error::stack did not become healthy"; docker compose $COMPOSE_FILES logs --tail=50; exit 1
 
       - name: Chaos drill, recorded
         id: drill
         continue-on-error: true
         env:
-          POLARIS_DOMAIN: localhost
           POLARIS_COMPOSE_EXTRA: "-f docker-compose.citest.yml -f docker-compose.bluegreen.yml"
           POLARIS_CHAOS_MODE: ci
           POLARIS_CHAOS_OUT: /tmp/chaos-drill.json
@@ -78,7 +79,7 @@ jobs:
 
       - name: Tear the stack down
         if: always()
-        run: cd polaris_web && docker compose -f docker-compose.prod.yml -f docker-compose.citest.yml -f docker-compose.bluegreen.yml down -v
+        run: cd polaris_web && docker compose $COMPOSE_FILES down -v
 
       - name: Fail the run if the drill failed
         if: steps.drill.outcome == 'failure'
