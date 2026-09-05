@@ -37,6 +37,11 @@ does.
   a capability back, if it stops publishing 80/443 onto 8080/8443, or if
   `Dockerfile.caddy` runs as root or sets no user.
 
+Also: the duress-page drill now pulls its three digest-pinned images up front
+with retries (five attempts, backing off from 15 s), because a registry error
+on the runner turned this ship's first CI run red before the drill had proven
+anything. The edge jobs had all passed; the rerun passed.
+
 Proven locally with the built image: `caddy validate` accepts the production
 Caddyfile, the process runs as uid 1000 with its state directories writable,
 listens on 8080 and 8443, answers HTTP with a 301 to `https://<domain>/…`

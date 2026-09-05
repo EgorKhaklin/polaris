@@ -52,6 +52,22 @@ cleanup() {
 trap cleanup EXIT
 fail() { echo "::error::$*" >&2; exit 1; }
 
+# v9.239 — pull each image up front, with retries. A digest-pinned image is
+# still fetched from a registry, and a registry error on the runner turned a
+# green edge change red (the v9.239 run failed on "Get registry-1.docker.io"
+# before the drill had proven anything). Same policy as the image-build
+# helper: five attempts, 15 s before the second, doubling after that.
+pull_with_retry() {
+    local image="$1" attempt=1 wait=15
+    while :; do
+        if docker pull -q "$image" >/dev/null 2>&1; then return 0; fi
+        if [ "$attempt" -ge 5 ]; then fail "could not pull $image after $attempt attempts"; fi
+        echo "  pull of $image failed (attempt $attempt/5); retrying in ${wait}s" >&2
+        sleep "$wait"; attempt=$((attempt + 1)); wait=$((wait * 2))
+    done
+}
+for image in "$PROM_IMAGE" "$AM_IMAGE" "$PY_IMAGE"; do pull_with_retry "$image"; done
+
 echo "== 1. the shipped configs validate (promtool + amtool) =="
 docker run --rm -v "$OBS:/obs:ro" --entrypoint promtool "$PROM_IMAGE" check rules /obs/polaris-alerts.yml
 docker run --rm -v "$OBS:/obs:ro" --entrypoint promtool "$PROM_IMAGE" check config /obs/prometheus.yml
