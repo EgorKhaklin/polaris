@@ -78,8 +78,10 @@ h1{font-size:clamp(44px,7vw,76px);font-weight:750;letter-spacing:.3em;margin:0 0
 .skip:focus{left:10px;top:10px;z-index:100;background:var(--bg1);color:var(--ink);
     padding:10px 14px;border:1px solid var(--gold);border-radius:3px}
 .masthead{position:sticky;top:0;z-index:50;display:flex;align-items:center;gap:8px 26px;flex-wrap:wrap;
-    padding:11px 22px;background:rgba(5,10,18,.88);border-bottom:1px solid var(--line);
+    padding:11px 22px;background:var(--void);border-bottom:1px solid var(--line);
     font-family:var(--font-mono);font-size:10.5px;letter-spacing:.18em;text-transform:uppercase}
+/* Anchored sections start below the sticky bar rather than under it. */
+section[id]{scroll-margin-top:54px}
 .masthead .brand{color:var(--gold-bright);font-weight:700;letter-spacing:.34em}
 .masthead nav{display:flex;gap:20px;flex-wrap:wrap}
 .masthead a{color:var(--ink-dim)}

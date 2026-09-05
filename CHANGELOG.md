@@ -5,6 +5,17 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.227 — 2026-09-04 (the sticky masthead stops showing the page through itself)
+
+Read on the published site rather than in a local file: the navigation bar
+added at v9.217 carried a 12 percent transparent background, so scrolled
+content, code blocks especially, bled through it. Anchor links also landed
+their heading underneath the bar.
+
+- The bar is opaque, and every anchored section carries a scroll margin the
+  height of the bar, so a link from the navigation lands its heading in view
+  rather than behind it.
+
 ## v9.226 — 2026-09-04 (the presentation pass is closed: twenty-nine ships, five roadmap rows, three defects nobody had seen)
 
 The rework the owner authorized on 2026-09-02 covered every human-facing
