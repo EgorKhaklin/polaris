@@ -82,7 +82,7 @@ database from before v9.245 has plain tables; the migration
 2. gives the existing table the composite key, drops its append-only trigger
    and its non-primary indexes (freeing their names);
 3. renames the shadow to the canonical name and **attaches the existing table
-   as the `DEFAULT` partition** — its rows stay physically in place, no copy;
+   as the `DEFAULT` partition** (its rows stay physically in place, no copy);
 4. re-creates the indexes and the append-only trigger on the parent, and
    premakes the monthly window.
 
