@@ -222,6 +222,7 @@ No single row is novel. The contribution is the assembly: all five properties in
 | Reading the security posture | [SECURITY.md](SECURITY.md) · [PQC-POSTURE](docs/reference/PQC-POSTURE.md) · [RED-TEAM-SCOPE](docs/RED-TEAM-SCOPE.md) · [threat model](docs/design/threat-model.md) |
 | Integrating against it | [API](docs/reference/API.md) · [DATA-MODEL](docs/reference/DATA-MODEL.md) · [GLOSSARY](docs/reference/GLOSSARY.md) |
 | Operating a deployment | [docs/operator/](docs/operator/README.md), seventeen runbooks and ledgers from install to disaster recovery |
+| Asking why a mechanism is built this way | [docs/design/](docs/design/README.md), one record per mechanism plus the cross-cutting notes |
 | Reading it as an academic artifact | [The project report](docs/paper/polaris_project_report.pdf) (PDF, same license) · [CITATION.cff](CITATION.cff) |
 | Working on the code, human or AI agent | [CONTRIBUTING.md](CONTRIBUTING.md) · [CLAUDE.md](CLAUDE.md) · [CHANGELOG.md](CHANGELOG.md) |
 

@@ -5,6 +5,16 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.228 — 2026-09-05 (the README routes a reader to the design records)
+
+The design set moved into the published documentation at v9.224 and the front
+page never learned about it: a reader asking why a mechanism works the way it
+does had no row in the routing table, only the six links inside the hard-parts
+section.
+
+- The Documentation table gains the row, between operating a deployment and
+  reading the report.
+
 ## v9.227 — 2026-09-04 (the sticky masthead stops showing the page through itself)
 
 Read on the published site rather than in a local file: the navigation bar
