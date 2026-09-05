@@ -57,7 +57,18 @@ VERSION="$(sed -n 's/^__version__: str = "\(.*\)"/\1/p' "$ROOT/polaris_web/__ver
 GIT="$(git -C "$ROOT" rev-parse --short HEAD 2>/dev/null || echo unknown)"
 DCS_NET=""; PARTITIONED=""; PARTITION_ALIAS_ARGS=()
 
-fail() { echo "::error::$*" >&2; exit 1; }
+diagnose() {  # what the cluster looked like when a scenario failed; the CI job tears the stack down afterwards
+    echo "--- diagnostics ---" >&2
+    for m in postgres postgres2; do
+        echo "[$m] /cluster: $(rest "$m" /cluster 2>/dev/null || echo unreachable)" >&2
+        echo "[$m] /patroni: $(rest "$m" /patroni 2>/dev/null || echo unreachable)" >&2
+        echo "[$m] last 40 log lines:" >&2; docker logs --tail 40 "polaris-$m" 2>&1 | sed 's/^/    /' >&2
+    done
+    echo "[pg-router] last 15 log lines:" >&2; docker logs --tail 15 polaris-pg-router 2>&1 | sed 's/^/    /' >&2
+    for e in etcd1 etcd2 etcd3; do echo "[$e] $(docker inspect -f '{{.State.Status}} health={{.State.Health.Status}}' "polaris-$e" 2>/dev/null)" >&2; done
+    echo "[writer] last 12 lines:" >&2; tail -12 "$WORK/state/writes.log" 2>/dev/null | sed 's/^/    /' >&2
+}
+fail() { echo "::error::$*" >&2; diagnose; exit 1; }
 cleanup() {
     if [[ -n "${TRAFFIC_PID:-}" ]]; then kill -TERM "$TRAFFIC_PID" 2>/dev/null || true; wait "$TRAFFIC_PID" 2>/dev/null || true; fi
     docker rm -f "$WRITER" >/dev/null 2>&1 || true
