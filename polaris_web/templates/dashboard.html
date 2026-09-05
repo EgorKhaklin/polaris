@@ -1,333 +1,237 @@
-{# AI-context: 6 panels, server-side data aggregation. CSP-safe: no inline scripts. See docs/design/atlas-scaling.md (analytics queries follow same patterns). #}
+{# The operations page (v9.238): service state, the token population, verification
+   behaviour, what needs a human, the cryptographic posture, and the audit of
+   record. Every figure is a bounded aggregate. CSP-safe: no inline scripts. #}
 {% extends "base.html" %}
-{% block title %}Dashboard{% endblock %}
+{% block title %}Operations{% endblock %}
 {% block body_class %} body-dashboard{% endblock %}
 {% block content %}
-<h1>System Dashboard</h1>
-<p class="subtitle">Schema-wide row counts, the analytical breakdown of the Polaris infrastructure, and the active-token roster. Live operational investigation lives on the <a href="{{ url_for('atlas') }}">Atlas</a>.</p>
+{% set privileged_view = current_user.role in ('admin', 'auditor') %}
 
-<h2>Schema Statistics</h2>
-<div class="stats-grid">
-    {% set principal_tables = ['Individual', 'Agency', 'CryptographicAlgorithm', 'VerificationContext'] %}
-    {% set core_tables = ['IdentityToken'] %}
-    {% set record_tables = ['TokenLifecycleEvent', 'VerificationEvent', 'DeviceBinding', 'BlockchainAnchor', 'RevocationList'] %}
-    {% set junction_tables = ['AgencyAlgorithmAuth', 'TokenPermission'] %}
-    {% for tbl, n in stats.items() %}
-        <div class="stat-card">
-            <div class="label">{{ tbl|camel_wbr }}</div>
-            <div class="value">{{ n }}</div>
-            <div class="sublabel">
-                {% if tbl in principal_tables %}principal
-                {%- elif tbl in core_tables %}central artifact
-                {%- elif tbl in record_tables %}record
-                {%- elif tbl in junction_tables %}junction
-                {%- endif %}
+<div class="ops-head">
+    <div>
+        <h1>Operations</h1>
+        <p class="subtitle">
+            {% if environment.label %}{{ environment.label }}{% elif environment.production %}Production{% else %}Notional data{% endif %}
+            · Polaris {{ environment.version }}
+            · as of {{ as_of.strftime('%Y-%m-%d %H:%M') }} UTC
+        </p>
+    </div>
+    <div class="ops-head-links">
+        <a href="{{ url_for('atlas') }}">Atlas</a>
+        <a href="{{ url_for('api_health') }}">Health JSON</a>
+    </div>
+</div>
+
+{# ---- Service ---------------------------------------------------------- #}
+<section class="ops-section" aria-labelledby="svc-h">
+    <div class="ops-section-head">
+        <h2 id="svc-h">Service</h2>
+        <span class="svc-overall svc-{{ service_overall }}">{{ service_overall }}</span>
+    </div>
+    <div class="svc-strip">
+        {% for c in service %}
+        <div class="svc svc-{{ c.status }}">
+            <span class="svc-dot" aria-hidden="true"></span>
+            <span class="svc-name">{{ c.label }}</span>
+            <span class="svc-detail">{{ c.detail }}</span>
+        </div>
+        {% endfor %}
+        <div class="svc {% if signing.real %}svc-healthy{% elif environment.production %}svc-unhealthy{% else %}svc-degraded{% endif %}">
+            <span class="svc-dot" aria-hidden="true"></span>
+            <span class="svc-name">Signing</span>
+            <span class="svc-detail">{{ signing.algorithm }} · {{ signing.backend }}{% if signing.custody and signing.custody.driver %} · custody {{ signing.custody.driver }}{% endif %}{% if signing.real and signing.second_witness %} · two witnesses{% endif %}</span>
+        </div>
+    </div>
+</section>
+
+{# ---- Population and activity ----------------------------------------- #}
+<div class="atlas-row">
+    <section class="atlas-panel" aria-labelledby="tok-h">
+        <div class="ops-section-head">
+            <h2 id="tok-h">Tokens</h2>
+            <a class="ops-more" href="{{ url_for('tokens_list') }}">All tokens</a>
+        </div>
+        <div class="kpi-row">
+            <div class="kpi kpi-primary"><span class="kpi-value">{{ tokens.by_status.ACTIVE }}</span><span class="kpi-label">active</span></div>
+            <div class="kpi"><span class="kpi-value">{{ tokens.by_status.RESERVE }}</span><span class="kpi-label">reserve</span></div>
+            <div class="kpi"><span class="kpi-value">{{ tokens.by_status.REVOKED }}</span><span class="kpi-label">revoked</span></div>
+            <div class="kpi"><span class="kpi-value">{{ tokens.by_status.LOST }}</span><span class="kpi-label">lost</span></div>
+            <div class="kpi"><span class="kpi-value">{{ tokens.by_status.EXPIRED }}</span><span class="kpi-label">expired</span></div>
+            <div class="kpi"><span class="kpi-value">{{ tokens.by_status.DORMANT }}</span><span class="kpi-label">dormant</span></div>
+        </div>
+        <table class="data compact">
+            <thead><tr><th>Lifecycle events</th><th class="num">24 h</th><th class="num">7 d</th></tr></thead>
+            <tbody>
+                <tr><td>Issued</td><td class="num">{{ tokens.issued['24h'] }}</td><td class="num">{{ tokens.issued['7d'] }}</td></tr>
+                <tr><td>Revoked</td><td class="num">{{ tokens.revoked['24h'] }}</td><td class="num">{{ tokens.revoked['7d'] }}</td></tr>
+            </tbody>
+        </table>
+        <p class="ops-note">{{ tokens.expiring_30d }} active token{{ 's' if tokens.expiring_30d != 1 }} expire{{ '' if tokens.expiring_30d != 1 else 's' }} within 30 days.</p>
+        <table class="data compact">
+            <thead><tr><th>Issuing agency</th><th class="num">Active</th><th class="num">Reserve</th><th class="num">Issued</th></tr></thead>
+            <tbody>
+                {% for a in tokens.by_issuer %}
+                <tr><td>{{ a.name }} <span class="agency-type agency-type-{{ a.agency_type|lower|replace('_', '-') }}">{{ a.agency_type }}</span></td><td class="num">{{ a.active }}</td><td class="num">{{ a.reserve }}</td><td class="num">{{ a.issued }}</td></tr>
+                {% else %}
+                <tr><td colspan="4" class="empty">No tokens issued.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+
+    <section class="atlas-panel" aria-labelledby="ver-h">
+        <div class="ops-section-head">
+            <h2 id="ver-h">Verifications</h2>
+            <a class="ops-more" href="{{ url_for('verifications_list') }}">Verification log</a>
+        </div>
+        <div class="kpi-row">
+            <div class="kpi kpi-primary"><span class="kpi-value">{{ verifications.volume['24h'] }}</span><span class="kpi-label">last 24 h</span></div>
+            <div class="kpi"><span class="kpi-value">{{ verifications.volume['7d'] }}</span><span class="kpi-label">last 7 d</span></div>
+            <div class="kpi {% if verifications.failure_rate_7d and verifications.failure_rate_7d >= 5 %}kpi-warn{% endif %}">
+                <span class="kpi-value">{% if verifications.failure_rate_7d is none %}·{% else %}{{ '%.1f'|format(verifications.failure_rate_7d) }}%{% endif %}</span>
+                <span class="kpi-label">not successful, 7 d</span>
             </div>
         </div>
-    {% endfor %}
-    <div class="stat-card stat-card-total">
-        <div class="label">Total Rows</div>
-        <div class="value">{{ total }}</div>
-        <div class="sublabel">across 12 tables</div>
-    </div>
-</div>
-
-{# Five tiles for the proof and trust structures behind the tokens. Each
-   links to its list page. The duress tile is admin/auditor only; the other
-   four are visible to every logged-in role. #}
-<h2>Proofs and trust</h2>
-<div class="stats-grid">
-    <a href="{{ url_for('anchors_list') }}" class="stat-card stat-card-link">
-        <div class="label">Anchor Batches</div>
-        <div class="value">{{ v2_substrate.anchor_batch_count }}</div>
-        <div class="sublabel">
-            Merkle commitments, append-only
-            {% if v2_substrate.anchor_batch_latest %}
-                · last {{ v2_substrate.anchor_batch_latest.strftime('%m-%d') }}
-            {% endif %}
+        {% set disc_total = verifications.disclosure_total %}
+        <div class="mix" aria-label="Disclosure levels across all verifications">
+            <div class="mix-bar">
+                {% for d in verifications.disclosure %}{% if d.n %}<span class="mix-seg mix-{{ d.level|lower }}" style="width: {{ '%.2f'|format(d.pct) }}%" title="{{ d.level }} {{ d.n }}"></span>{% endif %}{% endfor %}
+            </div>
+            <div class="mix-legend">
+                {% for d in verifications.disclosure %}
+                <span><i class="mix-key mix-{{ d.level|lower }}" aria-hidden="true"></i>{{ d.level }} {{ '%.0f'|format(d.pct) }}%</span>
+                {% endfor %}
+            </div>
+            <p class="ops-note">A zero-knowledge verification stores no token identifier; the share is structural, not access control.</p>
         </div>
-    </a>
-    <a href="{{ url_for('epochs_list') }}" class="stat-card stat-card-link">
-        <div class="label">ZK Epochs</div>
-        <div class="value">{{ v2_substrate.epoch_count }}</div>
-        <div class="sublabel">
-            Plonky2 inclusion proofs
-            {% if v2_substrate.epoch_latest %}
-                · last {{ v2_substrate.epoch_latest.strftime('%m-%d') }}
-            {% endif %}
-        </div>
-    </a>
-    <a href="{{ url_for('federation_viewer') }}" class="stat-card stat-card-link">
-        <div class="label">Trust Attestations</div>
-        <div class="value">{{ v2_substrate.attestation_active }}</div>
-        <div class="sublabel">
-            {{ v2_substrate.attestation_active }} active /
-            {{ v2_substrate.attestation_total }} total
-        </div>
-    </a>
-    <div class="stat-card">
-        <div class="label">Token Signatures</div>
-        <div class="value">{{ v2_substrate.signature_active }}</div>
-        <div class="sublabel">
-            {{ v2_substrate.signature_active }} active /
-            {{ v2_substrate.signature_total }} total
-        </div>
-    </div>
-    {% if current_user.role in ('admin', 'auditor') %}
-    <a href="{{ url_for('duress_dashboard') }}" class="stat-card stat-card-link stat-card-restricted">
-        <div class="label">Duress Signals</div>
-        <div class="value">{{ v2_substrate.duress_count }}</div>
-        <div class="sublabel">
-            admin and auditor only
-            {% if v2_substrate.duress_latest %}
-                · last {{ v2_substrate.duress_latest.strftime('%m-%d') }}
-            {% endif %}
-        </div>
-    </a>
-    {% endif %}
-</div>
-
-<h2>Token Status Breakdown</h2>
-<table class="data status-breakdown-table">
-    <thead>
-        <tr><th>Status</th><th>Count</th><th>Notes</th></tr>
-    </thead>
-    <tbody>
-        {% for s in status_breakdown %}
-        <tr class="status-row status-row-{{ s.status|lower }}">
-            <td><span class="pill pill-{{ s.status|lower }}">{{ s.status }}</span></td>
-            <td class="status-count">{{ s.n }}</td>
-            <td class="status-notes">
-                {%- if s.status == 'ACTIVE' %}Currently in use, may verify
-                {%- elif s.status == 'RESERVE' %}Pre-issued against possibility of loss
-                {%- elif s.status == 'DORMANT' %}Audit-preserved, no longer operational
-                {%- elif s.status == 'REVOKED' %}Terminal: administratively voided
-                {%- elif s.status == 'LOST' %}Terminal: holder reported loss
-                {%- elif s.status == 'EXPIRED' %}Terminal: passed expiration date
-                {%- endif %}
-            </td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
-
-{# ================== AUTHORIZATION MATRIX + PQ MIGRATION ================== #}
-<div class="atlas-row">
-
-    {# ---------- Authorization matrix ---------- #}
-    <div class="atlas-panel atlas-panel-wide">
-        <h2>Agency × Algorithm Authorization Matrix</h2>
-        <p class="panel-sub">M:N relationship resolved via <code>AgencyAlgorithmAuth</code>. Cells show the grant type: I = ISSUE only, V = VERIFY only, B = BOTH. Empty cells = no grant.</p>
-
-        <table class="auth-matrix">
-            <thead>
-                <tr>
-                    <th class="agency-col">Agency</th>
-                    {% for alg in algorithms %}
-                        <th class="alg-col">
-                            <div class="alg-name {% if not alg.quantum_resistant %}alg-classical{% endif %}">{{ alg.name }}</div>
-                            <div class="alg-tag">
-                                {% if alg.quantum_resistant %}
-                                    <span class="pill pill-active" style="font-size:9px;">PQ</span>
-                                {% else %}
-                                    <span class="pill pill-revoked" style="font-size:9px;">CLASSICAL</span>
-                                {% endif %}
-                            </div>
-                        </th>
-                    {% endfor %}
-                </tr>
-            </thead>
+        <table class="data compact">
+            <thead><tr><th>Context</th><th class="num">7 d</th><th class="num">not OK</th><th class="num">all time</th></tr></thead>
             <tbody>
-                {% for ag in agencies %}
+                {% for c in verifications.by_context %}
+                <tr><td>{{ c.context_type }}</td><td class="num">{{ c.v7d }}</td><td class="num {% if c.notok7d %}warn{% endif %}">{{ c.notok7d }}</td><td class="num">{{ c.total }}</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </section>
+</div>
+
+{# ---- Attention -------------------------------------------------------- #}
+<section class="atlas-panel" aria-labelledby="att-h">
+    <div class="ops-section-head">
+        <h2 id="att-h">Needs attention</h2>
+        <span class="ops-note">
+            {{ operators.privileged }} privileged account{{ 's' if operators.privileged != 1 }},
+            {{ operators.with_credential }} with a WebAuthn credential
+            · <a href="{{ url_for('webauthn_settings') }}">your credentials</a>
+        </span>
+    </div>
+    {% set visible = attention if privileged_view else attention|rejectattr('key', 'equalto', 'duress')|list %}
+    {% set open_items = visible|rejectattr('severity', 'equalto', 'ok')|list %}
+    {% if not open_items %}
+    <p class="attention-clear">Nothing needs attention.</p>
+    {% endif %}
+    <ul class="attention">
+        {% for a in visible %}
+        <li class="attention-item att-{{ a.severity }}">
+            <span class="att-count">{{ a.count }}</span>
+            <span class="att-label">{% if a.href %}<a href="{{ a.href }}">{{ a.label }}</a>{% else %}{{ a.label }}{% endif %}</span>
+            {% if a.note %}<span class="att-note">{{ a.note }}</span>{% endif %}
+        </li>
+        {% endfor %}
+    </ul>
+</section>
+
+{# ---- Cryptographic posture and the audit of record ------------------- #}
+<div class="atlas-row">
+    <section class="atlas-panel" aria-labelledby="pq-h">
+        <div class="ops-section-head">
+            <h2 id="pq-h">Cryptographic posture</h2>
+            <span class="ops-note">{% if crypto.pq_pct is none %}no active signatures{% else %}{{ '%.0f'|format(crypto.pq_pct) }}% of active tokens post-quantum{% endif %}</span>
+        </div>
+        <div class="mix">
+            <div class="mix-bar">
+                {% set signed = crypto.pq_active + crypto.classical_active %}
+                {% if crypto.pq_active %}<span class="mix-seg mix-pq" style="width: {{ '%.2f'|format(100 * crypto.pq_active / signed) }}%" title="post-quantum {{ crypto.pq_active }}"></span>{% endif %}
+                {% if crypto.classical_active %}<span class="mix-seg mix-classical" style="width: {{ '%.2f'|format(100 * crypto.classical_active / signed) }}%" title="classical {{ crypto.classical_active }}"></span>{% endif %}
+            </div>
+            <div class="mix-legend">
+                <span><i class="mix-key mix-pq" aria-hidden="true"></i>post-quantum {{ crypto.pq_active }}</span>
+                <span><i class="mix-key mix-classical" aria-hidden="true"></i>classical {{ crypto.classical_active }}</span>
+            </div>
+        </div>
+        <table class="data compact">
+            <thead><tr><th>Algorithm</th><th class="num">Active tokens</th><th class="num">Issuers</th><th class="num">Verifiers</th><th>Deprecation</th></tr></thead>
+            <tbody>
+                {% for a in crypto.algorithms %}
                 <tr>
-                    <td class="agency-cell agency-cell-{{ ag.agency_type|lower|replace('_', '-') }}">
-                        <strong>{{ ag.name }}</strong>
-                        <div class="agency-type agency-type-{{ ag.agency_type|lower|replace('_', '-') }}">{{ ag.agency_type }}</div>
-                    </td>
-                    {% for alg in algorithms %}
+                    <td class="mono">{{ a.name }} <span class="pill {% if a.quantum_resistant %}pill-pq{% else %}pill-classical{% endif %}">{{ 'PQ' if a.quantum_resistant else 'CLASSICAL' }}</span></td>
+                    <td class="num">{{ a.active_tokens }}</td>
+                    <td class="num">{{ a.agencies_issue }}</td>
+                    <td class="num">{{ a.agencies_verify }}</td>
+                    <td>{% if a.deprecation_date %}{{ a.deprecation_date.strftime('%Y-%m-%d') }}{% else %}<span class="muted">none scheduled</span>{% endif %}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <details class="ops-details">
+            <summary>Authorization matrix: {{ agencies|length }} agencies × {{ crypto.algorithms|length }} algorithms</summary>
+            <table class="auth-matrix">
+                <thead>
+                    <tr>
+                        <th class="agency-col">Agency</th>
+                        {% for alg in crypto.algorithms %}<th class="alg-col"><div class="alg-name {% if not alg.quantum_resistant %}alg-classical{% endif %}">{{ alg.name }}</div></th>{% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for ag in agencies %}
+                    <tr>
+                        <td class="agency-cell agency-cell-{{ ag.agency_type|lower|replace('_', '-') }}"><strong>{{ ag.name }}</strong><div class="agency-type agency-type-{{ ag.agency_type|lower|replace('_', '-') }}">{{ ag.agency_type }}</div></td>
+                        {% for alg in crypto.algorithms %}
                         {% set grant = auth_matrix.get((ag.agency_id, alg.algorithm_id)) %}
                         <td class="auth-cell auth-{{ (grant or 'none')|lower }}">
-                            {% if grant == 'BOTH' %}<span class="auth-mark auth-mark-both">B</span>
-                            {% elif grant == 'ISSUE' %}<span class="auth-mark">I</span>
-                            {% elif grant == 'VERIFY' %}<span class="auth-mark">V</span>
-                            {% else %}<span class="auth-empty">·</span>
-                            {% endif %}
+                            {%- if grant == 'BOTH' %}<span class="auth-mark auth-mark-both">issue + verify</span>
+                            {%- elif grant == 'ISSUE' %}<span class="auth-mark">issue</span>
+                            {%- elif grant == 'VERIFY' %}<span class="auth-mark">verify</span>
+                            {%- else %}<span class="auth-empty">·</span>{% endif -%}
                         </td>
+                        {% endfor %}
+                    </tr>
                     {% endfor %}
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
+                </tbody>
+            </table>
+        </details>
+    </section>
 
-    {# ---------- PQ migration status ---------- #}
-    <div class="atlas-panel">
-        <h2>Post-Quantum Migration</h2>
-        <p class="panel-sub">Active tokens by signing algorithm. Classical algorithms are flagged for replacement as Mosca's inequality tightens.</p>
-
-        {% set total_pq_class = pq_active_total + classical_active_total %}
-        <div class="pq-bar">
-            {% if pq_active_total %}
-                <div class="pq-bar-pq" style="width: {{ 100 * pq_active_total // (total_pq_class or 1) }}%;">
-                    {{ pq_active_total }} PQ
-                </div>
-            {% endif %}
-            {% if classical_active_total %}
-                <div class="pq-bar-classical" style="width: {{ 100 * classical_active_total // (total_pq_class or 1) }}%;">
-                    {{ classical_active_total }} classical
-                </div>
-            {% endif %}
+    <section class="atlas-panel" aria-labelledby="aud-h">
+        <div class="ops-section-head">
+            <h2 id="aud-h">Audit of record</h2>
         </div>
-
-        <table class="data" style="margin-top: 12px;">
-            <thead>
-                <tr><th>Algorithm</th><th>PQ?</th><th>Active Tokens</th><th>Deprecation</th></tr>
-            </thead>
+        <dl class="kv kv-ops">
+            <div><dt>ZK epochs</dt><dd><a href="{{ url_for('epochs_list') }}">{{ audit.epochs.closed }} closed</a>{% if audit.epochs.open %}, {{ audit.epochs.open }} open{% endif %}{% if audit.epochs.last_closed %} · last {{ audit.epochs.last_closed.strftime('%Y-%m-%d') }}{% endif %}</dd></div>
+            <div><dt>Anchor batches</dt><dd><a href="{{ url_for('anchors_list') }}">{{ audit.anchors.count }}</a>{% if audit.anchors.uncommitted %} · {{ audit.anchors.uncommitted }} not on chain{% endif %}{% if audit.anchors.latest %} · last {{ audit.anchors.latest.strftime('%Y-%m-%d') }}{% endif %}</dd></div>
+            {% if privileged_view %}
+            <div><dt>Duress signals</dt><dd><a href="{{ url_for('duress_dashboard') }}">{{ audit.duress.total }} on record</a>{% if audit.duress.latest %} · last {{ audit.duress.latest.strftime('%Y-%m-%d %H:%M') }}{% endif %}</dd></div>
+            {% endif %}
+            <div><dt>Retention in force</dt><dd>{% for r in audit.retention %}{{ r.table_class|lower|replace('_', ' ') }} {{ r.days }} d{% if not loop.last %} · {% endif %}{% endfor %}</dd></div>
+            <div><dt>Last archive purge</dt><dd>{% if audit.last_checkpoint %}{{ audit.last_checkpoint.purged_at.strftime('%Y-%m-%d') }} · {{ audit.last_checkpoint.rows_purged_total }} rows · {{ audit.last_checkpoint.cutoff_source|lower }} cutoff{% else %}<span class="muted">none yet</span>{% endif %}</dd></div>
+        </dl>
+        <h3 class="ops-sub">Recent lifecycle events</h3>
+        <table class="data compact">
+            <thead><tr><th>When</th><th>Event</th><th>Token</th><th>Actor</th><th>Reason</th></tr></thead>
             <tbody>
-                {% for r in pq_breakdown %}
-                <tr class="{% if r.quantum_resistant %}alg-row-pq{% else %}alg-row-classical{% endif %}">
-                    <td class="mono alg-name-cell">{{ r.name }}</td>
-                    <td>{% if r.quantum_resistant %}<span class="pill pill-pq">PQ</span>{% else %}<span class="pill pill-classical">CLASSICAL</span>{% endif %}</td>
-                    <td>{{ r.n }}</td>
-                    <td>{{ r.deprecation_date.strftime('%Y-%m-%d') if r.deprecation_date else '<span class="muted">none scheduled</span>'|safe }}</td>
+                {% for e in audit.recent_events %}
+                <tr>
+                    <td class="mono nowrap">{{ e.event_timestamp.strftime('%Y-%m-%d %H:%M') }}</td>
+                    <td><span class="pill pill-{{ e.event_type|lower }}">{{ e.event_type }}</span></td>
+                    <td><a href="{{ url_for('tokens_detail', tok_id=e.token_id) }}">#{{ e.token_id }}</a></td>
+                    <td>{{ e.actor_name or absent }}</td>
+                    <td class="mono">{{ e.reason_code or absent }}</td>
                 </tr>
+                {% else %}
+                <tr><td colspan="5" class="empty">No lifecycle events recorded.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
-    </div>
+    </section>
 </div>
-
-{# ================== CONTEXT ACTIVITY + DISCLOSURE BREAKDOWN ================== #}
-<div class="atlas-row">
-
-    <div class="atlas-panel">
-        <h2>Verification Activity by Context</h2>
-        <p class="panel-sub">Where the system is exercised. Each verification event happens in exactly one context.</p>
-
-        <div class="ctx-bars">
-            {% for c in context_activity %}
-                <div class="ctx-row ctx-{{ c.context_type|lower|replace('_', '-') }}">
-                    <div class="ctx-label">{{ c.context_type.replace('GOVERNMENT_BENEFITS', 'GOV_BENEFITS') }}</div>
-                    <div class="ctx-bar-wrap">
-                        <div class="ctx-bar-fill" style="width: {{ (100 * c.vol // max_vol) if c.vol else 1 }}%;">
-                            {% if c.vol > 0 %}
-                                <span class="ctx-counts">
-                                    {{ c.vol }} ({{ c.succ }}✓ / {{ c.fail }}✕)
-                                </span>
-                            {% else %}
-                                <span class="ctx-counts ctx-empty">no events</span>
-                            {% endif %}
-                        </div>
-                    </div>
-                </div>
-            {% endfor %}
-        </div>
-    </div>
-
-    <div class="atlas-panel">
-        <h2>Disclosure Posture</h2>
-        <p class="panel-sub">Distribution across the three disclosure levels. ZERO_KNOWLEDGE never stored token-identifying data; SELECTIVE released specific attributes; FULL released everything.</p>
-
-        <div class="disclosure-grid">
-            {% for d in disclosure_breakdown %}
-                <div class="disclosure-cell disclosure-cell-{{ d.disclosure_level|lower|replace('_', '-') }}">
-                    <div class="disc-pct">{{ 100 * d.n // total_verifs }}<span class="unit">%</span></div>
-                    <div class="disc-pill"><span class="pill pill-{{ d.disclosure_level|lower }}">{{ d.disclosure_level }}</span></div>
-                    <div class="disc-count">{{ d.n }} of {{ total_verifs }}</div>
-                </div>
-            {% endfor %}
-        </div>
-
-        <div class="disclosure-note">
-            <strong>Privacy invariant:</strong> ZERO_KNOWLEDGE rows have <code>token_id = NULL</code>
-            by design. The schema literally never recorded which token they verified, so even
-            warrant-authorized audits (UC-7) cannot reconstruct that link. The disclosure ratio
-            is a structural property of the data, not access control on top of it.
-        </div>
-    </div>
-</div>
-
-{# ================== LINEAGE + RECENT EVENTS ================== #}
-<div class="atlas-row">
-
-    <div class="atlas-panel">
-        <h2>Token Succession Lineage</h2>
-        <p class="panel-sub">Chains formed by <code>predecessor_token_id</code>. Every reissuance or reserve activation links a successor to its predecessor.</p>
-
-        {% if lineages %}
-            <div class="lineage-list">
-                {% for l in lineages %}
-                    <div class="lineage-row">
-                        <div class="lineage-holder">{{ l.legal_name }}</div>
-                        <div class="lineage-chain">
-                            {% if l.pred_id %}
-                                <a href="{{ url_for('tokens_detail', tok_id=l.pred_id) }}" class="chain-token">
-                                    #{{ l.pred_id }} <span class="pill pill-{{ l.pred_status|lower }}">{{ l.pred_status }}</span>
-                                </a>
-                                <span class="chain-arrow">→</span>
-                            {% endif %}
-                            <a href="{{ url_for('tokens_detail', tok_id=l.current_id) }}" class="chain-token chain-current">
-                                #{{ l.current_id }} <span class="pill pill-{{ l.current_status|lower }}">{{ l.current_status }}</span>
-                            </a>
-                            <span class="chain-seq">seq {{ l.activation_sequence }}</span>
-                        </div>
-                    </div>
-                {% endfor %}
-            </div>
-        {% else %}
-            <p style="color: var(--steel); font-style: italic;">No succession chains yet, no token has been replaced through UC-1 reissuance or UC-4 reserve activation.</p>
-        {% endif %}
-    </div>
-
-    <div class="atlas-panel">
-        <h2>Recent Audit Events</h2>
-        <p class="panel-sub">Last twelve <code>TokenLifecycleEvent</code> rows. Append-only by trigger; this is the chain that NFR-4 guarantees.</p>
-
-        <div class="audit-feed">
-            {% for e in recent_events %}
-                <div class="audit-event audit-{{ e.event_type|lower }}">
-                    <div class="audit-time">{{ e.event_timestamp.strftime('%Y-%m-%d %H:%M') }}</div>
-                    <div class="audit-body">
-                        <span class="audit-type">{{ e.event_type }}</span>
-                        on <a href="{{ url_for('tokens_detail', tok_id=e.token_id) }}">token #{{ e.token_id }}</a>
-                        ({{ e.legal_name }})
-                        {% if e.actor_name %}by {{ e.actor_name }}{% endif %}
-                        {% if e.reason_code %}<span class="audit-reason">{{ e.reason_code }}</span>{% endif %}
-                    </div>
-                </div>
-            {% endfor %}
-        </div>
-    </div>
-</div>
-
-<h2>Active Tokens (ActiveTokens View)</h2>
-<table class="data">
-    <thead>
-        <tr>
-            <th>ID</th><th>Token Value</th><th>Holder</th><th>Issuer</th>
-            <th>Algorithm</th><th>PQ</th><th>Activated</th><th>Expires</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for t in active_tokens %}
-        <tr class="{% if t.quantum_resistant %}token-row-pq{% else %}token-row-classical{% endif %}">
-            <td><a href="{{ url_for('tokens_detail', tok_id=t.token_id) }}" class="token-id-link">#{{ t.token_id }}</a></td>
-            <td class="mono token-value">{{ t.token_value }}</td>
-            <td class="token-holder">{{ t.legal_name }}</td>
-            <td class="token-issuer">{{ t.issuing_agency }}</td>
-            <td class="mono {% if t.quantum_resistant %}alg-name-pq{% else %}alg-name-classical{% endif %}">{{ t.algorithm }}</td>
-            <td>{% if t.quantum_resistant %}<span class="pill pill-pq">PQ</span>{% else %}<span class="pill pill-classical">CLASSICAL</span>{% endif %}</td>
-            <td>{{ t.activated_date.strftime('%Y-%m-%d') if t.activated_date else not_yet }}</td>
-            <td>{{ t.expiration_date.strftime('%Y-%m-%d') if t.expiration_date else no_expiry }}</td>
-        </tr>
-        {% else %}
-        <tr><td colspan="8" class="empty">No active tokens.</td></tr>
-        {% endfor %}
-    </tbody>
-</table>
-
-{# v8.35: "Quick Actions" block removed. The USE CASES dropdown in the
-   masthead nav is the single canonical entry point to UC-1 / UC-4 / UC-5 /
-   UC-6 / UC-7 / UC-8 / UC-9 / UC-12; duplicating them as buttons on the
-   dashboard was visual noise. #}
 {% endblock %}

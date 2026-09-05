@@ -1226,189 +1226,306 @@ def demo():
 @app.route('/dashboard')
 @security.login_required
 def dashboard():
-    """Landing page: schema-wide statistics, ActiveTokens view, and the analytical
-    panels that explain how the system is configured (Authorization Matrix,
-    PQ Migration, Disclosure Posture, Verification by Context, Lineage,
-    Recent Audit Events). The Atlas page is reserved for live operational
-    investigation; aggregate analytics live here."""
-    stats = {}
-    tables = ['Individual', 'Agency', 'CryptographicAlgorithm', 'VerificationContext',
-              'IdentityToken', 'TokenLifecycleEvent', 'VerificationEvent',
-              'DeviceBinding', 'BlockchainAnchor', 'RevocationList',
-              'AgencyAlgorithmAuth', 'TokenPermission']
-    for tbl in tables:
-        stats[tbl] = query(f'SELECT COUNT(*) AS n FROM {tbl}', fetch='one')['n']
+    """The operations page: what an operator needs at a glance, and only that.
 
-    # Snapshot, not an enumeration: cap the active-token table so the dashboard
-    # (the default post-login landing page, hit on every login) does not
-    # materialize every active token on every load. At national scale the
-    # unbounded fetch would be a DoS — the exact hazard individuals_list
-    # documents and paginates against. Show the 200 most recent active tokens.
-    active_tokens = query(
-        'SELECT * FROM ActiveTokens ORDER BY token_id DESC LIMIT 200')
-    status_breakdown = query("""
-        SELECT status, COUNT(*) AS n
-        FROM IdentityToken
-        GROUP BY status
-        ORDER BY n DESC
+    Rebuilt at v9.238. The earlier page opened with raw row counts of twelve
+    schema tables, carried a token roster that duplicated /tokens, and
+    explained each panel in a paragraph. This one reports state an operator
+    acts on: whether the service is healthy, how the token population is
+    moving, how verification is behaving, what needs a human, the
+    cryptographic posture, and the audit of record. Every figure is a bounded
+    aggregate (C8); nothing here enumerates a population.
+    """
+    return render_template('dashboard.html', **_dashboard_model())
+
+
+def _window_counts(sql_template):
+    """Run one aggregate for the 24-hour and 7-day windows."""
+    return {
+        '24h': query(sql_template.format(window="INTERVAL '24 hours'"), fetch='one')['n'] or 0,
+        '7d':  query(sql_template.format(window="INTERVAL '7 days'"), fetch='one')['n'] or 0,
+    }
+
+
+def _dashboard_service():
+    """The readiness roll-up, shaped for a status strip."""
+    body, _code = _compute_readiness()
+    checks = body.get('checks') or {}
+    order = [('database', 'Database'), ('redis', 'Rate limiter'), ('zk_binary', 'ZK verifier'),
+             ('custody', 'Key custody'), ('disk', 'Disk'), ('atlas_cache', 'Atlas cache')]
+    strip = []
+    for key, label in order:
+        c = checks.get(key)
+        if not isinstance(c, dict):
+            continue
+        parts = []
+        if c.get('latency_ms') is not None:
+            parts.append(f"{float(c['latency_ms']):.1f} ms")
+        for k in ('backend', 'driver', 'key_id', 'version', 'note', 'error'):
+            v = c.get(k)
+            if v:
+                parts.append(str(v)[:60])
+                if k in ('note', 'error'):
+                    break
+        strip.append({'key': key, 'label': label,
+                      'status': c.get('status', 'unhealthy'),
+                      'detail': ' · '.join(parts) or 'reachable'})
+    return body.get('status', 'unhealthy'), strip
+
+
+def _dashboard_signing():
+    """Which signer is live, and whether it is the real one."""
+    try:
+        rep = pqc_signing.availability_report()
+    except Exception as exc:  # the report must never take the page down
+        return {'algorithm': 'ML-DSA-65', 'real': False, 'backend': f'unavailable ({type(exc).__name__})',
+                'custody': None, 'second_witness': False}
+    custody = rep.get('custody') if isinstance(rep.get('custody'), dict) else None
+    real = bool(rep.get('is_enabled'))
+    if real:
+        backend = f"liboqs {rep.get('oqs_version') or ''}".strip()
+    elif rep.get('flag_set'):
+        backend = 'liboqs requested but not importable'
+    else:
+        backend = 'placeholder digest (development)'
+    return {
+        'algorithm': rep.get('algorithm') or 'ML-DSA-65',
+        'real': real,
+        'backend': backend,
+        'custody': custody,
+        'second_witness': bool(rep.get('second_witness_available')),
+    }
+
+
+def _dashboard_model():
+    now = datetime.now(timezone.utc)
+    overall, service = _dashboard_service()
+    signing = _dashboard_signing()
+
+    # --- Token population ---------------------------------------------------
+    by_status = {r['status']: r['n'] for r in query(
+        "SELECT status, COUNT(*) AS n FROM IdentityToken GROUP BY status")}
+    for st in ('ACTIVE', 'RESERVE', 'DORMANT', 'REVOKED', 'LOST', 'EXPIRED'):
+        by_status.setdefault(st, 0)
+    issued = _window_counts("SELECT COUNT(*) AS n FROM TokenLifecycleEvent "
+                            "WHERE event_type = 'ISSUED' AND event_timestamp >= now() - {window}")
+    revoked = _window_counts("SELECT COUNT(*) AS n FROM TokenLifecycleEvent "
+                             "WHERE event_type = 'REVOKED' AND event_timestamp >= now() - {window}")
+    expiry = query("""
+        SELECT SUM(CASE WHEN expiration_date < now() THEN 1 ELSE 0 END) AS past,
+               SUM(CASE WHEN expiration_date >= now()
+                         AND expiration_date < now() + INTERVAL '30 days' THEN 1 ELSE 0 END) AS soon
+          FROM IdentityToken WHERE status = 'ACTIVE'
+    """, fetch='one')
+    by_issuer = query("""
+        SELECT ag.name, ag.agency_type,
+               COUNT(*) FILTER (WHERE t.status = 'ACTIVE') AS active,
+               COUNT(*) FILTER (WHERE t.status = 'RESERVE') AS reserve,
+               COUNT(*) AS issued
+          FROM Agency ag
+          JOIN IdentityToken t ON t.issuing_agency_id = ag.agency_id
+         GROUP BY ag.agency_id, ag.name, ag.agency_type
+         ORDER BY active DESC, issued DESC, ag.name
+         LIMIT 8
     """)
+    tokens = {
+        'by_status': by_status, 'total': sum(by_status.values()),
+        'issued': issued, 'revoked': revoked,
+        'active_past_expiry': expiry['past'] or 0,
+        'expiring_30d': expiry['soon'] or 0,
+        'by_issuer': by_issuer,
+    }
 
-    analytics = _polaris_analytics()
-    v2_substrate = _v2_substrate_tiles()
+    # --- Verification activity ------------------------------------------------
+    volume = _window_counts("SELECT COUNT(*) AS n FROM VerificationEvent "
+                            "WHERE event_timestamp >= now() - {window}")
+    outcomes = {r['outcome']: r['n'] for r in query("""
+        SELECT outcome, COUNT(*) AS n FROM VerificationEvent
+         WHERE event_timestamp >= now() - INTERVAL '7 days' GROUP BY outcome""")}
+    for o in ('SUCCESS', 'FAILURE', 'EXPIRED', 'UNAUTHORIZED'):
+        outcomes.setdefault(o, 0)
+    not_success = outcomes['FAILURE'] + outcomes['EXPIRED'] + outcomes['UNAUTHORIZED']
+    failure_rate = (100.0 * not_success / volume['7d']) if volume['7d'] else None
+    disclosure_rows = query("""
+        SELECT disclosure_level, COUNT(*) AS n FROM VerificationEvent GROUP BY disclosure_level""")
+    disc = {r['disclosure_level']: r['n'] for r in disclosure_rows}
+    disc_total = sum(disc.values())
+    disclosure = []
+    for level in ('ZERO_KNOWLEDGE', 'SELECTIVE', 'FULL'):
+        n = disc.get(level, 0)
+        disclosure.append({'level': level, 'n': n,
+                           'pct': (100.0 * n / disc_total) if disc_total else 0.0})
+    by_context = query("""
+        SELECT vc.context_type,
+               COUNT(ve.event_id) FILTER (WHERE ve.event_timestamp >= now() - INTERVAL '7 days') AS v7d,
+               COUNT(ve.event_id) FILTER (WHERE ve.event_timestamp >= now() - INTERVAL '7 days'
+                                            AND ve.outcome <> 'SUCCESS') AS notok7d,
+               COUNT(ve.event_id) AS total
+          FROM VerificationContext vc
+          LEFT JOIN VerificationEvent ve ON ve.context_id = vc.context_id
+         GROUP BY vc.context_type
+         ORDER BY v7d DESC, total DESC, vc.context_type
+    """)
+    verifications = {
+        'volume': volume, 'outcomes_7d': outcomes, 'not_success_7d': not_success,
+        'failure_rate_7d': failure_rate, 'disclosure': disclosure,
+        'disclosure_total': disc_total, 'by_context': by_context,
+    }
 
-    return render_template('dashboard.html',
-                           stats=stats,
-                           active_tokens=active_tokens,
-                           status_breakdown=status_breakdown,
-                           total=sum(stats.values()),
-                           v2_substrate=v2_substrate,
-                           **analytics)
+    # --- Cryptographic posture --------------------------------------------------
+    algorithms = query("""
+        SELECT alg.algorithm_id, alg.name, alg.quantum_resistant, alg.deprecation_date,
+               COUNT(DISTINCT t.token_id) AS active_tokens,
+               (SELECT COUNT(DISTINCT a.agency_id) FROM AgencyAlgorithmAuth a
+                 WHERE a.algorithm_id = alg.algorithm_id
+                   AND a.authorization_type IN ('ISSUE', 'BOTH')) AS agencies_issue,
+               (SELECT COUNT(DISTINCT a.agency_id) FROM AgencyAlgorithmAuth a
+                 WHERE a.algorithm_id = alg.algorithm_id
+                   AND a.authorization_type IN ('VERIFY', 'BOTH')) AS agencies_verify
+          FROM CryptographicAlgorithm alg
+          LEFT JOIN TokenSignature s ON s.algorithm_id = alg.algorithm_id
+                                    AND s.deprecation_date IS NULL
+          LEFT JOIN IdentityToken t ON t.token_id = s.token_id AND t.status = 'ACTIVE'
+         GROUP BY alg.algorithm_id, alg.name, alg.quantum_resistant, alg.deprecation_date
+         ORDER BY alg.quantum_resistant DESC, alg.algorithm_id
+    """)
+    pq_active = sum(r['active_tokens'] for r in algorithms if r['quantum_resistant'])
+    classical_active = sum(r['active_tokens'] for r in algorithms if not r['quantum_resistant'])
+    signed_total = pq_active + classical_active
+    crypto = {
+        'algorithms': algorithms, 'pq_active': pq_active,
+        'classical_active': classical_active,
+        'pq_pct': (100.0 * pq_active / signed_total) if signed_total else None,
+    }
 
+    # --- Authorizations (the matrix, collapsed by default) --------------------
+    agencies = query("SELECT agency_id, name, agency_type FROM Agency ORDER BY name")
+    matrix = {(g['agency_id'], g['algorithm_id']): g['authorization_type']
+              for g in query("SELECT agency_id, algorithm_id, authorization_type FROM AgencyAlgorithmAuth")}
 
-def _v2_substrate_tiles():
-    """v8.28 — dashboard tiles for the v2 substrate primitives.
-
-    Returns counts + latest-event timestamps for the four v2 substrate
-    audit-of-record tables: AnchorBatch, TokenStateEpoch,
-    AgencyTrustAttestation, DuressEvent. Duress is exposed in the dict
-    unconditionally; the template gates the tile to admin/auditor via
-    `current_user.role` (R6 anti-revealing posture preserved)."""
-    anchor = query("""
-        SELECT COUNT(*) AS n, MAX(created_at) AS latest
-          FROM AnchorBatch
+    # --- Operators ---------------------------------------------------------------
+    ops = query("""
+        SELECT COUNT(*) AS privileged,
+               COUNT(*) FILTER (WHERE EXISTS (SELECT 1 FROM OperatorWebauthnCredential c
+                                                WHERE c.user_id = u.user_id)) AS with_credential,
+               COUNT(*) FILTER (WHERE u.webauthn_required_after IS NOT NULL
+                                  AND u.webauthn_required_after < now()
+                                  AND NOT EXISTS (SELECT 1 FROM OperatorWebauthnCredential c
+                                                   WHERE c.user_id = u.user_id)) AS overdue,
+               COUNT(*) FILTER (WHERE u.locked_until IS NOT NULL AND u.locked_until > now()) AS locked
+          FROM AppUser u
+         WHERE u.is_active AND u.role IN ('admin', 'operator')
     """, fetch='one')
-    epoch = query("""
-        SELECT COUNT(*) AS n, MAX(closed_at) AS latest
-          FROM TokenStateEpoch
-    """, fetch='one')
-    attest = query("""
-        SELECT COUNT(*) AS total,
-               SUM(CASE WHEN revocation_date IS NULL
-                         AND valid_until >= CURRENT_DATE THEN 1 ELSE 0 END) AS active,
-               MAX(attested_date) AS latest
-          FROM AgencyTrustAttestation
-    """, fetch='one')
+    failed_logins_24h = query("""
+        SELECT COUNT(*) AS n FROM AuthAuditLog
+         WHERE event_type IN ('LOGIN_FAILED', 'LOGIN_LOCKED')
+           AND event_timestamp >= now() - INTERVAL '24 hours'""", fetch='one')['n'] or 0
+    operators = {
+        'privileged': ops['privileged'] or 0, 'with_credential': ops['with_credential'] or 0,
+        'overdue': ops['overdue'] or 0, 'locked': ops['locked'] or 0,
+        'failed_logins_24h': failed_logins_24h,
+    }
+
+    # --- Attention: what needs a human ----------------------------------------
     duress = query("""
-        SELECT COUNT(*) AS n, MAX(event_timestamp) AS latest
-          FROM DuressEvent
-    """, fetch='one')
-    sig = query("""
         SELECT COUNT(*) AS total,
-               SUM(CASE WHEN deprecation_date IS NULL THEN 1 ELSE 0 END) AS active
-          FROM TokenSignature
+               COUNT(*) FILTER (WHERE event_timestamp >= now() - INTERVAL '24 hours') AS last_24h,
+               MAX(event_timestamp) AS latest
+          FROM DuressEvent""", fetch='one')
+    pending_recoveries = query(
+        "SELECT COUNT(*) AS n FROM RecoveryRequest WHERE status = 'PENDING'", fetch='one')['n'] or 0
+    anchors = query("""
+        SELECT COUNT(*) AS n, MAX(created_at) AS latest,
+               COUNT(*) FILTER (WHERE NOT committed_to_chain) AS uncommitted
+          FROM AnchorBatch""", fetch='one')
+    epochs = query("""
+        SELECT COUNT(*) FILTER (WHERE closed_at IS NOT NULL) AS closed,
+               COUNT(*) FILTER (WHERE closed_at IS NULL) AS open,
+               MAX(closed_at) AS last_closed
+          FROM TokenStateEpoch""", fetch='one')
+
+    attention = []
+    def item(key, count, one, many, severity, href=None, note=None):
+        attention.append({'key': key, 'count': count, 'label': one if count == 1 else many,
+                          'severity': severity if count else 'ok', 'href': href, 'note': note})
+    item('duress', duress['last_24h'] or 0,
+         'duress signal in the last 24 hours', 'duress signals in the last 24 hours', 'critical',
+         url_for('duress_dashboard'),
+         f"{duress['total'] or 0} on record" if duress['total'] else None)
+    item('recoveries', pending_recoveries,
+         'recovery request awaiting a decision', 'recovery requests awaiting a decision', 'warning',
+         url_for('uc9_queue'))
+    item('mfa_overdue', operators['overdue'],
+         'privileged account past its WebAuthn deadline', 'privileged accounts past their WebAuthn deadline',
+         'warning', None, 'polaris-id user-list shows who')
+    item('past_expiry', tokens['active_past_expiry'],
+         'active token past its expiry date', 'active tokens past their expiry date',
+         'warning', url_for('tokens_list', status='ACTIVE'))
+    # A link the reader cannot open is worse than none: UC-6 is admin and
+    # operator only, so an auditor gets the fact without the link.
+    role = (security.current_user() or {}).get('role')
+    item('classical', classical_active,
+         'active token still signed under a classical algorithm',
+         'active tokens still signed under a classical algorithm',
+         'warning', url_for('uc6_migrate') if role in ('admin', 'operator') else None,
+         'migrate with UC-6')
+    item('locked', operators['locked'],
+         'operator account currently locked out', 'operator accounts currently locked out', 'info', None,
+         'polaris-id user-passwd clears a lockout')
+    item('failed_logins', failed_logins_24h,
+         'failed login in the last 24 hours', 'failed logins in the last 24 hours', 'info', None)
+    item('expiring', tokens['expiring_30d'],
+         'active token expiring within 30 days', 'active tokens expiring within 30 days', 'info',
+         url_for('tokens_list', status='ACTIVE'))
+    item('uncommitted', anchors['uncommitted'] or 0,
+         'anchor batch not yet committed to a chain', 'anchor batches not yet committed to a chain',
+         'info', url_for('anchors_list'))
+    if not (epochs['closed'] or 0):
+        item('no_epoch', 1, 'no ZK epoch has been closed yet', 'no ZK epoch has been closed yet',
+             'info', url_for('epochs_list'), 'proofs need a closed epoch to verify against')
+
+    # --- Audit of record ---------------------------------------------------------
+    recent_events = query("""
+        SELECT le.event_id, le.event_type, le.event_timestamp, le.token_id, le.reason_code,
+               ag.name AS actor_name
+          FROM TokenLifecycleEvent le
+          LEFT JOIN Agency ag ON ag.agency_id = le.actor_agency_id
+         ORDER BY le.event_timestamp DESC, le.event_id DESC
+         LIMIT 10
+    """)
+    retention = query("""
+        SELECT c AS table_class, retention_days_for(c) AS days
+          FROM unnest(ARRAY['TOKEN_LIFECYCLE','VERIFICATION','ENROLLMENT','AUTH_AUDIT']::varchar(24)[]) AS c
+    """)
+    last_checkpoint = query("""
+        SELECT purged_at, rows_purged_total, cutoff_source
+          FROM LifecycleArchiveCheckpoint ORDER BY checkpoint_id DESC LIMIT 1
     """, fetch='one')
+    audit = {
+        'recent_events': recent_events, 'retention': retention,
+        'last_checkpoint': last_checkpoint,
+        'epochs': {'closed': epochs['closed'] or 0, 'open': epochs['open'] or 0,
+                   'last_closed': epochs['last_closed']},
+        'anchors': {'count': anchors['n'] or 0, 'latest': anchors['latest'],
+                    'uncommitted': anchors['uncommitted'] or 0},
+        'duress': {'total': duress['total'] or 0, 'last_24h': duress['last_24h'] or 0,
+                   'latest': duress['latest']},
+    }
+
     return dict(
-        anchor_batch_count=anchor['n'] or 0,
-        anchor_batch_latest=anchor['latest'],
-        epoch_count=epoch['n'] or 0,
-        epoch_latest=epoch['latest'],
-        attestation_total=attest['total'] or 0,
-        attestation_active=attest['active'] or 0,
-        attestation_latest=attest['latest'],
-        duress_count=duress['n'] or 0,
-        duress_latest=duress['latest'],
-        signature_total=sig['total'] or 0,
-        signature_active=sig['active'] or 0,
+        as_of=now,
+        environment={'production': _PRODUCTION, 'label': DEPLOYMENT_LABEL,
+                     'demo_mode': DEMO_MODE, 'version': POLARIS_VERSION},
+        service_overall=overall, service=service, signing=signing,
+        tokens=tokens, verifications=verifications, crypto=crypto,
+        agencies=agencies, auth_matrix=matrix,
+        operators=operators, attention=attention, audit=audit,
     )
 
 
 # ============================================================================
 # ATLAS — Operational investigation surface (Gotham-style)
 # ============================================================================
-
-def _polaris_analytics():
-    """Shared analytical aggregates: Authorization Matrix, PQ migration,
-    verification activity by context, disclosure posture, succession lineage,
-    recent audit events. Used by the dashboard. Atlas does NOT consume these,
-    Atlas only needs operational state for the globe and HUD."""
-    agencies = query("SELECT agency_id, name, agency_type FROM Agency ORDER BY agency_id")
-    algorithms = query("""
-        SELECT algorithm_id, name, quantum_resistant, deprecation_date
-        FROM CryptographicAlgorithm ORDER BY algorithm_id
-    """)
-    auth_grants = query("""
-        SELECT agency_id, algorithm_id, authorization_type
-        FROM AgencyAlgorithmAuth
-    """)
-    auth_matrix = {}
-    for g in auth_grants:
-        auth_matrix[(g['agency_id'], g['algorithm_id'])] = g['authorization_type']
-
-    # R11-1 / M2-6: PQ breakdown now counts tokens with ≥ 1 ACTIVE
-    # (non-deprecated) signature under each algorithm, via the M:N
-    # TokenSignature relation. A token mid-migration with both ML-DSA-65
-    # and ML-DSA-87 active signatures contributes to BOTH algorithm
-    # totals — this is the correct accounting for the dashboard:
-    # "how many tokens are still verifiable under algorithm X?"
-    pq_breakdown = query("""
-        SELECT alg.name, alg.quantum_resistant, alg.deprecation_date,
-               COUNT(DISTINCT t.token_id) AS n
-        FROM CryptographicAlgorithm alg
-        LEFT JOIN TokenSignature s ON alg.algorithm_id = s.algorithm_id
-                                  AND s.deprecation_date IS NULL
-        LEFT JOIN IdentityToken t ON s.token_id = t.token_id
-                                 AND t.status = 'ACTIVE'
-        GROUP BY alg.algorithm_id, alg.name, alg.quantum_resistant, alg.deprecation_date
-        ORDER BY alg.algorithm_id
-    """)
-    pq_active_total = sum(r['n'] for r in pq_breakdown if r['quantum_resistant'])
-    classical_active_total = sum(r['n'] for r in pq_breakdown if not r['quantum_resistant'])
-
-    context_activity = query("""
-        SELECT vc.context_type, COUNT(ve.event_id) AS vol,
-               SUM(CASE WHEN ve.outcome='SUCCESS'  THEN 1 ELSE 0 END) AS succ,
-               SUM(CASE WHEN ve.outcome='FAILURE'  THEN 1 ELSE 0 END) AS fail
-        FROM VerificationContext vc
-        LEFT JOIN VerificationEvent ve ON vc.context_id = ve.context_id
-        GROUP BY vc.context_type
-        ORDER BY vol DESC, vc.context_type
-    """)
-    max_vol = max((r['vol'] for r in context_activity), default=1) or 1
-
-    disclosure_breakdown = query("""
-        SELECT disclosure_level, COUNT(*) AS n
-        FROM VerificationEvent
-        GROUP BY disclosure_level
-        ORDER BY disclosure_level
-    """)
-    total_verifs = sum(r['n'] for r in disclosure_breakdown) or 1
-
-    lineages = query("""
-        SELECT t1.token_id AS current_id, t1.status AS current_status,
-               t1.activation_sequence,
-               t2.token_id AS pred_id, t2.status AS pred_status,
-               i.legal_name
-        FROM IdentityToken t1
-        LEFT JOIN IdentityToken t2 ON t1.predecessor_token_id = t2.token_id
-        JOIN Individual i ON t1.individual_id = i.individual_id
-        WHERE t1.predecessor_token_id IS NOT NULL
-           OR t1.activation_sequence > 1
-        ORDER BY t1.activation_sequence DESC, t1.token_id
-        LIMIT 10
-    """)
-
-    recent_events = query("""
-        SELECT le.event_id, le.event_type, le.event_timestamp,
-               le.token_id, i.legal_name, ag.name AS actor_name,
-               le.reason_code
-        FROM TokenLifecycleEvent le
-        JOIN IdentityToken t ON le.token_id = t.token_id
-        JOIN Individual i ON t.individual_id = i.individual_id
-        LEFT JOIN Agency ag ON le.actor_agency_id = ag.agency_id
-        ORDER BY le.event_timestamp DESC
-        LIMIT 12
-    """)
-
-    return dict(
-        agencies=agencies, algorithms=algorithms, auth_matrix=auth_matrix,
-        pq_breakdown=pq_breakdown,
-        pq_active_total=pq_active_total,
-        classical_active_total=classical_active_total,
-        context_activity=context_activity, max_vol=max_vol,
-        disclosure_breakdown=disclosure_breakdown, total_verifs=total_verifs,
-        lineages=lineages, recent_events=recent_events,
-    )
-
 
 @app.route('/atlas')
 @security.login_required

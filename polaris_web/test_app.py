@@ -250,24 +250,39 @@ class UnauthenticatedTestCase(PolarisTestCase):
 # ============================================================================
 
 class DashboardTests(PolarisTestCase):
+    """v9.238: the operations page reports state an operator acts on. It no
+    longer prints schema row counts or a token roster; those assertions moved
+    to what the page is for."""
 
     def test_dashboard_renders(self):
         r = self.client.get('/dashboard')
         self.assertEqual(r.status_code, 200)
-        self.assertHTML(r, 'POLARIS', 'System Dashboard')
+        self.assertHTML(r, 'POLARIS', 'Operations', 'Service', 'Needs attention',
+                        'Cryptographic posture', 'Audit of record')
 
-    def test_dashboard_shows_all_table_stats(self):
+    def test_dashboard_reports_service_state(self):
         r = self.client.get('/dashboard')
-        self.assertHTML(r,
-            'Individual', 'Agency', 'CryptographicAlgorithm',
-            'VerificationContext', 'IdentityToken', 'TokenLifecycleEvent',
-            'VerificationEvent', 'DeviceBinding', 'BlockchainAnchor',
-            'RevocationList', 'AgencyAlgorithmAuth', 'TokenPermission')
+        body = r.get_data(as_text=True)
+        for component in ('Database', 'Rate limiter', 'ZK verifier', 'Key custody', 'Signing'):
+            self.assertIn(component, body, f"service strip missing {component}")
+        self.assertRegex(body, r'svc-overall svc-(healthy|degraded|unhealthy)')
 
-    def test_dashboard_shows_active_tokens(self):
+    def test_dashboard_reports_token_population_not_row_counts(self):
         r = self.client.get('/dashboard')
-        # 3 active tokens in pristine sample data: T2 Maria, T3 James, T4 Priya
-        self.assertHTML(r, 'Maria Santos', 'James Chen', 'Priya Patel')
+        body = r.get_data(as_text=True)
+        for state in ('active', 'reserve', 'revoked'):
+            self.assertIn(f'<span class="kpi-label">{state}</span>', body)
+        # The old page opened with a grid of schema table row counts.
+        self.assertNotIn('Schema Statistics', body)
+        self.assertNotIn('Total Rows', body)
+        self.assertNotIn('AgencyAlgorithmAuth</div>', body)
+
+    def test_dashboard_no_longer_carries_the_token_roster(self):
+        """The roster lives on /tokens; the dashboard links to it."""
+        r = self.client.get('/dashboard')
+        body = r.get_data(as_text=True)
+        self.assertNotIn('Maria Santos', body)
+        self.assertIn('href="/tokens"', body)
 
 
 class AtlasTests(PolarisTestCase):
@@ -353,54 +368,59 @@ class AtlasTests(PolarisTestCase):
 
 
 class DashboardAnalyticsTests(PolarisTestCase):
-    """Dashboard at `/` is the analytics surface. Authorization Matrix,
-    PQ Migration, Verification by Context, Disclosure Posture, Lineage,
-    and Recent Audit Events all live here after the Gotham reframe."""
+    """The operations page's panels: verification behaviour, the attention
+    list, the cryptographic posture with the matrix collapsed inside it, and
+    the audit of record."""
 
-    def test_dashboard_renders(self):
+    def test_verification_panel(self):
         r = self.client.get('/dashboard')
-        self.assertEqual(r.status_code, 200)
-        self.assertHTML(r, 'System Dashboard', 'Schema Statistics')
+        self.assertHTML(r, 'Verifications', 'last 24 h', 'last 7 d',
+                        'ZERO_KNOWLEDGE', 'SELECTIVE', 'FULL', 'BANKING')
 
-    def test_dashboard_shows_state_breakdown(self):
-        """The status breakdown table is data-driven (GROUP BY status), so it
-        only lists states that actually have tokens. In pristine sample data
-        that's ACTIVE, RESERVE, and REVOKED."""
+    def test_attention_list_names_what_needs_a_human(self):
+        r = self.client.get('/dashboard')
+        # Labels pluralize with the count, so assert the invariant tail of each.
+        self.assertHTML(r, 'awaiting a decision', 'WebAuthn deadline',
+                        'past their expiry date', 'signed under a classical algorithm')
+
+    def test_duress_is_visible_to_admin_and_auditor_only(self):
+        body = self.client.get('/dashboard').get_data(as_text=True)
+        self.assertIn('duress signals in the last 24 hours', body)
+        self.assertIn('Duress signals', body)
+        self._login('operator')
+        body = self.client.get('/dashboard').get_data(as_text=True)
+        self.assertNotIn('duress signals in the last 24 hours', body)
+        self.assertNotIn('Duress signals', body)
+
+    def test_cryptographic_posture_lists_every_algorithm(self):
         r = self.client.get('/dashboard')
         body = r.get_data(as_text=True)
-        for state in ['ACTIVE', 'RESERVE', 'REVOKED']:
-            self.assertIn(state, body, f"Status breakdown missing {state}")
+        for alg in ['ML-DSA-65', 'ML-DSA-87', 'SLH-DSA-128s', 'ECDSA-P256']:
+            self.assertIn(alg, body, f"posture missing {alg}")
+        self.assertIn('post-quantum', body)
+        self.assertIn('none scheduled', body)
 
-    def test_dashboard_shows_authorization_matrix(self):
-        """Auth Matrix should include every agency name and algorithm."""
+    def test_authorization_matrix_is_collapsed_but_complete(self):
         r = self.client.get('/dashboard')
         body = r.get_data(as_text=True)
+        self.assertIn('<details class="ops-details">', body)
         for ag in ['US National Identity Service', 'Pennsylvania Identity Bureau',
                    'California Identity Office', 'First National Bank']:
-            self.assertIn(ag, body, f"Auth matrix missing {ag}")
-        for alg in ['ML-DSA-65', 'ML-DSA-87', 'SLH-DSA-128s', 'ECDSA-P256']:
-            self.assertIn(alg, body, f"Auth matrix missing {alg}")
+            self.assertIn(ag, body, f"matrix missing {ag}")
+        self.assertIn('issue + verify', body)
 
-    def test_dashboard_shows_pq_migration(self):
+    def test_audit_of_record_panel(self):
         r = self.client.get('/dashboard')
-        self.assertHTML(r, 'Post-Quantum Migration', 'PQ')
+        self.assertHTML(r, 'ZK epochs', 'Anchor batches', 'Retention in force',
+                        'token lifecycle 1825 d', 'Last archive purge',
+                        'Recent lifecycle events', 'ISSUED')
 
-    def test_dashboard_shows_disclosure_breakdown(self):
-        r = self.client.get('/dashboard')
-        self.assertHTML(r, 'Disclosure Posture',
-                        'ZERO_KNOWLEDGE', 'SELECTIVE', 'FULL')
-
-    def test_dashboard_shows_recent_events(self):
-        r = self.client.get('/dashboard')
-        self.assertHTML(r, 'Recent Audit Events', 'ISSUED')
-
-    def test_dashboard_shows_lineage(self):
-        r = self.client.get('/dashboard')
-        self.assertHTML(r, 'Token Succession Lineage')
-
-    def test_dashboard_shows_context_activity(self):
-        r = self.client.get('/dashboard')
-        self.assertHTML(r, 'Verification Activity by Context')
+    def test_every_figure_is_bounded(self):
+        """C8: the page must never enumerate a population. Ten recent events,
+        no roster, no per-token rows."""
+        body = self.client.get('/dashboard').get_data(as_text=True)
+        self.assertLessEqual(body.count('class="pill pill-issued"') + body.count('class="pill pill-activated"')
+                             + body.count('class="pill pill-revoked"'), 10 + 3)
 
 
 class HeartbeatTests(PolarisTestCase):
@@ -6872,14 +6892,15 @@ class V2SubstrateUITests(PolarisTestCase):
     # ---------- dashboard tiles ----------
 
     def test_dashboard_renders_v2_substrate_section(self):
+        """v9.238: the substrate facts live in the audit-of-record panel."""
         r = self.client.get('/dashboard')
         self.assertEqual(r.status_code, 200)
         body = r.data.decode()
-        self.assertIn('Proofs and trust', body)
-        self.assertIn('Anchor Batches', body)
-        self.assertIn('ZK Epochs', body)
-        self.assertIn('Trust Attestations', body)
-        self.assertIn('Token Signatures', body)
+        self.assertIn('Audit of record', body)
+        self.assertIn('ZK epochs', body)
+        self.assertIn('Anchor batches', body)
+        self.assertIn('href="/epochs"', body)
+        self.assertIn('href="/anchors"', body)
 
     def test_dashboard_duress_tile_visible_for_admin(self):
         r = self.client.get('/dashboard')

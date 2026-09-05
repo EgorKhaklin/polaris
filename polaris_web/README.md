@@ -115,7 +115,7 @@ key exchange. See [DEPLOYMENT.md](../docs/operator/DEPLOYMENT.md) and
 
 | Route                       | Method   | Purpose                                       |
 |-----------------------------|----------|-----------------------------------------------|
-| `/`                         | GET      | Schema-wide stats + ActiveTokens view         |
+| `/dashboard`                | GET      | Operations: service state, token population, verification behaviour, what needs attention, cryptographic posture, audit of record |
 | `/individuals`              | GET      | List all individuals                          |
 | `/individuals/new`          | GET POST | Create individual                             |
 | `/individuals/<id>/edit`    | GET POST | Update individual                             |

@@ -5,6 +5,52 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.238 — 2026-09-05 (the dashboard is an operations page)
+
+The dashboard is remade. The previous page opened with the row counts of
+twelve schema tables, carried a roster of active tokens that duplicated
+`/tokens`, explained every panel in a paragraph, and gave the agency-by-
+algorithm authorization matrix the most prominent position on the page. None
+of that is what an operator opens the console to learn.
+
+The new page reports state an operator acts on, in the order it matters:
+
+- **Service.** The readiness roll-up as a strip of components (database,
+  rate limiter, ZK verifier, key custody, disk, Atlas cache) with each one's
+  latency or note, plus the signer: which algorithm, whether it is the real
+  ML-DSA-65 through liboqs or the development placeholder, and which custody
+  driver holds the key. The placeholder shows amber outside production and
+  red inside it.
+- **Tokens.** The population by state, issued and revoked in the last 24
+  hours and 7 days, how many active tokens expire within 30 days, and the
+  active and reserve counts by issuing agency.
+- **Verifications.** Volume in the last 24 hours and 7 days, the share that
+  did not succeed, the disclosure mix as one bar (zero-knowledge, selective,
+  full), and a per-context table with the 7-day count and its failures.
+- **Needs attention.** A list with a count, a link and a next step for each
+  thing that wants a human: duress signals in the last 24 hours (admin and
+  auditor only, as before), recovery requests awaiting a decision, privileged
+  accounts past their WebAuthn deadline, active tokens past expiry, active
+  tokens still under a classical algorithm, locked operator accounts, failed
+  logins, tokens expiring soon, anchor batches not yet on a chain, and a
+  missing closed epoch. Zero items dim; the page says so when nothing is open.
+- **Cryptographic posture.** The post-quantum share of active tokens as a
+  bar, and per algorithm the active tokens, how many agencies may issue and
+  verify under it, and its deprecation date. The full authorization matrix
+  is still here, collapsed under a summary line.
+- **Audit of record.** ZK epochs, anchor batches, duress signals on record,
+  the retention in force per class from the engine, the last archive purge,
+  and the last ten lifecycle events as a table.
+
+Every figure is a bounded aggregate; the page never enumerates a population
+(C8). The stat-card grid and the data-viz stylesheet section the old page
+used are removed with it. The tests that pinned the old content are replaced
+by tests of the new: the service strip, the population without row counts,
+the absence of the roster, the attention list, the role gate on duress, the
+posture table, the collapsed matrix, and the audit panel.
+
+---
+
 ## v9.237 — 2026-09-05 (a production readiness pass over every surface, and what it found)
 
 A full readiness audit of the repository at v9.236: every stated number

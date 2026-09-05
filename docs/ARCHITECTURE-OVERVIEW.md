@@ -392,7 +392,7 @@ has none.
 |---|---|
 | `/` | Landing page (public) |
 | `/demo` | Live walk-through of issue, verify, revoke; served only when `POLARIS_DEMO_MODE` is on, never in production |
-| `/dashboard` | The operator dashboard |
+| `/dashboard` | The operations page: service state, the token population, verification behaviour, what needs attention, the cryptographic posture, the audit of record |
 | `/atlas` | World-map view of verification activity |
 | `/individuals`, `/agencies` | The people and the issuers |
 | `/tokens`, `/tokens/<id>` | Tokens with state filters; one token with its signatures verified |
