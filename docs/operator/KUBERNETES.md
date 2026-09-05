@@ -143,10 +143,11 @@ topology denied by policy on postgres, pgbouncer, and app, a rolling
 restart that keeps the edge healthy, and (v9.244) the database failover
 under a writer with the app's labels inserting through pgbouncer: the leader
 pod deleted (it returns under the same name inside its lease and keeps the
-role, a restart in place: 1.3 s of write outage), the leader's container
+role, a restart in place: 3.2 s of write outage), the leader's container
 frozen through the node's runtime (a hung node: the other member held the
-lease after 22 s, 23 s of write outage, the thawed leader demoted and
-streaming again 6 s later), a planned switchover (3.6 s), and every
+lease after 21 s, the pool's query cancelled at the 15 s `query_timeout` so a
+15.8 s write outage, the thawed leader demoted and streaming again 6 s
+later), a planned switchover (3.5 s), and every
 acknowledged insert present on the leader afterwards; local reference run
 at v9.244, the ceilings 60 s, 60 s and 30 s. Stated limits:
 single-node kind and `tls: internal`; multi-node placement and ACME are

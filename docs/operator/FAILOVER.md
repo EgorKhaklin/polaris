@@ -52,10 +52,10 @@ stack):**
   down. pgbouncer dials `pg-router`; the application is unchanged.
 - The failover drill, [`scripts/polaris-failover-drill.sh`](../../scripts/polaris-failover-drill.sh),
   run on every push (the `ha-failover` CI job) against the ceilings in §3,
-  asserting after every scenario that each insert acknowledged since the
-  drill began is present on the leader: no acknowledged write is lost.
-- `check_ha_automation`, which fails the build if the lease semantics, the
-  routing, the drill or this analysis change out from under each other.
+  asserting after every scenario that every insert acknowledged before the
+  failure began is present on the leader, and reporting how many acknowledged
+  inside the failure window are not: with asynchronous replication that
+  number is the RPO of §6, a switchover's is zero.
 
 **Operator-supplied:**
 
@@ -132,7 +132,7 @@ the drill asserts on the right:
 
 | Induced failure | What the supervisor did | Write outage | Rejoin | Ceiling |
 |---|---|---|---|---|
-| The leader node is lost (killed, kept down) | the replica acquired the lease and promoted 21 s later | 21.0 s, no insert failed: the pooler queued them | the old node was streaming again 3 s after it was started | 60 s |
+| The leader node is lost (killed, kept down) | the replica acquired the lease and promoted 20 s later | 20.0 s; queries in flight fail fast at the 15 s `query_timeout` and the app retries (18 of them here), none lost | the old node was streaming again 3 s after it was started | 60 s |
 | The leader is cut off from the lease store; its clients and the other member can still reach it | it demoted itself after 5 s; the other member, current, took the lease after 11 s | 13.2 s, 49 inserts failed against the demoting member | streaming 4 s after reconnecting | 45 s to demote, 60 s |
 | A planned switchover (`patronictl switchover`) | the candidate was leader within a second | 3.3 s, no insert failed | the old leader followed after 3 s | 30 s |
 | One etcd member crashes | nothing: the leader kept the lease on the remaining quorum | 0.3 s longest stall, no insert failed | the member restarted on its own in 1 s | 5 s, no failure |
@@ -140,10 +140,11 @@ the drill asserts on the right:
 On Kubernetes the same members under the chart, drilled on kind by
 `scripts/polaris-helm-drill.sh` (local reference run at v9.244): a deleted
 leader pod returns under the same name inside its lease and keeps the role,
-a restart in place costing 1.3 s of writes; a leader whose container is
+a restart in place costing 3.2 s of writes; a leader whose container is
 frozen through the node's runtime (a hung node) loses the lease to the other
-member after 22 s, with a 23 s write outage, and demotes and streams again
-6 s after thawing; a planned switchover is 3.6 s.
+member after 21 s, the pool's query cancelled at the 15 s `query_timeout`
+for a 15.8 s write outage, and demotes and streams again 6 s after thawing;
+a planned switchover is 3.5 s.
 
 Two things the numbers say. The write outage of a lost leader is the lease:
 about `ttl` plus one `loop_wait` before the replica can take the key. A
@@ -176,7 +177,10 @@ router as this profile rather than pointing the pooler at the leader
 Service. And a member whose address changed under a router that stayed up
 (a recreated pod) left its old sessions hanging until TCP gave up, minutes
 later; the router now closes a session whose peer stops acknowledging within
-3 s (`tcp-ut`). The pooler itself got the same two timeouts
+3 s (`tcp-ut`) and, on that error, marks the member down so its other
+sessions are cut too (`observe layer4 on-error mark-down`), which is what
+frees a pooled connection to a pod whose address has just vanished. The
+pooler itself got the same two timeouts
 (`PGBOUNCER_TCP_USER_TIMEOUT` and keepalives) for the hops in front of it.
 
 ---

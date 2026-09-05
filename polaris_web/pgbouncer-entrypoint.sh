@@ -75,6 +75,14 @@ SERVER_CONNECT_TIMEOUT="${PGBOUNCER_SERVER_CONNECT_TIMEOUT:-3}"
 # bounds unacknowledged data to five seconds; the keepalives retire an idle
 # connection to a dead peer in about eleven.
 TCP_USER_TIMEOUT="${PGBOUNCER_TCP_USER_TIMEOUT:-5000}"
+# v9.244 — the backstop for a backend that vanishes mid-query. When the leader
+# pod is deleted or a node hangs, the router (or the network) can leave a query
+# in flight to an address that is gone but still TCP-healthy at every visible
+# hop, so nothing below this layer times out. A query that has not returned in
+# QUERY_TIMEOUT seconds is cancelled and its server connection recycled onto a
+# live path. Polaris's transactions are a single short statement, so a query
+# this long is pathological on any substrate, not only during a failover.
+QUERY_TIMEOUT="${PGBOUNCER_QUERY_TIMEOUT:-15}"
 TCP_KEEPIDLE="${PGBOUNCER_TCP_KEEPIDLE:-5}"
 TCP_KEEPINTVL="${PGBOUNCER_TCP_KEEPINTVL:-2}"
 TCP_KEEPCNT="${PGBOUNCER_TCP_KEEPCNT:-3}"
@@ -95,7 +103,8 @@ for _nv in "POLARIS_DB_PORT=$DB_PORT" "PGBOUNCER_LISTEN_PORT=$LISTEN_PORT" \
            "PGBOUNCER_DNS_NXDOMAIN_TTL=$DNS_NXDOMAIN_TTL" \
            "PGBOUNCER_SERVER_CONNECT_TIMEOUT=$SERVER_CONNECT_TIMEOUT" \
            "PGBOUNCER_TCP_USER_TIMEOUT=$TCP_USER_TIMEOUT" "PGBOUNCER_TCP_KEEPIDLE=$TCP_KEEPIDLE" \
-           "PGBOUNCER_TCP_KEEPINTVL=$TCP_KEEPINTVL" "PGBOUNCER_TCP_KEEPCNT=$TCP_KEEPCNT"; do
+           "PGBOUNCER_TCP_KEEPINTVL=$TCP_KEEPINTVL" "PGBOUNCER_TCP_KEEPCNT=$TCP_KEEPCNT" \
+           "PGBOUNCER_QUERY_TIMEOUT=$QUERY_TIMEOUT"; do
     case "${_nv#*=}" in
         ''|*[!0-9]*) echo "pgbouncer: ${_nv%%=*} must be a positive integer (got '${_nv#*=}')" >&2; exit 1 ;;
     esac
@@ -243,6 +252,9 @@ tcp_keepalive = 1
 tcp_keepidle = $TCP_KEEPIDLE
 tcp_keepintvl = $TCP_KEEPINTVL
 tcp_keepcnt = $TCP_KEEPCNT
+# v9.244: a query with no answer for this long is cancelled and its server
+# connection recycled (a backend that vanished mid-query, see above).
+query_timeout = $QUERY_TIMEOUT
 # psycopg2 sends extra_float_digits; pgbouncer must tolerate it in transaction mode.
 ignore_startup_parameters = extra_float_digits
 # TLS (v9.121): server_tls encrypts the postgres hop, client_tls the app hop.

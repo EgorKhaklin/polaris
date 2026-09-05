@@ -37,9 +37,9 @@ Local reference run at v9.244:
 
 | Induced | Held | Measured |
 |---|---|---|
-| the leader pod deleted | it returns under the same name inside its lease and keeps the role: a restart in place | 1.3 s write outage; one leader, one streaming replica again in 3 s |
-| the leader's container frozen through the node's runtime (a hung node) | the other member holds the lease; the thawed leader demotes and rejoins | lease moved at 22 s; 23 s write outage; demoted and streaming 6 s after thawing |
-| a planned switchover | the candidate leads; the old leader follows | 3.6 s write outage; followed at 3 s |
+| the leader pod deleted | it returns under the same name inside its lease and keeps the role: a restart in place | 3.2 s write outage; one leader, one streaming replica again in 1 s |
+| the leader's container frozen through the node's runtime (a hung node) | the other member holds the lease; the thawed leader demotes and rejoins | lease moved at 21 s; the pool's query cancelled at the 15 s query_timeout for a 15.8 s write outage; demoted and streaming 6 s after thawing |
+| a planned switchover | the candidate leads; the old leader follows | 3.5 s write outage; followed at 3 s |
 
 and every acknowledged insert present on the leader afterwards.
 
@@ -100,7 +100,7 @@ times a second. Local reference run at v9.243:
 
 | Induced | Held | Measured |
 |---|---|---|
-| the leader node lost (killed, kept down) | the replica takes the lease; the old node rejoins on start | promoted at 19 s; 20.0 s write outage, no insert failed; rejoined 4 s after start |
+| the leader node lost (killed, kept down) | the replica takes the lease; the old node rejoins on start | promoted at 20 s; 20.0 s write outage, queries fail fast at the query timeout and are retried, none lost; rejoined 3 s after start |
 | the leader cut off from the lease store, clients still reaching it | it demotes itself; the other member takes the lease | demoted at 9 s; lease moved at 10 s; 12.3 s write outage, no insert failed |
 | a planned switchover | the candidate leads; the old leader follows | 3.4 s write outage, no insert failed; followed at 2 s |
 | one etcd member crashed | the quorum carries the lease; the leader does not change | 0.3 s longest stall, no insert failed |

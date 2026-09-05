@@ -36,7 +36,7 @@ data:
         srvtcpka-idle 3s
         srvtcpka-intvl 1s
         srvtcpka-cnt 3
-        default-server inter 500ms fall 2 rise 2 on-marked-down shutdown-sessions tcp-ut 3000
+        default-server inter 500ms fall 2 rise 2 on-marked-down shutdown-sessions tcp-ut 3000 observe layer4 error-limit 1 on-error mark-down
 
     resolvers kube
         parse-resolv-conf

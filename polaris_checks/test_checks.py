@@ -1350,8 +1350,9 @@ def test_pgbouncer_self_built_check_discriminates(tmp_path):
     GOOD_ENTRY = ("#!/bin/sh\nPWFILE=\"${POLARIS_DB_PASSWORD_FILE:-/run/secrets/x}\"\n"
                   "SERVER_LOGIN_RETRY=\"${PGBOUNCER_SERVER_LOGIN_RETRY:-1}\"\nDNS_NXDOMAIN_TTL=\"${PGBOUNCER_DNS_NXDOMAIN_TTL:-1}\"\n"
                   "SERVER_CONNECT_TIMEOUT=\"${PGBOUNCER_SERVER_CONNECT_TIMEOUT:-3}\"\nTCP_USER_TIMEOUT=\"${PGBOUNCER_TCP_USER_TIMEOUT:-5000}\"\n"
+                  "QUERY_TIMEOUT=\"${PGBOUNCER_QUERY_TIMEOUT:-15}\"\n"
                   "cat > ini <<EOF\nserver_login_retry = $SERVER_LOGIN_RETRY\ndns_nxdomain_ttl = $DNS_NXDOMAIN_TTL\n"
-                  "server_connect_timeout = $SERVER_CONNECT_TIMEOUT\ntcp_user_timeout = $TCP_USER_TIMEOUT\nEOF\n")
+                  "server_connect_timeout = $SERVER_CONNECT_TIMEOUT\ntcp_user_timeout = $TCP_USER_TIMEOUT\nquery_timeout = $QUERY_TIMEOUT\nEOF\n")
     gh = tmp_path / ".github" / "workflows"
     gh.mkdir(parents=True)
     (gh / "ci.yml").write_text("jobs:\n  d:\n    steps:\n      run: docker build -f polaris_web/Dockerfile.pgbouncer .\n")
@@ -3330,7 +3331,7 @@ def test_ha_automation_check_discriminates(tmp_path):
         "polaris_web/Dockerfile.postgres": "COPY polaris_web/requirements-patroni.txt /tmp/r.txt\nRUN pip3 install -r /tmp/r.txt && patroni --version\n",
         "polaris_web/requirements-patroni.txt": "patroni[etcd3]==4.1.5\n",
         "polaris_web/Dockerfile.etcd": "FROM alpine:3.24@sha256:" + "b" * 64 + "\nRUN apk add etcd\nUSER etcd\n",
-        "polaris_web/haproxy-pg.cfg": "resolvers docker\noption httpchk GET /primary\noption httpchk GET /replica\ndefault-server on-marked-down shutdown-sessions tcp-ut 3000\n",
+        "polaris_web/haproxy-pg.cfg": "resolvers docker\noption httpchk GET /primary\noption httpchk GET /replica\ndefault-server on-marked-down shutdown-sessions tcp-ut 3000 on-error mark-down\n",
         "scripts/polaris-failover-drill.sh": DRILL,
         "scripts/polaris-image-build.sh": "build_one polaris_web/Dockerfile.etcd polaris-etcd:x polaris_web\n",
         ".github/workflows/ci.yml": CI,

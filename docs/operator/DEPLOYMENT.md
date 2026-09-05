@@ -109,7 +109,7 @@ every CI push against hard ceilings:
 
 | Operation | What clients see | Measured (v9.240, local reference run) | Ceiling |
 |---|---|---|---|
-| Caddyfile change, `caddy reload` | nothing; a real change applied live, verified, reverted | 0 dropped of 112, slowest request 0.12 s | 0 drops |
+| Caddyfile change, `caddy reload` | nothing; a header added to the existing site, applied live, verified, reverted (a handler swap, not a listener change, which is Caddy's zero-drop path) | 0 dropped of 110, slowest request 0.06 s | 0 drops |
 | Edge recreation (`--force-recreate caddy`, an image update) | a sub-second gap | 0.3 s window, 6 dropped of 95 | 30 s |
 | Database restart (`restart postgres`) | latency, not errors: pgbouncer queues a query until its server connection is back | 0 dropped of 116, slowest request 0.94 s | 60 s |
 

@@ -303,6 +303,9 @@ services:
       # v9.244 — a backend that stops answering mid-query is retired in 5 s
       # (the Kubernetes failover drill found a frozen leader holding the pool).
       PGBOUNCER_TCP_USER_TIMEOUT: '5000'
+      # v9.244 — a query with no answer for 15 s is cancelled and its server
+      # connection recycled (a backend that vanished mid-query, e.g. a failover).
+      PGBOUNCER_QUERY_TIMEOUT: '15'
       # v9.121/v9.131 — TLS + VERIFICATION on both hops. server_tls verify-ca
       # pins postgres's self-signed cert (server_tls_ca_file); client_tls presents
       # pgbouncer's STABLE self-signed cert (mounted, so the app can pin it) and

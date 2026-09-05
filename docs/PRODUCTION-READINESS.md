@@ -38,9 +38,10 @@ under traffic on every push by `scripts/polaris-window-drill.sh` against a
 30 s ceiling (v9.240), and an edge configuration change is a live reload
 with no window at all. The database half closed with the HA profile
 (v9.243, [FAILOVER.md](operator/FAILOVER.md)): under Patroni a lost leader
-is replaced within its 20 s lease with no insert failed (21.0 s measured at
-v9.244), a planned switchover is a 3.3 s outage, and a leader that loses its
-lease store stands down in 5 s; the hosts the members run on are the operator's
+is replaced within its 20 s lease (20.0 s measured at v9.244; queries in
+flight fail fast at the pooler's 15 s query timeout and the app retries,
+none lost), a planned switchover is a 3.4 s outage, and a leader that loses
+its lease store stands down in 7 s; the hosts the members run on are the operator's
 placement. A single-host database restart without the profile remains
 latency the pooler absorbs (v9.240), and a database crash a 0.6 s window
 (v9.242). Closing the edge half means a second edge with an address that

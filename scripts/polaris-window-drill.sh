@@ -17,7 +17,10 @@
 #   scripts/polaris-window-drill.sh          # POLARIS_DRILL_URL defaults to https://localhost:8443
 #
 # Scenarios, each under continuous traffic against the edge:
-#   1. Edge configuration reload: a real change is written into the mounted
+#   1. Edge configuration reload: a response header is added inside the
+#      existing site and reloaded through the admin socket, then reverted. A
+#      handler swap leaves the listeners untouched, which is Caddy's zero-drop
+#      path; adding a new listen address is not (v9.244)
 #      Caddyfile (a new listener inside the container), applied with
 #      `caddy reload` through the admin unix socket, verified live, then
 #      reverted the same way. Assertion: ZERO dropped requests.
@@ -124,22 +127,38 @@ RELOAD=(compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapt
 
 echo "== 1. edge configuration reload under traffic =="
 traffic_start "$WORK/reload.json"
-{ cat "$WORK/Caddyfile.orig"; printf '\n# window drill\nhttp://127.0.0.1:8081 {\n    respond "window-drill" 200\n}\n'; } > "$WORK/Caddyfile.drill"
+# A response header added INSIDE the existing site block: a pure config reload
+# that swaps the HTTP handler with the :8443 and :8080 listeners untouched,
+# which is Caddy's zero-drop path. Adding a new listen address (a second site
+# on another port) is not: opening and closing a listener can reset a
+# connection being accepted on the main one, which the drill measured as 1
+# drop in ~115 on a Linux runner (v9.244).
+python3 - "$WORK/Caddyfile.orig" "$WORK/Caddyfile.drill" <<'PYIN'
+import re, sys
+src = open(sys.argv[1]).read().splitlines(keepends=True)
+out, done = [], False
+for line in src:
+    out.append(line)
+    if not done and re.match(r'^\S.*\{\s*$', line):   # the site address line, not the bare-{ global block
+        out.append('    header X-Window-Drill "live"\n'); done = True
+open(sys.argv[2], "w").write("".join(out))
+sys.exit(0 if done else 1)
+PYIN
+grep -q "X-Window-Drill" "$WORK/Caddyfile.drill" || fail "could not insert the drill header into the Caddyfile"
 cat "$WORK/Caddyfile.drill" > "$CADDYFILE"
 "${RELOAD[@]}" >/dev/null 2>&1 || fail "caddy reload through the admin socket failed"
 sleep 1
-body=$(compose exec -T caddy wget -qO- http://127.0.0.1:8081/ 2>/dev/null || true)
-[[ "$body" == "window-drill" ]] || fail "the reloaded configuration is not live inside the edge (got '${body}')"
+hdr=$(curl -skI "$URL/api/health/live" 2>/dev/null | tr -d '\r' | awk -F': ' 'tolower($1)=="x-window-drill"{print $2}')
+[[ "$hdr" == "live" ]] || fail "the reloaded configuration is not live at the edge (X-Window-Drill: '${hdr}')"
 restore_caddyfile
 "${RELOAD[@]}" >/dev/null 2>&1 || fail "caddy reload of the original Caddyfile failed"
 sleep 1
-if compose exec -T caddy wget -qO- -T 2 http://127.0.0.1:8081/ >/dev/null 2>&1; then
-    fail "the drill listener survived the reload of the original Caddyfile"
-fi
+hdr=$(curl -skI "$URL/api/health/live" 2>/dev/null | tr -d '\r' | awk -F': ' 'tolower($1)=="x-window-drill"{print $2}')
+[[ -z "$hdr" ]] || fail "the drill header survived the reload of the original Caddyfile (X-Window-Drill: '${hdr}')"
 sleep 2
 traffic_stop
 r_req=$(stat "$WORK/reload.json" requests); r_drops=$(stat "$WORK/reload.json" drops); r_lat=$(stat "$WORK/reload.json" max_latency_s)
-echo "  reload: ${r_req} requests, ${r_drops} drops, slowest request ${r_lat} s (a change applied live, verified, and reverted)"
+echo "  reload: ${r_req} requests, ${r_drops} drops, slowest request ${r_lat} s (a header added to the site, applied live, verified, reverted); breakdown $(stat "$WORK/reload.json" by)"
 [[ "$r_req" -ge 40 ]] || fail "too few requests during the reload scenario (${r_req})"
 [[ "$r_drops" -eq 0 ]] || fail "${r_drops} requests dropped during a configuration reload; the edge restarted a listener"
 

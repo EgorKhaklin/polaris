@@ -779,6 +779,7 @@ deployments.
 | `PGBOUNCER_DNS_NXDOMAIN_TTL` | 1 | Docker unregisters a container's name while it restarts; PgBouncer's 15 s default caches that failure for 15 s (v9.242) |
 | `PGBOUNCER_SERVER_CONNECT_TIMEOUT` | 3 | Never above a few seconds: a connect that has not completed in 3 s is a dead or demoted peer. On the 15 s default the failover drill measured a connect started just before HAProxy marked the old leader down stalling every client for 15 s (v9.243) |
 | `PGBOUNCER_TCP_USER_TIMEOUT` | 5000 ms | Never above a few seconds: a backend that stops answering mid-query (a frozen node) is retired in 5 s instead of TCP's minutes. On Kubernetes nothing else cuts the pool's connections to a frozen leader; the kind drill found the writes hanging until it was set (v9.244) |
+| `PGBOUNCER_QUERY_TIMEOUT` | 15 s | A query with no answer for this long is cancelled and its server connection recycled: the backstop for a backend that vanishes mid-query (a deleted pod, a hung node) and is still TCP-healthy at every visible hop, so nothing else times out. Polaris's transactions are one short statement, so 15 s is pathological on any substrate (v9.244) |
 
 **Operator commands:**
 

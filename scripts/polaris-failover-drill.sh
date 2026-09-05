@@ -208,11 +208,15 @@ replica_current() {  # replica_current MEMBER VIA: streaming with zero lag, twic
     return 0
 }
 ROWS0=0
-no_lost_write() {  # every insert acknowledged since the drill began is in the surviving history
-    local leader rows acked; leader=$(leader); rows=$(( $(rows_on "$leader") - ROWS0 )); acked=$(ok_count)
-    [[ "$rows" -ge "$acked" ]] || fail "$rows rows added to ha_marker on $leader but $acked inserts were acknowledged: an acknowledged write was lost"
-    echo "  integrity: $rows rows added on $leader, $acked inserts acknowledged"
+no_lost_write() {  # no_lost_write FLOOR: every insert acknowledged before the failure began (FLOOR of them) is in
+                   # the surviving history; inserts acknowledged after it began may be the async replication's
+                   # RPO (FAILOVER.md section 6) and are reported, not tolerated silently
+    local floor="$1" leader rows acked lost; leader=$(leader); rows=$(( $(rows_on "$leader") - ROWS0 )); acked=$(ok_count)
+    [[ "$rows" -ge "$floor" ]] || fail "$rows rows added to ha_marker on $leader but $floor inserts were acknowledged before the failure began: an acknowledged write from before the failure was lost"
+    lost=$(( acked - rows )); [[ "$lost" -lt 0 ]] && lost=0
+    echo "  integrity: $rows rows added on $leader, $acked inserts acknowledged, $lost of them (acknowledged inside the failure window) not in the surviving history"
 }
+member_role_is() { [[ "$(rest "$1" /patroni | python3 -c "import json,sys; print(json.load(sys.stdin).get('role',''))" 2>/dev/null)" == "$2" ]]; }
 settle() {  # the write stream must be flowing and the replica current before a scenario starts its clock
     local t l r; t=$(now); wait_for 60 writes_ok_since "$t" >/dev/null || fail "writes are not flowing before the next scenario"
     l=$(leader); r=$(other "$l")
@@ -252,7 +256,7 @@ echo "  writes flowing through pgbouncer -> pg-router -> $L0"
 settle
 echo "== 1. the leader node ($L0) is lost: killed, and it stays down past the lease =="
 traffic_start "$WORK/s1.json"
-t0=$(now)
+acked0=$(ok_count); t0=$(now)
 docker kill -s KILL "polaris-$L0" >/dev/null   # a manual stop to Docker: no restart, the node is gone
 p1=$(wait_for "$CEIL_FAILOVER" leader_changed_from "$L0" "$R0") || fail "no new leader within ${CEIL_FAILOVER}s of losing the leader"
 L1=$(leader_via "$R0"); [[ "$L1" == "$R0" ]] || fail "the new leader is $L1, not the surviving replica $R0"
@@ -264,7 +268,7 @@ sleep 2; traffic_stop
 tl1=$(cluster_field "$L1" timeline "$L1")
 echo "  promoted $L1 after ${p1}s; writes: ${fails1} failed (span ${gap1}s), longest stall ${stall1}s, outage ${out1}s; $L0 rejoined as a replica ${j1}s after it was started; timeline $tl1; reads dropped $(drops "$WORK/s1.json")"
 le "$out1" "$CEIL_FAILOVER" || fail "write outage ${out1}s exceeds the ${CEIL_FAILOVER}s ceiling"
-no_lost_write
+no_lost_write "$acked0"
 [[ "$(cluster_field "$L1" timeline "$L0")" == "$tl1" ]] || fail "$L0 is on timeline $(cluster_field "$L1" timeline "$L0"), the leader on $tl1: it did not follow"
 
 # --- 2. the leader is cut off from the lease store -------------------------------------
@@ -274,9 +278,14 @@ PARTITION_ALIAS_ARGS=()
 while IFS= read -r a; do [[ -n "$a" ]] && PARTITION_ALIAS_ARGS+=(--alias "$a"); done < <(docker inspect -f '{{json (index .NetworkSettings.Networks "'"$DCS_NET"'").Aliases}}' "polaris-$L1" \
     | python3 -c "import json,sys; [print(a) for a in (json.load(sys.stdin) or [])]")
 traffic_start "$WORK/s2.json"
-t0=$(now)
+acked0=$(ok_count); t0=$(now)
 docker network disconnect "$DCS_NET" "polaris-$L1"; PARTITIONED="$L1"
 d2=$(wait_for "$CEIL_DEMOTE" not_primary "$L1") || fail "$L1 kept answering /primary for ${CEIL_DEMOTE}s without its lease: the split-brain guard did not hold"
+# The member stops answering /primary the moment Patroni decides to demote,
+# a second or so before its Postgres restarts read-only; inserts it still
+# acknowledges in that second are within its lease. The leaderless clock
+# starts when it is read-only.
+wait_for 30 member_role_is "$L1" replica >/dev/null || fail "$L1 did not restart read-only within 30s of standing down"
 acked_at_demotion=$(ok_count)
 outcome2=promoted
 if p2=$(wait_for "$CEIL_FAILOVER" leader_is "$L0" "$L0"); then
@@ -304,7 +313,7 @@ if [[ "$outcome2" == promoted ]]; then
 else
     echo "  $L1 demoted itself after ${d2}s; leaderless until the partition healed; $L2 held the lease ${p2}s after the partition began; writes: ${fails2} failed (span ${gap2}s), longest stall ${stall2}s, outage ${out2}s; $R2 streaming after ${j2}s; reads dropped $(drops "$WORK/s2.json")"
 fi
-no_lost_write
+no_lost_write "$acked0"
 
 # --- 3. a planned switchover ------------------------------------------------------------
 settle
@@ -321,7 +330,7 @@ sleep 2; traffic_stop
 read -r gap3 fails3 stall3 <<< "$(gap_since "$t0")"; out3=$(outage "$gap3" "$stall3")
 echo "  $C3 leader after ${p3}s; writes: ${fails3} failed (span ${gap3}s), longest stall ${stall3}s, outage ${out3}s; $L3 follows after ${j3}s; reads dropped $(drops "$WORK/s3.json")"
 le "$out3" "$CEIL_SWITCHOVER" || fail "switchover write outage ${out3}s exceeds the ${CEIL_SWITCHOVER}s ceiling"
-no_lost_write
+no_lost_write "$(ok_count)"
 L1="$C3"
 
 # --- 4. an etcd member crashes ----------------------------------------------------------

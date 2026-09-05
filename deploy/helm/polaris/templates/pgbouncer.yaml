@@ -48,6 +48,7 @@ spec:
             - {name: PGBOUNCER_DNS_NXDOMAIN_TTL, value: "1"}
             - {name: PGBOUNCER_SERVER_CONNECT_TIMEOUT, value: "3"}
             - {name: PGBOUNCER_TCP_USER_TIMEOUT, value: "5000"}
+            - {name: PGBOUNCER_QUERY_TIMEOUT, value: "15"}
             - {name: PGBOUNCER_SERVER_TLS_SSLMODE, value: verify-ca}
             - {name: PGBOUNCER_SERVER_TLS_CA_FILE, value: /etc/polaris-pg-certs/postgres.crt}
             - {name: PGBOUNCER_CLIENT_TLS_SSLMODE, value: require}

@@ -1551,14 +1551,15 @@ def check_pgbouncer_self_built(root: pathlib.Path) -> list[Finding]:
     # 16.2 s outage for the application. The generated ini must set both to a
     # second or two, from the entrypoint's own defaults.
     for key, var, cap in (("server_login_retry", "SERVER_LOGIN_RETRY", 2), ("dns_nxdomain_ttl", "DNS_NXDOMAIN_TTL", 2),
-                          ("server_connect_timeout", "SERVER_CONNECT_TIMEOUT", 5), ("tcp_user_timeout", "TCP_USER_TIMEOUT", 10000)):
+                          ("server_connect_timeout", "SERVER_CONNECT_TIMEOUT", 5), ("tcp_user_timeout", "TCP_USER_TIMEOUT", 10000),
+                          ("query_timeout", "QUERY_TIMEOUT", 30)):
         m = re.search(r'(?m)^%s="\$\{PGBOUNCER_%s:-(\d+)\}"' % (var, var), entry)
         if not m or int(m.group(1)) > cap:
             return _fail("pgbouncer_image",
                          f"pgbouncer-entrypoint.sh must default PGBOUNCER_{var} to at most {cap} seconds: on PgBouncer's "
                          f"15 s defaults a half-second database crash is a 16 s outage for the application, a "
-                         f"connect started just before a failover stalls every client for 15 s, and a frozen leader "
-                         f"holds the pool for minutes")
+                         f"connect started just before a failover stalls every client for 15 s, a frozen leader "
+                         f"holds the pool for minutes, and a query to a vanished backend never returns")
         if not re.search(r"(?m)^%s = \$%s$" % (key, var), entry):
             return _fail("pgbouncer_image", f"pgbouncer-entrypoint.sh must write `{key} = ${var}` into the generated ini")
     if (root / "polaris_web" / "pgbouncer.ini").exists():
@@ -4472,7 +4473,7 @@ def check_ha_automation(root: pathlib.Path) -> list[Finding]:
         return _fail("ha_automation", "Dockerfile.etcd must build from a digest-pinned base and run as the etcd user")
     if "Dockerfile.etcd" not in build:
         return _fail("ha_automation", "polaris-image-build.sh must build Dockerfile.etcd with the stack")
-    for needle in ("GET /primary", "GET /replica", "on-marked-down shutdown-sessions", "resolvers", "tcp-ut"):
+    for needle in ("GET /primary", "GET /replica", "on-marked-down shutdown-sessions", "resolvers", "tcp-ut", "on-error mark-down"):
         if needle not in hap:
             return _fail("ha_automation", f"haproxy-pg.cfg lacks {needle!r}: route on Patroni's role endpoints, cut sessions "
                          "to a demoted node, close sessions to a vanished address (tcp-ut), follow Docker DNS")
