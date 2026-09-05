@@ -703,6 +703,99 @@ class QuotaCommandTests(CLIBaseTestCase):
         self.assertIn('No agency quotas set', r.stdout)
 
 
+class RetentionCommandTests(CLIBaseTestCase):
+    """v9.235 (P1.11): retention-show / retention-set are the operator's view of
+    the retention decision, and the only surface that does not require writing
+    SQL by hand. The refusals matter as much as the writes: an operator cannot
+    talk the floor down from here either."""
+
+    ADMIN = '1'
+
+    def _effective(self, table_class, jurisdiction=None):
+        conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        with conn.cursor() as cur:
+            cur.execute("SELECT retention_days_for(%s, %s) AS d", (table_class, jurisdiction))
+            days = cur.fetchone()['d']
+        conn.close()
+        return days
+
+    def test_retention_show_lists_every_class_and_its_cutoff(self):
+        r = run_cli('retention-show')
+        for cls in ('TOKEN_LIFECYCLE', 'VERIFICATION', 'ENROLLMENT', 'AUTH_AUDIT'):
+            self.assertIn(cls, r.stdout)
+        self.assertIn('purgeable before', r.stdout)
+        self.assertIn('floor is 365 days', r.stdout)
+
+    def test_retention_set_records_a_decision_and_show_reflects_it(self):
+        r = run_cli('retention-set', '--actor-user-id', self.ADMIN,
+                    '--jurisdiction', 'US-CLI', '--table-class', 'AUTH_AUDIT',
+                    '--days', '1095',
+                    '--justification', 'RetentionCommandTests: a three-year operator record')
+        self.assertIn('AUTH_AUDIT kept 1095 days', r.stdout)
+        self.assertEqual(self._effective('AUTH_AUDIT', 'US-CLI'), 1095)
+        # A class with no jurisdiction row falls back to the deployment default.
+        self.assertEqual(self._effective('TOKEN_LIFECYCLE', 'US-CLI'),
+                         self._effective('TOKEN_LIFECYCLE'))
+        r = run_cli('retention-show', '--jurisdiction', 'US-CLI', '--history')
+        self.assertIn('1095 days', r.stdout)
+        self.assertIn('RetentionCommandTests', r.stdout)
+
+    def test_retention_set_supersedes_rather_than_edits(self):
+        run_cli('retention-set', '--actor-user-id', self.ADMIN, '--jurisdiction', 'US-CLI2',
+                '--table-class', 'VERIFICATION', '--days', '1000',
+                '--justification', 'RetentionCommandTests: the first decision recorded')
+        run_cli('retention-set', '--actor-user-id', self.ADMIN, '--jurisdiction', 'US-CLI2',
+                '--table-class', 'VERIFICATION', '--days', '2000',
+                '--justification', 'RetentionCommandTests: the decision that replaced it')
+        self.assertEqual(self._effective('VERIFICATION', 'US-CLI2'), 2000)
+        r = run_cli('retention-show', '--jurisdiction', 'US-CLI2', '--history')
+        self.assertIn('superseded', r.stdout)
+        self.assertIn('the first decision recorded', r.stdout,
+                      "the replaced decision must stay readable")
+
+    def test_retention_set_applies_a_template(self):
+        r = run_cli('retention-set', '--actor-user-id', self.ADMIN,
+                    '--jurisdiction', 'US-CLI3', '--template', 'MINIMIZED')
+        self.assertIn('MINIMIZED adopted', r.stdout)
+        self.assertEqual(self._effective('TOKEN_LIFECYCLE', 'US-CLI3'), 1825)
+        self.assertEqual(self._effective('VERIFICATION', 'US-CLI3'), 730)
+
+    def test_retention_set_refuses_below_the_floor(self):
+        r = run_cli('retention-set', '--actor-user-id', self.ADMIN, '--table-class', 'VERIFICATION',
+                    '--days', '30',
+                    '--justification', 'RetentionCommandTests: a month is not an audit of record',
+                    expect_success=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('at least 365', r.stderr)
+
+    def test_retention_set_refuses_a_short_justification(self):
+        r = run_cli('retention-set', '--actor-user-id', self.ADMIN, '--table-class', 'VERIFICATION',
+                    '--days', '1000', '--justification', 'because', expect_success=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('20 characters', r.stderr)
+
+    def test_retention_set_refuses_a_non_admin(self):
+        conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        with conn.cursor() as cur:
+            cur.execute("SELECT user_id FROM AppUser WHERE role <> 'admin' ORDER BY user_id LIMIT 1")
+            row = cur.fetchone()
+        conn.close()
+        if row is None:
+            self.skipTest("no non-admin AppUser in the sample data")
+        r = run_cli('retention-set', '--actor-user-id', str(row['user_id']),
+                    '--template', 'STANDARD-5Y', expect_success=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('admin-only', r.stderr)
+
+    def test_retention_set_refuses_a_template_mixed_with_a_class(self):
+        r = run_cli('retention-set', '--actor-user-id', self.ADMIN, '--template', 'MINIMIZED',
+                    '--table-class', 'VERIFICATION', '--days', '1000',
+                    '--justification', 'RetentionCommandTests: both forms at once',
+                    expect_success=False)
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn('do not combine', r.stderr)
+
+
 class AuditLogCommandTests(CLIBaseTestCase):
 
     def setUp(self):

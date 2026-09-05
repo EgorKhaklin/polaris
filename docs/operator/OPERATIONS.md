@@ -565,6 +565,21 @@ effective row per (table class, jurisdiction) with the retention in days, a
 justification, and the operator who set it. A fresh deployment ships with five
 years for every class.
 
+The CLI is the shortest path; the SQL below it is the same thing by hand.
+
+```bash
+# What is in force, and the cutoff each class resolves to.
+polaris-id retention-show
+polaris-id retention-show --jurisdiction=US-CA --history   # + superseded decisions
+
+# Adopt a profile, or record a decision of your own. Both append: the previous
+# decision is superseded, never edited. Admin only.
+polaris-id retention-set --actor-user-id=7 --jurisdiction=US-CA --template=MINIMIZED
+polaris-id retention-set --actor-user-id=7 --jurisdiction=US-CA \
+    --table-class=AUTH_AUDIT --days=1095 \
+    --justification="State retention schedule 4.2 for operator access records."
+```
+
 ```bash
 # What is in force right now.
 psql -d polaris -c "

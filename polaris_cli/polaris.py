@@ -3,8 +3,8 @@
 
 Every operation the web application performs on tokens, individuals, agencies
 and operator accounts, without a browser: the use-case stored procedures, the
-read-only queries, the operator-account and quota management, and the
-authentication audit log.
+read-only queries, the operator-account, quota and retention management, and
+the authentication audit log.
 
 Installed as `polaris-id`; from a checkout, run `python3 polaris_cli/polaris.py`.
 
@@ -30,6 +30,8 @@ drift from what the program accepts):
     user-deactivate    Deactivate (soft-delete) a user account
     quota-set          Set per-agency caps; 0 clears a cap
     quota-show         Show per-agency caps (all agencies, or one)
+    retention-show     What retention is in force, and the cutoff it resolves to
+    retention-set      Record a retention decision, or adopt a named template
     audit-log          Tail the authentication audit log
 
 The database connection uses the same environment variables as the web
@@ -1079,6 +1081,154 @@ def cmd_quota_show(args):
 
 
 # ----------------------------------------------------------------------------
+# COMMAND: retention-show / retention-set (the retention decision, P1.11)
+# ----------------------------------------------------------------------------
+
+def cmd_retention_show(args):
+    """What retention is in force, and what the purge would use.
+
+    Shows the effective policy per class, the cutoff each resolves to, and
+    optionally the decisions those replaced. The history is the point: a
+    retention decision is an audit of record, so a shortening is visible.
+    """
+    conn = connect()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT to_regclass('public.retentionpolicy') IS NOT NULL AS present")
+            if not cur.fetchone()['present']:
+                sys.stderr.write(red("RetentionPolicy is absent; apply the retention-engine "
+                                     "migration (2026-09-05-001) first.\n"))
+                sys.exit(2)
+            cur.execute("""
+                SELECT c AS table_class,
+                       retention_days_for(c, %s) AS days,
+                       retention_cutoff(c, %s)   AS cutoff
+                  FROM unnest(ARRAY['TOKEN_LIFECYCLE','VERIFICATION',
+                                    'ENROLLMENT','AUTH_AUDIT']::varchar(24)[]) AS c
+            """, (args.jurisdiction, args.jurisdiction))
+            effective = cur.fetchall()
+            cur.execute("""
+                SELECT policy_id, table_class, jurisdiction, retention_days, justification,
+                       set_by_user_id, effective_from, superseded_at
+                  FROM RetentionPolicy
+                 WHERE (%s IS NULL OR jurisdiction IS NOT DISTINCT FROM %s)
+                 ORDER BY table_class, effective_from DESC
+            """, (args.jurisdiction, args.jurisdiction))
+            rows = cur.fetchall()
+    finally:
+        conn.close()
+
+    scope = args.jurisdiction or '(deployment default)'
+    print(f"Retention in force for {scope}:")
+    for r in effective:
+        years = r['days'] / 365.0
+        print(f"  {r['table_class']:<16} {r['days']:>5} days ({years:.1f}y)   "
+              f"purgeable before {r['cutoff']:%Y-%m-%d}")
+    print(dim("  The floor is 365 days, enforced by a CHECK constraint: no configuration "
+              "reaches below it."))
+
+    if not args.history:
+        return
+    print()
+    print("Recorded decisions:")
+    if not rows:
+        print(dim("  none; every class resolves to the schema floor."))
+        return
+    for r in rows:
+        state = 'superseded ' + r['superseded_at'].strftime('%Y-%m-%d') \
+            if r['superseded_at'] else 'in force'
+        juris = r['jurisdiction'] or '(default)'
+        print(f"  #{r['policy_id']} {r['table_class']:<16} {juris:<10} "
+              f"{r['retention_days']:>5}d  {state:<22} "
+              f"from {r['effective_from']:%Y-%m-%d} by user {r['set_by_user_id']}")
+        print(dim(f"     {r['justification']}"))
+
+
+def cmd_retention_set(args):
+    """Record a retention decision, or adopt one of the two named templates.
+
+    Either --template, or --table-class with --days and --justification. Both
+    append: the previous decision is superseded, never edited, so what was
+    decided when survives. Both are admin-gated at the database.
+    """
+    if args.template and (args.table_class or args.days is not None):
+        sys.stderr.write(red("--template adopts a whole profile; do not combine it with "
+                             "--table-class/--days.\n"))
+        sys.exit(1)
+    if not args.template:
+        if not args.table_class or args.days is None:
+            sys.stderr.write(red("Give --template, or --table-class with --days and "
+                                 "--justification.\n"))
+            sys.exit(1)
+        if len((args.justification or '').strip()) < 20:
+            sys.stderr.write(red("--justification must be at least 20 characters: it is what "
+                                 "an assessor reads.\n"))
+            sys.exit(1)
+        if args.days < 365:
+            sys.stderr.write(red(f"--days must be at least 365. The floor is a schema "
+                                 f"constraint, not a setting; {args.days} would put an audit "
+                                 f"row out of reach of the record.\n"))
+            sys.exit(1)
+
+    conn = connect()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT role FROM AppUser WHERE user_id = %s", (args.actor_user_id,))
+            actor = cur.fetchone()
+            if actor is None:
+                sys.stderr.write(red(f"No such user: {args.actor_user_id}\n"))
+                sys.exit(1)
+            if actor['role'] != 'admin':
+                sys.stderr.write(red(f"user {args.actor_user_id} has role {actor['role']}; "
+                                     f"recording a retention decision is admin-only.\n"))
+                sys.exit(1)
+
+            if args.template:
+                cur.execute("CALL uc_apply_retention_template(%s, %s, %s)",
+                            (args.template, args.jurisdiction, args.actor_user_id))
+                conn.commit()
+                scope = args.jurisdiction or '(deployment default)'
+                print(green(f"✓ {args.template} adopted for {scope}"))
+            else:
+                cur.execute("""
+                    UPDATE RetentionPolicy SET superseded_at = now()
+                     WHERE table_class = %s
+                       AND jurisdiction IS NOT DISTINCT FROM %s
+                       AND superseded_at IS NULL
+                """, (args.table_class, args.jurisdiction))
+                superseded = cur.rowcount
+                cur.execute("""
+                    INSERT INTO RetentionPolicy
+                        (table_class, jurisdiction, retention_days, justification, set_by_user_id)
+                    VALUES (%s, %s, %s, %s, %s) RETURNING policy_id
+                """, (args.table_class, args.jurisdiction, args.days,
+                      args.justification.strip(), args.actor_user_id))
+                pid = cur.fetchone()['policy_id']
+                conn.commit()
+                scope = args.jurisdiction or '(deployment default)'
+                print(green(f"✓ policy #{pid}: {args.table_class} kept {args.days} days "
+                            f"for {scope}"))
+                if superseded:
+                    print(dim(f"  {superseded} earlier decision superseded; it stays readable."))
+        print(dim("  The purge refuses any cutoff inside this window. "
+                  "See docs/design/retention.md."))
+    except psycopg2.errors.CheckViolation as e:
+        conn.rollback()
+        sys.stderr.write(red(f"Refused: {str(e).split(chr(10))[0]}\n"))
+        sys.exit(3)
+    except psycopg2.errors.InsufficientPrivilege as e:
+        conn.rollback()
+        sys.stderr.write(red(f"Refused: {str(e).split(chr(10))[0]}\n"))
+        sys.exit(3)
+    except psycopg2.Error as e:
+        conn.rollback()
+        sys.stderr.write(red(f"Database error: {db_error_message(e)}\n"))
+        sys.exit(2)
+    finally:
+        conn.close()
+
+
+# ----------------------------------------------------------------------------
 # COMMAND: audit-log (tail authentication audit events)
 # ----------------------------------------------------------------------------
 
@@ -1397,6 +1547,30 @@ def build_parser():
     p_qsh = sub.add_parser('quota-show', help='Show per-agency caps (all agencies, or one)')
     p_qsh.add_argument('agency_id', type=int, nargs='?', default=None)
 
+    # retention (roadmap P1.11)
+    p_rsh = sub.add_parser('retention-show',
+                           help='What retention is in force, and the cutoff it resolves to')
+    p_rsh.add_argument('--jurisdiction', default=None,
+                       help='A jurisdiction label; omit for the deployment default')
+    p_rsh.add_argument('--history', action='store_true',
+                       help='Also list superseded decisions and their justifications')
+    p_rst = sub.add_parser('retention-set',
+                           help='Record a retention decision, or adopt a named template')
+    p_rst.add_argument('--actor-user-id', type=int, required=True,
+                       help='AppUser.user_id of an admin (recorded on the row)')
+    p_rst.add_argument('--jurisdiction', default=None,
+                       help='A jurisdiction label; omit for the deployment default')
+    p_rst.add_argument('--template', choices=['STANDARD-5Y', 'MINIMIZED'], default=None,
+                       help='STANDARD-5Y: five years for every class. MINIMIZED: five years '
+                            'for the civic record, two for operational history')
+    p_rst.add_argument('--table-class',
+                       choices=['TOKEN_LIFECYCLE', 'VERIFICATION', 'ENROLLMENT', 'AUTH_AUDIT'],
+                       default=None)
+    p_rst.add_argument('--days', type=int, default=None,
+                       help='Days to keep; at least 365 (the schema floor)')
+    p_rst.add_argument('--justification', default=None,
+                       help='Why this retention (>= 20 chars; stored on the row)')
+
     # audit-log
     p_al = sub.add_parser('audit-log', help='Tail the authentication audit log')
     p_al.add_argument('--event-type',
@@ -1441,6 +1615,8 @@ HANDLERS = {
     'user-deactivate':  cmd_user_deactivate,
     'quota-set':        cmd_quota_set,
     'quota-show':       cmd_quota_show,
+    'retention-show':   cmd_retention_show,
+    'retention-set':    cmd_retention_set,
     'audit-log':        cmd_audit_log,
 }
 

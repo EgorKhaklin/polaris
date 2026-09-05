@@ -5,6 +5,36 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.236 — 2026-09-05 (the retention decision gets an operator surface; P1.11 closes)
+
+Roadmap P1.11, third of three ships, and the row closes. The engine and the
+per-class purge landed at v9.234 and v9.235; until now the only way to read or
+change a retention decision was to write the SQL by hand, which is not a
+surface an operator should be asked to use for a decision an assessor will
+read.
+
+`polaris-id retention-show` prints what is in force per class, the cutoff each
+resolves to, and with `--history` the decisions those replaced, with their
+justifications. `polaris-id retention-set` records a decision or adopts a named
+template. Both take `--jurisdiction`; omitting it means the deployment default.
+
+The command refuses what the database refuses, before the round trip and in the
+operator's language: retention below the 365-day floor, a justification under
+twenty characters, a non-admin actor, and `--template` mixed with an explicit
+class. Setting a decision supersedes rather than edits, so the previous
+decision and its reasoning stay readable.
+
+Proven by eight CLI tests in `RetentionCommandTests`, including that a
+superseded decision stays visible and that a jurisdiction with one class set
+falls back to the deployment default for the rest.
+
+**P1.11 is closed.** The retention decision is data with a floor no
+configuration reaches, append-only with one-way supersession, resolved per
+class, enforced by the purge, carried end to end by the archive chain, recorded
+in the checkpoint, drilled in CI, and operable from the CLI.
+
+---
+
 ## v9.235 — 2026-09-05 (the retention schedule reaches the purge, and the chain is finally drilled)
 
 Roadmap P1.11, second of three ships. v9.234 made retention a per-class

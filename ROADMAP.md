@@ -27,7 +27,7 @@ XL (multi-arc). Risk is delivery risk, not security risk.
 
 ---
 
-## Where we are (inventory at v9.196)
+## Where we are (inventory at v9.236)
 
 **Have, working, CI-proven:** a 30-table constraint-enforced schema (34 tables
 in a migrated deployment) with append-only audit; a 72-route application with
@@ -40,10 +40,12 @@ behind a post-quantum TLS edge (X25519MLKEM768, proven in CI), deployable by
 compose, by blue-green rolling deploy, by a scripted Linux install under
 systemd, or by the Helm reference profile; pgBackRest backup and restore,
 off-site to S3, streaming replication, and a monthly DR drill that measures
-RPO and RTO; a sealed secrets store; opt-in distributed tracing with dashboards
-as code; SBOMs and SLSA provenance on every release; CVE gates on dependencies
-and images; a coverage floor; 119 invariant checks (v9.234) each with a
-detection test; seventeen operator runbooks and ledgers; and the bound on
+RPO and RTO; a retention engine that holds the retention decision as data with
+a floor no configuration reaches, per class and per jurisdiction, enforced by
+the purge and drilled end to end in CI; a sealed secrets store; opt-in
+distributed tracing with dashboards as code; SBOMs and SLSA provenance on every
+release; CVE gates on dependencies and images; a coverage floor; 119 invariant
+checks (v9.234) each with a detection test; seventeen operator runbooks and ledgers; and the bound on
 every claim in [docs/PRODUCTION-READINESS.md](docs/PRODUCTION-READINESS.md).
 
 **Do not have:** hardware tokens (the physical artifact is modeled, not built);
@@ -129,7 +131,7 @@ Polaris for its population, on Linux, around the clock, without the author.
 | [x] P1.8 | Abuse controls (v9.190) | M | med | - | Pinned by `check_abuse_controls` |
 | [x] P1.9 | Performance baseline v1, published (v9.191) | M | low | P0.4 | Pinned by `check_performance_baseline` |
 | [x] P1.10 | DR to targets, on a schedule (v9.192) | M | low | P0.9 | Pinned by `check_dr_drill_scheduled` |
-| [ ] P1.11 | Retention and lifecycle engine | M | med | - | Per-table-class retention configuration with jurisdiction templates; the archive/purge chain drives it; the C1 carve-out rules unchanged. **v9.234: the engine ships** (`RetentionPolicy`, the 365-day CHECK floor, append-only supersession, `uc_archive_purge` refusing a cutoff inside the window, `uc_apply_retention_template`; [retention.md](docs/design/retention.md)). **v9.235: the schedule reaches the purge** (`--from-policy` archives per class, the purge honours the manifest's cutoffs and verifies the archive against it, the checkpoint records both horizons, and `polaris-retention-drill.sh` runs the chain in CI for the first time). Open: the operator CLI surface |
+| [x] P1.11 | Retention and lifecycle engine (v9.234-v9.236) | M | med | - | Per-table-class retention as data with a 365-day CHECK floor and jurisdiction templates, append-only with one-way supersession; the archive/purge chain drives it per class and verifies the archive against its manifest before deleting; the checkpoint records which cutoff applied to which class; `polaris-retention-drill.sh` runs the whole chain in CI; `polaris-id retention-show` / `retention-set` are the operator surface. The C1 carve-out rules are unchanged. [retention.md](docs/design/retention.md) |
 | [ ] P1.12 | External penetration test | M | ext | P1.1-P1.8 | [EXT: funding, firm] The readiness pack is ours to build; findings triaged, fixed, and pinned; a summary published |
 | [x] P1.13 | Human-facing documentation, reworked for the national-deployment reader (v9.194-v9.200) | L | med | - | [OWNER-AUTHORIZED REWORK, 2026-09-02] Every document a person reads (README, `docs/`, the operator runbooks, the reference set, the in-code docstrings and comments that face an operator or assessor) is rewritten or removed against one standard: a named reader (operator, integrator, assessor, contributor), one job per document, one voice (declarative, no version archaeology in the body, no em-dashes), stamps only where a number lives, and nothing stale, internal, or ambiguous to a first-time assessor of a national identity system. Duplicated and superseded documents are merged or deleted, not annotated. `docs/README.md` and `SYSTEM-MAP.md` match the tree exactly. An observer-confusion audit (a read-through as a first-time assessor, recorded) finds nothing to ask. Pinned by a check on the doc index and the stamp discipline Ship by ship per [DEVNOTES/presentation-plan.md](DEVNOTES/presentation-plan.md) |
 | [x] P1.14 | The GitHub presence as the front door (v9.201-v9.205) | M | med | P1.13 | [OWNER-AUTHORIZED REWORK] The repository's About, topics, README above the fold, SECURITY.md, CONTRIBUTING.md, release notes, and the Pages site present one accurate, professional story of what Polaris is, what it proves, and what it is not; templates and community files that a national-deployment reader expects exist and nothing demo-era or internal remains visible. Pinned by a check Ship by ship per [DEVNOTES/presentation-plan.md](DEVNOTES/presentation-plan.md) |

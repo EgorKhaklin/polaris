@@ -163,6 +163,7 @@ deliberate operator action with an archive behind it.
 | Per-class archive | `scripts/polaris-archive.sh --from-policy` |
 | Per-class purge | `scripts/polaris-purge.sh` (reads `cutoff_by_class`) |
 | The drill | `scripts/polaris-retention-drill.sh`, run on every CI push |
+| Operator surface | `polaris-id retention-show` / `retention-set` |
 | Migrations | `2026-09-05-001-retention-policy`, `2026-09-05-002-per-class-purge-cutoffs` |
 | Tests | Section S of `08_tests.sql`; `TestRetentionEngine` in `polaris_web/test_check_constraints.py` |
 | Invariant | `check_retention_engine` (`polaris_checks/checks.py`) |

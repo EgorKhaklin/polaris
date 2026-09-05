@@ -228,6 +228,41 @@ remain valid). To reactivate, run a SQL update directly.
 polaris-id user-deactivate alice
 ```
 
+### `polaris-id retention-show` / `retention-set`
+
+The retention decision, as an operator sees it. How long each class of audit
+row is kept is data in `RetentionPolicy`, not a number typed at the purge, and
+these two commands are the surface for reading and changing it.
+
+```bash
+# What is in force, and the cutoff each class resolves to:
+polaris-id retention-show
+
+# One jurisdiction, with the decisions this one replaced:
+polaris-id retention-show --jurisdiction=US-CA --history
+
+# Adopt a profile. STANDARD-5Y is five years for every class; MINIMIZED keeps
+# the civic record at five years and operational history at two. Admin only.
+polaris-id retention-set --actor-user-id=7 --jurisdiction=US-CA --template=MINIMIZED
+
+# Or record a decision of your own. The justification is stored on the row and
+# must be at least twenty characters: it is what an assessor reads.
+polaris-id retention-set --actor-user-id=7 --jurisdiction=US-CA \
+    --table-class=AUTH_AUDIT --days=1095 \
+    --justification="State retention schedule 4.2 for operator access records."
+```
+
+Three refusals are worth knowing before you need them. Retention below 365 days
+is refused: the floor is a CHECK constraint, so no configuration reaches under
+it and lowering it is a schema change. A recorded decision cannot be edited or
+deleted, only superseded, so the previous decision and its justification stay
+readable. And `uc_archive_purge` refuses any cutoff inside the window,
+naming the class and the earliest cutoff it would accept.
+
+The design record is [docs/design/retention.md](../docs/design/retention.md);
+the runbook section is in
+[OPERATIONS.md](../docs/operator/OPERATIONS.md).
+
 ### `polaris-id audit-log`
 
 Tail the authentication audit log. Captures every login attempt (success
