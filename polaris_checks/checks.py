@@ -981,8 +981,10 @@ def check_compose_resource_limits(root: pathlib.Path) -> list[Finding]:
 # service must drop ALL Linux capabilities (adding back only the few its
 # entrypoint genuinely needs) and forbid privilege escalation
 # (no-new-privileges). The app + pgbouncer then run with ZERO capabilities; the
-# public Caddy edge keeps only NET_BIND_SERVICE; postgres/redis keep only the
-# caps their root-then-drop init needs. Proven to still boot + serve by the
+# public Caddy edge runs as uid 1000 on 8080/8443 with NO capability added
+# back (v9.239; until then it ran as root with NET_BIND_SERVICE, the one
+# engineering limit the readiness ledger carried openly); postgres/redis keep
+# only the caps their root-then-drop init needs. Proven to still boot + serve by the
 # prod-stack-boot CI job (cap_drop ALL would otherwise silently break an
 # entrypoint). A service that ships without these is the un-hardened default.
 # ---------------------------------------------------------------------------
@@ -1003,6 +1005,26 @@ def check_container_hardening(root: pathlib.Path) -> list[Finding]:
         return _fail("container_hardening",
                      f"only {cap_drop_all}/{services} prod-compose services cap_drop ALL — a "
                      "service runs with the full default Linux capability set")
+    # v9.239: the public edge holds no capability at all and runs as a
+    # non-root user. A cap_add on the caddy service, or a Dockerfile.caddy
+    # without a USER, is the old root-with-NET_BIND_SERVICE posture coming back.
+    m = re.search(r"(?ms)^  caddy:\n(.*?)(?=^  [a-z_]+:\n|\Z)", text)
+    if not m:
+        return _fail("container_hardening", "the prod compose has no caddy service")
+    if re.search(r"^\s+cap_add:", m.group(1), re.M):
+        return _fail("container_hardening",
+                     "the caddy service adds a capability back: the edge must run as a non-root "
+                     "user on unprivileged ports (8080/8443) with the host publishing 80/443")
+    if not re.search(r'"80:8080"', m.group(1)) or not re.search(r'"443:8443"', m.group(1)):
+        return _fail("container_hardening",
+                     "the caddy service must publish host 80/443 onto the unprivileged 8080/8443 "
+                     "the non-root edge listens on")
+    df = _read(root, "polaris_web/Dockerfile.caddy")
+    um = re.search(r"(?m)^USER\s+(\S+)", df)
+    if not um or um.group(1).split(":")[0] in ("root", "0"):
+        return _fail("container_hardening",
+                     "Dockerfile.caddy must end as a non-root USER: the edge ran as root until "
+                     "v9.239 and the readiness ledger carried it as an open limit")
     # The boot test must prove the hardened stack still serves (cap_drop can break
     # an entrypoint that needs a capability — e.g. gosu/setpriv's SETUID).
     ci = _read(root, ".github/workflows/ci.yml")

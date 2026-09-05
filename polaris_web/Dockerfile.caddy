@@ -68,11 +68,23 @@ COPY --from=builder /usr/bin/caddy /usr/bin/caddy
 # v9.186 (roadmap P1.5) — the runtime base sets cap_net_bind_service on the caddy
 # binary as a FILE capability; a non-root user with all capabilities dropped (the
 # restricted Pod Security Standard) then cannot exec it at all ("operation not
-# permitted", found by the kind drill). The Kubernetes profile listens on
-# 8080/8443, and the compose edge runs as root with NET_BIND_SERVICE from
-# cap_add, so the file capability is stripped.
+# permitted", found by the kind drill). Every profile listens on 8080/8443 as
+# uid 1000 (v9.239 brought compose in line with the chart), so the file
+# capability is stripped and nothing adds one back.
 RUN apk add --no-cache libcap && setcap -r /usr/bin/caddy && apk del libcap
 
 # Fail the build if the plugin did not actually land in the binary (defense in
 # depth against a silently-broken xcaddy build shipping a plugin-less Caddy).
 RUN caddy list-modules | grep -q '^http.handlers.rate_limit$'
+
+# v9.239 — the edge runs as a non-root user everywhere, not only under the
+# Kubernetes profile. uid 1000 matches the chart's pod security context and the
+# app image, so one ownership rule covers every substrate. Caddy listens on
+# 8080/8443 (the Caddyfile's http_port/https_port) and the host publishes
+# 80/443 onto them, so no capability is needed to bind. /data holds the ACME
+# account and certificates and /config Caddy's autosave; a named volume seeded
+# from this image inherits the ownership, and polaris-deploy.sh corrects the
+# volumes of a deployment created before this change.
+RUN addgroup -g 1000 -S caddy && adduser -u 1000 -G caddy -S -H -s /sbin/nologin caddy && \
+    chown -R caddy:caddy /data /config
+USER caddy:caddy

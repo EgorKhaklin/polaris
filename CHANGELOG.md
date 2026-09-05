@@ -5,6 +5,48 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.239 — 2026-09-05 (the edge runs as a non-root user on every substrate)
+
+The readiness ledger carried two engineering limits openly. This closes the
+first: the Caddy edge in the compose stack, which is what the single-host and
+Linux-server paths run, was the one production container still running as
+root, holding `NET_BIND_SERVICE` so it could bind 80 and 443. The Kubernetes
+profile had run it as uid 1000 on 8080/8443 since v9.186; now every substrate
+does.
+
+- `Dockerfile.caddy` creates uid 1000, owns `/data` (the ACME account and
+  certificates) and `/config` to it, and ends with `USER caddy`. The file
+  capability on the binary was already stripped; nothing adds one back.
+- The compose edge drops `cap_add` entirely and publishes host 80/443 onto
+  8080/8443. The CI overlay maps 8443 onto 8443. Firewall rules and every
+  URL an operator or CI uses are unchanged, because the host ports are.
+- Both Caddyfiles set `http_port 8080` and `https_port 8443`. Caddy's
+  automatic HTTP-to-HTTPS redirect names `:8443` in its Location header
+  when `https_port` is not 443, so it is disabled and the explicit `http://`
+  site redirects to the domain on the port the client used. The Helm chart
+  had exactly that latent defect since v9.186 and gets the same fix.
+- The edge logs to stdout rather than to a file under `/var/log/caddy`,
+  which needed a host directory writable by the container's user. The
+  json-file driver already caps and rotates it; `docker compose logs caddy`
+  reads it.
+- A deployment created before this change has root-owned edge volumes the
+  new user could not read or write. `polaris-deploy.sh` re-owns them once
+  before the edge starts; the runbook's upgrade section carries the manual
+  command for anyone bringing the stack up another way.
+- `check_container_hardening` now fails the build if the caddy service adds
+  a capability back, if it stops publishing 80/443 onto 8080/8443, or if
+  `Dockerfile.caddy` runs as root or sets no user.
+
+Proven locally with the built image: `caddy validate` accepts the production
+Caddyfile, the process runs as uid 1000 with its state directories writable,
+listens on 8080 and 8443, answers HTTP with a 301 to `https://<domain>/…`
+with no port, and terminates TLS on 8443. CI proves the rest on every push:
+the full production stack boots through the edge, the post-quantum handshake
+is negotiated against it, and the Linux install drill brings it up on Debian
+and Rocky.
+
+---
+
 ## v9.238 — 2026-09-05 (the dashboard is an operations page)
 
 The dashboard is remade. The previous page opened with the row counts of

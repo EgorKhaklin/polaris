@@ -64,9 +64,9 @@ prerequisite of a national system (statute, funding, enrollment workforce,
 manufacturing, authorization to operate).
 
 **Carrying debts:** none from the P0 list; that paragraph closed with P0
-(v9.160 to v9.175). Two engineering limits are carried openly in the readiness
-ledger: the Caddy edge is not fully non-root, and edge and database recreation
-are window operations. P0.11 (internal-hop hybrid KEX) stays `[EXT]` on
+(v9.160 to v9.175). One engineering limit is carried openly in the readiness
+ledger: edge and database recreation are window operations. The Caddy edge
+became fully non-root at v9.239. P0.11 (internal-hop hybrid KEX) stays `[EXT]` on
 OpenSSL 3.5 reaching the pgbouncer and postgres images.
 
 ---

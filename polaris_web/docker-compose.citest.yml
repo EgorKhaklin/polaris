@@ -5,7 +5,7 @@
 # The ONLY change from prod is the TLS edge: the prod Caddyfile provisions a
 # Let's Encrypt cert for POLARIS_DOMAIN (no ACME in CI), so here Caddy serves the
 # same reverse-proxy + rate_limit config under its internal CA (localhost). Ports
-# are reset to a single 8443 -> 443 (no host 80/443 bind, so it never collides),
+# are reset to a single 8443 -> 8443 (no host 80/443 bind, so it never collides),
 # and the Caddyfile mount is swapped (merge-by-target). Everything else (app in
 # production mode, pgbouncer verify-ca to postgres, postgres TLS, the generated
 # secrets, the real images) is exactly prod, so the boot proves the production
@@ -17,4 +17,4 @@ services:
     volumes:
       - ./Caddyfile.citest:/etc/caddy/Caddyfile:ro
     ports: !override
-      - "8443:443"
+      - "8443:8443"

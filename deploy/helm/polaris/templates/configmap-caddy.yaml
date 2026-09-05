@@ -13,6 +13,10 @@ data:
         admin off
         http_port 8080
         https_port 8443
+        # v9.239 — Caddy's automatic HTTP-to-HTTPS redirect names :8443 when
+        # https_port is not 443; the explicit http:// site below redirects to
+        # the domain on the port the client used.
+        auto_https disable_redirects
         {{- if eq .Values.edge.tls "acme" }}
         email admin@{{ .Values.domain }}
         {{- end }}
@@ -85,4 +89,8 @@ data:
                 window 1m
             }
         }
+    }
+
+    http://{{ .Values.domain }} {
+        redir https://{{ .Values.domain }}{uri} permanent
     }

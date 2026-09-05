@@ -95,7 +95,7 @@ Volumes:
 - `caddy_config` (named): Caddy's config-time state
 - `polaris_state` (named): script state
 - `./secrets/`: file-mounted secrets, read-only at `/run/secrets/*`
-- `./logs/` (bind mount): gunicorn logs at `/var/log/polaris`, Caddy logs at `/var/log/caddy`
+- `./logs/` (bind mount): gunicorn's `/var/log/polaris`. Caddy logs to stdout (v9.239), where the json-file driver caps and rotates it: `docker compose logs caddy`
 
 ---
 
@@ -182,10 +182,12 @@ docker compose -f polaris_web/docker-compose.prod.yml logs --tail=100 caddy
 docker compose -f polaris_web/docker-compose.prod.yml logs --tail=100 postgres
 ```
 
-Persistent log files are written to `./logs/` (mounted into the app container
-as `/var/log/polaris/` and into Caddy as `/var/log/caddy/`). Container stdout
-is capped by the json-file driver (`max-size` x `max-file`), so logs cannot
-fill the disk.
+The app's persistent log files are written to `./logs/` (mounted into the app
+container as `/var/log/polaris/`). Caddy's access and error logs go to its
+stdout: the edge runs as an unprivileged user with no writable host directory
+(v9.239), and `docker compose logs caddy` is where its log is read. Container
+stdout is capped by the json-file driver (`max-size` x `max-file`), so logs
+cannot fill the disk.
 
 ### Operator authentication (WebAuthn-MFA)
 
@@ -1373,6 +1375,19 @@ recreated.
 Always read [CHANGELOG.md](../../CHANGELOG.md) for the version you are
 upgrading to; an entry with "breaking change" in the notes requires extra
 steps.
+
+**Upgrading across v9.239.** The edge now runs as uid 1000 and listens on
+8080/8443 behind the host's 80/443. A deployment created earlier has
+`caddy_data` and `caddy_config` volumes owned by root, which the new edge could
+neither read (the ACME account and certificates) nor write (renewals).
+`polaris-deploy.sh` re-owns both volumes once before it starts the edge. If
+you bring the stack up some other way, do it by hand first:
+
+```bash
+for v in polaris_web_caddy_data polaris_web_caddy_config; do
+    docker run --rm -v "$v:/v" alpine:3.24 chown -R 1000:1000 /v
+done
+```
 
 ### Postgres version upgrade
 

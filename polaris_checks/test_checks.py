@@ -1513,27 +1513,32 @@ def test_container_hardening_check_discriminates(tmp_path):
     (gh / "ci.yml").write_text("jobs:\n  prod-stack-boot:\n    steps:\n      run: echo boot\n")
     compose = web / "docker-compose.prod.yml"
 
-    def svc(name, hardened=True):
+    def svc(name, hardened=True, cap_add=None):
         block = f"  {name}:\n    image: x:1\n"
         if hardened:
             block += ("    security_opt:\n      - no-new-privileges:true\n"
                       "    cap_drop:\n      - ALL\n")
+        if cap_add:
+            block += f"    cap_add:\n      - {cap_add}\n"
+        if name == "caddy":
+            block += '    ports:\n      - "80:8080"\n      - "443:8443"\n'
         return block
 
-    TWO_HARDENED = "services:\n" + svc("a") + svc("b")
+    (web / "Dockerfile.caddy").write_text("FROM caddy:2\nUSER caddy:caddy\n")
+    TWO_HARDENED = "services:\n" + svc("caddy") + svc("b")
 
     # 1. Two services, neither hardened -> FAIL.
-    compose.write_text("services:\n" + svc("a", False) + svc("b", False))
+    compose.write_text("services:\n" + svc("caddy", False) + svc("b", False))
     assert checks.check_container_hardening(tmp_path)[0].level == "FAIL", \
         "must FAIL when services lack no-new-privileges + cap_drop"
 
     # 2. One hardened, one not -> FAIL (not all services).
-    compose.write_text("services:\n" + svc("a", True) + svc("b", False))
+    compose.write_text("services:\n" + svc("caddy", True) + svc("b", False))
     assert checks.check_container_hardening(tmp_path)[0].level == "FAIL", \
         "must FAIL when only some services are hardened"
 
     # 3. Has cap_drop ALL but no no-new-privileges -> FAIL.
-    compose.write_text("services:\n  a:\n    image: x:1\n    cap_drop:\n      - ALL\n"
+    compose.write_text("services:\n  caddy:\n    image: x:1\n    cap_drop:\n      - ALL\n"
                        "  b:\n    image: x:1\n    cap_drop:\n      - ALL\n")
     assert checks.check_container_hardening(tmp_path)[0].level == "FAIL", \
         "must FAIL when privilege-escalation is not forbidden"
@@ -1548,6 +1553,20 @@ def test_container_hardening_check_discriminates(tmp_path):
     (gh / "ci.yml").write_text("jobs:\n  prod-stack-boot:\n    steps:\n      run: echo boot\n")
     assert checks.check_container_hardening(tmp_path)[0].level == "OK", \
         "must PASS when every service drops caps + forbids escalation, validated by the boot job"
+
+    # 6. v9.239: the edge adds NET_BIND_SERVICE back -> FAIL (root-with-a-capability posture).
+    compose.write_text("services:\n" + svc("caddy", cap_add="NET_BIND_SERVICE") + svc("b"))
+    assert checks.check_container_hardening(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the edge adds a capability back instead of running unprivileged"
+
+    # 7. v9.239: the edge image runs as root -> FAIL.
+    compose.write_text(TWO_HARDENED)
+    (web / "Dockerfile.caddy").write_text("FROM caddy:2\nUSER root\n")
+    assert checks.check_container_hardening(tmp_path)[0].level == "FAIL", \
+        "must FAIL when Dockerfile.caddy runs the edge as root"
+    (web / "Dockerfile.caddy").write_text("FROM caddy:2\n")
+    assert checks.check_container_hardening(tmp_path)[0].level == "FAIL", \
+        "must FAIL when Dockerfile.caddy sets no USER at all"
 
 
 def test_edge_pq_kex_check_discriminates(tmp_path):

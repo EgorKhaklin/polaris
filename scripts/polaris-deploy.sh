@@ -139,6 +139,23 @@ compose build app
 # the running app keeps serving while migrations (the expand phase) apply
 # below; the app colours are then rolled one at a time. Recreating caddy or
 # postgres here (only when their config changed) is not zero-downtime.
+# v9.239 — the edge runs as uid 1000. A deployment created before this change
+# has caddy_data and caddy_config volumes seeded root-owned by the old image,
+# which the non-root edge could neither read (the ACME account and
+# certificates) nor write (renewals). Re-own them once, before caddy starts;
+# on a fresh deployment the volumes are seeded from the image already owned
+# by uid 1000 and this is a no-op. The helper image is digest-pinned like every
+# other base in the stack.
+for vol in caddy_data caddy_config; do
+    vol_name=$(compose config --format json 2>/dev/null \
+        | python3 -c "import json,sys; print(json.load(sys.stdin)['volumes']['${vol}'].get('name',''))" 2>/dev/null || true)
+    if [[ -n "${vol_name}" ]] && docker volume inspect "${vol_name}" >/dev/null 2>&1; then
+        docker run --rm -v "${vol_name}:/v" \
+            alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b \
+            chown -R 1000:1000 /v >/dev/null 2>&1 || echo "  ! could not re-own ${vol_name}; the edge may fail to start as uid 1000" >&2
+    fi
+done
+
 echo "  [5/7] Bringing infrastructure up (postgres, pgbouncer, redis, caddy)…"
 compose up -d --remove-orphans --no-deps postgres pgbouncer redis caddy
 

@@ -5,18 +5,29 @@
 # G27: TLS is required. No HTTP-only production.
 #
 # The POLARIS_DOMAIN env var is interpolated at load time via {$POLARIS_DOMAIN}.
-# Caddy auto-redirects HTTP (:80) → HTTPS (:443) for the configured site.
+# HTTP on 8080 (host 80) redirects to HTTPS; TLS is served on 8443 (host 443).
 # ============================================================================
 
 {
     # Global options
     email admin@{$POLARIS_DOMAIN}
     admin off                                 # disable local admin API
+    # v9.239 — the edge runs as uid 1000 with no capabilities, so it listens on
+    # unprivileged ports; the host publishes 80/443 onto 8080/8443 (compose)
+    # and the Service does the same (Helm). Caddy's automatic HTTP-to-HTTPS
+    # redirect would name :8443 in its Location header when https_port is not
+    # 443, so it is disabled and the http:// site at the end of this file
+    # redirects to the domain without a port, as the client sees it. ACME
+    # HTTP-01 is unaffected: the challenge handler is injected on http_port
+    # regardless.
+    http_port 8080
+    https_port 8443
+    auto_https disable_redirects
+    # Logs go to stdout, where the json-file driver caps and rotates them
+    # (compose) or the cluster collects them (Helm). A file under /var/log/caddy
+    # needed a host directory writable by the container's user; stdout does not.
     log {
-        output file /var/log/caddy/caddy.log {
-            roll_size 10mb
-            roll_keep 5
-        }
+        output stdout
         format json
         level INFO
     }
@@ -129,17 +140,17 @@
     }
     respond @blocked 404
 
-    # Access logging
+    # Access logging: stdout, capped and rotated by the json-file driver.
     log {
-        output file /var/log/caddy/access.log {
-            roll_size 50mb
-            roll_keep 10
-        }
+        output stdout
         format json
     }
 }
 
-# HTTP → HTTPS upgrade (Caddy does this automatically, but be explicit)
+# HTTP-to-HTTPS redirect, written out rather than left to Caddy: with
+# https_port 8443 the automatic redirect would send clients to :8443, which
+# only exists inside the container. This site binds http_port (8080) and
+# redirects to the domain on the port the client used (443).
 http://{$POLARIS_DOMAIN} {
     redir https://{$POLARIS_DOMAIN}{uri} permanent
 }
