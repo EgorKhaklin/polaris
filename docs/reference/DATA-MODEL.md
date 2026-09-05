@@ -553,7 +553,14 @@ rows_purged_anchorbatch    INTEGER      NOT NULL DEFAULT 0    -- always 0 in v8.
 rows_purged_attestation    INTEGER      NOT NULL DEFAULT 0    -- always 0 in v8.87 (Phase 2c)
 rows_purged_duress         INTEGER      NOT NULL DEFAULT 0    -- always 0 in v8.87 (Phase 2c)
 rows_purged_total          INTEGER      NOT NULL DEFAULT 0
+cutoff_source              VARCHAR(6)   NOT NULL DEFAULT 'FLAG'   -- FLAG | POLICY (v9.235)
+jurisdiction               VARCHAR(10)                            -- the policy set used
+cutoff_lifecycle           TIMESTAMPTZ                            -- what actually applied,
+cutoff_verification        TIMESTAMPTZ                            -- per class; NULL on rows
+cutoff_enrollment          TIMESTAMPTZ                            -- written before v9.235,
+cutoff_authaudit           TIMESTAMPTZ                            -- where the scalar was all
 
+CHECK (cutoff_source IN ('FLAG','POLICY'))     -- cutoff_source_known
 CHECK (archive_sha256 ~ '^[0-9a-fA-F]{64}$')   -- archive_sha256_is_hex
 CHECK (cutoff_timestamp <= now())              -- cutoff_in_past
 CHECK (rows_purged_total >= 0)                 -- rows_purged_total_nonneg
@@ -569,6 +576,13 @@ deletion carve-out.
 **Privacy claim preserved** (`docs/operator/PRIVACY.md` §
 Append-only audit): any purge produces an append-only checkpoint
 row, so attempted tidying still leaves a permanent record.
+
+**Per-class cutoffs (v9.235).** A retention schedule that keeps the
+civic record longer than operational history produces a purge with
+more than one horizon, and one scalar cannot describe it. `POLICY`
+rows carry the four cutoffs that applied; `FLAG` rows are a single
+cutoff applied to every class. See
+[design/retention.md](../design/retention.md).
 
 ### `RetentionPolicy` (constraint C1: append-only)
 

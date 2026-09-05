@@ -1127,6 +1127,95 @@ class TestRetentionEngine(_CheckBase):
                 return
         self.fail("a second effective policy for the same class was accepted")
 
+    def test_policy_mode_purges_each_class_at_its_own_cutoff(self):
+        """The point of a per-class schedule: two horizons, one purge."""
+        self.cur.execute("SELECT user_id FROM AppUser WHERE role = 'admin' LIMIT 1")
+        admin = self.cur.fetchone()
+        self.cur.execute("SELECT token_id FROM IdentityToken ORDER BY token_id LIMIT 1")
+        token = self.cur.fetchone()
+        self.cur.execute(
+            "SELECT context_id, requesting_agency_id FROM VerificationEvent ORDER BY event_id LIMIT 1")
+        ctx = self.cur.fetchone()
+        if admin is None or token is None or ctx is None:
+            self.skipTest("no admin, token or verification context in the sample data")
+
+        self.cur.execute(
+            "INSERT INTO TokenLifecycleEvent (token_id, event_type, event_timestamp, reason_code) "
+            "VALUES (%s, 'ISSUED', now() - INTERVAL '1100 days', 'PYDRILL')",
+            (token["token_id"],))
+        self.cur.execute(
+            "INSERT INTO VerificationEvent (token_id, context_id, requesting_agency_id, "
+            "event_timestamp, outcome, disclosure_level) "
+            "VALUES (%s, %s, %s, now() - INTERVAL '1100 days', 'SUCCESS', 'SELECTIVE')",
+            (token["token_id"], ctx["context_id"], ctx["requesting_agency_id"]))
+
+        # The civic record is held for five years; verification for two.
+        self.cur.execute(
+            "CALL uc_archive_purge(%s::timestamptz, %s, %s, %s, NULL, %s::timestamptz[], NULL)",
+            ("2021-01-01T00:00:00+00", "file:///tmp/pyclass.tar.gz", "d" * 64,
+             admin["user_id"],
+             ["2021-01-01T00:00:00+00", "2024-01-01T00:00:00+00",
+              "2021-01-01T00:00:00+00", "2024-01-01T00:00:00+00"]))
+
+        self.cur.execute(
+            "SELECT count(*) AS n FROM TokenLifecycleEvent WHERE reason_code = 'PYDRILL'")
+        self.assertEqual(self.cur.fetchone()["n"], 1,
+                         "a 1100-day-old lifecycle row must survive a five-year lifecycle cutoff")
+        self.cur.execute(
+            "SELECT count(*) AS n FROM VerificationEvent "
+            "WHERE event_timestamp < now() - INTERVAL '1000 days'")
+        self.assertEqual(self.cur.fetchone()["n"], 0,
+                         "verification rows past the two-year cutoff must be purged")
+
+        self.cur.execute(
+            "SELECT cutoff_source, cutoff_lifecycle, cutoff_verification "
+            "FROM LifecycleArchiveCheckpoint ORDER BY checkpoint_id DESC LIMIT 1")
+        cp = self.cur.fetchone()
+        self.assertEqual(cp["cutoff_source"], "POLICY")
+        self.assertLess(cp["cutoff_lifecycle"], cp["cutoff_verification"],
+                        "the checkpoint must record both horizons, not one")
+
+    def test_policy_mode_refuses_a_class_cutoff_inside_its_window(self):
+        """An archive taken under a longer-lived policy must not purge under a shorter one."""
+        self.cur.execute("SELECT user_id FROM AppUser WHERE role = 'admin' LIMIT 1")
+        admin = self.cur.fetchone()
+        if admin is None:
+            self.skipTest("no admin user to authorize the purge")
+        with self.assertRaises(pg_errors.CheckViolation):
+            self.cur.execute(
+                "CALL uc_archive_purge(%s::timestamptz, %s, %s, %s, NULL, %s::timestamptz[], NULL)",
+                ("2021-01-01T00:00:00+00", "file:///tmp/pyinside.tar.gz", "e" * 64,
+                 admin["user_id"],
+                 # Verification inside its own window: ten days ago.
+                 ["2021-01-01T00:00:00+00", "2026-08-25T00:00:00+00",
+                  "2021-01-01T00:00:00+00", "2021-01-01T00:00:00+00"]))
+
+    def test_policy_mode_refuses_a_scalar_newer_than_a_class_cutoff(self):
+        """The manifest scalar is the oldest cutoff, so an old reader cannot over-delete."""
+        self.cur.execute("SELECT user_id FROM AppUser WHERE role = 'admin' LIMIT 1")
+        admin = self.cur.fetchone()
+        if admin is None:
+            self.skipTest("no admin user to authorize the purge")
+        with self.assertRaises(pg_errors.CheckViolation):
+            self.cur.execute(
+                "CALL uc_archive_purge(%s::timestamptz, %s, %s, %s, NULL, %s::timestamptz[], NULL)",
+                ("2024-01-01T00:00:00+00", "file:///tmp/pyscalar.tar.gz", "f" * 64,
+                 admin["user_id"],
+                 ["2021-01-01T00:00:00+00", "2024-01-01T00:00:00+00",
+                  "2021-01-01T00:00:00+00", "2024-01-01T00:00:00+00"]))
+
+    def test_policy_mode_refuses_a_malformed_cutoff_array(self):
+        self.cur.execute("SELECT user_id FROM AppUser WHERE role = 'admin' LIMIT 1")
+        admin = self.cur.fetchone()
+        if admin is None:
+            self.skipTest("no admin user to authorize the purge")
+        with self.assertRaises(pg_errors.CheckViolation):
+            self.cur.execute(
+                "CALL uc_archive_purge(%s::timestamptz, %s, %s, %s, NULL, %s::timestamptz[], NULL)",
+                ("2021-01-01T00:00:00+00", "file:///tmp/pyshort.tar.gz", "a" * 64,
+                 admin["user_id"],
+                 ["2021-01-01T00:00:00+00", "2021-01-01T00:00:00+00"]))
+
     def test_purge_refuses_a_cutoff_inside_the_retention_window(self):
         self.cur.execute("SELECT user_id FROM AppUser WHERE role = 'admin' LIMIT 1")
         admin = self.cur.fetchone()

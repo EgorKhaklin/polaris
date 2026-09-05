@@ -20,8 +20,8 @@ block after the shebang is its documentation, and `--help` prints it.
 | `polaris-rotate-secret.sh` | Rotates one secret in place, without a redeploy | An operator |
 | `polaris-backup.sh` | Atomic full-system backup, encrypted, with a manifest | An operator; the cron wiring |
 | `polaris-restore.sh` | Recovery from a backup, verifying the manifest first | An operator, under `DR.md` |
-| `polaris-archive.sh` | Selective export of audit rows to cold storage | `polaris-rotate-logs.sh` |
-| `polaris-purge.sh` | Archive-then-delete for aged audit rows | `polaris-rotate-logs.sh` |
+| `polaris-archive.sh` | Selective export of audit rows to cold storage; `--from-policy` takes a cutoff per retention class | `polaris-rotate-logs.sh` |
+| `polaris-purge.sh` | Archive-then-delete for aged audit rows; verifies the archive against its manifest and honours per-class cutoffs | `polaris-rotate-logs.sh` |
 | `polaris-rotate-logs.sh` | The yearly archive-and-purge wrapper | `polaris-cron-install.sh` |
 | `polaris-cron-install.sh` | Installs the operator crontab wiring | An operator, once |
 | `polaris-create-operator.sh` | Onboards an operator account | An operator; `polaris_web/docker-init.sh` bootstraps the first admin |
@@ -46,6 +46,7 @@ block after the shebang is its documentation, and `--help` prints it.
 | `polaris-helm-drill.sh` | The Kubernetes profile boots healthy with policies enforced | `ci.yml` |
 | `polaris-page-drill.sh` | A duress event reaches the pager webhook | `ci.yml` |
 | `polaris-abuse-drill.sh` | The per-agency quotas refuse writes under real load | `ci.yml` |
+| `polaris-retention-drill.sh` | The archive and purge chain, per retention class, end to end | `ci.yml` |
 | `polaris-trace-drill.sh` | Tracing joins logs to spans, and the dashboards load | `ci.yml` |
 | `polaris-perf-baseline.sh` | The published latency baseline, re-measured in smoke mode | `ci.yml` |
 | `polaris-custody-pkcs11-drill.sh` | ML-DSA-65 signing inside a PKCS#11 token | `ci.yml`'s custody job |

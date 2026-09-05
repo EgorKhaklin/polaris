@@ -1566,7 +1566,173 @@ BEGIN
     END IF;
 END $$;
 
--- S.9: the section retires the policies it created, so a loaded database
+-- ----------------------------------------------------------------------------
+-- Per-class purge cutoffs (v9.235). The engine's second half: a schedule that
+-- keeps the civic record for five years and operational history for two has to
+-- reach the purge as two cutoffs, not one.
+-- ----------------------------------------------------------------------------
+
+-- S.9: policy mode purges each class at its own cutoff. Verification rows
+-- three years old go under a 730-day verification retention while lifecycle
+-- rows the same age stay, held by the 1825-day civic-record retention.
+DO $$
+DECLARE
+    v_admin       INTEGER;
+    v_token       INTEGER;
+    v_life_before INTEGER;
+    v_life_after  INTEGER;
+    v_ver_after   INTEGER;
+    v_cp          BIGINT;
+BEGIN
+    SELECT user_id INTO v_admin FROM AppUser WHERE role = 'admin' ORDER BY user_id LIMIT 1;
+    SELECT token_id INTO v_token FROM IdentityToken ORDER BY token_id LIMIT 1;
+    IF v_admin IS NULL OR v_token IS NULL THEN
+        PERFORM _record('S.9: policy mode purges each class at its own cutoff',
+            TRUE, 'skipped: no admin or token in the sample data');
+        RETURN;
+    END IF;
+
+    CALL uc_apply_retention_template('MINIMIZED', NULL, v_admin);
+
+    INSERT INTO TokenLifecycleEvent (token_id, event_type, event_timestamp, reason_code)
+    VALUES (v_token, 'ISSUED', now() - interval '1100 days', 'S9_LIFECYCLE');
+    INSERT INTO VerificationEvent
+        (token_id, context_id, requesting_agency_id, event_timestamp, outcome, disclosure_level)
+    SELECT v_token, context_id, requesting_agency_id,
+           now() - interval '1100 days', 'SUCCESS', 'SELECTIVE'
+      FROM VerificationEvent ORDER BY event_id LIMIT 1;
+
+    SELECT count(*) INTO v_life_before FROM TokenLifecycleEvent
+     WHERE event_timestamp < now() - interval '1000 days';
+
+    CALL uc_archive_purge(
+        -- The manifest scalar is the oldest of the per-class cutoffs.
+        p_cutoff_timestamp   := now() - interval '1825 days',
+        p_archive_uri        := 'file:///tmp/s9.tar.gz',
+        p_archive_sha256     := repeat('9', 64),
+        p_actor_user_id      := v_admin,
+        p_jurisdiction       := NULL,
+        p_class_cutoffs      := ARRAY[
+            now() - interval '1825 days',   -- TOKEN_LIFECYCLE
+            now() - interval '1000 days',   -- VERIFICATION
+            now() - interval '1825 days',   -- ENROLLMENT
+            now() - interval '1000 days'    -- AUTH_AUDIT
+        ]::timestamptz[],
+        checkpoint_id_out    := v_cp);
+
+    SELECT count(*) INTO v_life_after FROM TokenLifecycleEvent
+     WHERE event_timestamp < now() - interval '1000 days';
+    SELECT count(*) INTO v_ver_after FROM VerificationEvent
+     WHERE event_timestamp < now() - interval '1000 days';
+
+    PERFORM _record('S.9: policy mode purges each class at its own cutoff',
+        v_life_after = v_life_before AND v_ver_after = 0,
+        format('lifecycle %s -> %s (must not change), verification remaining %s (must be 0)',
+               v_life_before, v_life_after, v_ver_after));
+END $$;
+
+-- S.10: the checkpoint records what actually applied, per class.
+DO $$
+DECLARE r RECORD;
+BEGIN
+    SELECT cutoff_source, jurisdiction, cutoff_lifecycle, cutoff_verification,
+           cutoff_enrollment, cutoff_authaudit
+      INTO r
+      FROM LifecycleArchiveCheckpoint
+     WHERE archive_uri = 'file:///tmp/s9.tar.gz'
+     ORDER BY checkpoint_id DESC LIMIT 1;
+
+    IF r IS NULL THEN
+        PERFORM _record('S.10: the checkpoint records the per-class cutoffs',
+            TRUE, 'skipped: S.9 did not run');
+        RETURN;
+    END IF;
+
+    PERFORM _record('S.10: the checkpoint records the per-class cutoffs',
+        r.cutoff_source = 'POLICY'
+        AND r.cutoff_lifecycle IS NOT NULL
+        AND r.cutoff_verification IS NOT NULL
+        AND r.cutoff_verification > r.cutoff_lifecycle,
+        format('source=%s lifecycle=%s verification=%s (verification must be the later cutoff)',
+               r.cutoff_source, r.cutoff_lifecycle, r.cutoff_verification));
+END $$;
+
+-- S.11: the ceiling holds. A policy-mode purge never deletes past the boundary
+-- the archive covers, even where the retention would allow more.
+DO $$
+DECLARE
+    v_admin  INTEGER;
+    v_token  INTEGER;
+    v_kept   INTEGER;
+    v_cp     BIGINT;
+BEGIN
+    SELECT user_id INTO v_admin FROM AppUser WHERE role = 'admin' ORDER BY user_id LIMIT 1;
+    SELECT token_id INTO v_token FROM IdentityToken ORDER BY token_id LIMIT 1;
+    IF v_admin IS NULL OR v_token IS NULL THEN
+        PERFORM _record('S.11: a policy-mode purge stops at the archive ceiling',
+            TRUE, 'skipped: no admin or token in the sample data');
+        RETURN;
+    END IF;
+
+    -- Old enough for the 730-day verification retention, but newer than the
+    -- ceiling this purge is given.
+    INSERT INTO VerificationEvent
+        (token_id, context_id, requesting_agency_id, event_timestamp, outcome, disclosure_level)
+    SELECT v_token, context_id, requesting_agency_id,
+           now() - interval '900 days', 'SUCCESS', 'SELECTIVE'
+      FROM VerificationEvent ORDER BY event_id LIMIT 1;
+
+    CALL uc_archive_purge(
+        p_cutoff_timestamp   := now() - interval '1825 days',
+        p_archive_uri        := 'file:///tmp/s11.tar.gz',
+        p_archive_sha256     := repeat('b', 64),
+        p_actor_user_id      := v_admin,
+        p_jurisdiction       := NULL,
+        p_class_cutoffs      := ARRAY[
+            now() - interval '1825 days',   -- TOKEN_LIFECYCLE
+            now() - interval '1200 days',   -- VERIFICATION, ceilinged by the archive
+            now() - interval '1825 days',   -- ENROLLMENT
+            now() - interval '1200 days'    -- AUTH_AUDIT
+        ]::timestamptz[],
+        checkpoint_id_out    := v_cp);
+
+    SELECT count(*) INTO v_kept FROM VerificationEvent
+     WHERE event_timestamp < now() - interval '890 days'
+       AND event_timestamp > now() - interval '910 days';
+
+    PERFORM _record('S.11: a policy-mode purge stops at the archive ceiling',
+        v_kept = 1,
+        format('a 900-day-old verification row survived a purge ceilinged at 1200 days: kept=%s', v_kept));
+END $$;
+
+-- S.12: flag mode is unchanged. The refusal still stands, so an operator who
+-- has not asked for per-class cutoffs cannot purge inside a window by accident.
+DO $$
+DECLARE
+    v_admin INTEGER;
+    v_cp    BIGINT;
+BEGIN
+    SELECT user_id INTO v_admin FROM AppUser WHERE role = 'admin' ORDER BY user_id LIMIT 1;
+    IF v_admin IS NULL THEN
+        PERFORM _record('S.12: flag mode still refuses a cutoff inside the window',
+            TRUE, 'skipped: no admin in the sample data');
+        RETURN;
+    END IF;
+    BEGIN
+        CALL uc_archive_purge(
+            p_cutoff_timestamp := now() - interval '30 days',
+            p_archive_uri      := 'file:///tmp/s12.tar.gz',
+            p_archive_sha256   := repeat('c', 64),
+            p_actor_user_id    := v_admin,
+            checkpoint_id_out  := v_cp);
+        PERFORM _record('S.12: flag mode still refuses a cutoff inside the window',
+            FALSE, 'a 30-day cutoff was accepted in flag mode');
+    EXCEPTION WHEN check_violation THEN
+        PERFORM _record('S.12: flag mode still refuses a cutoff inside the window', TRUE, NULL);
+    END;
+END $$;
+
+-- S.13: the section retires the policies it created, so a loaded database
 -- carries only the shipped defaults as effective. Retiring rather than
 -- deleting is the point: a retention decision cannot be erased, so the test
 -- rows stay visible as superseded history.
@@ -1583,7 +1749,7 @@ BEGIN
      WHERE superseded_at IS NULL
        AND jurisdiction IS NOT NULL;
 
-    PERFORM _record('S.9: test policies retire, leaving only shipped defaults effective',
+    PERFORM _record('S.13: test policies retire, leaving only shipped defaults effective',
         v_effective = 0, v_effective || ' jurisdiction-scoped policies still effective');
 END $$;
 

@@ -202,6 +202,16 @@ jobs:
       # database, /metrics, and the structured log all agreeing, on the REDIS
       # rate-limiter backend (redis-py 8.x in a real stack). Pinned by
       # check_abuse_controls.
+      # v9.235 (roadmap P1.11) — the archive-then-purge chain, exercised. It
+      # shipped at v8.87 and had never once run in CI: the scripts were
+      # reviewed, the procedure was unit-tested, and the two had never been put
+      # end to end by anything but a human at a terminal. The drill adopts
+      # MINIMIZED, archives --from-policy, proves an edited archive is refused,
+      # purges, and checks that a three-year-old lifecycle row is held while a
+      # three-year-old verification row goes. Pinned by check_retention_engine.
+      - name: Retention drill (per-class archive + purge, end to end)
+        run: bash scripts/polaris-retention-drill.sh
+
       - name: Abuse-controls drill (quota under load + alert unit tests, redis backend)
         env:
           POLARIS_RATE_LIMIT_BACKEND: redis

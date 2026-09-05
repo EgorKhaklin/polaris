@@ -160,9 +160,99 @@ with open('${EXTRACTED}/MANIFEST.json') as f:
     m = json.load(f)
 print(m.get('deletion_from_hot', False))
 ")
+# v9.235 (P1.11): an archive taken with --from-policy carries a cutoff per
+# retention class, because a schedule that holds the civic record for five
+# years and operational history for two cannot be described by one timestamp.
+# An older archive has no cutoff_by_class; every class then takes cutoff_iso,
+# which is exactly the pre-v9.235 behavior.
+CUTOFF_SOURCE=$(python3 -c "
+import json
+with open('${EXTRACTED}/MANIFEST.json') as f:
+    m = json.load(f)
+print(m.get('cutoff_source', 'flag'))
+")
+MF_JURISDICTION=$(python3 -c "
+import json
+with open('${EXTRACTED}/MANIFEST.json') as f:
+    m = json.load(f)
+print(m.get('jurisdiction') or '')
+")
+if [[ -n "${MF_JURISDICTION}" ]] && ! [[ "${MF_JURISDICTION}" =~ ^[A-Za-z0-9_-]{1,10}$ ]]; then
+    echo "  ✗ manifest jurisdiction ${MF_JURISDICTION} is not a valid label; refusing" >&2
+    exit "${EXIT_ARCHIVE}"
+fi
+# Plain variables plus ${!name} indirection: macOS ships bash 3.2, with no
+# declare -A, and an operator runs this from wherever they are.
+for cls in TOKEN_LIFECYCLE VERIFICATION ENROLLMENT AUTH_AUDIT; do
+    iso=$(python3 -c "
+import json
+with open('${EXTRACTED}/MANIFEST.json') as f:
+    m = json.load(f)
+print((m.get('cutoff_by_class') or {}).get('${cls}', ''))
+")
+    eval "CUT_${cls}=\"\${iso:-\${CUTOFF_ISO}}\""
+done
+
 echo "  Manifest cutoff_iso: ${CUTOFF_ISO}"
+echo "  Manifest cutoff source: ${CUTOFF_SOURCE}${MF_JURISDICTION:+ (jurisdiction ${MF_JURISDICTION})}"
+if [[ "${CUTOFF_SOURCE}" == "policy" ]]; then
+    for cls in TOKEN_LIFECYCLE VERIFICATION ENROLLMENT AUTH_AUDIT; do
+        cls_var="CUT_${cls}"
+        printf "    %-16s %s\n" "${cls}" "${!cls_var}"
+    done
+fi
 echo "  Manifest deletion_from_hot flag: ${DELETION_FROM_HOT}  (informational; this script issues the deletion)"
 echo
+
+# ---------------------------------------------------------------------------
+# Component integrity (v9.235). The carve-out's whole justification is that the
+# archive reconstitutes every purged row. Until now this script hashed the
+# tarball for the checkpoint but never checked what was inside it against the
+# manifest: an archive whose CSVs had been edited was accepted, and the rows it
+# no longer held were deleted anyway. polaris-archive.sh --verify-latest did
+# this check; the step that actually deletes did not.
+#
+# Limit worth stating: the manifest is not signed, so an edit to both the CSVs
+# and their recorded hashes passes here. What still catches that is the
+# coverage pre-check below, which compares the manifest's row counts against
+# the live database, and the checkpoint, which records the tarball hash in an
+# append-only row.
+# ---------------------------------------------------------------------------
+COMPONENT_BAD=$(python3 - "${EXTRACTED}" <<'PY'
+import hashlib, json, os, sys
+base = sys.argv[1]
+with open(os.path.join(base, "MANIFEST.json")) as fh:
+    m = json.load(fh)
+recorded = m.get("sha256") or {}
+if not recorded:
+    print("manifest records no component hashes")
+    raise SystemExit(0)
+problems = []
+for name, want in sorted(recorded.items()):
+    path = os.path.join(base, name)
+    if not os.path.isfile(path):
+        problems.append(f"{name}: listed in the manifest but missing from the archive")
+        continue
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 16), b""):
+            h.update(chunk)
+    if h.hexdigest() != want:
+        problems.append(f"{name}: sha256 {h.hexdigest()[:16]}… does not match the manifest's {want[:16]}…")
+for name in sorted(os.listdir(base)):
+    if name != "MANIFEST.json" and name not in recorded and os.path.isfile(os.path.join(base, name)):
+        problems.append(f"{name}: present in the archive but absent from the manifest")
+print("; ".join(problems))
+PY
+)
+if [[ -n "${COMPONENT_BAD}" ]]; then
+    echo "  ✗ archive integrity check failed; refusing to purge." >&2
+    echo "    ${COMPONENT_BAD}" >&2
+    echo "    The archive does not match its own manifest, so it cannot be trusted to" >&2
+    echo "    reconstitute the rows this purge would delete. Re-archive and purge from that." >&2
+    exit "${EXIT_ARCHIVE}"
+fi
+echo "  Component integrity: every file matches the manifest  ✓"
 
 # ---------------------------------------------------------------------------
 # Archive/target binding. The carve-out's constitutional justification is that
@@ -217,13 +307,15 @@ echo "  Archive/target binding: ${TGT_DB} (system_identifier ${TGT_SYSID:-unavai
 # ---------------------------------------------------------------------------
 COVERAGE_MISMATCH=0
 for pair in \
-    "TokenLifecycleEvent|lifecycle.csv" \
-    "VerificationEvent|verifications.csv" \
-    "EnrollmentStatusEvent|enrollment_events.csv" \
-    "AuthAuditLog|auth_audit.csv"; do
-    IFS='|' read -r ptable pfile <<< "${pair}"
+    "TokenLifecycleEvent|lifecycle.csv|TOKEN_LIFECYCLE" \
+    "VerificationEvent|verifications.csv|VERIFICATION" \
+    "EnrollmentStatusEvent|enrollment_events.csv|ENROLLMENT" \
+    "AuthAuditLog|auth_audit.csv|AUTH_AUDIT"; do
+    IFS='|' read -r ptable pfile pclass <<< "${pair}"
+    pclass_var="CUT_${pclass}"
+    pcut="${!pclass_var}"
     would_delete=$(run_psql -c \
-        "SELECT count(*) FROM ${ptable} WHERE event_timestamp < '${CUTOFF_ISO}'::timestamptz" \
+        "SELECT count(*) FROM ${ptable} WHERE event_timestamp < '${pcut}'::timestamptz" \
         2>/dev/null | tr -d '[:space:]')
     archived=$(python3 -c "
 import json
@@ -232,7 +324,7 @@ with open('${EXTRACTED}/MANIFEST.json') as f:
 print(m.get('row_counts', {}).get('${pfile}', -1))
 ")
     if [[ "${would_delete}" != "${archived}" ]]; then
-        echo "  ✗ coverage mismatch on ${ptable}: would delete ${would_delete}, archive holds ${archived}" >&2
+        echo "  ✗ coverage mismatch on ${ptable} at ${pcut}: would delete ${would_delete}, archive holds ${archived}" >&2
         COVERAGE_MISMATCH=1
     fi
 done
@@ -251,20 +343,53 @@ if [[ "${DRY_RUN}" -eq 1 ]]; then
     echo "    archive_uri      = file://${ARCHIVE}"
     echo "    archive_sha256   = ${ARCHIVE_SHA}"
     echo "    actor_user_id    = ${ACTOR_USER_ID}"
+    if [[ "${CUTOFF_SOURCE}" == "policy" ]]; then
+        echo "    jurisdiction     = ${MF_JURISDICTION:-(deployment default)}"
+        echo "    class_cutoffs    = ${CUT_TOKEN_LIFECYCLE} (lifecycle)"
+        echo "                       ${CUT_VERIFICATION} (verification)"
+        echo "                       ${CUT_ENROLLMENT} (enrollment)"
+        echo "                       ${CUT_AUTH_AUDIT} (auth audit)"
+    fi
     echo "  [dry-run] no DELETE issued."
     exit "${EXIT_OK}"
 fi
 
-# Issue the procedure call.
+# Issue the procedure call. In policy mode the per-class cutoffs come from the
+# archive's manifest, not from a fresh resolution: retention_cutoff() advances
+# with now(), so re-resolving here would drift past what the archive holds. The
+# procedure still checks each supplied cutoff against its class's retention
+# window, so a manifest from a longer-lived policy is refused rather than
+# honored.
 echo "  → calling uc_archive_purge()…"
-PURGE_OUT=$(run_psql -c "
+if [[ "${CUTOFF_SOURCE}" == "policy" ]]; then
+    juris_sql="NULL"
+    [[ -n "${MF_JURISDICTION}" ]] && juris_sql="'${MF_JURISDICTION}'"
+    PURGE_CALL="
+CALL uc_archive_purge(
+    p_cutoff_timestamp := '${CUTOFF_ISO}'::timestamptz,
+    p_archive_uri      := 'file://${ARCHIVE}',
+    p_archive_sha256   := '${ARCHIVE_SHA}',
+    p_actor_user_id    := ${ACTOR_USER_ID},
+    p_jurisdiction     := ${juris_sql},
+    p_class_cutoffs    := ARRAY[
+        '${CUT_TOKEN_LIFECYCLE}',
+        '${CUT_VERIFICATION}',
+        '${CUT_ENROLLMENT}',
+        '${CUT_AUTH_AUDIT}'
+    ]::timestamptz[]
+);
+"
+else
+    PURGE_CALL="
 CALL uc_archive_purge(
     p_cutoff_timestamp := '${CUTOFF_ISO}'::timestamptz,
     p_archive_uri      := 'file://${ARCHIVE}',
     p_archive_sha256   := '${ARCHIVE_SHA}',
     p_actor_user_id    := ${ACTOR_USER_ID}
 );
-" 2>&1) || {
+"
+fi
+PURGE_OUT=$(run_psql -c "${PURGE_CALL}" 2>&1) || {
     echo "  ✗ procedure call failed:" >&2
     echo "${PURGE_OUT}" >&2
     exit "${EXIT_PROC}"

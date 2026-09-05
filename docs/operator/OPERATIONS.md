@@ -114,6 +114,7 @@ Volumes:
 | Retention review | Yearly, or when a jurisdiction's schedule changes | `SELECT * FROM RetentionPolicy WHERE superseded_at IS NULL` (the purge refuses any cutoff inside these windows) |
 | Verify archive integrity | Quarterly | `./scripts/polaris-archive.sh --verify-latest --dest=DIR` |
 | Audit-log purge | Operator-driven, after archive verify | `./scripts/polaris-purge.sh --archive=TARBALL --actor-user-id=N` |
+| Audit-log archive, per class | Yearly, when retention differs by class | `./scripts/polaris-archive.sh --from-policy` then the purge above |
 | Certificate transparency check | Daily (cron) | `./scripts/polaris-ct-monitor.sh`: alerts on unexpected cert issuance for `${POLARIS_DOMAIN}`; see [Certificate transparency monitoring](#certificate-transparency-monitoring) |
 | Audit-log rotation | Yearly (cron) | `./scripts/polaris-rotate-logs.sh --actor-user-id=N`: wraps archive + verify + purge in one cron-ready pipeline |
 | Operator onboarding | As needed | `./scripts/polaris-create-operator.sh --username NAME --role admin\|operator\|auditor --password-file PATH`: scrypt-hashed AppUser + AuthAuditLog entry |
@@ -618,7 +619,43 @@ and only when `uc_archive_purge()` is running, and the procedure itself
 deletes from four high-volume audit tables (`TokenLifecycleEvent`,
 `VerificationEvent`, `EnrollmentStatusEvent`, `AuthAuditLog`).
 
-**Two-step retention workflow:**
+**Purging per class (v9.235).** If the retention schedule differs by class,
+a single cutoff cannot express it: a five-year purge leaves behind operational
+history the schedule says can go, and a two-year purge is refused because it
+falls inside the civic record's window. Archive from the policy instead, and
+the purge follows it.
+
+```bash
+# Resolves a cutoff per class from RetentionPolicy and exports each table at
+# its own boundary. --jurisdiction selects a jurisdiction's policy set.
+./scripts/polaris-archive.sh --from-policy --dest=/var/backups
+./scripts/polaris-archive.sh --from-policy --jurisdiction=US-CA --dest=/var/backups
+
+# The purge reads the per-class cutoffs back out of the manifest. Nothing else
+# changes: same verification, same coverage pre-check, same checkpoint.
+./scripts/polaris-purge.sh \
+    --archive=/var/backups/polaris-archive-<TIMESTAMP>.tar.gz \
+    --actor-user-id=<admin user_id>
+
+# What was actually deleted, and under which decision.
+psql -d polaris -c "
+    SELECT checkpoint_id, cutoff_source, COALESCE(jurisdiction, '(default)') AS jurisdiction,
+           cutoff_lifecycle, cutoff_verification, cutoff_enrollment, cutoff_authaudit,
+           rows_purged_total
+    FROM LifecycleArchiveCheckpoint ORDER BY purged_at DESC LIMIT 5"
+```
+
+The purge refuses an archive whose per-class cutoffs fall inside the retention
+now in force, so an archive taken under a longer-lived policy cannot be used to
+purge under a shorter one. It also verifies every file in the archive against
+the manifest before deleting anything: the carve-out's justification is that
+the archive reconstitutes every purged row, and an archive edited after it was
+written does not.
+
+To rehearse the whole chain on a database you can afford to change:
+`bash scripts/polaris-retention-drill.sh`. It runs on every CI push.
+
+**Two-step retention workflow (one cutoff for every class):**
 
 ```bash
 # Step 1: produce a manifest-hashed archive of rows older than the

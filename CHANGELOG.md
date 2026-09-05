@@ -5,6 +5,65 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.235 — 2026-09-05 (the retention schedule reaches the purge, and the chain is finally drilled)
+
+Roadmap P1.11, second of three ships. v9.234 made retention a per-class
+decision but left the purge taking one cutoff for all four classes. Under
+MINIMIZED that meant a five-year purge left two years of verification history
+the schedule said could go, and a two-year purge was refused because it fell
+inside the civic record's window. Half the engine was unusable.
+
+**Per class, end to end.** `polaris-archive.sh --from-policy` resolves
+`retention_cutoff` for each class and exports each table at its own boundary,
+recording all four in the manifest under `cutoff_by_class` alongside the
+jurisdiction. `polaris-purge.sh` reads them back and passes them to
+`uc_archive_purge` as `p_class_cutoffs`; the coverage pre-check counts per
+class at that class's own cutoff. The scalar `cutoff_iso` stays, set to the
+oldest of the four, so a reader that ignores per-class cutoffs cannot delete a
+row the archive does not hold.
+
+**The procedure takes the archive's numbers rather than resolving its own**,
+because `retention_cutoff()` advances with `now()` and would drift past the
+archive between the archive run and the purge. It checks what it is given:
+each cutoff must be in the past, must not be inside its class's retention
+window, and must not be older than the manifest scalar. An archive taken under
+a longer-lived policy than the one in force is refused. Called without
+`p_class_cutoffs` the procedure behaves exactly as at v9.234, refusal included.
+
+**The checkpoint says what happened.** `LifecycleArchiveCheckpoint` gains
+`cutoff_source`, `jurisdiction`, and the four cutoffs that applied. It is the
+audit of record for the deletion carve-out, and one scalar no longer describes
+a purge.
+
+**A gap the drill found.** The purge hashed the tarball for the checkpoint but
+never checked its contents against the manifest, so an archive whose CSVs had
+been edited was accepted and the rows it no longer held were deleted anyway.
+`polaris-archive.sh --verify-latest` did this check; the step that actually
+deletes did not. It does now, before anything is deleted. The manifest is still
+unsigned, and the record says so: what catches an edit to both the CSVs and
+their hashes is the coverage pre-check against the live database.
+
+**The chain is drilled.** `scripts/polaris-retention-drill.sh` adopts
+MINIMIZED, archives from policy, proves an edited archive is refused, purges,
+and checks that a three-year-old lifecycle row is held while a three-year-old
+verification row goes. It runs on every CI push. The archive-then-purge chain
+shipped at v8.87 and until now had never run in CI at all: the scripts were
+reviewed, the procedure was unit-tested, and the two had never been put end to
+end by anything but a human at a terminal.
+
+Also: `polaris-archive.sh` and `polaris-purge.sh` no longer use `declare -A`,
+which macOS's bash 3.2 does not have, so both run on the machine the operator
+is actually sitting at.
+
+Proven: 13 SQL self-tests in Section S (suite 91), 11 DB-backed tests in
+`TestRetentionEngine`, the drill itself, and `check_retention_engine` extended
+to fail the build if the per-class path, the archive verification or the drill
+goes missing.
+
+Ship 3 of P1.11 remains: the operator CLI surface.
+
+---
+
 ## v9.234 — 2026-09-05 (retention becomes a recorded decision with a floor)
 
 Roadmap P1.11, first of three ships. The archive-then-purge chain has been

@@ -4058,7 +4058,7 @@ CREATE OR REPLACE FUNCTION retention_days_for(p_c VARCHAR) RETURNS INTEGER
 LANGUAGE sql STABLE AS $$ SELECT 365; $$;
 CREATE OR REPLACE FUNCTION retention_cutoff(p_c VARCHAR) RETURNS TIMESTAMPTZ
 LANGUAGE sql STABLE AS $$ SELECT now(); $$;
-CREATE OR REPLACE PROCEDURE uc_archive_purge(p_cutoff TIMESTAMPTZ)
+CREATE OR REPLACE PROCEDURE uc_archive_purge(p_cutoff TIMESTAMPTZ, p_class_cutoffs TIMESTAMPTZ[])
 LANGUAGE plpgsql SECURITY DEFINER AS $$
 BEGIN
     IF p_cutoff > now() - make_interval(days => retention_days_for('VERIFICATION')) THEN
@@ -4068,6 +4068,18 @@ END;
 $$;
 """
     (sql / "05_procedures.sql").write_text(good_proc)
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    (scripts / "polaris-archive.sh").write_text(
+        "# --from-policy resolves a cutoff per class\n"
+        'MANIFEST=\'{"cutoff_by_class": {}}\'\n')
+    (scripts / "polaris-purge.sh").write_text(
+        "# reads cutoff_by_class from MANIFEST.json and passes p_class_cutoffs\n"
+        "import hashlib  # component verification\n")
+    (scripts / "polaris-retention-drill.sh").write_text("# the chain, end to end\n")
+    wf = tmp_path / ".github/workflows"
+    wf.mkdir(parents=True)
+    (wf / "ci.yml").write_text("      - run: bash scripts/polaris-retention-drill.sh\n")
     assert checks.check_retention_engine(tmp_path)[0].level == "OK", \
         "must PASS when the floor, the boundary, the trigger and the guard are all present"
 
@@ -4083,7 +4095,8 @@ $$;
 
     (sql / "01_schema.sql").write_text(schema)
     (sql / "05_procedures.sql").write_text(
-        good_proc.replace("retention_days_for('VERIFICATION')", "1825"))
+        good_proc.replace("now() - make_interval(days => retention_days_for('VERIFICATION'))",
+                          "'2020-01-01'::timestamptz"))
     assert checks.check_retention_engine(tmp_path)[0].level == "FAIL", \
         "must FAIL when the purge stops consulting the policy and hardcodes a window"
 
@@ -4109,3 +4122,68 @@ $$;
     (sql / "02_indexes.sql").write_text("-- no uniqueness on the effective policy\n")
     assert checks.check_retention_engine(tmp_path)[0].level == "FAIL", \
         "must FAIL when two effective policies could disagree for one table class"
+
+
+def test_retention_engine_check_fails_when_the_per_class_chain_breaks(tmp_path):
+    """v9.235: the engine is only half useful if the schedule cannot reach the purge."""
+    sql = tmp_path / "polaris_sql"
+    sql.mkdir(parents=True)
+    (sql / "01_schema.sql").write_text(
+        "CREATE TABLE RetentionPolicy (retention_days INTEGER NOT NULL,\n"
+        "  CONSTRAINT retention_floor CHECK (retention_days >= 365));\n")
+    (sql / "09_grants.sql").write_text("REVOKE UPDATE, DELETE ON RetentionPolicy FROM polaris_app;\n")
+    (sql / "06_triggers.sql").write_text(
+        "CREATE TRIGGER trg_retention_policy_immutable BEFORE UPDATE OR DELETE ON RetentionPolicy\n"
+        "  FOR EACH ROW EXECUTE FUNCTION enforce_retention_policy_immutability();\n")
+    (sql / "02_indexes.sql").write_text(
+        "CREATE UNIQUE INDEX uq_effective_retention_policy ON RetentionPolicy (table_class);\n")
+    (sql / "05_procedures.sql").write_text("""
+CREATE OR REPLACE FUNCTION retention_days_for(p_c VARCHAR) RETURNS INTEGER
+LANGUAGE sql STABLE AS $$ SELECT 365; $$;
+CREATE OR REPLACE FUNCTION retention_cutoff(p_c VARCHAR) RETURNS TIMESTAMPTZ
+LANGUAGE sql STABLE AS $$ SELECT now(); $$;
+CREATE OR REPLACE PROCEDURE uc_archive_purge(p_cutoff TIMESTAMPTZ, p_class_cutoffs TIMESTAMPTZ[])
+LANGUAGE plpgsql SECURITY DEFINER AS $$
+BEGIN
+    IF p_cutoff > retention_cutoff('VERIFICATION') THEN
+        RAISE EXCEPTION 'cutoff is inside the retention window';
+    END IF;
+END;
+$$;
+""")
+    scripts = tmp_path / "scripts"
+    scripts.mkdir()
+    archive_ok = "# --from-policy\ncutoff_by_class\n"
+    purge_ok = "# cutoff_by_class from MANIFEST.json, passes p_class_cutoffs\nimport hashlib\n"
+    (scripts / "polaris-archive.sh").write_text(archive_ok)
+    (scripts / "polaris-purge.sh").write_text(purge_ok)
+    (scripts / "polaris-retention-drill.sh").write_text("# drill\n")
+    wf = tmp_path / ".github/workflows"
+    wf.mkdir(parents=True)
+    (wf / "ci.yml").write_text("      - run: bash scripts/polaris-retention-drill.sh\n")
+    assert checks.check_retention_engine(tmp_path)[0].level == "OK", \
+        "must PASS when the per-class chain is complete"
+
+    (scripts / "polaris-archive.sh").write_text("# one cutoff for everything\n")
+    assert checks.check_retention_engine(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the archive cannot be taken from the retention policy"
+
+    (scripts / "polaris-archive.sh").write_text(archive_ok)
+    (scripts / "polaris-purge.sh").write_text("# ignores cutoff_by_class\nimport hashlib\n")
+    assert checks.check_retention_engine(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the purge ignores the manifest's per-class cutoffs"
+
+    (scripts / "polaris-purge.sh").write_text(
+        "# cutoff_by_class from MANIFEST.json, passes p_class_cutoffs\n# no hashing\n")
+    assert checks.check_retention_engine(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the purge deletes without verifying the archive against its manifest"
+
+    (scripts / "polaris-purge.sh").write_text(purge_ok)
+    (scripts / "polaris-retention-drill.sh").unlink()
+    assert checks.check_retention_engine(tmp_path)[0].level == "FAIL", \
+        "must FAIL when nothing exercises the chain end to end"
+
+    (scripts / "polaris-retention-drill.sh").write_text("# drill\n")
+    (wf / "ci.yml").write_text("      - run: echo nothing\n")
+    assert checks.check_retention_engine(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the drill exists but CI never runs it"

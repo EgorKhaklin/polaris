@@ -47,6 +47,65 @@ policy, then the deployment default, then 365. There is always an answer, and it
 is never below the floor, so a deployment that has configured nothing is still
 bounded.
 
+## Reaching the purge, per class
+
+A schedule that keeps the civic record for five years and operational history
+for two has to arrive at the purge as two cutoffs. Until v9.235 it could not:
+`uc_archive_purge` took one cutoff for all four classes, so a five-year purge
+left two years of verification history the schedule said could go, and a
+two-year purge was refused outright. Half the engine was unusable.
+
+The chain now runs per class end to end.
+
+`polaris-archive.sh --from-policy` resolves `retention_cutoff` for each class
+and exports each table at its own boundary. The manifest records all four under
+`cutoff_by_class`, plus the jurisdiction and a `cutoff_source` of `policy`. The
+scalar `cutoff_iso` stays, set to the oldest of the four: a reader that knows
+nothing of per-class cutoffs then cannot delete a row the archive does not
+hold. Tables the purge never touches take the newest cutoff, so the archive
+carries as much context as it can.
+
+`polaris-purge.sh` reads those cutoffs back and passes them to
+`uc_archive_purge` as `p_class_cutoffs`, in the order token lifecycle,
+verification, enrollment, auth audit. The coverage pre-check counts per class
+at that class's own cutoff.
+
+The procedure does not resolve the cutoffs itself, and the reason matters:
+`retention_cutoff()` is relative to `now()`, so re-resolving at purge time
+would drift newer than the archive between the archive run and the purge, and
+delete rows the archive does not hold. It takes the archive's numbers and
+checks them: each supplied cutoff must be in the past, must not be inside its
+class's retention window, and must not be older than the manifest scalar. An
+archive taken under a longer-lived policy than the one now in force is refused,
+not honored.
+
+Called without `p_class_cutoffs`, the procedure behaves exactly as it did at
+v9.234: one cutoff, refused if it falls inside any window. An operator who has
+not asked for per-class cutoffs cannot get them by accident.
+
+## What the checkpoint records
+
+`LifecycleArchiveCheckpoint` is the audit of record for the deletion carve-out,
+so it has to say what the cutoff actually was. It carries `cutoff_source`
+(`FLAG` or `POLICY`), the `jurisdiction`, and the four cutoffs that applied.
+Rows written before v9.235 carry `FLAG` and NULL per-class cutoffs, which is
+accurate: policy mode did not exist and the scalar was the whole story.
+
+## Verifying the archive before deleting
+
+The carve-out's justification is that the archive reconstitutes every purged
+row. Until v9.235 the purge hashed the tarball for the checkpoint but never
+checked its contents against the manifest, so an archive whose CSVs had been
+edited was accepted and the rows it no longer held were deleted anyway.
+`polaris-archive.sh --verify-latest` did this check; the step that actually
+deletes did not. It does now, before anything is deleted.
+
+The limit worth stating: the manifest is not signed, so an edit to both the
+CSVs and their recorded hashes passes that check. What still catches it is the
+coverage pre-check, which compares the manifest's row counts against the live
+database, and the checkpoint, which records the tarball hash in an append-only
+row.
+
 ## Why the decision is append-only
 
 A retention decision is an audit of record in the sense
@@ -78,9 +137,8 @@ procedure is admin-gated: it raises `insufficient_privilege` for any actor whose
 
 ## What this does not do
 
-It does not archive. The archive chain is unchanged: the operator still runs
-`polaris-archive.sh` and `polaris-purge.sh`, and the purge still verifies the
-manifest SHA-256 before deleting anything.
+It does not archive on its own. The operator still runs `polaris-archive.sh`
+and `polaris-purge.sh` as two deliberate steps.
 
 It does not enforce a jurisdiction's law. `jurisdiction` is an opaque
 ten-character label the deployment chooses. Polaris holds the decision, its
@@ -102,6 +160,9 @@ deliberate operator action with an archive behind it.
 | Resolution | `retention_days_for`, `retention_cutoff` (`05_procedures.sql`) |
 | Templates | `uc_apply_retention_template` (`05_procedures.sql`) |
 | The guard | `uc_archive_purge` (`05_procedures.sql`) |
-| Migration | `2026-09-05-001-retention-policy` |
+| Per-class archive | `scripts/polaris-archive.sh --from-policy` |
+| Per-class purge | `scripts/polaris-purge.sh` (reads `cutoff_by_class`) |
+| The drill | `scripts/polaris-retention-drill.sh`, run on every CI push |
+| Migrations | `2026-09-05-001-retention-policy`, `2026-09-05-002-per-class-purge-cutoffs` |
 | Tests | Section S of `08_tests.sql`; `TestRetentionEngine` in `polaris_web/test_check_constraints.py` |
 | Invariant | `check_retention_engine` (`polaris_checks/checks.py`) |

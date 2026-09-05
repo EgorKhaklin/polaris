@@ -1323,9 +1323,33 @@ CREATE TABLE LifecycleArchiveCheckpoint (
     rows_purged_duress         INTEGER  NOT NULL DEFAULT 0,
     rows_purged_total          INTEGER  NOT NULL DEFAULT 0,
 
+    -- v9.235 (P1.11): what the cutoff actually was, per class. Under a
+    -- per-class retention schedule one scalar cannot describe the purge:
+    -- verification history can be purgeable at two years while the token
+    -- lifecycle is held for five. FLAG means the operator's single cutoff
+    -- applied to every class; POLICY means each class was purged at its own
+    -- retention cutoff, bounded by what the archive covers. Rows written
+    -- before v9.235 carry FLAG and NULL per-class cutoffs, which is accurate:
+    -- policy mode did not exist, and cutoff_timestamp was the whole story.
+    cutoff_source          VARCHAR(6)   NOT NULL DEFAULT 'FLAG',
+    jurisdiction           VARCHAR(10),
+    cutoff_lifecycle       TIMESTAMPTZ,
+    cutoff_verification    TIMESTAMPTZ,
+    cutoff_enrollment      TIMESTAMPTZ,
+    cutoff_authaudit       TIMESTAMPTZ,
+
     -- The actor must exist as an AppUser (admin role required at the
     -- procedure layer; not enforced via FK to avoid blocking AppUser
     -- deletions, which are themselves rare and audited).
+    CONSTRAINT cutoff_source_known CHECK (
+        cutoff_source IN ('FLAG', 'POLICY')
+    ),
+    CONSTRAINT per_class_cutoffs_in_past CHECK (
+        (cutoff_lifecycle    IS NULL OR cutoff_lifecycle    <= now()) AND
+        (cutoff_verification IS NULL OR cutoff_verification <= now()) AND
+        (cutoff_enrollment   IS NULL OR cutoff_enrollment   <= now()) AND
+        (cutoff_authaudit    IS NULL OR cutoff_authaudit    <= now())
+    ),
     CONSTRAINT archive_sha256_is_hex CHECK (
         archive_sha256 ~ '^[0-9a-fA-F]{64}$'
     ),

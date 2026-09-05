@@ -4556,17 +4556,55 @@ def check_retention_engine(root: pathlib.Path) -> list[Finding]:
     if not m:
         return _fail("retention", "uc_archive_purge procedure not found in 05_procedures.sql")
     body = m.group(0)
-    if "retention_days_for" not in body:
+    if "retention_days_for" not in body and "retention_cutoff" not in body:
         return _fail("retention",
-                     "uc_archive_purge does not consult retention_days_for: the purge would accept "
-                     "any cutoff, including one inside the retention window")
+                     "uc_archive_purge does not consult the retention policy: the purge would "
+                     "accept any cutoff, including one inside the retention window")
     if not re.search(r"RAISE\s+EXCEPTION", body, re.I):
         return _fail("retention",
                      "uc_archive_purge reads the retention policy but never refuses: a cutoff "
                      "inside the window must raise, not silently narrow")
+
+    # v9.235: the per-class path. A schedule that keeps the civic record longer
+    # than operational history has to reach the purge as more than one cutoff,
+    # and the archive has to be the source of those cutoffs. Re-resolving them
+    # at purge time would drift past what the archive holds, because
+    # retention_cutoff() advances with now().
+    if "p_class_cutoffs" not in body:
+        return _fail("retention",
+                     "uc_archive_purge takes no per-class cutoffs: a retention schedule that "
+                     "differs by class cannot be applied, and half the engine is unusable")
+    archive = _read(root, "scripts/polaris-archive.sh")
+    if "--from-policy" not in archive or "cutoff_by_class" not in archive:
+        return _fail("retention",
+                     "scripts/polaris-archive.sh cannot archive from the retention policy: "
+                     "--from-policy and a cutoff_by_class manifest entry are what let the purge "
+                     "delete per class")
+    purge = _read(root, "scripts/polaris-purge.sh")
+    if "cutoff_by_class" not in purge or "p_class_cutoffs" not in purge:
+        return _fail("retention",
+                     "scripts/polaris-purge.sh ignores the manifest's per-class cutoffs, so a "
+                     "policy archive would be purged at one cutoff")
+    if "MANIFEST.json" not in purge or "hashlib" not in purge:
+        return _fail("retention",
+                     "scripts/polaris-purge.sh does not verify the archive against its manifest "
+                     "before deleting: the carve-out's justification is that the archive "
+                     "reconstitutes every purged row, and an edited archive would break it")
+    drill = root / "scripts/polaris-retention-drill.sh"
+    if not drill.is_file():
+        return _fail("retention",
+                     "scripts/polaris-retention-drill.sh is missing: the archive/purge chain "
+                     "would again be a path nothing exercises end to end")
+    ci = _read(root, ".github/workflows/ci.yml")
+    if "polaris-retention-drill.sh" not in ci:
+        return _fail("retention",
+                     "the retention drill is not wired into CI, so the archive/purge chain runs "
+                     "only when a human runs it")
     return _ok("retention",
                f"retention is data with a {floor.group(1)}-day floor, append-only, one effective "
-               "policy per class, and the purge refuses a cutoff inside the window")
+               "policy per class; the purge refuses a cutoff inside the window, honours the "
+               "archive's per-class cutoffs, verifies the archive against its manifest, and the "
+               "whole chain is drilled in CI")
 
 
 CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
