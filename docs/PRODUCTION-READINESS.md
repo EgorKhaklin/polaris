@@ -32,12 +32,17 @@ recorded as made for a named deployment.
 | **Retention schedule** | The engine: `RetentionPolicy` holds the decision per table class and jurisdiction with a 365-day CHECK floor, append-only with one-way supersession, and `uc_archive_purge` refuses a cutoff inside the window (v9.234, [retention.md](design/retention.md)). Ships at five years for every class. | The days each class is kept in this jurisdiction, and the counsel who says the number satisfies the statute. Polaris records the decision and its justification; it does not know the law. |
 | **Independent penetration test and threat-model sign-off** | The readiness pack in [RED-TEAM-SCOPE.md](RED-TEAM-SCOPE.md); roadmap row P1.12. | The firm, the funding, and an accountable human signature. |
 
-One engineering limit is carried openly rather than closed: edge and database
-recreation are still window operations under the blue-green deploy (roadmap
-P1.4). The other one the ledger carried, a Caddy edge that ran as root with
-`NET_BIND_SERVICE`, closed at v9.239: the edge runs as uid 1000 with no
-capability on every substrate, listening on 8080/8443 behind the host's 80/443,
-and `check_container_hardening` fails the build if a capability or a root user
+One engineering limit is carried openly rather than closed, and it is now
+bounded: recreating the edge or restarting the database on a single host is
+not a zero-downtime operation, but `scripts/polaris-window-drill.sh` measures
+both under traffic on every push against hard ceilings (30 s and 60 s), and at
+v9.240 they measure as a 0.3 s gap and as latency the pooler absorbs with no
+failed request. An edge configuration change is no longer a window at all: it
+is a live reload. Closing the limit itself means a hot standby with automated
+failover, which is roadmap P2.7. The other limit the ledger carried, a Caddy
+edge that ran as root with `NET_BIND_SERVICE`, closed at v9.239: the edge runs
+as uid 1000 with no capability on every substrate, and
+`check_container_hardening` fails the build if a capability or a root user
 comes back.
 
 ---
@@ -138,6 +143,7 @@ CHANGELOG entry for the version carries the detail.
 | Retention is data with a floor, purged per class, drilled in CI | v9.234 to v9.236 | `check_retention_engine` |
 | Every base image under the self-built containers is digest-pinned | v9.237 | `check_prod_images_digest_pinned` |
 | The TLS edge runs as a non-root user with no capability on every substrate | v9.239 | `check_container_hardening` |
+| Edge configuration changes are live reloads; edge and database recreation windows are measured against ceilings on every push | v9.240 | `check_zero_downtime_deploy` |
 
 ---
 

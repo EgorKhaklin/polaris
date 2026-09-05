@@ -1045,6 +1045,27 @@ under real traffic from the load generator, the database, `/metrics`, and the
 log agreeing) is `scripts/polaris-abuse-drill.sh`. Runbooks:
 [RUNBOOKS.md](RUNBOOKS.md).
 
+### Changing the edge or database configuration
+
+A Caddyfile change is applied live (v9.240). Edit
+[`polaris_web/Caddyfile`](../../polaris_web/Caddyfile) and either run the
+deploy, which reloads the edge as its step 5a, or reload it yourself:
+
+```bash
+docker compose -f polaris_web/docker-compose.prod.yml exec -T caddy \
+    caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile --address unix//config/admin.sock
+```
+
+A Caddyfile that fails to adapt is refused and the running configuration keeps
+serving. Recreating the edge container (an image update) is a sub-second gap
+for clients; `scripts/polaris-window-drill.sh` measures it on every push.
+
+A PostgreSQL parameter that is reloadable takes effect with
+`SELECT pg_reload_conf()` after `ALTER SYSTEM SET`; one that requires a restart
+(`shared_buffers`, `wal_level`) needs `docker compose restart postgres`, which
+the pooler turns into a second of latency rather than errors, as the same
+drill shows. Pick a quiet minute for it all the same.
+
 ### Distributed tracing
 
 Opt-in OpenTelemetry traces across the app and the database, joined to the

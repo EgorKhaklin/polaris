@@ -3133,12 +3133,16 @@ def test_migrations_expand_contract_check_discriminates(tmp_path):
 
 
 def test_zero_downtime_deploy_check_discriminates(tmp_path):
-    CADDY = "reverse_proxy {$POLARIS_UPSTREAMS:app:8000} {\n  lb_try_duration 15s\n  health_uri /api/health/live\n}\n"
+    CADDY = ("admin unix//config/admin.sock\n"
+             "reverse_proxy {$POLARIS_UPSTREAMS:app:8000} {\n  lb_try_duration 15s\n  health_uri /api/health/live\n}\n")
     COMPOSE = ("services:\n  app:\n    container_name: polaris-app\n    healthcheck:\n      test: x\n    stop_grace_period: 35s\n"
                "  pgbouncer:\n    image: y\n  caddy:\n    environment:\n      POLARIS_UPSTREAMS: \"${POLARIS_UPSTREAMS:-app:8000}\"\n")
     DEPLOY = ("read -r -a COMPOSE_EXTRA <<< \"${POLARIS_COMPOSE_EXTRA:-}\"\ncompose up -d --no-deps postgres pgbouncer redis caddy\n"
+              "compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --address unix//config/admin.sock\n"
               "polaris-migrate.sh --up --target=docker-stack\nwait_healthy() { :; }\n"
               "mapfile -t APP_SERVICES < <(compose config --services | grep -E '^app(-green)?$' | sort -r)\n")
+    WINDOW = ("caddy reload\n[[ \"$r_drops\" -eq 0 ]]\ncompose up -d --no-deps --force-recreate caddy\n"
+              "EDGE_CEILING=30\ncompose restart -t 10 postgres\nDB_CEILING=60\n")
     good = {
         "polaris_web/Caddyfile": CADDY, "polaris_web/Caddyfile.citest": CADDY,
         "polaris_web/docker-compose.prod.yml": COMPOSE,
@@ -3147,7 +3151,9 @@ def test_zero_downtime_deploy_check_discriminates(tmp_path):
         "scripts/polaris-rotate-secret.sh": "recreate_apps() { compose config --services | grep -E '^app(-green)?$'; }\n",
         "scripts/polaris-rolling-drill.sh": ("bash scripts/polaris-deploy.sh prod --no-pull\nassert s[\"drops\"] == 0\n"
                                              "compose stop -t 1 app app-green\nassert s[\"drops\"] > 0\n"),
-        ".github/workflows/ci.yml": "run: docker compose -f docker-compose.bluegreen.yml up -d; bash scripts/polaris-rolling-drill.sh\n",
+        "scripts/polaris-window-drill.sh": WINDOW,
+        ".github/workflows/ci.yml": ("run: docker compose -f docker-compose.bluegreen.yml up -d; bash scripts/polaris-rolling-drill.sh\n"
+                                     "run: bash scripts/polaris-window-drill.sh\n"),
     }
 
     def write(overrides=None):
@@ -3177,6 +3183,18 @@ def test_zero_downtime_deploy_check_discriminates(tmp_path):
     # Rotation that only recreates one colour.
     write({"scripts/polaris-rotate-secret.sh": "compose up -d --no-deps --force-recreate app\n"})
     assert checks.check_zero_downtime_deploy(tmp_path)[0].level == "FAIL", "must FAIL when rotation ignores app-green"
+    # v9.240: the edge with its admin API off has no reload path.
+    write({"polaris_web/Caddyfile": "admin off\n" + CADDY.replace("admin unix//config/admin.sock\n", "")})
+    assert checks.check_zero_downtime_deploy(tmp_path)[0].level == "FAIL", "must FAIL when the edge cannot be reloaded live"
+    # A deploy that never reloads the edge silently ignores a Caddyfile change.
+    write({"scripts/polaris-deploy.sh": DEPLOY.replace("compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --address unix//config/admin.sock\n", "")})
+    assert checks.check_zero_downtime_deploy(tmp_path)[0].level == "FAIL", "must FAIL when the deploy does not reload the edge"
+    # A window drill that measures nothing.
+    write({"scripts/polaris-window-drill.sh": "echo windows are fine\n"})
+    assert checks.check_zero_downtime_deploy(tmp_path)[0].level == "FAIL", "must FAIL when the windows are not measured"
+    # The drill exists but CI never runs it.
+    write({".github/workflows/ci.yml": "run: docker compose -f docker-compose.bluegreen.yml up -d; bash scripts/polaris-rolling-drill.sh\n"})
+    assert checks.check_zero_downtime_deploy(tmp_path)[0].level == "FAIL", "must FAIL when CI does not run the window drill"
 
 
 def test_helm_reference_profile_check_discriminates(tmp_path):

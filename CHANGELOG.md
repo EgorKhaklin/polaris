@@ -5,6 +5,52 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.240 — 2026-09-05 (edge configuration changes are live reloads; the two remaining windows are measured)
+
+The readiness ledger's last engineering limit read "edge and database
+recreation are window operations under the blue-green deploy". This ship does
+not close it, which takes a hot standby with automated failover (roadmap
+P2.7), but it removes the most frequent case from it and puts numbers on the
+rest.
+
+**An edge configuration change is no longer a window.** All three Caddyfiles
+expose Caddy's admin API on a unix socket inside the container
+(`/config/admin.sock`, owned by the edge's own user, never on the network), and
+`polaris-deploy.sh` applies an edited Caddyfile with `caddy reload` through it
+as its step 5a. The listeners never close. Until now compose did not recreate
+the container for a change inside a bind-mounted file, so an edited Caddyfile
+was silently not applied until the next recreation; a Caddyfile that fails to
+adapt is now refused loudly while the previous configuration keeps serving.
+
+**The windows are measured.** `scripts/polaris-window-drill.sh` runs on every
+push after the rolling drill, against the same booted blue-green stack and the
+same traffic generator, and asserts hard ceilings:
+
+- A real Caddyfile change (a new listener inside the container) is applied
+  live, verified through it, and reverted, under traffic: zero dropped
+  requests, or the drill fails.
+- Recreating the edge: the window from the first dropped request to the last,
+  ceiling 30 s. Measured locally at v9.240: 0.3 s, 6 of 95 requests.
+- Restarting the database: ceiling 60 s, the container's start time must
+  change (a restart that did not happen would make the scenario vacuous), and
+  the app containers must not be replaced. Measured: no failed request at all.
+  pgbouncer queues a query while its server connection is re-established, so
+  a short restart reaches clients as latency (slowest request 0.94 s), not as
+  errors, and the app recovers without a restart because every request opens
+  its own connection through the pooler.
+
+The numbers are in DEPLOYMENT.md with the ceilings; the runbook says how to
+change the edge or database configuration; the ledger's limit paragraph states
+what remains and where it closes. `check_zero_downtime_deploy` now fails the
+build without the admin socket, without the deploy's reload step, without the
+drill and its three scenarios, or without CI running it.
+
+Also found: the CI edge's local CA tried to install its root certificate into
+the OS trust store on every load, which the non-root edge cannot do and does
+not need; `skip_install_trust` silences it.
+
+---
+
 ## v9.239 — 2026-09-05 (the edge runs as a non-root user on every substrate)
 
 The readiness ledger carried two engineering limits openly. This closes the

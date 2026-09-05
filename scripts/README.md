@@ -43,6 +43,7 @@ block after the shebang is its documentation, and `--help` prints it.
 | `polaris-dr-drill.sh` | Kills a primary, restores from the WAL archive, measures RPO and RTO | `ci.yml`, `dr-drill.yml`, the monthly timer |
 | `polaris-offsite-drill.sh` | The S3 backup and restore path, end to end | `ci.yml` |
 | `polaris-rolling-drill.sh` | A rolling deploy drops zero requests | `ci.yml` |
+| `polaris-window-drill.sh` | An edge configuration reload drops nothing; edge and database recreation windows measured against ceilings | `ci.yml` |
 | `polaris-helm-drill.sh` | The Kubernetes profile boots healthy with policies enforced | `ci.yml` |
 | `polaris-page-drill.sh` | A duress event reaches the pager webhook | `ci.yml` |
 | `polaris-abuse-drill.sh` | The per-agency quotas refuse writes under real load | `ci.yml` |

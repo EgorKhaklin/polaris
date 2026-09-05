@@ -10,7 +10,7 @@ data:
   # user on 8080/8443 (the Service maps 80/443) and logging to stdout.
   Caddyfile: |
     {
-        admin off
+        admin unix//config/admin.sock         # live reloads through kubectl exec (v9.240)
         http_port 8080
         https_port 8443
         # v9.239 — Caddy's automatic HTTP-to-HTTPS redirect names :8443 when

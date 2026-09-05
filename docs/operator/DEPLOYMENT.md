@@ -98,8 +98,25 @@ being recreated, gunicorn drains in-flight requests on SIGTERM
 the `OperatorSession` registry in Postgres with the rate limiter's state in
 Redis, so no container holds session state and either colour serves
 any request. `polaris-deploy.sh` and `polaris-rotate-secret.sh` both roll the
-colours one at a time. Edge (`caddy`) and database (`postgres`) recreation
-still interrupt service; plan those in a window.
+colours one at a time.
+
+**Edge and database operations (v9.240).** An edge configuration change is
+not a window: `polaris-deploy.sh` applies an edited Caddyfile with
+`caddy reload` through the edge's admin unix socket, and the listeners never
+close. What remains are the two recreations, measured under traffic by
+[`scripts/polaris-window-drill.sh`](../../scripts/polaris-window-drill.sh) on
+every CI push against hard ceilings:
+
+| Operation | What clients see | Measured (v9.240, local reference run) | Ceiling |
+|---|---|---|---|
+| Caddyfile change, `caddy reload` | nothing; a real change applied live, verified, reverted | 0 dropped of 112, slowest request 0.12 s | 0 drops |
+| Edge recreation (`--force-recreate caddy`, an image update) | a sub-second gap | 0.3 s window, 6 dropped of 95 | 30 s |
+| Database restart (`restart postgres`) | latency, not errors: pgbouncer queues a query until its server connection is back | 0 dropped of 116, slowest request 0.94 s | 60 s |
+
+The app containers are not restarted for a database restart: every request
+opens its own connection through the pooler, so recovery is automatic. Plan an
+edge image update or a database restart for a quiet minute; nothing else about
+them needs a window.
 the `rolling-deploy` job in [`ci.yml`](../../.github/workflows/ci.yml) and
 [`scripts/polaris-rolling-drill.sh`](../../scripts/polaris-rolling-drill.sh)
 has the CI proof and the local drill.

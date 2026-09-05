@@ -65,8 +65,9 @@ manufacturing, authorization to operate).
 
 **Carrying debts:** none from the P0 list; that paragraph closed with P0
 (v9.160 to v9.175). One engineering limit is carried openly in the readiness
-ledger: edge and database recreation are window operations. The Caddy edge
-became fully non-root at v9.239. P0.11 (internal-hop hybrid KEX) stays `[EXT]` on
+ledger: edge and database recreation are window operations, measured against
+ceilings on every push since v9.240 (edge configuration changes are live
+reloads). Closing it is P2.7. The Caddy edge became fully non-root at v9.239. P0.11 (internal-hop hybrid KEX) stays `[EXT]` on
 OpenSSL 3.5 reaching the pgbouncer and postgres images.
 
 ---

@@ -6,9 +6,10 @@
 # self-built image's plugin), but terminates TLS with Caddy's internal CA so the
 # full prod stack can be booted and proven end-to-end without ACME.
 {
-    admin off
+    admin unix//config/admin.sock             # live reloads (v9.240), see Caddyfile
     auto_https disable_redirects
     local_certs
+    skip_install_trust                        # the edge is not root; it cannot install its CA into the OS store, and need not
     # v9.239 — same unprivileged ports as production; the overlay publishes
     # host 8443 onto 8443.
     http_port 8080

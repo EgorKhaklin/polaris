@@ -3682,9 +3682,33 @@ def check_zero_downtime_deploy(root: pathlib.Path) -> list[Finding]:
                          "deploy AND a negative control that shows drops")
     if "polaris-rolling-drill.sh" not in ci or "docker-compose.bluegreen.yml" not in ci:
         return _fail("zero_downtime", "ci.yml must boot the blue-green profile and run scripts/polaris-rolling-drill.sh")
+    # v9.240: an edge configuration change is a live reload, not a window, and
+    # the two windows that remain (edge and database recreation) are measured
+    # under traffic against ceilings. Without the admin socket there is no
+    # reload path; without the deploy step an edited Caddyfile is silently not
+    # applied; without the drill the windows are a sentence in a document.
+    for name, cf in (("Caddyfile", caddy), ("Caddyfile.citest", citest)):
+        if "admin unix//config/admin.sock" not in cf:
+            return _fail("zero_downtime", f"{name} must expose Caddy's admin API on the unix socket "
+                         "/config/admin.sock: it is the reload path that makes a configuration change windowless")
+    if "caddy reload" not in dep or "unix//config/admin.sock" not in dep:
+        return _fail("zero_downtime", "polaris-deploy.sh must apply a Caddyfile change with `caddy reload` through "
+                     "the admin unix socket; compose does not recreate a container for a bind-mounted file change")
+    wdrill = _read(root, "scripts/polaris-window-drill.sh")
+    if not wdrill:
+        return _fail("zero_downtime", "scripts/polaris-window-drill.sh is missing: the edge and database recreation "
+                     "windows must be measured, not asserted")
+    for needle in ("caddy reload", "--force-recreate caddy", "restart -t 10 postgres", "EDGE_CEILING", "DB_CEILING",
+                   'r_drops" -eq 0'):
+        if needle not in wdrill:
+            return _fail("zero_downtime", f"polaris-window-drill.sh must contain {needle!r}: a reload with zero drops, "
+                         "an edge recreation and a database restart measured against ceilings")
+    if "polaris-window-drill.sh" not in ci:
+        return _fail("zero_downtime", "ci.yml must run scripts/polaris-window-drill.sh after the rolling drill")
     return _ok("zero_downtime", "blue-green profile behind a retrying edge with fast liveness, deploy migrates then rolls "
-               "green/blue with health waits (rollback both), rotation rolls too, and CI drills zero drops under "
-               "traffic with a negative control")
+               "green/blue with health waits (rollback both), rotation rolls too, CI drills zero drops under "
+               "traffic with a negative control, edge configuration changes are live reloads, and the edge and "
+               "database recreation windows are measured against ceilings")
 
 
 def check_helm_reference_profile(root: pathlib.Path) -> list[Finding]:
