@@ -37,7 +37,7 @@ polaris/
 │   ├── Dockerfile.prod / docker-compose.prod.yml  ← prod image and the five-service stack
 │   ├── docker-compose.bluegreen.yml               ← the zero-downtime profile
 │   ├── Dockerfile.caddy / Caddyfile               ← self-built TLS edge (rate_limit compiled in)
-│   ├── Dockerfile.pgbouncer / pgbouncer.ini       ← self-built connection pooler
+│   ├── Dockerfile.pgbouncer / pgbouncer-entrypoint.sh ← self-built connection pooler (config generated at start)
 │   ├── Dockerfile.postgres / pgbackrest.conf      ← database image with WAL archiving
 │   └── gunicorn.conf.py                           ← prod WSGI config
 ├── polaris_sql/        ← schema, procedures, triggers, atlas functions, migrations/
@@ -60,7 +60,7 @@ polaris/
 ├── scripts/            ← every shell tool (polaris-*): deploys, drills, gates, checks
 ├── site/               ← the published project page (GitHub Pages), its logo and the Atlas captures
 │
-├── .github/workflows/  ← ci.yml (14 jobs), dr-drill.yml (monthly), sbom.yml (per release), pages.yml (the site)
+├── .github/workflows/  ← ci.yml (14 jobs), dr-drill.yml (monthly), chaos.yml (weekly), sbom.yml (per release), pages.yml (the site)
 ├── .github/dependabot.yml, .pre-commit-config.yaml, .gitignore, .coveragerc, .trivyignore
 ```
 
@@ -82,7 +82,10 @@ polaris/
 - `prod-stack-boot`: boots the full prod compose end to end and asserts `/api/health` serves through the TLS edge.
 
 `dr-drill.yml` runs the same drill monthly and commits the measured row to
-[`docs/operator/DR-DRILLS.md`](../operator/DR-DRILLS.md). `sbom.yml` attaches
+[`docs/operator/DR-DRILLS.md`](../operator/DR-DRILLS.md). `chaos.yml` boots the
+blue-green stack weekly, crashes one colour, stops both until `PolarisAppDown`
+reaches a webhook, crashes redis and postgres, partitions pgbouncer, and commits
+every recovery time to [`docs/operator/CHAOS-DRILLS.md`](../operator/CHAOS-DRILLS.md). `sbom.yml` attaches
 SPDX bills of materials with SLSA provenance to every release. `pages.yml`
 publishes `site/`.
 
@@ -112,7 +115,7 @@ publishes `site/`.
 
 | Directory | What |
 |---|---|
-| [`docs/operator/`](../operator/README.md) | INSTALL, DEPLOYMENT, LINUX-SERVER, KUBERNETES, HARDENING, OPERATIONS, SECRETS, KEY-CEREMONY, SECURITY, PRIVACY, DR, DR-DRILLS (ledger), FAILOVER, ENCRYPTION-AT-REST, SLOS, RUNBOOKS, WEBAUTHN-ROLLOUT |
+| [`docs/operator/`](../operator/README.md) | INSTALL, DEPLOYMENT, LINUX-SERVER, KUBERNETES, HARDENING, OPERATIONS, SECRETS, KEY-CEREMONY, SECURITY, PRIVACY, DR, DR-DRILLS (ledger), CHAOS-DRILLS (ledger), FAILOVER, ENCRYPTION-AT-REST, SLOS, RUNBOOKS, WEBAUTHN-ROLLOUT |
 | [`docs/reference/`](README.md) | API, DATA-MODEL, PQC-POSTURE, PERFORMANCE-BASELINE, SCALING, GLOSSARY, this map |
 | [`docs/`](../README.md) | ARCHITECTURE-OVERVIEW, PRODUCTION-READINESS (the bound on every claim), RED-TEAM-SCOPE, THESIS, SEED_DATA, CONVENTIONS |
 | [`docs/paper/`](../paper/) | The academic report |

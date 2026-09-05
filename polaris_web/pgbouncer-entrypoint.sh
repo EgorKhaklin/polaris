@@ -55,6 +55,14 @@ DEFAULT_POOL_SIZE="${PGBOUNCER_DEFAULT_POOL_SIZE:-20}"
 MIN_POOL_SIZE="${PGBOUNCER_MIN_POOL_SIZE:-5}"
 RESERVE_POOL_SIZE="${PGBOUNCER_RESERVE_POOL_SIZE:-5}"
 MAX_DB_CONNECTIONS="${PGBOUNCER_MAX_DB_CONNECTIONS:-50}"
+# v9.242 — recovery after a database crash. PgBouncer's defaults wait 15 s
+# after one failed connect before trying again (server_login_retry) and cache
+# a failed name lookup for 15 s (dns_nxdomain_ttl; Docker unregisters a
+# container's name while it restarts). The chaos drill measured a Postgres
+# crash as a 16.2 s outage for the application while the database itself was
+# back in half a second; with these two at 1 s it measures 1.9 s.
+SERVER_LOGIN_RETRY="${PGBOUNCER_SERVER_LOGIN_RETRY:-1}"
+DNS_NXDOMAIN_TTL="${PGBOUNCER_DNS_NXDOMAIN_TTL:-1}"
 
 # The settings above are interpolated unquoted into pgbouncer.ini, so validate
 # them: numerics must be all-digits, the pool mode must be one of the three
@@ -67,7 +75,9 @@ for _nv in "POLARIS_DB_PORT=$DB_PORT" "PGBOUNCER_LISTEN_PORT=$LISTEN_PORT" \
            "PGBOUNCER_DEFAULT_POOL_SIZE=$DEFAULT_POOL_SIZE" \
            "PGBOUNCER_MIN_POOL_SIZE=$MIN_POOL_SIZE" \
            "PGBOUNCER_RESERVE_POOL_SIZE=$RESERVE_POOL_SIZE" \
-           "PGBOUNCER_MAX_DB_CONNECTIONS=$MAX_DB_CONNECTIONS"; do
+           "PGBOUNCER_MAX_DB_CONNECTIONS=$MAX_DB_CONNECTIONS" \
+           "PGBOUNCER_SERVER_LOGIN_RETRY=$SERVER_LOGIN_RETRY" \
+           "PGBOUNCER_DNS_NXDOMAIN_TTL=$DNS_NXDOMAIN_TTL"; do
     case "${_nv#*=}" in
         ''|*[!0-9]*) echo "pgbouncer: ${_nv%%=*} must be a positive integer (got '${_nv#*=}')" >&2; exit 1 ;;
     esac
@@ -204,6 +214,10 @@ default_pool_size = $DEFAULT_POOL_SIZE
 min_pool_size = $MIN_POOL_SIZE
 reserve_pool_size = $RESERVE_POOL_SIZE
 max_db_connections = $MAX_DB_CONNECTIONS
+# v9.242: retry a failed backend connect after 1 s, not PgBouncer's 15 s, and
+# do not cache a failed name lookup while the database container restarts.
+server_login_retry = $SERVER_LOGIN_RETRY
+dns_nxdomain_ttl = $DNS_NXDOMAIN_TTL
 # psycopg2 sends extra_float_digits; pgbouncer must tolerate it in transaction mode.
 ignore_startup_parameters = extra_float_digits
 # TLS (v9.121): server_tls encrypts the postgres hop, client_tls the app hop.

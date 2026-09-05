@@ -46,6 +46,7 @@ block after the shebang is its documentation, and `--help` prints it.
 | `polaris-window-drill.sh` | An edge configuration reload drops nothing; edge and database recreation windows measured against ceilings | `ci.yml` |
 | `polaris-helm-drill.sh` | The Kubernetes profile boots healthy with policies enforced | `ci.yml` |
 | `polaris-page-drill.sh` | A duress event reaches the pager webhook | `ci.yml` |
+| `polaris-chaos-drill.sh` | Induced failures against the booted stack under traffic: one colour killed, both stopped until the outage pages, redis and postgres killed, pgbouncer partitioned, every recovery measured against a ceiling | `chaos.yml`, weekly and on demand |
 | `polaris-abuse-drill.sh` | The per-agency quotas refuse writes under real load | `ci.yml` |
 | `polaris-retention-drill.sh` | The archive and purge chain, per retention class, end to end | `ci.yml` |
 | `polaris-trace-drill.sh` | Tracing joins logs to spans, and the dashboards load | `ci.yml` |
@@ -60,7 +61,7 @@ block after the shebang is its documentation, and `--help` prints it.
 | `polaris-test.sh` | One-shot runner for the database-backed suites, with the env set | A contributor; `polaris-coverage.sh` |
 | `polaris-release-notes.sh` | Renders a release body from the CHANGELOG entry | A contributor, at release time |
 | `polaris-authz-audit.sh` | The who-can-do-what report across all four authorization surfaces | A contributor or an assessor; `RED-TEAM-SCOPE.md` points here |
-| `polaris-chaos-test.sh` | Fault injection, asserting the system fails safe rather than open | A contributor, by hand |
+| `polaris-chaos-test.sh` | Fault injection, asserting the system fails safe rather than open | `ci.yml`, on every push |
 | `polaris-load-test.sh` | HTTP load generation against a running instance | A contributor, by hand |
 | `polaris-loadtest-tokens.sh` | Token-volume load: issuance at scale | A contributor, by hand |
 | `polaris-atlas-benchmark.sh` | The Atlas endpoints against a multi-million-event log | A contributor, reproducing `SCALING.md` |

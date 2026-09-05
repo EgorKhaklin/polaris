@@ -113,6 +113,12 @@ every CI push against hard ceilings:
 | Edge recreation (`--force-recreate caddy`, an image update) | a sub-second gap | 0.3 s window, 6 dropped of 95 | 30 s |
 | Database restart (`restart postgres`) | latency, not errors: pgbouncer queues a query until its server connection is back | 0 dropped of 116, slowest request 0.94 s | 60 s |
 
+Failures rather than operations are measured the same way by the weekly
+chaos drill ([CHAOS-DRILLS.md](CHAOS-DRILLS.md), v9.242): one app colour
+crashed costs no request, a Postgres crash is a 0.6 s window, a redis crash
+costs no request, and an outage of both colours pages within the alert's
+two-minute `for`.
+
 The app containers are not restarted for a database restart: every request
 opens its own connection through the pooler, so recovery is automatic. Plan an
 edge image update or a database restart for a quiet minute; nothing else about

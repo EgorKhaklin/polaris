@@ -1543,9 +1543,27 @@ def check_pgbouncer_self_built(root: pathlib.Path) -> list[Finding]:
         return _fail("pgbouncer_image",
                      "CI must build + exercise the self-built pgbouncer image (Dockerfile.pgbouncer) "
                      "so a broken pooler image is caught in CI, not at deploy")
+    # v9.242: recovery after a database crash. PgBouncer's defaults wait 15 s
+    # before retrying a failed backend connect and cache a failed name lookup
+    # for 15 s; the chaos drill measured a half-second Postgres crash as a
+    # 16.2 s outage for the application. The generated ini must set both to a
+    # second or two, from the entrypoint's own defaults.
+    for key, var in (("server_login_retry", "SERVER_LOGIN_RETRY"), ("dns_nxdomain_ttl", "DNS_NXDOMAIN_TTL")):
+        m = re.search(r'(?m)^%s="\$\{PGBOUNCER_%s:-(\d+)\}"' % (var, var), entry)
+        if not m or int(m.group(1)) > 2:
+            return _fail("pgbouncer_image",
+                         f"pgbouncer-entrypoint.sh must default PGBOUNCER_{var} to at most 2 seconds: on PgBouncer's "
+                         f"15 s default a half-second database crash is a 16 s outage for the application")
+        if not re.search(r"(?m)^%s = \$%s$" % (key, var), entry):
+            return _fail("pgbouncer_image", f"pgbouncer-entrypoint.sh must write `{key} = ${var}` into the generated ini")
+    if (root / "polaris_web" / "pgbouncer.ini").exists():
+        return _fail("pgbouncer_image",
+                     "polaris_web/pgbouncer.ini exists but nothing consumes it (the entrypoint generates the "
+                     "ini): a second configuration a reader believes is the running one")
     return _ok("pgbouncer_image",
                "pgbouncer is self-built from Dockerfile.pgbouncer (no third-party catalog), reads "
-               "the file-mounted DB secret (scram on both hops), and is round-tripped in CI")
+               "the file-mounted DB secret (scram on both hops), retries a failed backend connect within "
+               "two seconds, and is round-tripped in CI")
 
 
 # ---------------------------------------------------------------------------
@@ -4321,6 +4339,54 @@ def check_dr_drill_scheduled(root: pathlib.Path) -> list[Finding]:
                "committed to the ledger, on every push in CI, and monthly on a Linux host by timer")
 
 
+def check_chaos_program(root: pathlib.Path) -> list[Finding]:
+    """Roadmap P2.11 (v9.242): the fail-closed harness runs on every push, and
+    a weekly drill induces failures against the booted stack under traffic
+    with paging verified through real Prometheus and Alertmanager, its row
+    committed to a ledger. A chaos program that is a script a contributor may
+    run by hand is not a program."""
+    ci = _read(root, ".github/workflows/ci.yml")
+    if "scripts/polaris-chaos-test.sh" not in ci:
+        return _fail("chaos_program", "ci.yml must run scripts/polaris-chaos-test.sh on every push (the fail-closed "
+                     "harness: database gone mid-recovery, prover absent, epoch close interrupted)")
+    drill = _read(root, "scripts/polaris-chaos-drill.sh")
+    if not drill:
+        return _fail("chaos_program", "scripts/polaris-chaos-drill.sh is missing (induced failures against the stack)")
+    for needle in ("--pid=host", "crash polaris-app-green", 'a_drops" -eq 0', "compose stop -t 1 app app-green",
+                   '"alertname":"PolarisAppDown"', 'b_drops" -gt 0', "crash polaris-redis",
+                   "crash polaris-postgres", "app_ids_before", "docker network disconnect",
+                   'docker network connect "${PGB_ALIAS_ARGS[@]}"', "app_resolves_pgbouncer",
+                   "CEIL_RESTART", "CEIL_DB", "CEIL_PAGE", "polaris-alerts.yml", "alertmanager.yml",
+                   "--record", "record_row FAIL"):
+        if needle not in drill:
+            return _fail("chaos_program", f"polaris-chaos-drill.sh lacks {needle!r}: one colour crashed (a SIGKILL from "
+                         "the host pid namespace; `docker kill` is a manual stop the restart policy ignores) with zero "
+                         "drops, both stopped until PolarisAppDown reaches the sink, redis and postgres crashed, "
+                         "pgbouncer partitioned and reconnected WITH its aliases (a plain reconnect loses the "
+                         "service name), every recovery against a ceiling, the row recorded pass or fail")
+    ledger = _read(root, "docs/operator/CHAOS-DRILLS.md")
+    if "| Page s |" not in ledger or "| Status |" not in ledger:
+        return _fail("chaos_program", "docs/operator/CHAOS-DRILLS.md must carry the ledger table header the drill appends to")
+    wf = _read(root, ".github/workflows/chaos.yml")
+    if not wf:
+        return _fail("chaos_program", ".github/workflows/chaos.yml is missing (the weekly drill)")
+    if not re.search(r"cron:\s*[\"']\S+ \S+ \* \* [0-6][\"']", wf):
+        return _fail("chaos_program", "chaos.yml must run weekly (a cron on one weekday)")
+    if "contents: write" not in wf or "git push" not in wf or "CHAOS-DRILLS.md" not in wf:
+        return _fail("chaos_program", "chaos.yml must be able to commit and push the ledger row")
+    if "polaris-chaos-drill.sh --record" not in wf or "docker-compose.bluegreen.yml" not in wf:
+        return _fail("chaos_program", "chaos.yml must boot the blue-green stack and run the drill with --record")
+    if "docs/operator/CHAOS-DRILLS.md" not in ci.split("jobs:", 1)[0]:
+        return _fail("chaos_program", "ci.yml must ignore the chaos ledger path on push (the weekly row must not spend a run)")
+    if "CHAOS-DRILLS.md" not in _read(root, "docs/operator/README.md"):
+        return _fail("chaos_program", "docs/operator/README.md must index the chaos ledger")
+    return _ok("chaos_program",
+               "P2.11: the fail-closed harness runs on every push; weekly and on demand the drill crashes one colour "
+               "(zero drops), stops both until PolarisAppDown reaches a webhook through real Prometheus and "
+               "Alertmanager, crashes redis and postgres, partitions pgbouncer, measures every recovery against a "
+               "ceiling, and commits the row to the ledger")
+
+
 # ---------------------------------------------------------------------------
 # Image builds — every container image CI builds goes through
 # scripts/polaris-image-build.sh, which retries a build that failed on someone
@@ -4826,6 +4892,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_abuse_controls,
     check_performance_baseline,
     check_dr_drill_scheduled,
+    check_chaos_program,
     check_stated_counts,
     check_c1c10_objects_resolve,
     check_helm_chart_version_current,

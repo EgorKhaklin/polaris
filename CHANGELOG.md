@@ -5,6 +5,74 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.242 — 2026-09-05 (the standing chaos program, and what its first run found)
+
+Roadmap P2.11 asked for scheduled chaos runs with paging verified and
+findings feeding checks. The fail-closed harness (`polaris-chaos-test.sh`,
+v9.27) had never run anywhere but a contributor's terminal, and nothing
+induced a failure in the assembled stack. Both halves ship, and the first
+runs of the second found three things.
+
+**On every push:** the product-test job runs the harness. The database gone
+mid-recovery, the prover binary absent, an epoch close interrupted: each must
+end in a refusal, never a silent success.
+
+**Weekly, and on demand:** `scripts/polaris-chaos-drill.sh` runs against the
+booted blue-green stack under continuous traffic, with a Prometheus scraping
+the real app containers on the shipped rules, the shipped Alertmanager
+routing, and a webhook sink for the pager. Five scenarios, each against a
+ceiling; the local reference run at v9.242:
+
+| | Induced | Held | Measured |
+|---|---|---|---|
+| A | one app colour crashed | the other carries every request; the container restarts on its own | 0 of 152 dropped; back healthy in 5 s |
+| B | both colours stopped for 150 s | the generator sees the outage; `PolarisAppDown` reaches the sink | paged 121 s in; service back 3 s after start |
+| C | redis crashed | the app keeps serving; redis returns on its own | 0 of 228 dropped; back in 10 s |
+| D | postgres crashed | crash recovery; the app containers are not replaced | 0.6 s window, 6 of 95 dropped; healthy 2 s after the crash |
+| E | pgbouncer partitioned for 15 s | the database path recovers on reconnect | healthy at the first probe after the reconnect |
+
+`.github/workflows/chaos.yml` builds the images, boots the stack, runs the
+drill with `--record`, and commits the row to
+[docs/operator/CHAOS-DRILLS.md](docs/operator/CHAOS-DRILLS.md) pass or fail,
+Mondays 05:47 UTC and on dispatch. `check_chaos_program` pins the harness in
+CI, the five scenarios and their ceilings, the paging assertion, the
+schedule, and the ledger.
+
+**What the first runs found.**
+
+1. *A Postgres crash was a 16 s outage for the application.* The database
+   itself was back in half a second (a container restart in 0.15 s, redo in
+   0.00 s). PgBouncer's defaults wait 15 s before retrying a failed backend
+   connect (`server_login_retry`) and cache a failed name lookup for 15 s
+   (`dns_nxdomain_ttl`; Docker unregisters a container's name while it
+   restarts), and every client was fast-failed with the cached error until
+   the retry. Measured against the running pooler: 16.2 s on the defaults,
+   1.8 s with the retry at 1 s, 1.9 s with both at 1 s. The entrypoint now
+   sets both from `PGBOUNCER_SERVER_LOGIN_RETRY` and
+   `PGBOUNCER_DNS_NXDOMAIN_TTL`, default 1, listed in the compose and the
+   Helm chart; `check_pgbouncer_self_built` fails a default above 2 s. The
+   drill's scenario D went from a 14.6 s window to 0.6 s.
+2. *`polaris_web/pgbouncer.ini` was not the pooler's configuration.* Nothing
+   consumed it; the entrypoint generates the ini at container start, and the
+   file claimed a 5 s retry the running pooler never had. Deleted, and the
+   check fails if a file by that name returns.
+3. *Two of the drill's own primitives measured nothing.* `docker kill` is a
+   manual stop to Docker, so the restart policy never fired and a "crashed"
+   container stayed down; the drill now delivers SIGKILL to the container's
+   init from the host pid namespace. `docker network connect` without
+   `--alias` reattaches a container under its container name only, so the
+   app could never resolve `pgbouncer` again; the reconnect restores the
+   aliases it captured and proves the app resolves the name before the
+   recovery clock is read. Both are in the drill's header so the next author
+   does not rediscover them.
+
+Also: README, the roadmap and the site count 120 checks; the system map,
+the operator index, RUNBOOKS (PolarisAppDown), OPERATIONS, DEPLOYMENT and the
+observability README point at the ledger; CI ignores the ledger path on push
+so the weekly row does not spend a run.
+
+---
+
 ## v9.241 — 2026-09-05 (the SLIs and the error budget are recorded series)
 
 The P1 exit gate reads "SLOs met". SLOS.md states three objectives over a

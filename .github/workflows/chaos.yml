@@ -1,0 +1,87 @@
+name: Chaos drill
+
+# The standing chaos program (roadmap P2.11): weekly, and on demand, boot the
+# production stack with the blue-green overlay and induce failures under
+# traffic with paging verified. Every run appends a row to
+# docs/operator/CHAOS-DRILLS.md, PASS or FAIL, so the ledger is the record
+# and a missing week is visible. The per-push fail-closed harness
+# (polaris-chaos-test.sh) runs in ci.yml; this workflow is the stack-level
+# complement.
+
+on:
+  schedule:
+    - cron: "47 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: chaos-drill
+  cancel-in-progress: false
+
+jobs:
+  chaos:
+    name: Induced failures against the booted stack
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          persist-credentials: true
+
+      - name: Build the production images
+        run: bash scripts/polaris-image-build.sh --stack prod
+
+      - name: Generate secrets and boot the blue-green stack
+        env:
+          POLARIS_DOMAIN: localhost
+        run: |
+          bash scripts/polaris-generate-secrets.sh
+          cd polaris_web
+          docker compose -f docker-compose.prod.yml -f docker-compose.citest.yml -f docker-compose.bluegreen.yml up -d
+          for i in $(seq 1 60); do
+            if curl -sk -o /dev/null -w '%{http_code}' https://localhost:8443/api/health | grep -q 200; then
+              echo "stack healthy after ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::stack did not become healthy"; docker compose -f docker-compose.prod.yml -f docker-compose.citest.yml -f docker-compose.bluegreen.yml logs --tail=50; exit 1
+
+      - name: Chaos drill, recorded
+        id: drill
+        continue-on-error: true
+        env:
+          POLARIS_DOMAIN: localhost
+          POLARIS_COMPOSE_EXTRA: "-f docker-compose.citest.yml -f docker-compose.bluegreen.yml"
+          POLARIS_CHAOS_MODE: ci
+          POLARIS_CHAOS_OUT: /tmp/chaos-drill.json
+        run: bash scripts/polaris-chaos-drill.sh --record
+
+      - name: Commit the ledger row
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/operator/CHAOS-DRILLS.md
+          if git diff --cached --quiet; then echo "no ledger change"; exit 0; fi
+          git commit -m "chaos: record drill $(date -u +%Y-%m-%d) (${{ steps.drill.outcome }})"
+          git push
+
+      - name: Upload the drill summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: chaos-drill
+          path: /tmp/chaos-drill.json
+          if-no-files-found: ignore
+
+      - name: Tear the stack down
+        if: always()
+        run: cd polaris_web && docker compose -f docker-compose.prod.yml -f docker-compose.citest.yml -f docker-compose.bluegreen.yml down -v
+
+      - name: Fail the run if the drill failed
+        if: steps.drill.outcome == 'failure'
+        run: |
+          echo "::error::the chaos drill failed; the ledger row is committed, see docs/operator/CHAOS-DRILLS.md"
+          exit 1

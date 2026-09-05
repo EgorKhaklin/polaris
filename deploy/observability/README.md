@@ -56,6 +56,14 @@ page beforehand. The app half, a duress-code match incrementing that counter,
 is `test_duress_increments_prometheus_counter` in the product suite. Together
 they cover the whole path from a holder's duress code to the pager URL.
 
+The outage path is proven the same way, weekly, on the real application:
+`scripts/polaris-chaos-drill.sh` (the `chaos` workflow) points a Prometheus at
+both app colours of a booted stack, stops them, and asserts `PolarisAppDown`
+reaches the webhook through this Alertmanager configuration before it starts
+them again; the delivery time is recorded in
+[`docs/operator/CHAOS-DRILLS.md`](../../docs/operator/CHAOS-DRILLS.md).
+
+
 ## Access control (required)
 
 `/metrics` and `/api/metrics` are unauthenticated by design (Prometheus scrapes

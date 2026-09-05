@@ -16,6 +16,8 @@ on:
     # commit must not spend a full CI run.
     paths-ignore:
       - docs/operator/DR-DRILLS.md
+      # v9.242: the weekly chaos drill commits its row the same way.
+      - docs/operator/CHAOS-DRILLS.md
   pull_request:
     branches: [main, master]
   workflow_dispatch:
@@ -217,6 +219,19 @@ jobs:
           POLARIS_RATE_LIMIT_BACKEND: redis
           POLARIS_REDIS_URL: redis://localhost:6379/0
         run: bash scripts/polaris-abuse-drill.sh
+
+      # v9.242 (roadmap P2.11) — the fail-closed harness, on every push. It
+      # shipped at v9.27 and was listed as "a contributor, by hand": the
+      # database gone mid-recovery, the prover binary absent, an epoch close
+      # interrupted, each of which must end in a refusal and never a silent
+      # success. The stack-level drill (one colour killed, both stopped until
+      # the outage pages, redis and postgres killed, pgbouncer partitioned)
+      # runs weekly in chaos.yml with its row committed. Pinned by
+      # check_chaos_program.
+      - name: Chaos harness (the application fails safe, never open)
+        env:
+          POLARIS_TEST_PYTHON: python3
+        run: bash scripts/polaris-chaos-test.sh --json
 
       # v9.191 (roadmap P1.9) — the performance baseline's procedure, re-run
       # in smoke mode (5s per stage, low rates) on every push: gunicorn is

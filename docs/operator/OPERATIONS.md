@@ -775,6 +775,8 @@ deployments.
 | `PGBOUNCER_RESERVE_POOL_SIZE` | 5  | Bursty traffic; the reserve absorbs spikes |
 | `PGBOUNCER_MAX_CLIENT_CONN`   | 500 | Clients see "no more connections allowed" |
 | `PGBOUNCER_MAX_DB_CONNECTIONS` | 50 | Must stay below Postgres `max_connections` minus admin headroom (~10) |
+| `PGBOUNCER_SERVER_LOGIN_RETRY` | 1 | Never above a few seconds. PgBouncer's own default is 15 s, and on it the chaos drill measured a half-second Postgres crash as a 16.2 s outage for the application (v9.242); at 1 s it measures 1.9 s |
+| `PGBOUNCER_DNS_NXDOMAIN_TTL` | 1 | Docker unregisters a container's name while it restarts; PgBouncer's 15 s default caches that failure for 15 s (v9.242) |
 
 **Operator commands:**
 
@@ -1006,7 +1008,9 @@ mode), so an absolute counter is whole-app.
 wired to the shipped [alertmanager.yml](../../deploy/observability/alertmanager.yml)
 routing and pager receiver, and a [README](../../deploy/observability/README.md).
 CI runs `promtool` and `amtool` on all three and drills the duress page path
-end to end (`scripts/polaris-page-drill.sh`); the pager URL itself is yours
+end to end (`scripts/polaris-page-drill.sh`); weekly, the chaos drill stops
+both app colours until `PolarisAppDown` reaches the webhook through the same
+rules and routing ([CHAOS-DRILLS.md](CHAOS-DRILLS.md)); the pager URL itself is yours
 (a mounted file; [RUNBOOKS.md, Paging](RUNBOOKS.md#paging-wiring-the-receiver)).
 
 ### Per-agency quotas and velocity alerts

@@ -292,6 +292,11 @@ services:
       PGBOUNCER_RESERVE_POOL_SIZE: '5'
       PGBOUNCER_MAX_CLIENT_CONN: '500'
       PGBOUNCER_MAX_DB_CONNECTIONS: '50'
+      # v9.242 — a Postgres crash was a 16.2 s outage for the application on
+      # PgBouncer's defaults (15 s before retrying a failed connect, 15 s
+      # caching a failed name lookup); at 1 s each it measures 1.9 s.
+      PGBOUNCER_SERVER_LOGIN_RETRY: '1'
+      PGBOUNCER_DNS_NXDOMAIN_TTL: '1'
       # v9.121/v9.131 — TLS + VERIFICATION on both hops. server_tls verify-ca
       # pins postgres's self-signed cert (server_tls_ca_file); client_tls presents
       # pgbouncer's STABLE self-signed cert (mounted, so the app can pin it) and

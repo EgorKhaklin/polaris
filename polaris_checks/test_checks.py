@@ -1346,7 +1346,9 @@ def test_pgbouncer_self_built_check_discriminates(tmp_path):
     web.mkdir()
     GOOD_COMPOSE = ("services:\n  pgbouncer:\n    build:\n      context: .\n"
                     "      dockerfile: Dockerfile.pgbouncer\n    image: polaris-pgbouncer:prod\n")
-    GOOD_ENTRY = "#!/bin/sh\nPWFILE=\"${POLARIS_DB_PASSWORD_FILE:-/run/secrets/x}\"\n"
+    GOOD_ENTRY = ("#!/bin/sh\nPWFILE=\"${POLARIS_DB_PASSWORD_FILE:-/run/secrets/x}\"\n"
+                  "SERVER_LOGIN_RETRY=\"${PGBOUNCER_SERVER_LOGIN_RETRY:-1}\"\nDNS_NXDOMAIN_TTL=\"${PGBOUNCER_DNS_NXDOMAIN_TTL:-1}\"\n"
+                  "cat > ini <<EOF\nserver_login_retry = $SERVER_LOGIN_RETRY\ndns_nxdomain_ttl = $DNS_NXDOMAIN_TTL\nEOF\n")
     gh = tmp_path / ".github" / "workflows"
     gh.mkdir(parents=True)
     (gh / "ci.yml").write_text("jobs:\n  d:\n    steps:\n      run: docker build -f polaris_web/Dockerfile.pgbouncer .\n")
@@ -1397,6 +1399,27 @@ def test_pgbouncer_self_built_check_discriminates(tmp_path):
     write(compose="services:\n  pgbouncer:\n    image: BITNAMI/PgBouncer:1.22\n")
     assert checks.check_pgbouncer_self_built(tmp_path)[0].level == "FAIL", \
         "must FAIL on a case-variant bitnami/pgbouncer reference"
+
+    # 8. v9.242: the pooler on PgBouncer's 15 s retry default (a half-second
+    #    database crash is a 16 s outage) -> FAIL; and a default of 15 -> FAIL.
+    write(entry="#!/bin/sh\nPWFILE=\"${POLARIS_DB_PASSWORD_FILE:-/run/secrets/x}\"\n")
+    assert checks.check_pgbouncer_self_built(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the entrypoint leaves server_login_retry at PgBouncer's default"
+    write(entry=GOOD_ENTRY.replace("PGBOUNCER_SERVER_LOGIN_RETRY:-1", "PGBOUNCER_SERVER_LOGIN_RETRY:-15"))
+    assert checks.check_pgbouncer_self_built(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the retry default is 15 seconds"
+    # 9. The knob is read but never written into the ini -> FAIL.
+    write(entry=GOOD_ENTRY.replace("server_login_retry = $SERVER_LOGIN_RETRY\n", ""))
+    assert checks.check_pgbouncer_self_built(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the retry is read from the environment but not written to the ini"
+    # 10. A dead pgbouncer.ini beside the generated one -> FAIL.
+    write()
+    (web / "pgbouncer.ini").write_text("[pgbouncer]\nserver_login_retry = 5\n")
+    assert checks.check_pgbouncer_self_built(tmp_path)[0].level == "FAIL", \
+        "must FAIL when a pgbouncer.ini nothing consumes sits beside the generated config"
+    (web / "pgbouncer.ini").unlink()
+    write()
+    assert checks.check_pgbouncer_self_built(tmp_path)[0].level == "OK"
 
 
 def test_caddy_self_built_check_discriminates(tmp_path):
@@ -3219,6 +3242,66 @@ def test_zero_downtime_deploy_check_discriminates(tmp_path):
     # The drill exists but CI never runs it.
     write({".github/workflows/ci.yml": "run: docker compose -f docker-compose.bluegreen.yml up -d; bash scripts/polaris-rolling-drill.sh\n"})
     assert checks.check_zero_downtime_deploy(tmp_path)[0].level == "FAIL", "must FAIL when CI does not run the window drill"
+
+
+def test_chaos_program_check_discriminates(tmp_path):
+    DRILL = ("crash() { docker run --rm --privileged --pid=host alpine kill -9 \"$pid\"; }\n"
+             "crash polaris-app-green\n[[ \"$a_drops\" -eq 0 ]]\ncompose stop -t 1 app app-green\n"
+             "grep -q '\"alertname\":\"PolarisAppDown\"'\n[[ \"$b_drops\" -gt 0 ]]\ncrash polaris-redis\n"
+             "crash polaris-postgres\n[[ \"$app_ids_before\" == \"$app_ids_after\" ]]\n"
+             "docker network disconnect\ndocker network connect \"${PGB_ALIAS_ARGS[@]}\" \"$NET\" polaris-pgbouncer\n"
+             "wait_for 10 app_resolves_pgbouncer\nCEIL_RESTART=60\nCEIL_DB=90\nCEIL_PAGE=240\n"
+             "-v polaris-alerts.yml -v alertmanager.yml\n--record\nfail() { record_row FAIL; }\n")
+    WF = ("on:\n  schedule:\n    - cron: \"47 5 * * 1\"\npermissions:\n  contents: write\n"
+          "run: docker compose -f docker-compose.bluegreen.yml up -d\nrun: bash scripts/polaris-chaos-drill.sh --record\n"
+          "run: git add docs/operator/CHAOS-DRILLS.md && git push\n")
+    CI = "on:\n  push:\n    paths-ignore:\n      - docs/operator/CHAOS-DRILLS.md\njobs:\n  test:\n    run: bash scripts/polaris-chaos-test.sh\n"
+    good = {
+        ".github/workflows/ci.yml": CI,
+        ".github/workflows/chaos.yml": WF,
+        "scripts/polaris-chaos-drill.sh": DRILL,
+        "docs/operator/CHAOS-DRILLS.md": "| Date (UTC) | Version | Commit | Mode | Recovery | Page s | Status | Note |\n",
+        "docs/operator/README.md": "| CHAOS-DRILLS.md | the chaos ledger |\n",
+    }
+
+    def write(overrides=None):
+        files = dict(good); files.update(overrides or {})
+        for rel, body in files.items():
+            f = tmp_path / rel
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_text(body)
+
+    write()
+    assert checks.check_chaos_program(tmp_path)[0].level == "OK", "must PASS on the good fixture"
+    # The harness that only a contributor runs by hand (the pre-P2.11 state).
+    write({".github/workflows/ci.yml": CI.replace("    run: bash scripts/polaris-chaos-test.sh\n", "")})
+    assert checks.check_chaos_program(tmp_path)[0].level == "FAIL", "must FAIL when the fail-closed harness is not in CI"
+    # A drill whose crash is `docker kill`: a manual stop the restart policy ignores.
+    write({"scripts/polaris-chaos-drill.sh": DRILL.replace("crash() { docker run --rm --privileged --pid=host alpine kill -9 \"$pid\"; }\n", "")
+                                                   .replace("crash polaris-", "docker kill -s KILL polaris-")})
+    assert checks.check_chaos_program(tmp_path)[0].level == "FAIL", "must FAIL when the crash is a manual stop"
+    # A reconnect without the aliases: the app can never resolve the pooler again.
+    write({"scripts/polaris-chaos-drill.sh": DRILL.replace("docker network connect \"${PGB_ALIAS_ARGS[@]}\" \"$NET\" polaris-pgbouncer\n",
+                                                           "docker network connect \"$NET\" polaris-pgbouncer\n")})
+    assert checks.check_chaos_program(tmp_path)[0].level == "FAIL", "must FAIL when the reconnect loses the service alias"
+    # A drill that crashes things but never proves the outage paged.
+    write({"scripts/polaris-chaos-drill.sh": DRILL.replace("grep -q '\"alertname\":\"PolarisAppDown\"'\n", "")})
+    assert checks.check_chaos_program(tmp_path)[0].level == "FAIL", "must FAIL when paging is not verified"
+    # A drill without ceilings measures recovery and asserts nothing.
+    write({"scripts/polaris-chaos-drill.sh": DRILL.replace("CEIL_DB=90\n", "")})
+    assert checks.check_chaos_program(tmp_path)[0].level == "FAIL", "must FAIL when a recovery has no ceiling"
+    # A workflow on demand only is not a standing program.
+    write({".github/workflows/chaos.yml": WF.replace("  schedule:\n    - cron: \"47 5 * * 1\"\n", "")})
+    assert checks.check_chaos_program(tmp_path)[0].level == "FAIL", "must FAIL when the drill is not scheduled"
+    # A workflow that runs the drill but cannot commit the row.
+    write({".github/workflows/chaos.yml": WF.replace("permissions:\n  contents: write\n", "")})
+    assert checks.check_chaos_program(tmp_path)[0].level == "FAIL", "must FAIL when the ledger row cannot be committed"
+    # The ledger without its header: nothing to append to.
+    write({"docs/operator/CHAOS-DRILLS.md": "# Chaos drills\n"})
+    assert checks.check_chaos_program(tmp_path)[0].level == "FAIL", "must FAIL when the ledger has no table"
+    # The weekly row spending a full CI run.
+    write({".github/workflows/ci.yml": CI.replace("    paths-ignore:\n      - docs/operator/CHAOS-DRILLS.md\n", "")})
+    assert checks.check_chaos_program(tmp_path)[0].level == "FAIL", "must FAIL when CI does not ignore the ledger path"
 
 
 def test_helm_reference_profile_check_discriminates(tmp_path):

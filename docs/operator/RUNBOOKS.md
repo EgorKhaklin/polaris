@@ -79,6 +79,14 @@ The target is down: the app is unreachable or the process has crashed.
 
 ---
 
+**How this is verified.** Weekly, `scripts/polaris-chaos-drill.sh` (the
+`chaos` workflow) stops both app colours of a booted stack under traffic and
+waits for this alert to reach a webhook sink through a real Prometheus
+scraping the real app on the shipped rules and the shipped Alertmanager
+routing; the delivery time is a column in [CHAOS-DRILLS.md](CHAOS-DRILLS.md).
+The same drill crashes one colour and shows the other carries every request.
+
+
 ## PolarisAppInfoAbsent
 
 **Severity:** SEV-1 · **Expression:** `absent(polaris_app_info)` · **For:** 5m

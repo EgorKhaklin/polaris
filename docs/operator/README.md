@@ -22,6 +22,7 @@ fails otherwise.
 | [`ENCRYPTION-AT-REST.md`](ENCRYPTION-AT-REST.md) | What is plaintext on disk, what is already encrypted, and the host volume encryption path |
 | [`DR.md`](DR.md) | Disaster recovery: the targets (RPO 300 s, RTO 4 h), the procedures by failure class, WAL archiving and the off-site repository |
 | [`DR-DRILLS.md`](DR-DRILLS.md) | The drill ledger, machine-appended: every measured RPO and RTO, locally and from the monthly CI run |
+| [`CHAOS-DRILLS.md`](CHAOS-DRILLS.md) | The chaos ledger, machine-appended: the standing program, its five induced failures with their recovery ceilings, and every weekly run's measured recoveries and page delivery |
 | [`FAILOVER.md`](FAILOVER.md) | Streaming replication, the hot standby and its promotion; the high-availability complement to DR.md |
 | [`SLOS.md`](SLOS.md) | The reference service objectives (availability, request latency, database latency) and the error budget, grounded in exposed metrics |
 | [`RUNBOOKS.md`](RUNBOOKS.md) | One response runbook per shipped alert: trigger, diagnosis, remediation; and the pager wiring |
@@ -38,7 +39,7 @@ in [PRODUCTION-READINESS.md](../PRODUCTION-READINESS.md).
 
 **Assessing a deployment.** [SECURITY.md](SECURITY-CONTROLS.md), [PRIVACY.md](PRIVACY.md),
 [ENCRYPTION-AT-REST.md](ENCRYPTION-AT-REST.md), [DR.md](DR.md) with the
-measured rows in [DR-DRILLS.md](DR-DRILLS.md), and
+measured rows in [DR-DRILLS.md](DR-DRILLS.md) and [CHAOS-DRILLS.md](CHAOS-DRILLS.md), and
 [PQC-POSTURE.md](../reference/PQC-POSTURE.md).
 
 **During an incident.** [OPERATIONS.md](OPERATIONS.md#incident-response) for the
