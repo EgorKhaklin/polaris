@@ -58,12 +58,12 @@
             <td><span class="pill pill-{{ t.status|lower }}">{{ t.status }}</span></td>
             <td>{{ t.activation_sequence }}</td>
             <td class="mono" style="white-space: nowrap;">{{ t.issued_date.strftime('%Y-%m-%d') }}</td>
-            <td class="mono" style="white-space: nowrap;">{{ t.expiration_date.strftime('%Y-%m-%d') if t.expiration_date else 'None' }}</td>
+            <td class="mono" style="white-space: nowrap;">{{ t.expiration_date.strftime('%Y-%m-%d') if t.expiration_date else no_expiry }}</td>
             <td>
                 {% if t.predecessor_token_id %}
                     <a href="{{ url_for('investigate_token', tok_id=t.predecessor_token_id) }}">#{{ t.predecessor_token_id }}</a>
                 {% else %}
-                    <span class="muted">None</span>
+                    <span class="muted">none</span>
                 {% endif %}
             </td>
             <td>{% if t.has_duress_code %}<span class="pill pill-active">YES</span>{% else %}<span class="muted">no</span>{% endif %}</td>
@@ -108,8 +108,8 @@
                     <span class="pill" style="background: #2a3550; color: #d8d8c4;">{{ v.disclosure_level }}</span>
                 {% endif %}
             </td>
-            <td>{{ v.context_type or 'None' }}</td>
-            <td>{{ v.requesting_agency_name or 'None' }}</td>
+            <td>{{ v.context_type or absent }}</td>
+            <td>{{ v.requesting_agency_name or absent }}</td>
         </tr>
         {% endfor %}
     </tbody>

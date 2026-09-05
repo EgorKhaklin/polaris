@@ -21,10 +21,14 @@
 
     var reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-    // CARTO dark-matter: free vector basemap, no API key, dark palette that
-    // matches the Polaris console. The CSP relaxation for these origins is
-    // scoped to the /atlas endpoint only (see security.apply_security_headers).
-    var STYLE_URL = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
+    // The basemap style comes from the deployment (POLARIS_ATLAS_BASEMAP_STYLE_URL,
+    // rendered onto the map element by the view). The default is CARTO
+    // dark-matter: free vector basemap, no API key, a dark palette that matches
+    // the console. A self-hosted style keeps every request inside the estate.
+    // The CSP relaxation for the configured origin is scoped to /atlas only
+    // (see security.apply_security_headers).
+    var STYLE_URL = mapEl.getAttribute('data-basemap-style')
+        || 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
 
     // -- Tone palette (shared with the legend) --------------------------------
     // Cyan is the colour of an aggregate, not of a disclosure level. A

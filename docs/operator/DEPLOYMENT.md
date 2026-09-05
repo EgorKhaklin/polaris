@@ -219,9 +219,9 @@ database, and `08_tests.sql` rewrites sample rows; never point them at a
 production database):
 
 ```bash
-psql -d polaris_test -f polaris_sql/08_tests.sql                # SQL self-tests: 78/78 (v9.194)
-cd polaris_web && python3 -m pytest test_app.py -q              # Web: 462 passed, 12 skipped (v9.194)
-cd polaris_cli && python3 -m pytest test_cli.py -q              # CLI: 71 passed (v9.194)
+psql -d polaris_test -f polaris_sql/08_tests.sql                # SQL self-tests: 91/91 (v9.236)
+cd polaris_web && python3 -m pytest test_app.py -q              # Web: 467 passed, 12 skipped (v9.236)
+cd polaris_cli && python3 -m pytest test_cli.py -q              # CLI: 79 passed (v9.236)
 python3 -m polaris_checks.run                                   # C1-C10 invariant layer, must end "0 fail"
 ```
 

@@ -81,7 +81,7 @@ reaches a webhook end to end.
 
 `alertmanager.yml`, `prometheus.yml`, `tempo.yml` and the Grafana dashboards
 ship beside them. What stays the operator's is the pager product, its URL and
-the on-call rotation, which is one of the eight decisions in the readiness
+the on-call rotation, which is one of the nine decisions in the readiness
 ledger.
 
 ## Watching it by hand

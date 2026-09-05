@@ -123,7 +123,7 @@ This requires the stack to be up first (the tests connect to the
 running Postgres). Expected output:
 
 ```
-462 passed, 12 skipped        # polaris_web/test_app.py (v9.194; skips need optional backends)
+467 passed, 12 skipped        # polaris_web/test_app.py (v9.236; skips need optional backends)
 OK
 ```
 

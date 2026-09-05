@@ -225,8 +225,12 @@ class PolarisTestCase(unittest.TestCase):
         return self.client.post(path, data=data, **kwargs)
 
     def assertHTML(self, response, *substrings):
-        """Assert that the response body contains all given substrings."""
-        body = response.get_data(as_text=True)
+        """Assert that the response body contains all given substrings.
+
+        <wbr> is stripped first: since v9.237 the dashboard breaks long schema
+        identifiers with it so they wrap inside their cards, and the break
+        carries no meaning for an assertion about content."""
+        body = response.get_data(as_text=True).replace('<wbr>', '')
         for s in substrings:
             self.assertIn(s, body, f"Response did not contain {s!r}")
 
@@ -3872,6 +3876,26 @@ class F01_AuthenticationTests(UnauthenticatedTestCase):
         location = r.headers.get('Location', '')
         self.assertNotIn('evil.example.com', location)
 
+    def test_login_returns_to_the_page_that_required_it(self):
+        """v9.237: the redirect to /login carries a relative ?next= that the
+        login accepts, so the operator lands where they were going. Before
+        this the app emitted an absolute URL its own validator refused, and
+        every deep link ended on the dashboard."""
+        with self.client.session_transaction() as sess:
+            sess.clear()
+        r = self.client.get('/tokens?page=2')
+        self.assertEqual(r.status_code, 302)
+        location = r.headers.get('Location', '')
+        from urllib.parse import urlsplit, parse_qs
+        nxt = parse_qs(urlsplit(location).query).get('next', [''])[0]
+        self.assertEqual(nxt, '/tokens?page=2',
+                         f"the login redirect must carry a relative next, got {location}")
+        r = self.client.post('/login?next=/tokens?page=2',
+                             data={'username': 'admin', 'password': 'Admin@123!'})
+        self.assertEqual(r.status_code, 302)
+        self.assertTrue(r.headers.get('Location', '').endswith('/tokens?page=2'),
+                        f"login must return to the requested page, got {r.headers.get('Location')}")
+
     def test_login_session_fixation_resistance(self):
         """Session ID/data must change on login to prevent fixation (CWE-384)."""
         # Get a session before login
@@ -3960,6 +3984,48 @@ class F03_RateLimitingTests(UnauthenticatedTestCase):
             'username': 'oneMore', 'password': 'whatever'
         })
         self.assertEqual(r.status_code, 429)
+
+
+class F04b_AtlasBasemapCspTests(PolarisTestCase):
+    """v9.237: the Atlas basemap origin is a deployment setting, and the page's
+    CSP follows it. The default admits CARTO on /atlas only; a self-hosted style
+    leaves the page self-only apart from blob:, which MapLibre's workers need."""
+
+    def _atlas_csp(self):
+        r = self.client.get('/atlas')
+        self.assertEqual(r.status_code, 200)
+        return r.headers.get('Content-Security-Policy', '')
+
+    def test_default_admits_carto_on_atlas_only(self):
+        csp = self._atlas_csp()
+        self.assertIn('basemaps.cartocdn.com', csp)
+        self.assertIn('blob:', csp)
+        other = self.client.get('/dashboard').headers.get('Content-Security-Policy', '')
+        self.assertNotIn('cartocdn', other, "the relaxation must not leak past /atlas")
+
+    def test_configured_origin_replaces_carto(self):
+        saved = flask_app.ATLAS_BASEMAP_STYLE_URL
+        try:
+            flask_app.ATLAS_BASEMAP_STYLE_URL = 'https://tiles.internal.example/dark/style.json'
+            csp = self._atlas_csp()
+            self.assertIn('https://tiles.internal.example', csp)
+            self.assertNotIn('cartocdn', csp)
+            page = self.client.get('/atlas').get_data(as_text=True)
+            self.assertIn('data-basemap-style="https://tiles.internal.example/dark/style.json"', page)
+        finally:
+            flask_app.ATLAS_BASEMAP_STYLE_URL = saved
+
+    def test_self_hosted_style_keeps_the_page_self_only(self):
+        saved = flask_app.ATLAS_BASEMAP_STYLE_URL
+        try:
+            flask_app.ATLAS_BASEMAP_STYLE_URL = '/static/basemap/style.json'
+            csp = self._atlas_csp()
+            self.assertNotIn('cartocdn', csp)
+            self.assertNotIn('https://', csp.split('connect-src')[1].split(';')[0],
+                             "a relative style must add no external connect-src origin")
+            self.assertIn('blob:', csp)
+        finally:
+            flask_app.ATLAS_BASEMAP_STYLE_URL = saved
 
 
 class F04_SecurityHeadersTests(PolarisTestCase):

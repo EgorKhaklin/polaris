@@ -68,7 +68,7 @@
             <td>{{ r.verifier_name }}</td>
             <td><span class="pill pill-{{ r.outcome|lower }}">{{ r.outcome }}</span></td>
             <td><span class="pill pill-{{ r.disclosure_level|lower }}">{{ r.disclosure_level }}</span></td>
-            <td>{{ r.requestor_location or 'None' }}</td>
+            <td>{{ r.requestor_location or absent }}</td>
         </tr>
         {% else %}
         <tr><td colspan="8" class="empty">No verification events.</td></tr>

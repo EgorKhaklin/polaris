@@ -1038,14 +1038,41 @@ def check_prod_images_digest_pinned(root: pathlib.Path) -> list[Finding]:
                      "prod-compose third-party image(s) are tag-pinned, not digest-pinned: "
                      + ", ".join(unpinned) + " — pin as name:tag@sha256:<digest> so a mutated or "
                      "deleted upstream tag cannot change what runs")
+    # v9.237: four of the five production images are self-built, and a
+    # self-built image is only as pinned as the base its Dockerfile pulls.
+    # Until now the check read the compose file's image: lines and stopped, so
+    # "third-party images are digest-pinned" was true of redis and false of the
+    # python, alpine and rust bases under the app and the pooler. Every
+    # Dockerfile the prod compose names must pin every FROM.
+    unpinned_from = []
+    for m in re.finditer(r"(?m)^\s*dockerfile:\s*(\S+)", compose):
+        rel = m.group(1).strip().strip('"').strip("'")
+        # compose context is polaris_web/ or the repo root; resolve either.
+        candidates = [root / "polaris_web" / pathlib.Path(rel).name, root / rel]
+        df = next((p for p in candidates if p.is_file()), None)
+        if df is None:
+            return _fail("image_digests", f"prod compose names {rel}, which does not exist")
+        for fm in re.finditer(r"(?m)^\s*FROM\s+(\S+)", df.read_text(encoding="utf-8")):
+            base = fm.group(1)
+            if base.lower() == "scratch" or "@sha256:" in base:
+                continue
+            # A FROM that names an earlier stage (AS builder) is not a pull.
+            if re.search(rf"(?m)^\s*FROM\s+\S+\s+AS\s+{re.escape(base)}\b", df.read_text(encoding="utf-8"), re.I):
+                continue
+            unpinned_from.append(f"{df.name}: {base}")
+    if unpinned_from:
+        return _fail("image_digests",
+                     "self-built production image(s) pull a base by tag only: "
+                     + "; ".join(unpinned_from) + " — pin every FROM as name:tag@sha256:<digest>; "
+                     "Dependabot's docker ecosystem keeps the pins current")
     dep = root / ".github" / "dependabot.yml"
     if not dep.is_file() or "docker" not in dep.read_text():
         return _fail("image_digests",
                      "add the docker ecosystem to .github/dependabot.yml so the pinned digests get "
                      "security bumps (a frozen digest never updates on its own)")
     return _ok("image_digests",
-               "all third-party prod-compose images are digest-pinned (@sha256); Dependabot's "
-               "docker ecosystem keeps the pins current")
+               "every pulled prod-compose image and every base under the self-built ones is "
+               "digest-pinned (@sha256); Dependabot's docker ecosystem keeps the pins current")
 
 
 # ---------------------------------------------------------------------------
@@ -4590,6 +4617,22 @@ def check_retention_engine(root: pathlib.Path) -> list[Finding]:
                      "scripts/polaris-purge.sh does not verify the archive against its manifest "
                      "before deleting: the carve-out's justification is that the archive "
                      "reconstitutes every purged row, and an edited archive would break it")
+    # v9.237: the automated form of the chain. The cron wrapper is what actually
+    # runs on the first of January; until v9.237 it passed a fixed 1825-day
+    # cutoff and ignored the engine, and the installed cron line omitted the
+    # --actor-user-id the purge requires, so it exited with a usage error.
+    rotate = _read(root, "scripts/polaris-rotate-logs.sh")
+    if "--from-policy" not in rotate:
+        return _fail("retention",
+                     "scripts/polaris-rotate-logs.sh does not archive --from-policy: the yearly "
+                     "cron rotation would ignore the retention engine")
+    cron = _read(root, "scripts/polaris-cron-install.sh")
+    m_cron = re.search(r"(?m)^\S+\s+\S+\s+\S+\s+\S+\s+\S+\s+.*polaris-rotate-logs\.sh(.*)$", cron)
+    if m_cron and "--actor-user-id" not in m_cron.group(1):
+        return _fail("retention",
+                     "the cron line polaris-cron-install.sh installs for polaris-rotate-logs.sh "
+                     "omits --actor-user-id, which the purge requires: the yearly rotation would "
+                     "exit with a usage error")
     drill = root / "scripts/polaris-retention-drill.sh"
     if not drill.is_file():
         return _fail("retention",

@@ -71,6 +71,13 @@ CRONTAB="${CRONTAB:-crontab}"
 # Generate the entries
 SCRIPTS_DIR="${POLARIS_ROOT}/scripts"
 BACKUP_DEST="${POLARIS_BACKUP_DEST:-/var/backups}"
+# The admin who authorizes the yearly purge. 1 is the first operator the
+# bootstrap creates on a fresh production database; set it explicitly if yours differs.
+ROTATE_ACTOR="${POLARIS_ROTATE_ACTOR_USER_ID:-1}"
+if ! [[ "${ROTATE_ACTOR}" =~ ^[0-9]+$ ]]; then
+    echo "error: POLARIS_ROTATE_ACTOR_USER_ID must be an integer AppUser.user_id" >&2
+    exit 3
+fi
 LOADTEST_DEST="${POLARIS_LOADTEST_TARGET:-polaris_drill}"
 
 # Verify scripts exist; refuse to install pointing at missing scripts
@@ -105,10 +112,13 @@ ${MARKER_BEGIN}
 # Weekly backup verification at 04:00 Sun — manifest + SHA-256 cross-check
 0 4 * * 0   ${SCRIPTS_DIR}/polaris-backup.sh --verify-latest --dest ${BACKUP_DEST} 2>&1 | logger -t polaris-backup-verify
 
-# Yearly audit-log archive+purge at 02:00 Jan 1 — rotates audit-class rows
-0 2 1 1 *   ${SCRIPTS_DIR}/polaris-rotate-logs.sh 2>&1 | logger -t polaris-rotate-logs
+# Yearly audit-log archive+purge at 02:00 Jan 1: rotates audit-class rows per the
+# retention policy. --actor-user-id is REQUIRED by the purge (an admin AppUser.user_id);
+# before v9.237 this line omitted it and every yearly run exited with a usage error.
+0 2 1 1 *   ${SCRIPTS_DIR}/polaris-rotate-logs.sh --dest ${BACKUP_DEST} --actor-user-id ${ROTATE_ACTOR} 2>&1 | logger -t polaris-rotate-logs
 
-# Quarterly DR drill at 03:00 1st of Jan/Apr/Jul/Oct — verifies restore path
+# Quarterly restore rehearsal (dry-run) at 03:00 1st of Jan/Apr/Jul/Oct. The measured DR
+# drill (RPO/RTO) is polaris-dr-drill.sh under the systemd timer in deploy/linux/.
 0 3 1 1,4,7,10 *   ${SCRIPTS_DIR}/polaris-restore.sh --dry-run \$(ls -t ${BACKUP_DEST}/polaris-*.tar.gz ${BACKUP_DEST}/polaris-*.tar.gz.enc 2>/dev/null | head -1) 2>&1 | logger -t polaris-dr-drill
 
 ${MARKER_END}

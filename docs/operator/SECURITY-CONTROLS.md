@@ -81,7 +81,7 @@ Per-agency quotas on issuance, revocation, and verification are a database contr
 | `Cache-Control` | `no-store, no-cache, must-revalidate, private` on authenticated responses | Sensitive content in caches |
 | `Server` | `Polaris` (the edge proxy is authoritative and may strip it) | No server version on the wire |
 
-The one relaxation: the Atlas page loads a self-hosted MapLibre basemap whose tiles come from `basemaps.cartocdn.com`, so on that endpoint only, by a flag the view sets, `img-src` and `connect-src` admit the two cartocdn hosts and `img-src` and `worker-src` admit `blob:`. `script-src` stays `'self'` everywhere; `check_csp_forbids_unsafe_inline` pins it. `F04_SecurityHeadersTests` (6 tests) covers the headers above.
+The one relaxation: the Atlas page loads a self-hosted MapLibre library whose basemap style and tiles come from the origin the deployment configures (`POLARIS_ATLAS_BASEMAP_STYLE_URL`; the default is `basemaps.cartocdn.com`), so on that endpoint only, by a flag the view sets, `img-src` and `connect-src` admit that one origin and `img-src` and `worker-src` admit `blob:`. A self-hosted style leaves the page self-only apart from `blob:` (v9.237). `script-src` stays `'self'` everywhere; `check_csp_forbids_unsafe_inline` pins it. `F04_SecurityHeadersTests` (6 tests) covers the headers above.
 
 ### Cookies
 
@@ -209,15 +209,15 @@ Not covered: a coercer who knows the mechanism and forbids its use; a typo that 
 
 ## Test Coverage
 
-Measured at v9.194 (the README's "Verified, not asserted" table is the
+Measured at v9.237 (the README's "Verified, not asserted" table is the
 canonical statement and is re-stamped on every ship that changes it):
 
 ```
-SQL self-tests : 78 assertions in 08_tests.sql, plus 12_v7_constraints.sql and 13_substrate.sql
-Web            : 462 (test_app.py, 12 skipped without optional backends) + 72 constraint tests + 16 property tests + 19 secret-store tests
-CLI            : 71 (test_cli.py)
-Crypto         : 76 passing of 80 collected across the signing, custody and ZK witness suites (4 need AWS KMS)
-Invariants     : 113 checks, each with a detection test (polaris_checks, v9.210)
+SQL self-tests : 91 assertions in 08_tests.sql, plus 12_v7_constraints.sql and 13_substrate.sql
+Web            : 471 (test_app.py, 12 skipped without optional backends) + 83 constraint tests + 16 property tests + 19 secret-store tests
+CLI            : 79 (test_cli.py)
+Crypto         : 95 passing of 99 collected across the signing, custody and ZK witness suites (3 need a PKCS#11 token, 1 a real KMS key)
+Invariants     : 119 checks, each with a detection test (polaris_checks, v9.237)
 ```
 
 Run with:

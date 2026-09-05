@@ -53,7 +53,7 @@
                         <span class="pill pill-warn">until {{ r.cooldown_expires_at.strftime('%Y-%m-%d %H:%M') }}</span>
                     {% endif %}
                 {% else %}
-                    <span class="muted">None</span>
+                    <span class="muted">none</span>
                 {% endif %}
             </td>
             <td>
@@ -66,7 +66,7 @@
                     by <strong>{{ r.decided_by_username }}</strong><br>
                     <span class="mono">{{ r.decided_at.strftime('%Y-%m-%d %H:%M') }}</span>
                 {% else %}
-                    <span class="muted">None</span>
+                    <span class="muted">pending</span>
                 {% endif %}
             </td>
             <td class="actions">

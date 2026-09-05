@@ -299,13 +299,13 @@ footer a{color:var(--ink-dim)}
         counts are measured per release on the reference machine. CI does not just run tests;
         it exercises the artifacts.</p>
     <div class="numbers">
-        <div class="num"><b>645</b><span>product tests, live DB</span></div>
-        <div class="num"><b>76</b><span>crypto-witness tests</span></div>
+        <div class="num"><b>649</b><span>product tests, live DB</span></div>
+        <div class="num"><b>95</b><span>crypto-witness tests</span></div>
         <div class="num"><b>119</b><span>invariant checks</span></div>
         <div class="num"><b>14</b><span>CI jobs</span></div>
         <div class="num"><b>5</b><span>services booted in CI</span></div>
     </div>
-    <p class="asof">test counts measured at v9.215; the rest recomputed on every push</p>
+    <p class="asof">test counts measured at v9.237; the rest recomputed on every push</p>
     <ul class="prodlist">
         <li><strong>The production stack boots in CI.</strong> Five services behind a self-built TLS edge come up end to end on every push, and health is asserted through the edge. Building that job surfaced four prod-down bugs the day it landed.</li>
         <li><strong>Backups restore, provably.</strong> An encrypted backup and restore round-trip runs in CI with a fail-closed negative check, plus streaming replication and a failover runbook.</li>
@@ -339,10 +339,10 @@ footer a{color:var(--ink-dim)}
     <div class="limits">
         <p class="limits-status">Not production-ready for real identity data. Every engineering
             gap the readiness ledger enumerated is closed and pinned by a check. What remains
-            cannot be built here: eight decisions that belong to the deploying organization,
+            cannot be built here: nine decisions that belong to the deploying organization,
             two engineering limits carried openly, and the deployment-scale work the roadmap
             tracks phase by phase.</p>
-        <p class="lede">The eight decisions, each one a named accountable choice rather than a
+        <p class="lede">The nine decisions, each one a named accountable choice rather than a
             missing feature:</p>
         <ul class="decisions">
             <li>Legal basis, data-protection impact assessment, regulator approval</li>
@@ -352,6 +352,7 @@ footer a{color:var(--ink-dim)}
             <li>The offsite backup target, its retention and its schedule</li>
             <li>The alerting backend and the named on-call rotation</li>
             <li>The right-to-erasure policy against an append-only audit</li>
+            <li>The retention schedule per class and jurisdiction, and the counsel who says it satisfies the statute</li>
             <li>An independent penetration test and threat-model sign-off</li>
         </ul>
         <p class="lede">The bound on every claim on this page is the ledger itself:
@@ -378,7 +379,7 @@ export POLARIS_DOMAIN=polaris.example.com
 ./scripts/polaris-deploy.sh prod
 curl -fsS https://$POLARIS_DOMAIN/api/health</code></pre>
         <p class="runnote">Five services behind a self-built TLS edge that provisions its own
-            certificate. One host, so the database has no standby: that is one of the eight
+            certificate. One host, so the database has no standby: that is one of the nine
             decisions above.</p>
 
         <h3>Linux server under systemd</h3>

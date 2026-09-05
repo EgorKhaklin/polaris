@@ -3,7 +3,7 @@
 **Reader:** the privacy officer or data-protection reviewer assessing a
 Polaris deployment. **Job:** state what personal data Polaris collects, what
 it retains, how the architecture enforces minimization, and what holders can
-expect. This is distinct from [SECURITY.md](SECURITY-CONTROLS.md) (which covers
+expect. This is distinct from [SECURITY-CONTROLS.md](SECURITY-CONTROLS.md) (which covers
 attacks) and [docs/design/threat-model.md](../design/threat-model.md)
 (which covers the architectural defenses).
 
@@ -30,7 +30,7 @@ Polaris).
 | Data | Purpose | Retention |
 |---|---|---|
 | `username` | Authentication | Until account removed |
-| `password_hash` (argon2id) | Authentication | Until rotation |
+| `password_hash` (scrypt, via Werkzeug) | Authentication | Until rotation |
 | `role` | Authorization | Until role change |
 | `agency_id` | Scope of access | Until reassignment |
 | `failed_login_count`, `locked_until` | Brute-force defense | Cleared on successful login or admin reset |
@@ -43,11 +43,19 @@ events stay (the action is permanent, even when the actor is gone).
 
 | Event type | What's recorded | Retention |
 |---|---|---|
-| `TokenLifecycleEvent` | token_id, agency, type, timestamp, reason, geo (optional) | Permanent (C1) |
-| `VerificationEvent` (FULL) | token_id, requesting agency, context, timestamp, geo | Permanent (C1) |
-| `VerificationEvent` (SELECTIVE) | token_id, requesting agency, context, timestamp, geo, attribute set | Permanent (C1) |
-| `VerificationEvent` (ZERO_KNOWLEDGE) | requesting agency, context, timestamp, geo | Permanent (C1); note `token_id IS NULL` (C2) |
-| `AuthAuditLog` | username, event_type, ip_address, timestamp | Permanent for non-repudiation |
+| `TokenLifecycleEvent` | token_id, agency, type, timestamp, reason, geo (optional) | Append-only in hot storage (C1); archived and purged after the `TOKEN_LIFECYCLE` retention, five years by default |
+| `VerificationEvent` (FULL) | token_id, requesting agency, context, timestamp, geo | Append-only (C1); archived and purged after the `VERIFICATION` retention, five years by default |
+| `VerificationEvent` (SELECTIVE) | token_id, requesting agency, context, timestamp, geo, attribute set | Append-only (C1); same `VERIFICATION` retention |
+| `VerificationEvent` (ZERO_KNOWLEDGE) | requesting agency, context, timestamp, geo | Append-only (C1); same `VERIFICATION` retention; note `token_id IS NULL` (C2) |
+| `AuthAuditLog` | username, event_type, ip_address, timestamp | Append-only; archived and purged after the `AUTH_AUDIT` retention, five years by default |
+
+"Archived and purged" means the rows leave the hot table only after a
+manifest-hashed archive holds them and a checkpoint records the deletion; the
+carve-out below is the whole of that path. The retention itself is a recorded
+decision in `RetentionPolicy`, per table class and jurisdiction, behind a
+365-day CHECK floor that no configuration reaches
+([design/retention.md](../design/retention.md)). Every other audit table is
+permanent.
 
 The audit invariant (C1) means events are permanent. This is a
 deliberate trade-off: the system's repudiation defense (R-R1, R-R2
@@ -118,12 +126,15 @@ filesystem against host-side reads).
 
 **Constitutional carve-out:** for four high-volume audit tables
 (`TokenLifecycleEvent`, `VerificationEvent`,
-`EnrollmentStatusEvent`, `AuthAuditLog`), rows older than an
-operator-supplied cutoff can be moved from hot storage to a
-manifest-hashed archive tarball via `uc_archive_purge()`. The hot
-row is deleted; a `LifecycleArchiveCheckpoint` row recording
-cutoff, SHA-256, and operator user_id is written in the same
-transaction. The checkpoint table is strictly append-only; the
+`EnrollmentStatusEvent`, `AuthAuditLog`), rows older than the class's
+retention cutoff can be moved from hot storage to a manifest-hashed
+archive tarball via `uc_archive_purge()`. The cutoff is not a number the
+operator types: it resolves from `RetentionPolicy`, and the procedure
+refuses any cutoff inside a class's window (v9.234). The hot row is
+deleted; a `LifecycleArchiveCheckpoint` row recording the cutoff that
+applied to each class, the archive SHA-256, and the operator user_id is
+written in the same transaction, and the purge verifies the archive
+against its manifest before deleting anything (v9.235). The checkpoint table is strictly append-only; the
 procedure is the only DELETE path. **Non-repudiation is preserved
 at the constitutional level**: every event is reconstructible from
 the hot table or (older than the cutoff) from the archive tarball
@@ -147,8 +158,15 @@ Vocation (anti-coercion, in `MISSION.md`) refuses on sight.
 ### CSP `script-src 'self'` (C5)
 
 No third-party scripts run in the operator UI. No CDNs, no
-analytics, no tracking beacons. The only network requests from the
-operator's browser are to the Polaris instance.
+analytics, no tracking beacons. Every network request from the
+operator's browser goes to the Polaris instance, with one exception the
+operator controls: the Atlas basemap. By default its style and tiles
+come from `basemaps.cartocdn.com`, so on that page the tile coordinates
+of an investigation and the operator's address reach a third party.
+`POLARIS_ATLAS_BASEMAP_STYLE_URL` points the Atlas at a self-hosted
+style instead, and the page's CSP follows it (v9.237; the runbook's
+"The Atlas basemap" section). Until v9.237 this document said there was
+no exception, which was not true of the Atlas.
 
 ---
 

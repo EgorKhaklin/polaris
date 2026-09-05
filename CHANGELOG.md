@@ -5,6 +5,103 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.237 — 2026-09-05 (a production readiness pass over every surface, and what it found)
+
+A full readiness audit of the repository at v9.236: every stated number
+re-measured, every deployment artifact validated, every operator page walked
+in a real browser at desktop and laptop widths, and the site rendered as a
+visitor sees it. What was already true stays true and is listed at the end.
+What was not is fixed here.
+
+**The application, as an operator sees it.**
+
+- Every page but the landing page printed "Version" with nothing after it,
+  and every static asset was served as `polaris.css?v=` with an empty
+  cache-buster, because `polaris_version` reached only one template. It is
+  injected for all of them now.
+- On a 1366-pixel laptop the dashboard's `CryptographicAlgorithm` card label
+  ran past its card: a single CamelCase word cannot wrap. A `camel_wbr` filter
+  gives every schema identifier a break point at each case boundary, with
+  `overflow-wrap` as the fallback.
+- Twenty-six cells across eight templates printed the word `None` for a
+  missing value, and the dashboard's algorithm table printed it in a
+  hard-coded deprecation column that never read the data. A raw `None` can no
+  longer reach a page (a Jinja `finalize` blanks it), each deliberate absence
+  now says what it is (`not yet`, `no expiry`, `not recorded`, `pending`,
+  `none scheduled`), and the deprecation column reads `deprecation_date`.
+- The Atlas subject search field had no id, which Chrome reports as an
+  accessibility issue.
+- A deep link never survived the login. The redirect to `/login` carried the
+  absolute `request.url` as `?next=`, and the login's open-redirect guard
+  accepts only a relative path, so the app refused its own parameter and
+  every operator landed on the dashboard. The redirect now carries the path
+  and query; `test_login_returns_to_the_page_that_required_it` pins it, and
+  the guard is unchanged.
+
+**The Atlas basemap is a deployment setting.** Its style and tiles were
+hard-coded to CARTO, so the operator's browser fetched them from a third party
+on that page, and PRIVACY.md said the browser only ever talked to the Polaris
+instance, which was not true there. `POLARIS_ATLAS_BASEMAP_STYLE_URL` points the
+Atlas at a self-hosted MapLibre style; the page's Content-Security-Policy
+follows the configured origin, and a relative URL leaves the page self-only
+apart from `blob:`. Plumbed through compose, the systemd environment file and
+the chart guidance; documented in the runbook, SECURITY-CONTROLS.md and
+PRIVACY.md; three tests in `F04b_AtlasBasemapCspTests`.
+
+**Two claims in the readiness ledger that the code did not hold.**
+
+- "Third-party images are digest-pinned" was true of the one image the prod
+  compose pulls and false of the bases under the four it builds: the app
+  image pulled `python:3.12-slim-bookworm` and a rust nightly by tag, and the
+  pooler pulled `alpine:3.24` by tag. All pinned;
+  `check_prod_images_digest_pinned` now reads every `FROM` of every Dockerfile
+  the prod compose names.
+- The yearly audit-log rotation the cron installer sets up could never have
+  run: the installed line omitted the `--actor-user-id` the purge requires, so
+  it exited with a usage error, and the wrapper archived at a fixed 1825-day
+  cutoff that ignored the retention engine shipped at v9.234. The wrapper now
+  archives `--from-policy` by default (`--cutoff-days` is an explicit
+  override), the installed line carries the destination and the actor, and
+  `check_retention_engine` pins both. Proven with a dry run of the whole
+  pipeline.
+
+**Documents that had drifted from the code.**
+
+- PRODUCTION-READINESS.md was stamped v9.196, counted eight operator
+  decisions while listing nine, and its engineering record stopped at the
+  pre-P1 gaps. It is stamped v9.237, counts nine, and carries the P1 rows.
+  The site and docs/design/observability.md counted eight as well; the site
+  gained the retention decision.
+- PRIVACY.md and DATA-MODEL.md said passwords are argon2id; the code uses
+  scrypt. DATA-MODEL's `AppUser` rows described a key and a column that do
+  not exist; rewritten from the schema.
+- PRIVACY.md called the four purgeable audit tables permanent and described
+  the purge cutoff as a number the operator types; both now describe the
+  retention engine.
+- observability/README.md said six alert rules; there are ten. DEPLOYMENT.md
+  and INSTALL.md carried test counts from v9.194.
+- The evidence numbers on the README, the site and SECURITY-CONTROLS.md were
+  measured at v9.215 and v9.194. Re-measured today: 649 product tests passing
+  (661 collected, 12 skip without optional backends), 95 crypto witnesses of
+  99 collected (3 need a PKCS#11 token, 1 a real KMS key), 91 SQL self-tests,
+  119 invariants.
+- The chart gained `icon`, `home` and `sources`.
+
+**Verified clean, and recorded as such:** pip-audit finds no known
+vulnerability in the pinned requirements; the Rust toolchain is pinned; Helm
+lint and the prod compose validate; all four workflows are green; no
+TODO/FIXME markers and no secret material in the tracked tree; the GitHub
+metadata is current; every operator route redirects to login when
+unauthenticated, `/demo` and `/api/quit` are unreachable in production, the
+login `next=` parameter ignores an off-host target, authenticated pages are
+`no-store`, and the security headers are as SECURITY-CONTROLS.md states.
+
+Proven: 582 web tests (570 passed, 12 skipped), 79 CLI, 91 SQL, 99 crypto
+witnesses (95 passed), 119 detection tests, 119 invariants, and the pages
+themselves in a browser.
+
+---
+
 ## v9.236 — 2026-09-05 (the retention decision gets an operator surface; P1.11 closes)
 
 Roadmap P1.11, third of three ships, and the row closes. The engine and the

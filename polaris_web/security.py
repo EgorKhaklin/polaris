@@ -939,12 +939,23 @@ def revoke_session(get_conn, sid, reason):
         conn.close()
 
 
+def _relative_next():
+    """The current request as a same-origin path, for ?next=.
+
+    is_safe_next_url() accepts only a relative path, and until v9.237 every
+    redirect to /login carried request.url, which is absolute, so the return
+    to the page that required the login never happened: the operator always
+    landed on the dashboard. Path plus query string, nothing else."""
+    qs = request.query_string.decode('utf-8', 'replace')
+    return request.path + ('?' + qs if qs else '')
+
+
 def _end_session():
     """Clear the cookie session and send the browser to /login (GETs keep a
     ?next= so the operator lands back where they were after re-authenticating)."""
     session.clear()
     if request.method == 'GET':
-        return redirect(url_for('login', next=request.url))
+        return redirect(url_for('login', next=_relative_next()))
     return redirect(url_for('login'))
 
 
@@ -1059,7 +1070,7 @@ def login_required(view_func):
             if request.method != 'GET':
                 _audit(current_app.config['GET_DB'], 'AUTH_REQUIRED',
                        detail=f"{request.method} {request.path}")
-            return redirect(url_for('login', next=request.url))
+            return redirect(url_for('login', next=_relative_next()))
         return view_func(*args, **kwargs)
     return wrapped
 
@@ -1074,7 +1085,7 @@ def require_role(*allowed_roles):
         @functools.wraps(view_func)
         def wrapped(*args, **kwargs):
             if not session.get('logged_in'):
-                return redirect(url_for('login', next=request.url))
+                return redirect(url_for('login', next=_relative_next()))
             if session.get('role') not in allowed_roles:
                 _audit(current_app.config['GET_DB'], 'AUTHZ_DENIED',
                        username=session.get('username'),
@@ -1190,10 +1201,14 @@ def apply_security_headers(response):
     # script-src stays 'self'. ZERO_KNOWLEDGE events are never plotted (C6), so
     # the basemap is cartography, not new exposure.
     from flask import g as _g
-    _TILE = "https://basemaps.cartocdn.com https://*.basemaps.cartocdn.com"
+    # v9.237: the origin is whatever the deployment configured (app.py's
+    # ATLAS_BASEMAP_STYLE_URL); the view sets g.atlas_tile_origins from it. A
+    # self-hosted basemap yields an empty list and the page stays self-only
+    # apart from blob:, which MapLibre needs for its workers regardless.
+    _TILE = getattr(_g, 'atlas_tile_origins', '') or ''
     atlas_tiles = bool(getattr(_g, 'atlas_tiles', False))
-    img_extra     = (" blob: " + _TILE) if atlas_tiles else ""
-    connect_extra = (" " + _TILE)        if atlas_tiles else ""
+    img_extra     = (" blob:" + (" " + _TILE if _TILE else "")) if atlas_tiles else ""
+    connect_extra = ((" " + _TILE) if _TILE else "")            if atlas_tiles else ""
 
     csp_parts = [
         "default-src 'self'",

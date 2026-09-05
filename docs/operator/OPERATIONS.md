@@ -110,13 +110,13 @@ Volumes:
 | Restore drill | Quarterly | `./scripts/polaris-restore.sh <latest> --target=polaris_drill` |
 | Restore dry-run | Monthly | `./scripts/polaris-restore.sh <latest> --dry-run` (manifest-verify only) |
 | RPO/RTO drill | Monthly (automated) | `./scripts/polaris-dr-drill.sh --record`; ledger in [DR-DRILLS.md](DR-DRILLS.md) |
-| Audit-log archive | Yearly | `./scripts/polaris-archive.sh --cutoff-days=1825` (C1-preserving export at the 5y retention floor) |
+| Audit-log archive | Yearly | `./scripts/polaris-archive.sh --from-policy` (C1-preserving export, one cutoff per retention class) |
 | Retention review | Yearly, or when a jurisdiction's schedule changes | `SELECT * FROM RetentionPolicy WHERE superseded_at IS NULL` (the purge refuses any cutoff inside these windows) |
 | Verify archive integrity | Quarterly | `./scripts/polaris-archive.sh --verify-latest --dest=DIR` |
 | Audit-log purge | Operator-driven, after archive verify | `./scripts/polaris-purge.sh --archive=TARBALL --actor-user-id=N` |
 | Audit-log archive, per class | Yearly, when retention differs by class | `./scripts/polaris-archive.sh --from-policy` then the purge above |
 | Certificate transparency check | Daily (cron) | `./scripts/polaris-ct-monitor.sh`: alerts on unexpected cert issuance for `${POLARIS_DOMAIN}`; see [Certificate transparency monitoring](#certificate-transparency-monitoring) |
-| Audit-log rotation | Yearly (cron) | `./scripts/polaris-rotate-logs.sh --actor-user-id=N`: wraps archive + verify + purge in one cron-ready pipeline |
+| Audit-log rotation | Yearly (cron) | `./scripts/polaris-rotate-logs.sh --actor-user-id=N`: archive from the retention policy, verify, purge, in one cron-ready pipeline (`--cutoff-days` overrides the policy with one fixed cutoff) |
 | Operator onboarding | As needed | `./scripts/polaris-create-operator.sh --username NAME --role admin\|operator\|auditor --password-file PATH`: scrypt-hashed AppUser + AuthAuditLog entry |
 | Scrape `/metrics` | Continuous (Prometheus) | `curl http://app:8000/metrics` from the stack network: Prometheus text-format exposition; see [Prometheus metrics](#prometheus-metrics-metrics) for the required edge ACL |
 | Rotate `POLARIS_SECRET_KEY` | 180 days | `./scripts/polaris-rotate-secret.sh polaris_secret_key` |
@@ -1061,6 +1061,26 @@ inbound `traceparent` is honoured only behind `POLARIS_TRUST_PROXY`,
 symmetric with `X-Request-ID`. Health probes are excluded by default
 (`POLARIS_OTEL_EXCLUDE=/api/health/live,/api/health/ready`). Sampling uses
 the standard `OTEL_TRACES_SAMPLER[_ARG]` knobs.
+
+### The Atlas basemap
+
+The Atlas draws its events over a vector basemap. By default that is CARTO's
+free dark-matter style, and the operator's browser fetches the style and its
+tiles from `basemaps.cartocdn.com` on that one page: the tile coordinates of
+an investigation, and the operator's address, leave the estate. Nothing else
+in the console reaches a third party. A deployment that cannot allow even
+that (an air-gapped network, or a privacy posture that forbids it) points the
+Atlas at a self-hosted MapLibre style, and the page's Content-Security-Policy
+follows the configured origin (v9.237):
+
+```bash
+POLARIS_ATLAS_BASEMAP_STYLE_URL=https://tiles.internal.example/dark/style.json
+# or, served by the app itself from polaris_web/static:
+POLARIS_ATLAS_BASEMAP_STYLE_URL=/static/basemap/style.json
+```
+
+Any MapLibre-compatible style works; the map falls back to plotted markers
+over an empty globe if the style cannot be fetched.
 
 **The join, in practice:** a caller quotes an `X-Request-ID`; TraceQL
 `{span.polaris.request_id="<id>"}` finds the trace; a log line's `trace_id`

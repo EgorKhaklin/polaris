@@ -184,6 +184,11 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-http://tempo:4318}"
       OTEL_TRACES_SAMPLER: "${OTEL_TRACES_SAMPLER:-parentbased_always_on}"
       POLARIS_OTEL_EXCLUDE: "${POLARIS_OTEL_EXCLUDE:-/api/health/live,/api/health/ready}"
+      # v9.237: where the Atlas basemap comes from. Empty = CARTO's free
+      # dark-matter style, fetched by the operator's browser from a third party
+      # on that one page. Point it at a self-hosted MapLibre style to keep every
+      # request inside the estate; the Atlas CSP follows the configured origin.
+      POLARIS_ATLAS_BASEMAP_STYLE_URL: "${POLARIS_ATLAS_BASEMAP_STYLE_URL:-}"
       # v9.189 (roadmap P1.7) — session and origin hardening. All optional,
       # read from the shell / polaris.env, validated at boot (a bad value
       # refuses the start). docs/operator/HARDENING.md section 13 and

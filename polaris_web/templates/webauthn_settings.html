@@ -50,9 +50,9 @@
                     <tr>
                         <td>{{ c.device_label or '(unnamed)' }}</td>
                         <td>{{ c.algorithm }}</td>
-                        <td>{{ c.transports or 'None' }}</td>
+                        <td>{{ c.transports or absent }}</td>
                         <td><code>{{ (c.credential_id[:16]) }}…</code></td>
-                        <td>{{ c.enrolled_at.strftime('%Y-%m-%d %H:%M') if c.enrolled_at else 'None' }}</td>
+                        <td>{{ c.enrolled_at.strftime('%Y-%m-%d %H:%M') if c.enrolled_at else absent }}</td>
                         <td>{{ c.last_used_at.strftime('%Y-%m-%d %H:%M') if c.last_used_at else '(never)' }}</td>
                         <td>
                             {# data-confirm lives on the <form>: confirm-submit.js

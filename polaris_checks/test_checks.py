@@ -1799,6 +1799,19 @@ def test_prod_images_digest_pinned_check_discriminates(tmp_path):
     assert checks.check_prod_images_digest_pinned(tmp_path)[0].level == "OK", \
         "must PASS when every third-party image is @sha256-pinned (polaris-* exempt)"
 
+    # 2b. v9.237: a self-built image whose Dockerfile pulls a base by tag -> FAIL;
+    #     pinned base, and FROM lines that name an earlier stage, -> OK.
+    BUILT = PINNED + "  pgbouncer:\n    build:\n      context: .\n      dockerfile: Dockerfile.pgbouncer\n    image: polaris-pgbouncer:prod\n"
+    write(BUILT)
+    (web / "Dockerfile.pgbouncer").write_text("FROM alpine:3.24\nRUN true\n")
+    assert checks.check_prod_images_digest_pinned(tmp_path)[0].level == "FAIL", \
+        "must FAIL when a self-built image's base is pinned by tag only"
+    (web / "Dockerfile.pgbouncer").write_text(
+        "FROM alpine:3.24@sha256:" + "c" * 64 + " AS builder\nRUN true\nFROM builder\nRUN true\n")
+    assert checks.check_prod_images_digest_pinned(tmp_path)[0].level == "OK", \
+        "must PASS when every base is digest-pinned and stage references are not counted as pulls"
+    write(PINNED)
+
     # 3. Digest-pinned but Dependabot lacks the docker ecosystem -> FAIL.
     (gh / "dependabot.yml").write_text("version: 2\nupdates:\n  - package-ecosystem: pip\n")
     write(PINNED)
@@ -4077,6 +4090,9 @@ $$;
         "# reads cutoff_by_class from MANIFEST.json and passes p_class_cutoffs\n"
         "import hashlib  # component verification\n")
     (scripts / "polaris-retention-drill.sh").write_text("# the chain, end to end\n")
+    (scripts / "polaris-rotate-logs.sh").write_text("polaris-archive.sh --from-policy\n")
+    (scripts / "polaris-cron-install.sh").write_text(
+        "0 2 1 1 *   ${SCRIPTS_DIR}/polaris-rotate-logs.sh --dest ${BACKUP_DEST} --actor-user-id ${ROTATE_ACTOR}\n")
     wf = tmp_path / ".github/workflows"
     wf.mkdir(parents=True)
     (wf / "ci.yml").write_text("      - run: bash scripts/polaris-retention-drill.sh\n")
@@ -4158,6 +4174,10 @@ $$;
     (scripts / "polaris-archive.sh").write_text(archive_ok)
     (scripts / "polaris-purge.sh").write_text(purge_ok)
     (scripts / "polaris-retention-drill.sh").write_text("# drill\n")
+    rotate_ok = "polaris-archive.sh --from-policy\n"
+    cron_ok = "0 2 1 1 *   ${SCRIPTS_DIR}/polaris-rotate-logs.sh --dest ${BACKUP_DEST} --actor-user-id ${ROTATE_ACTOR}\n"
+    (scripts / "polaris-rotate-logs.sh").write_text(rotate_ok)
+    (scripts / "polaris-cron-install.sh").write_text(cron_ok)
     wf = tmp_path / ".github/workflows"
     wf.mkdir(parents=True)
     (wf / "ci.yml").write_text("      - run: bash scripts/polaris-retention-drill.sh\n")
@@ -4187,3 +4207,14 @@ $$;
     (wf / "ci.yml").write_text("      - run: echo nothing\n")
     assert checks.check_retention_engine(tmp_path)[0].level == "FAIL", \
         "must FAIL when the drill exists but CI never runs it"
+
+    (wf / "ci.yml").write_text("      - run: bash scripts/polaris-retention-drill.sh\n")
+    (scripts / "polaris-rotate-logs.sh").write_text("polaris-archive.sh --cutoff-days=1825\n")
+    assert checks.check_retention_engine(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the yearly cron rotation archives at a fixed cutoff instead of the policy"
+
+    (scripts / "polaris-rotate-logs.sh").write_text(rotate_ok)
+    (scripts / "polaris-cron-install.sh").write_text(
+        "0 2 1 1 *   ${SCRIPTS_DIR}/polaris-rotate-logs.sh 2>&1 | logger\n")
+    assert checks.check_retention_engine(tmp_path)[0].level == "FAIL", \
+        "must FAIL when the installed cron line omits the actor the purge requires"

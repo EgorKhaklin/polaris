@@ -14,7 +14,7 @@
     {% set junction_tables = ['AgencyAlgorithmAuth', 'TokenPermission'] %}
     {% for tbl, n in stats.items() %}
         <div class="stat-card">
-            <div class="label">{{ tbl }}</div>
+            <div class="label">{{ tbl|camel_wbr }}</div>
             <div class="value">{{ n }}</div>
             <div class="sublabel">
                 {% if tbl in principal_tables %}principal
@@ -189,7 +189,7 @@
                     <td class="mono alg-name-cell">{{ r.name }}</td>
                     <td>{% if r.quantum_resistant %}<span class="pill pill-pq">PQ</span>{% else %}<span class="pill pill-classical">CLASSICAL</span>{% endif %}</td>
                     <td>{{ r.n }}</td>
-                    <td>None</td>
+                    <td>{{ r.deprecation_date.strftime('%Y-%m-%d') if r.deprecation_date else '<span class="muted">none scheduled</span>'|safe }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -317,8 +317,8 @@
             <td class="token-issuer">{{ t.issuing_agency }}</td>
             <td class="mono {% if t.quantum_resistant %}alg-name-pq{% else %}alg-name-classical{% endif %}">{{ t.algorithm }}</td>
             <td>{% if t.quantum_resistant %}<span class="pill pill-pq">PQ</span>{% else %}<span class="pill pill-classical">CLASSICAL</span>{% endif %}</td>
-            <td>{{ t.activated_date.strftime('%Y-%m-%d') if t.activated_date else 'None' }}</td>
-            <td>{{ t.expiration_date.strftime('%Y-%m-%d') if t.expiration_date else 'None' }}</td>
+            <td>{{ t.activated_date.strftime('%Y-%m-%d') if t.activated_date else not_yet }}</td>
+            <td>{{ t.expiration_date.strftime('%Y-%m-%d') if t.expiration_date else no_expiry }}</td>
         </tr>
         {% else %}
         <tr><td colspan="8" class="empty">No active tokens.</td></tr>

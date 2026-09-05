@@ -110,12 +110,21 @@ this is who logs in to use the system, not who holds tokens.
 
 | column | type | notes |
 |---|---|---|
-| `username` | VARCHAR(64) PK | |
-| `password_hash` | VARCHAR(255) NOT NULL | argon2id |
+| `user_id` | SERIAL PK | What procedures and the audit rows record as the actor |
+| `username` | VARCHAR(50) NOT NULL UNIQUE | |
+| `password_hash` | VARCHAR(255) NOT NULL | scrypt, via Werkzeug (`security.hash_password`) |
 | `role` | VARCHAR(20) NOT NULL | `admin` \| `operator` \| `auditor` |
-| `agency_id` | INTEGER | FK to Agency, optional |
+| `is_active` | BOOLEAN NOT NULL | Deactivation is a flag, so the account's audit trail survives |
+| `created_at` | TIMESTAMP NOT NULL | |
+| `last_login_at` | TIMESTAMP | |
 | `failed_login_count` | INTEGER NOT NULL DEFAULT 0 | atomic increment via `col = col + 1 RETURNING ...`; constraint C4 |
 | `locked_until` | TIMESTAMP | |
+| `webauthn_required_after` | TIMESTAMPTZ | The enforcement date once a credential is registered ([webauthn.md](../design/webauthn.md)) |
+| `recovery_code_hash` | VARCHAR(64) | The emergency password-login authorization, hashed |
+
+(Corrected at v9.237: the row set had described `username` as the key, an
+`agency_id` column that does not exist, and argon2id where the code uses
+scrypt.)
 
 ---
 

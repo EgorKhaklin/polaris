@@ -263,6 +263,29 @@ if _PRODUCTION and _env_flag('POLARIS_DEMO_MODE', False):
 # launcher routes.
 LAUNCHER_WATCH = _env_flag('POLARIS_LAUNCHER_WATCH', False)
 
+# v9.237: where the Atlas basemap comes from. The default is CARTO's free
+# dark-matter style, which means the operator's browser fetches tiles from a
+# third party on that one page. A deployment that cannot allow that (an
+# air-gapped network, or a privacy posture that forbids the viewport of an
+# investigation leaving the estate) points this at a self-hosted MapLibre
+# style, and the Atlas CSP admits that origin instead of cartocdn.
+ATLAS_BASEMAP_STYLE_URL = (os.environ.get('POLARIS_ATLAS_BASEMAP_STYLE_URL', '').strip()
+                           or 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json')
+
+
+def atlas_basemap_origins():
+    """The CSP source list for the basemap: the style URL's origin, and for the
+    CARTO default its tile subdomains too. A relative URL (self-hosted under
+    /static) adds nothing, so the page keeps the strict self-only CSP."""
+    from urllib.parse import urlsplit
+    parts = urlsplit(ATLAS_BASEMAP_STYLE_URL)
+    if not parts.scheme or not parts.netloc:
+        return ''
+    origin = f"{parts.scheme}://{parts.netloc}"
+    if parts.netloc == 'basemaps.cartocdn.com':
+        return f"{origin} https://*.basemaps.cartocdn.com"
+    return origin
+
 # DEPLOYMENT_LABEL: what a production Atlas shows as its provenance (an
 # operator-chosen deployment name); empty renders no label. Outside
 # production the Atlas labels itself as notional data.
@@ -710,11 +733,44 @@ observability.structured_log(
     **{f'webauthn_{key}': value for key, value in _WEBAUTHN_POLICY.items()})
 
 
+# v9.237: a Python None must never reach a page as the word "None". The
+# finalize hook blanks a raw None; the `absent` global is the deliberate
+# placeholder templates use where a value can legitimately be missing, so an
+# empty cell and a not-recorded value are distinguishable to the reader.
+from markupsafe import Markup as _Markup
+app.jinja_env.finalize = lambda value: '' if value is None else value
+app.jinja_env.globals['absent'] = _Markup('<span class="muted">not recorded</span>')
+app.jinja_env.globals['not_yet'] = _Markup('<span class="muted">not yet</span>')
+app.jinja_env.globals['no_expiry'] = _Markup('<span class="muted">no expiry</span>')
+
+
+@app.template_filter('camel_wbr')
+def _camel_wbr(value):
+    """Give a CamelCase identifier somewhere to wrap.
+
+    Schema table names are rendered as-is on the dashboard cards, and a single
+    unbroken word like CryptographicAlgorithm cannot wrap, so at laptop widths
+    it ran past the card edge (v9.237). A <wbr> at each lower-to-upper boundary
+    lets the browser break "Cryptographic|Algorithm" cleanly and leaves the
+    name itself untouched. The input is escaped first: the filter returns
+    markup, and the name must never be a way to inject any.
+    """
+    import re
+    from markupsafe import Markup, escape
+    text = str(escape(value))
+    return Markup(re.sub(r'(?<=[a-z0-9])(?=[A-Z])', '<wbr>', text))
+
+
 @app.context_processor
 def _inject_security_context():
     """csrf_token(), current_user, and the presentation gates, for every template."""
     ctx = security.template_context_processor()
     ctx.update({
+        # Every template's footer prints it and every static asset URL carries
+        # it as the cache-buster. Until v9.237 only the landing page passed it,
+        # so every other page rendered "Version" with nothing after it and
+        # served polaris.css?v= with an empty query.
+        'polaris_version': POLARIS_VERSION,
         'demo_mode': DEMO_MODE,
         'launcher_watch': LAUNCHER_WATCH,
         'atlas_provenance': atlas_provenance(),
@@ -1285,13 +1341,14 @@ def _polaris_analytics():
     # totals — this is the correct accounting for the dashboard:
     # "how many tokens are still verifiable under algorithm X?"
     pq_breakdown = query("""
-        SELECT alg.name, alg.quantum_resistant, COUNT(DISTINCT t.token_id) AS n
+        SELECT alg.name, alg.quantum_resistant, alg.deprecation_date,
+               COUNT(DISTINCT t.token_id) AS n
         FROM CryptographicAlgorithm alg
         LEFT JOIN TokenSignature s ON alg.algorithm_id = s.algorithm_id
                                   AND s.deprecation_date IS NULL
         LEFT JOIN IdentityToken t ON s.token_id = t.token_id
                                  AND t.status = 'ACTIVE'
-        GROUP BY alg.algorithm_id, alg.name, alg.quantum_resistant
+        GROUP BY alg.algorithm_id, alg.name, alg.quantum_resistant, alg.deprecation_date
         ORDER BY alg.algorithm_id
     """)
     pq_active_total = sum(r['n'] for r in pq_breakdown if r['quantum_resistant'])
@@ -1365,6 +1422,7 @@ def atlas():
     # (apply_security_headers reads g.atlas_tiles). Every other page stays
     # strict self-only. ZERO_KNOWLEDGE events are never plotted (C6).
     g.atlas_tiles = True
+    g.atlas_tile_origins = atlas_basemap_origins()
 
     # --- Agency roster for the operational agency filter (v9.146). ---------
     # Plotting/filtering is by issuing/acting AGENCY, an operational pivot,
@@ -1426,7 +1484,10 @@ def atlas():
 
     # The globe is data-driven via /api/atlas/* (clusters, points, events);
     # the page itself ships only the health snapshot for the HUD.
-    return render_template('atlas.html', health=health, agencies=agencies)
+    return render_template(
+        'atlas.html',
+        atlas_basemap_style=ATLAS_BASEMAP_STYLE_URL,
+        health=health, agencies=agencies)
 
 
 # ============================================================================

@@ -5,9 +5,9 @@ national-identity data. **Job:** the bound on every claim in this repository.
 Status first, then the decisions only a deploying organization can make, then
 the engineering record with the check that pins each closed item.
 
-**Status (v9.196): not production-ready for real identity data.** Every
+**Status (v9.237): not production-ready for real identity data.** Every
 engineering gap this ledger enumerated is closed and pinned by a check (the
-table at the end). What remains is not buildable here: eight decisions that
+table at the end). What remains is not buildable here: nine decisions that
 belong to the deploying organization, two engineering limits carried openly,
 and the deployment-scale work that [ROADMAP.md](../ROADMAP.md) tracks phase by
 phase. [MISSION.md](../MISSION.md) still governs every change, and
@@ -72,6 +72,10 @@ national rollout (P7). Do not read a closed ledger here as readiness for those.
   rotated off its development default at first boot.
 - **Algorithm-as-data (C7)**, `TokenSignature` immutability, and the duress
   machinery are real and enforced in the schema.
+- **Retention is a recorded decision with a floor**: `RetentionPolicy` holds
+  the days per table class and jurisdiction behind a 365-day CHECK, the purge
+  refuses a cutoff inside the window, and the archive chain runs per class
+  and is drilled in CI (v9.234 to v9.236).
 
 ---
 
@@ -120,12 +124,22 @@ CHANGELOG entry for the version carries the detail.
 | Dependency CVEs and SAST gate the build; the production image ships no test framework | v9.105, v9.112 | `check_cve_scanning`, `check_prod_image_no_test_deps`, `check_sast_scanning` |
 | Container image CVEs gate the build | v9.138 | `check_image_cve_scanning` |
 | The SQL console is read-only at the engine | v9.104 | `check_sql_console_readonly` |
+| A fresh Linux host reaches a healthy stack by one script, exercised on Debian and Rocky in CI | v9.176 | `check_linux_server_deployment` |
+| The signing key sits behind a custody interface with file, PKCS#11 and KMS drivers | v9.178 | `check_key_custody_abstraction` |
+| Secrets are sealed and rotated through the same lifecycle | v9.180 | `check_secrets_lifecycle_sealed` |
+| The Kubernetes profile boots on kind with restricted policies | v9.186 | `check_helm_reference_profile` |
+| Tracing and dashboards ship as code | v9.187 | `check_distributed_tracing` |
+| Sessions are registered server-side with per-role caps and origin checks | v9.189 | `check_session_origin_hardening` |
+| Per-agency quotas refuse writes under real load, proven in CI | v9.190 | `check_abuse_controls` |
+| The performance baseline is published and re-run on every push | v9.191 | `check_performance_baseline` |
+| Retention is data with a floor, purged per class, drilled in CI | v9.234 to v9.236 | `check_retention_engine` |
+| Every base image under the self-built containers is digest-pinned | v9.237 | `check_prod_images_digest_pinned` |
 
 ---
 
 ## The rule
 
-The status line at the top changes only when the eight decisions above are
+The status line at the top changes only when the nine decisions above are
 recorded as made for a named deployment and the roadmap's P1 exit gate is met.
 No document in this repository claims a protection the code does not
 implement, and every row above names the check that fails if it stops being

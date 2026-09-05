@@ -87,7 +87,7 @@
            population by attribute. ZK events stay withheld even here. #}
         {% if current_user.role in ('admin', 'auditor') %}
         <div class="atlas-subject-search">
-            <input type="search" class="subject-search-input" data-atlas-subject-search
+            <input type="search" id="atlas-subject-search" class="subject-search-input" data-atlas-subject-search
                    placeholder="🔎 Focus subject…" maxlength="100" autocomplete="off"
                    aria-label="Search a subject to investigate on the map">
             <div class="subject-search-results" data-atlas-subject-results role="listbox" hidden></div>
@@ -150,6 +150,7 @@
             <div class="atlas-globe">
                 <div id="atlas-map"
                      class="atlas-map"
+                     data-basemap-style="{{ atlas_basemap_style }}"
                      role="application"
                      aria-label="Interactive map of Polaris token and verification activity. Drag to pan, scroll to zoom from globe to street level."></div>
             </div>

@@ -8,8 +8,9 @@
 # but the schedule + on-failure alerting around them didn't. This
 # script is the cron-ready wrapper that:
 #
-#   1. Runs polaris-archive.sh at the 5-year retention floor (default
-#      cutoff per the v8.84 Sanctum)
+#   1. Runs polaris-archive.sh --from-policy, so each retention class is
+#      archived at the cutoff RetentionPolicy resolves for it (v9.237; before
+#      this the wrapper passed a fixed 1825-day cutoff and ignored the engine)
 #   2. Verifies the archive (manifest re-hash)
 #   3. Runs polaris-purge.sh against the verified archive, deleting
 #      the now-archived rows from hot tables
@@ -31,7 +32,10 @@
 #   ./scripts/polaris-rotate-logs.sh --actor-user-id N [options]
 #
 #   --actor-user-id N        AppUser.user_id for the purge step (admin)
-#   --cutoff-days N          retention floor in days (default 1825 = 5y)
+#   --jurisdiction LABEL     the RetentionPolicy jurisdiction to resolve (default: deployment)
+#   --cutoff-days N          OVERRIDE: one fixed cutoff for every class instead of the
+#                            policy. The purge still refuses it if it falls inside any
+#                            class's retention window.
 #   --dest=PATH              archive destination (default /var/backups)
 #   --target=docker-stack    use the running production stack
 #   --dry-run                full pipeline minus the purge DELETE
@@ -49,7 +53,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &> /dev/null && pwd)"
 POLARIS_ROOT="$(cd -- "${SCRIPT_DIR}/.." &> /dev/null && pwd)"
 
-CUTOFF_DAYS=1825
+CUTOFF_DAYS=""
+JURISDICTION=""
 DEST="/var/backups"
 ACTOR_USER_ID=""
 USE_DOCKER_STACK=0
@@ -58,7 +63,9 @@ DRY_RUN=0
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --cutoff-days=*)    CUTOFF_DAYS="${1#--cutoff-days=}" ;;
-        --cutoff-days)      shift; CUTOFF_DAYS="${1:-1825}" ;;
+        --cutoff-days)      shift; CUTOFF_DAYS="${1:-}" ;;
+        --jurisdiction=*)   JURISDICTION="${1#--jurisdiction=}" ;;
+        --jurisdiction)     shift; JURISDICTION="${1:-}" ;;
         --dest=*)           DEST="${1#--dest=}" ;;
         --dest)             shift; DEST="${1:-/var/backups}" ;;
         --actor-user-id=*)  ACTOR_USER_ID="${1#--actor-user-id=}" ;;
@@ -82,6 +89,17 @@ fi
 TARGET_FLAG=""
 [[ "${USE_DOCKER_STACK}" -eq 1 ]] && TARGET_FLAG="--target=docker-stack"
 
+# The cutoff comes from the retention policy unless the operator overrides it.
+# polaris-archive.sh validates both values before they reach SQL.
+if [[ -n "${CUTOFF_DAYS}" ]]; then
+    CUTOFF_ARGS=(--cutoff-days="${CUTOFF_DAYS}")
+    CUTOFF_LABEL="${CUTOFF_DAYS} days (override)"
+else
+    CUTOFF_ARGS=(--from-policy)
+    [[ -n "${JURISDICTION}" ]] && CUTOFF_ARGS+=(--jurisdiction="${JURISDICTION}")
+    CUTOFF_LABEL="from RetentionPolicy${JURISDICTION:+ (${JURISDICTION})}"
+fi
+
 DRY_FLAG=""
 [[ "${DRY_RUN}" -eq 1 ]] && DRY_FLAG="--dry-run"
 
@@ -90,14 +108,14 @@ RESULT=""
 ARCHIVE_PATH=""
 
 cleanup() {
-    echo "${TS} ${RESULT} dest=${DEST} cutoff=${CUTOFF_DAYS}d archive=${ARCHIVE_PATH:-none}"
+    echo "${TS} ${RESULT} dest=${DEST} cutoff=${CUTOFF_LABEL} archive=${ARCHIVE_PATH:-none}"
 }
 trap cleanup EXIT
 
 cat <<BANNER
   Polaris audit-log rotation
   ──────────────────────────
-  Cutoff:        ${CUTOFF_DAYS} days
+  Cutoff:        ${CUTOFF_LABEL}
   Destination:   ${DEST}
   Actor user:    ${ACTOR_USER_ID}
   Mode:          $([[ "${USE_DOCKER_STACK}" -eq 1 ]] && echo 'docker-stack' || echo 'local-psql')
@@ -107,7 +125,7 @@ BANNER
 
 # Step 1: archive
 echo "  [1/3] archiving old audit rows…"
-if ! "${SCRIPT_DIR}/polaris-archive.sh" --dest="${DEST}" --cutoff-days="${CUTOFF_DAYS}" ${TARGET_FLAG}; then
+if ! "${SCRIPT_DIR}/polaris-archive.sh" --dest="${DEST}" "${CUTOFF_ARGS[@]}" ${TARGET_FLAG}; then
     RESULT="FAIL:archive"
     exit 1
 fi

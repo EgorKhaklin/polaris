@@ -863,6 +863,9 @@ td.actions form + form { margin-left: 6px; }
     letter-spacing: 0.12em;
     text-transform: uppercase;
     color: var(--ink-dim);
+    /* A label is a schema identifier and may be one long word; it wraps at
+       the <wbr> the template inserts, and never past the card edge. */
+    overflow-wrap: anywhere;
 }
 
 .stat-card .value {
