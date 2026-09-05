@@ -5,6 +5,22 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.233 — 2026-09-05 (the design index says what the pass found, and the last three stamps are re-verified)
+
+Closing the voice pass. The index's note said a voice pass was recorded as
+deferred; it now says what the pass actually turned up, so a reader arriving
+at `docs/design/` knows the records were checked against the code rather than
+merely tidied.
+
+- **Three version stamps survive, and all three earn it**: the note that these
+  documents moved out of `DEVNOTES/` at v9.224, the measured ZK performance
+  table, and the SLH-DSA status, which is re-verified and restamped at this
+  version rather than left reading v9.194.
+- **The last shouted negative is restated.** The substrate's storage row said
+  Polaris does NOT do application-level encryption at rest; it now says what
+  is true, that the operator's filesystem encryption is the layer that
+  matters, and points at the decision that owns it.
+
 ## v9.232 — 2026-09-05 (the voice pass, part three: the last six records, and the substrate manifest stops listing a deleted library)
 
 The six largest records, and the end of the pass. Every one of the

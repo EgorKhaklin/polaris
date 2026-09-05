@@ -66,8 +66,8 @@ Each row records:
 - **Fail mode:** If SLH-DSA breaks, the hedge is gone, but only ML-DSA
   tokens issued under the same hedge assumption are at risk. SLH-DSA
   itself is not the operational default.
-- **Status at v9.194:** registry rows only; no SLH-DSA signer is wired
-  (PQC-POSTURE.md, REGISTERED_NOT_WIRED).
+- **Status at v9.232:** registry rows only. No SLH-DSA signer is wired, which
+  `docs/reference/PQC-POSTURE.md` records as registered and not wired.
 - **Replacement:** Same multi-signature path as ML-DSA. The whole
   rationale for keeping SLH-DSA in the schema is that it was vetted
   under different mathematical assumptions; if both break together,
@@ -210,9 +210,10 @@ Each row records:
 - **Layer:** storage
 - **Authority:** Linux kernel; underlying volume
 - **Role:** Data pages, write-ahead log, `/etc/polaris/secret_key`.
-- **Fail mode:** Data-at-rest exposure. Polaris does NOT do
-  application-level encryption-at-rest; the operator's filesystem-level
-  encryption (LUKS, dm-crypt) is the layer that matters.
+- **Fail mode:** Data-at-rest exposure. There is no application-level
+  encryption at rest; the operator's filesystem encryption, LUKS or dm-crypt,
+  is the layer that matters, and choosing it is one of the operator decisions
+  in the readiness ledger.
 - **Replacement:** Operator policy (LUKS + key in TPM; cloud-native
   envelope encryption).
 - **Detection:** Outside Polaris's purview.

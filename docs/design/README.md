@@ -46,9 +46,11 @@ The proof that the zero-knowledge redaction holds against an explicit
 adversary, rather than merely storing a NULL, is
 [meta/redaction-proof.md](../../meta/redaction-proof.md).
 
-**On voice.** These records were written as working notes and read like it:
-they carry more history than a reference document should, and their headings
-are uneven. Each one now opens with its reader and its job, and the internal
-mission identifiers are gone. A full voice pass over the bodies is recorded in
-[DEVNOTES/presentation-plan.md](../../DEVNOTES/presentation-plan.md) rather
-than done here, so that the move itself stayed reviewable.
+**On accuracy.** These were working notes before they were documentation, and
+rewriting them found drift as well as tone: a second witness one document said
+did not exist, a table shape another described that never existed, a rule
+catalogue built on apparatus removed at v9.55, and a dependency manifest
+listing a library deleted three versions ago. Every SQL object, test, route
+and environment variable cited here was checked against the tree at the time
+of writing. Where a record states a limit, the limit is real; where it states
+a gap, the gap is open.
