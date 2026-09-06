@@ -182,6 +182,24 @@ class TestAtlasGlobeE2E(unittest.TestCase):
         finally:
             page.close()
 
+    def test_breakdown_tab_renders_table_and_crosstab(self):
+        """v9.249: the Breakdown tab must reveal its panel and populate the
+        ranked table plus a cross-tab matrix, with no error banner. Catches:
+        the tab wiring, the /api/atlas/breakdown + /crosstab fetches, and the
+        hidden-attribute CSS regression that made the error banner show."""
+        page = self._context.new_page()
+        try:
+            self._login_and_goto(page)
+            page.click('[data-atlas-view-tab="breakdown"]')
+            page.wait_for_selector('[data-atlas-view-panel="breakdown"]', state="visible", timeout=3000)
+            # the ranked table renders at least one row, and a cross-tab a matrix
+            page.wait_for_selector('[data-bd-ranked] .bd-row', timeout=4000)
+            page.wait_for_selector('[data-bd-crosstab="outcome"] .bd-matrix-grid', timeout=4000)
+            self.assertFalse(page.is_visible('[data-bd-error]'),
+                "the Breakdown error banner must stay hidden when the fetches succeed")
+        finally:
+            page.close()
+
     def test_atlas_page_has_no_inline_script_csp_violations(self):
         """The page must not log any CSP violations to the console.
         Per CLAUDE.md C5 + pre-known-gotcha #5: script-src 'self' is

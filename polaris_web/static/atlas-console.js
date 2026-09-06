@@ -82,6 +82,7 @@
       });
       mapBooted = true;
     }
+    if (name === 'breakdown') loadBreakdown();
     try { history.replaceState(null, '', '#' + name); } catch (e) { /* ignore */ }
   }
   $$('[data-atlas-view-tab]').forEach(function (t) {
@@ -369,6 +370,189 @@
     }
   }
 
+  // =========================================================================
+  // Breakdown view (v9.249): slice one dimension, then cross-tab it against
+  // outcome and disclosure so an anomalous profile stands out.
+  // =========================================================================
+  var bd = $('[data-atlas-view-panel="breakdown"]');
+  var bdState = { stream: 'verification', window: 'all', dim: 'agency', metric: 'volume' };
+  var BD_DIMS = {
+    verification: [
+      { key: 'agency', label: 'Agency' }, { key: 'context', label: 'Context' },
+      { key: 'jurisdiction', label: 'Jurisdiction' }, { key: 'algorithm', label: 'Algorithm' }
+    ],
+    lifecycle: [{ key: 'agency', label: 'Agency' }]
+  };
+  var BD_XTABS = {
+    verification: [
+      { col: 'outcome', title: 'Profile by outcome' },
+      { col: 'disclosure', title: 'Profile by disclosure' }
+    ],
+    lifecycle: [{ col: 'event_type', title: 'Profile by event type' }]
+  };
+  var COL_TONE = {
+    SUCCESS: '#5fd9a2', FAILURE: '#f87171', EXPIRED: '#fbbf24', UNAUTHORIZED: '#f87171',
+    ZERO_KNOWLEDGE: '#a78bfa', SELECTIVE: '#38bdf8', FULL: '#fbbf24'
+  };
+  function hexA(hex, a) {
+    var n = parseInt(hex.slice(1), 16);
+    return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a.toFixed(3) + ')';
+  }
+
+  function bdSetChips(attr, value, root) {
+    $$('[' + attr + ']', root || bd).forEach(function (c) {
+      var on = c.getAttribute(attr) === value;
+      c.classList.toggle('toolbar-chip-active', on);
+      c.setAttribute('aria-checked', on ? 'true' : 'false');
+    });
+  }
+  function bdBuildDimPicker() {
+    var group = $('[data-bd-dim-group]', bd);
+    if (!group) return;
+    group.textContent = '';
+    BD_DIMS[bdState.stream].forEach(function (d) {
+      var b = el('button', { class: 'toolbar-chip', type: 'button', role: 'radio',
+        'data-bd-dim': d.key, 'aria-checked': 'false', text: d.label });
+      b.addEventListener('click', function () {
+        bdState.dim = d.key; bdSetChips('data-bd-dim', d.key); loadBreakdown();
+      });
+      group.appendChild(b);
+    });
+    // keep a valid selection when switching streams
+    if (!BD_DIMS[bdState.stream].some(function (d) { return d.key === bdState.dim; }))
+      bdState.dim = BD_DIMS[bdState.stream][0].key;
+    bdSetChips('data-bd-dim', bdState.dim);
+  }
+  if (bd) {
+    $$('[data-bd-stream]', bd).forEach(function (c) {
+      c.addEventListener('click', function () {
+        bdState.stream = c.getAttribute('data-bd-stream');
+        bdSetChips('data-bd-stream', bdState.stream); bdBuildDimPicker(); loadBreakdown();
+      });
+    });
+    $$('[data-bd-window]', bd).forEach(function (c) {
+      c.addEventListener('click', function () {
+        bdState.window = c.getAttribute('data-bd-window');
+        bdSetChips('data-bd-window', bdState.window); loadBreakdown();
+      });
+    });
+    $$('[data-bd-metric]', bd).forEach(function (c) {
+      c.addEventListener('click', function () {
+        bdState.metric = c.getAttribute('data-bd-metric');
+        bdSetChips('data-bd-metric', bdState.metric);
+        if (bdLastCats) renderRankedTable($('[data-bd-ranked]', bd), bdLastCats, bdState.metric);
+      });
+    });
+    var bdRetry = $('[data-bd-retry]', bd);
+    if (bdRetry) bdRetry.addEventListener('click', loadBreakdown);
+    bdBuildDimPicker();
+  }
+
+  function renderRankedTable(mount, cats, metric) {
+    if (!mount) return;
+    mount.textContent = '';
+    if (!cats || !cats.length) { mount.appendChild(el('div', { class: 'ov-empty', text: 'No data in this window.' })); return; }
+    var total = cats.reduce(function (a, c) { return a + c.n_total; }, 0) || 1;
+    var maxV = Math.max.apply(null, cats.map(function (c) { return c.n_total; })) || 1;
+    var sorted = cats.slice().sort(function (a, b) {
+      if (metric === 'failure') {
+        var ra = a.n_total ? a.n_failure / a.n_total : 0, rb = b.n_total ? b.n_failure / b.n_total : 0;
+        return (rb - ra) || (b.n_total - a.n_total);
+      }
+      return b.n_total - a.n_total;
+    });
+    var head = el('div', { class: 'bd-row bd-row-head' });
+    head.appendChild(el('span', { class: 'bd-row-label', text: 'Category' }));
+    head.appendChild(el('span', { class: 'bd-row-barhead', text: 'Volume' }));
+    head.appendChild(el('span', { class: 'bd-row-vol', text: '#' }));
+    head.appendChild(el('span', { class: 'bd-row-rate', text: 'Fail %' }));
+    head.appendChild(el('span', { class: 'bd-row-share', text: 'Share' }));
+    mount.appendChild(head);
+    sorted.forEach(function (c) {
+      var rate = c.n_total ? c.n_failure / c.n_total : 0;
+      var row = el('div', { class: 'bd-row' });
+      row.appendChild(el('span', { class: 'bd-row-label', title: c.label, text: c.label }));
+      var track = el('span', { class: 'ov-bar-track' });
+      var ok = el('span', { class: 'ov-bar-fill' }); ok.style.width = (100 * (c.n_total - c.n_failure) / maxV) + '%'; track.appendChild(ok);
+      if (c.n_failure > 0) { var bad = el('span', { class: 'ov-bar-fill ov-bar-fill-fail' }); bad.style.width = (100 * c.n_failure / maxV) + '%'; track.appendChild(bad); }
+      row.appendChild(track);
+      row.appendChild(el('span', { class: 'bd-row-vol', text: fmtInt(c.n_total) }));
+      row.appendChild(el('span', { class: 'bd-row-rate' + (rate >= 0.15 ? ' bd-rate-high' : ''), text: fmtPct(100 * rate) }));
+      row.appendChild(el('span', { class: 'bd-row-share', text: fmtPct(100 * c.n_total / total) }));
+      mount.appendChild(row);
+    });
+  }
+
+  function renderMatrix(mount, data) {
+    if (!mount) return;
+    mount.textContent = '';
+    if (!data || !data.rows.length || !data.cols.length) {
+      mount.appendChild(el('div', { class: 'ov-empty', text: 'No data in this window.' })); return;
+    }
+    var lut = {};
+    data.cells.forEach(function (c) { lut[c.row + ' ' + c.col] = c.n; });
+    var grid = el('div', { class: 'bd-matrix-grid' });
+    grid.style.gridTemplateColumns = 'minmax(84px,1.3fr) repeat(' + data.cols.length + ', 1fr) auto';
+    grid.appendChild(el('span', { class: 'bd-mx-corner' }));
+    data.cols.forEach(function (col) { grid.appendChild(el('span', { class: 'bd-mx-colhead', title: col, text: prettyLabel(col) })); });
+    grid.appendChild(el('span', { class: 'bd-mx-colhead bd-mx-total', text: 'Total' }));
+    data.rows.forEach(function (r) {
+      grid.appendChild(el('span', { class: 'bd-mx-rowhead', title: r.label, text: r.label }));
+      data.cols.forEach(function (col) {
+        var n = lut[r.label + ' ' + col] || 0;
+        var share = r.total ? n / r.total : 0;
+        var cell = el('span', { class: 'bd-mx-cell', text: n ? fmtInt(n) : '·',
+          title: r.label + ' · ' + prettyLabel(col) + ': ' + fmtInt(n) + ' (' + fmtPct(100 * share) + ' of row)' });
+        cell.style.background = n ? hexA(COL_TONE[col] || '#8da6c4', 0.10 + 0.60 * share) : 'transparent';
+        if (share >= 0.5 && n) cell.classList.add('bd-mx-strong');
+        grid.appendChild(cell);
+      });
+      grid.appendChild(el('span', { class: 'bd-mx-cell bd-mx-total', text: fmtInt(r.total) }));
+    });
+    mount.appendChild(grid);
+  }
+
+  function bdShowError(msg) {
+    var box = $('[data-bd-error]', bd); if (!box) return;
+    box.hidden = false; var d = $('[data-bd-error-detail]', bd); if (d) d.textContent = msg;
+  }
+
+  var bdSeq = 0, bdLastCats = null;
+  function loadBreakdown() {
+    if (!bd) return;
+    var seq = ++bdSeq;
+    var box = $('[data-bd-error]', bd); if (box) box.hidden = true;
+    var q = 'window=' + encodeURIComponent(bdState.window) + '&kind=' + encodeURIComponent(bdState.stream);
+    var dim = bdState.dim;
+    var title = $('[data-bd-ranked-title]', bd);
+    if (title) title.textContent = 'By ' + dim;
+
+    // ranked breakdown of the sliced dimension
+    apiCall('/api/atlas/breakdown?' + q + '&dimension=' + dim + '&limit=30').then(function (data) {
+      if (seq !== bdSeq) return;
+      bdLastCats = data.categories || [];
+      renderRankedTable($('[data-bd-ranked]', bd), bdLastCats, bdState.metric);
+    }).catch(function (e) { if (seq === bdSeq) bdShowError('Breakdown failed: ' + e.message); });
+
+    // cross-tabs: sliced dimension x each column dimension for this stream
+    var xtabs = BD_XTABS[bdState.stream];
+    ['outcome', 'disclosure'].forEach(function (colKey) {
+      var card = $('[data-bd-xtab-card="' + colKey + '"]', bd);
+      var conf = xtabs.filter(function (x) { return x.col === colKey; })[0];
+      // for lifecycle, reuse the 'outcome' card slot to show the event_type matrix
+      if (!conf && colKey === 'outcome' && bdState.stream === 'lifecycle') conf = xtabs[0];
+      if (card) card.hidden = !conf;
+      if (!conf) return;
+      var mount = $('[data-bd-crosstab="' + colKey + '"]', bd);
+      var tEl = $('[data-bd-xtab-title="' + colKey + '"]', bd);
+      if (tEl) tEl.textContent = conf.title;
+      apiCall('/api/atlas/crosstab?' + q + '&row=' + dim + '&col=' + conf.col + '&limit=20').then(function (data) {
+        if (seq !== bdSeq) return;
+        renderMatrix(mount, data);
+      }).catch(function (e) { if (seq === bdSeq) bdShowError('Cross-tab failed: ' + e.message); });
+    });
+  }
+
   // initial paint
   loadOverview();
 
@@ -376,5 +560,6 @@
   setInterval(function () {
     if (document.hidden) return;
     if (!overview.hidden) loadOverview();
+    else if (bd && !bd.hidden) loadBreakdown();
   }, 60000);
 })();

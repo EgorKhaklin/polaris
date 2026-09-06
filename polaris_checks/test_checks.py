@@ -3573,17 +3573,22 @@ def test_bulk_enrollment_check_discriminates(tmp_path):
 
 def test_atlas_console_check_discriminates(tmp_path):
     ATLAS = ('<button data-atlas-view-tab="overview" aria-selected="true" class="atlas-tab atlas-tab-active">Overview</button>\n'
+             '<button data-atlas-view-tab="breakdown" aria-selected="false">Breakdown</button>\n'
              '<button data-atlas-view-tab="map" aria-selected="false">Map</button>\n'
              '<script src="atlas-console.js"></script>\n')
     def sqlfn(name, ret):
         return (f"CREATE OR REPLACE FUNCTION {name}(\n    p_x INTEGER\n) RETURNS TABLE (\n{ret}\n)\n"
                 f"LANGUAGE sql\nSTABLE\nAS $$ SELECT 1 $$;\n")
     SQL = (sqlfn("atlas_volume_series", "    bucket_ts TIMESTAMP, n_total BIGINT, n_failure BIGINT, n_zk BIGINT")
-           + sqlfn("atlas_breakdown", "    label TEXT, n_total BIGINT, n_failure BIGINT"))
+           + sqlfn("atlas_breakdown", "    label TEXT, n_total BIGINT, n_failure BIGINT")
+           + sqlfn("atlas_crosstab", "    row_label TEXT, col_label TEXT, n_total BIGINT"))
     APP = ("_ATLAS_MAX_CLUSTERS=5000\n_ATLAS_MAX_POINTS=2000\n_ATLAS_MAX_EVENTS=500\n_ATLAS_MAX_CATEGORIES=50\n"
            "_ATLAS_BREAKDOWN_DIMENSIONS={'verification': ('agency',)}\n"
+           "_ATLAS_CROSSTAB_ROWS={'verification': ('agency',)}\n"
+           "_ATLAS_CROSSTAB_COLS={'verification': ('outcome',)}\n"
            "@app.route('/api/atlas/series')\n@replica_reads\ndef api_atlas_series():\n    pass\n"
-           "@app.route('/api/atlas/breakdown')\n@replica_reads\ndef api_atlas_breakdown():\n    pass\n")
+           "@app.route('/api/atlas/breakdown')\n@replica_reads\ndef api_atlas_breakdown():\n    pass\n"
+           "@app.route('/api/atlas/crosstab')\n@replica_reads\ndef api_atlas_crosstab():\n    pass\n")
     good = {
         "polaris_web/templates/atlas.html": ATLAS,
         "polaris_web/static/atlas-console.js": "/* console */\n",
@@ -3612,6 +3617,19 @@ def test_atlas_console_check_discriminates(tmp_path):
     # the series endpoint is not replica-routed
     write({"polaris_web/app.py": APP.replace("@app.route('/api/atlas/series')\n@replica_reads", "@app.route('/api/atlas/series')")})
     assert checks.check_atlas_console(tmp_path)[0].level == "FAIL", "must FAIL when api_atlas_series is not @replica_reads"
+    # the Breakdown tab is absent
+    write({"polaris_web/templates/atlas.html": ATLAS.replace('data-atlas-view-tab="breakdown"', 'data-atlas-view-tab="other"')})
+    assert checks.check_atlas_console(tmp_path)[0].level == "FAIL", "must FAIL when the Breakdown tab is absent"
+    # the crosstab endpoint is absent
+    write({"polaris_web/app.py": APP.replace("@app.route('/api/atlas/crosstab')", "@app.route('/api/atlas/other')")})
+    assert checks.check_atlas_console(tmp_path)[0].level == "FAIL", "must FAIL when the crosstab endpoint is absent"
+    # the crosstab dimensions are not whitelisted
+    write({"polaris_web/app.py": APP.replace("_ATLAS_CROSSTAB_ROWS", "_SOMETHING_ELSE")})
+    assert checks.check_atlas_console(tmp_path)[0].level == "FAIL", "must FAIL when the crosstab dimensions are not whitelisted"
+    # atlas_crosstab leaks a location column (C6)
+    write({"polaris_sql/11_atlas.sql": SQL.replace("row_label TEXT, col_label TEXT, n_total BIGINT",
+                                                   "row_label TEXT, lon DOUBLE PRECISION, n_total BIGINT")})
+    assert checks.check_atlas_console(tmp_path)[0].level == "FAIL", "must FAIL when atlas_crosstab returns a location column"
 
 
 def test_helm_reference_profile_check_discriminates(tmp_path):

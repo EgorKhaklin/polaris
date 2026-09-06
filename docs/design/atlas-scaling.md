@@ -32,6 +32,7 @@ agency tallies) without ever carrying its location (C6):
 |---|---|---|
 | `atlas_volume_series(since, buckets, kind, …)` | total-volume time series (counts EVERY event, unlike `atlas_timeline` which is located-only for the map strip) | ≤240 buckets |
 | `atlas_breakdown(dimension, since, limit, kind, …)` | top-K roll-up by one whitelisted dimension | `_ATLAS_MAX_CATEGORIES` (50) |
+| `atlas_crosstab(row_dim, col_dim, since, limit, kind, …)` | 2-D pivot (Breakdown view): top-K rows x a low-cardinality column dimension | `_ATLAS_MAX_CATEGORIES` rows |
 
 Their endpoints (`/api/atlas/series`, `/api/atlas/breakdown`) are
 `@replica_reads` and capped, and the charts are hand-rolled inline SVG / CSS

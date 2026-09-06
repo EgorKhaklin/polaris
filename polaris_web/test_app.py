@@ -5632,6 +5632,40 @@ class AtlasConsoleAPITests(PolarisTestCase):
         r2 = self.client.get('/api/atlas/breakdown?window=all&kind=verification&dimension=event_type')
         self.assertEqual(r2.status_code, 400, "event_type is not a verification dimension")
 
+    def test_crosstab_shape_and_canonical_columns(self):
+        r = self.client.get('/api/atlas/crosstab?window=all&kind=verification&row=agency&col=outcome')
+        self.assertEqual(r.status_code, 200)
+        data = r.get_json()
+        self.assertIn('rows', data); self.assertIn('cols', data); self.assertIn('cells', data)
+        self.assertGreater(len(data['rows']), 0)
+        # rows are ordered by total desc
+        totals = [row['total'] for row in data['rows']]
+        self.assertEqual(totals, sorted(totals, reverse=True))
+        # SUCCESS precedes FAILURE in the canonical outcome order
+        if 'SUCCESS' in data['cols'] and 'FAILURE' in data['cols']:
+            self.assertLess(data['cols'].index('SUCCESS'), data['cols'].index('FAILURE'))
+        # cells never carry a location (C6)
+        for c in data['cells']:
+            self.assertNotIn('lat', c); self.assertNotIn('lon', c)
+
+    def test_crosstab_rows_capped_at_max_categories(self):
+        r = self.client.get('/api/atlas/crosstab?window=all&row=agency&col=outcome&limit=100000')
+        self.assertEqual(r.status_code, 200)
+        self.assertLessEqual(len(r.get_json()['rows']), flask_app._ATLAS_MAX_CATEGORIES)
+        self.assertLessEqual(r.get_json()['limit'], flask_app._ATLAS_MAX_CATEGORIES)
+
+    def test_crosstab_rejects_unknown_dimensions(self):
+        self.assertEqual(self.client.get('/api/atlas/crosstab?window=all&row=gender&col=outcome').status_code, 400)
+        self.assertEqual(self.client.get('/api/atlas/crosstab?window=all&row=agency&col=religion').status_code, 400)
+        # a column that is valid for lifecycle but not verification is rejected
+        self.assertEqual(self.client.get('/api/atlas/crosstab?window=all&kind=verification&row=agency&col=event_type').status_code, 400)
+
+    def test_crosstab_counts_zero_knowledge_in_disclosure(self):
+        r = self.client.get('/api/atlas/crosstab?window=all&row=context&col=disclosure')
+        self.assertEqual(r.status_code, 200)
+        self.assertIn('ZERO_KNOWLEDGE', r.get_json()['cols'],
+            "zero-knowledge must be counted in a disclosure cross-tab (C6: counted, never located)")
+
 
 class AtlasFilterAPITests(PolarisTestCase):
     """v8.3 (A+C): the temporal-lens + operational-filter primitives must

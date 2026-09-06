@@ -855,3 +855,95 @@ COMMENT ON FUNCTION atlas_breakdown IS
   'the window by one whitelisted dimension, ordered by volume, capped at '
   'p_limit (API-capped at _ATLAS_MAX_CATEGORIES). Non-geographic; counts '
   'zero-knowledge events like any other (C6), never locating them.';
+
+
+-- ----------------------------------------------------------------------------
+-- atlas_crosstab  (roadmap P2.3, v9.249 — the Breakdown view)
+--
+-- A 2-D categorical pivot for the "which slice is anomalous?" question: counts
+-- the window's events grouped by a ROW dimension and a COLUMN dimension, so an
+-- operator can read a failure or disclosure profile per agency/context/etc. at
+-- a glance. The rows are the top-K categories of the row dimension by volume
+-- (capped at p_limit == _ATLAS_MAX_CATEGORIES); the column dimension is a
+-- low-cardinality categorical (outcome/disclosure/event_type), so the cell
+-- count is bounded by construction (C8).
+--
+-- Non-geographic: a zero-knowledge verification is counted in its agency /
+-- context / jurisdiction row and its disclosure column, but never located (C6).
+-- Both dimensions are whitelisted by the API before they reach the CASE, so
+-- there is no dynamic SQL and no injection surface.
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION atlas_crosstab(
+    p_row_dim    TEXT,       -- verification: agency|context|jurisdiction|algorithm ; lifecycle: agency|event_type
+    p_col_dim    TEXT,       -- verification: outcome|disclosure ; lifecycle: event_type
+    p_since      TIMESTAMP,
+    p_limit      INTEGER,
+    p_kind       TEXT      DEFAULT 'verification',
+    p_outcomes   TEXT      DEFAULT NULL,
+    p_disclosure TEXT      DEFAULT NULL,
+    p_contexts   TEXT      DEFAULT NULL,
+    p_agencies   TEXT      DEFAULT NULL
+) RETURNS TABLE (
+    row_label   TEXT,
+    col_label   TEXT,
+    n_total     BIGINT
+)
+LANGUAGE sql
+STABLE
+AS $$
+    WITH base AS (
+        SELECT
+            CASE p_row_dim
+                WHEN 'agency'       THEN ag.name::TEXT
+                WHEN 'context'      THEN vc.context_type::TEXT
+                WHEN 'jurisdiction' THEN ag.jurisdiction::TEXT
+                WHEN 'algorithm'    THEN COALESCE(ca.name::TEXT, 'Zero-knowledge (no token)')
+                ELSE ag.name::TEXT
+            END AS rl,
+            CASE p_col_dim
+                WHEN 'outcome'    THEN ve.outcome::TEXT
+                WHEN 'disclosure' THEN ve.disclosure_level::TEXT
+                ELSE ve.outcome::TEXT
+            END AS cl
+        FROM VerificationEvent ve
+        JOIN      Agency               ag ON ve.requesting_agency_id = ag.agency_id
+        JOIN      VerificationContext  vc ON ve.context_id           = vc.context_id
+        LEFT JOIN IdentityToken         t ON ve.token_id             = t.token_id
+        LEFT JOIN CryptographicAlgorithm ca ON t.algorithm_id        = ca.algorithm_id
+        WHERE p_kind = 'verification'
+          AND (p_since      IS NULL OR ve.event_timestamp >= p_since)
+          AND (p_outcomes   IS NULL OR ve.outcome         = ANY(string_to_array(p_outcomes, ',')))
+          AND (p_disclosure IS NULL OR ve.disclosure_level = ANY(string_to_array(p_disclosure, ',')))
+          AND (p_contexts   IS NULL OR vc.context_type     = ANY(string_to_array(p_contexts, ',')))
+          AND (p_agencies   IS NULL OR ve.requesting_agency_id::text = ANY(string_to_array(p_agencies, ',')))
+        UNION ALL
+        SELECT
+            CASE p_row_dim
+                WHEN 'agency'     THEN COALESCE(ag.name::TEXT, 'System / device')
+                WHEN 'event_type' THEN le.event_type::TEXT
+                ELSE le.event_type::TEXT
+            END AS rl,
+            le.event_type::TEXT AS cl
+        FROM TokenLifecycleEvent le
+        LEFT JOIN Agency ag ON le.actor_agency_id = ag.agency_id
+        WHERE p_kind = 'lifecycle'
+          AND (p_since    IS NULL OR le.event_timestamp >= p_since)
+          AND (p_agencies IS NULL OR le.actor_agency_id::text = ANY(string_to_array(p_agencies, ',')))
+    ),
+    top_rows AS (
+        SELECT rl FROM base WHERE rl IS NOT NULL
+        GROUP BY rl ORDER BY count(*) DESC, rl ASC LIMIT p_limit
+    )
+    SELECT b.rl AS row_label, b.cl AS col_label, count(*)::BIGINT AS n_total
+    FROM base b JOIN top_rows tr ON b.rl = tr.rl
+    WHERE b.cl IS NOT NULL
+    GROUP BY b.rl, b.cl
+    ORDER BY b.rl ASC, b.cl ASC;
+$$;
+
+COMMENT ON FUNCTION atlas_crosstab IS
+  'Roadmap P2.3 (Breakdown view): a 2-D categorical pivot (row dimension x '
+  'column dimension) for spotting an anomalous slice. Rows are the top-K of '
+  'the row dimension by volume (p_limit == _ATLAS_MAX_CATEGORIES); columns are '
+  'a low-cardinality categorical, so the cells are bounded (C8). Non-geographic '
+  '(C6): zero-knowledge events are counted, never located.';

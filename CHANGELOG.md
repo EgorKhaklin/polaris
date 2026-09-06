@@ -5,6 +5,44 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.249 — 2026-09-06 (Atlas Breakdown: find the anomalous slice)
+
+Roadmap P2.3, ship 2 of the Atlas rebuild. The Overview answers "how is it
+doing"; the Breakdown answers "which slice is wrong". It is the investigative
+view an operator reaches for when a failure rate climbs.
+
+**Slice, then cross-tab.** Pick a dimension to slice by (agency, context,
+jurisdiction, algorithm) and the Breakdown shows a ranked table (volume,
+failure rate, share, sortable by either) plus two cross-tabs: the sliced
+dimension against outcome, and against disclosure. Each cross-tab cell is
+shaded by its share of the row and tinted by column (success green, failure
+red, zero-knowledge purple, and so on), so an anomalous profile jumps out: an
+agency with an unusually red Failure column, or a context skewed to full
+disclosure, is visible at a glance rather than buried in a list.
+
+**One new bounded aggregate.** `atlas_crosstab(row_dim, col_dim, ...)` in
+11_atlas.sql: the top-K rows of the row dimension (capped at
+_ATLAS_MAX_CATEGORIES) crossed with a low-cardinality column dimension, so the
+cell count is bounded by construction (C8). Non-geographic, so a zero-knowledge
+verification is counted in its agency/context/disclosure cell but never located
+(C6). Its endpoint `/api/atlas/crosstab` is replica-routed and both dimensions
+are whitelisted per stream.
+
+**A hidden-attribute bug, fixed.** The error banners (`.ov-error`, flex-display)
+overrode the HTML `hidden` attribute at equal specificity, so they showed even
+when idle. One authoritative rule (`.atlas-shell [hidden]{display:none}`) now
+makes every `hidden` in the console obey it; this also corrected the Overview,
+where the same banner was showing below the fold.
+
+**Proven.** `check_atlas_console` now pins the Breakdown tab, the crosstab
+endpoint, atlas_crosstab (location-free, C6), and the row/column whitelists
+(+ detection test); four new `AtlasConsoleAPITests` cover the endpoint; a new
+Playwright e2e case renders the table and a cross-tab and asserts no error
+banner. Schema unchanged; the check layer is 125; the app is 75 routes. Plan in
+[DEVNOTES/atlas-redesign.md](DEVNOTES/atlas-redesign.md).
+
+---
+
 ## v9.248 — 2026-09-06 (the Atlas becomes an analytical console)
 
 Roadmap P2.3, ship 1 of the Atlas rebuild ([DEVNOTES/atlas-redesign.md](DEVNOTES/atlas-redesign.md)).

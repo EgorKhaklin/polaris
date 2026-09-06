@@ -275,6 +275,24 @@ zero-knowledge events are counted like any other (C6). `@replica_reads`.
 }
 ```
 
+### `GET /api/atlas/crosstab`
+
+The Breakdown view's 2-D pivot (roadmap P2.3, v9.249): `?row=` by `?col=`. Returns
+the top-K rows of the row dimension (by volume, capped at `_ATLAS_MAX_CATEGORIES`)
+crossed with the column dimension. Both are whitelisted per stream (verification
+row: `agency|context|jurisdiction|algorithm`, col: `outcome|disclosure`;
+lifecycle row: `agency|event_type`, col: `event_type`). Non-geographic;
+zero-knowledge events are counted (C6). `@replica_reads`.
+
+```json
+{
+  "kind": "verification", "row": "agency", "col": "outcome", "window": "7d", "limit": 20,
+  "rows": [ {"label": "First National Bank", "total": 18420} ],
+  "cols": ["SUCCESS", "FAILURE"],
+  "cells": [ {"row": "First National Bank", "col": "SUCCESS", "n": 18210} ]
+}
+```
+
 ### `GET /api/atlas/cache-stats`
 
 Cache observability for R8-5. Returns hit/miss/expired/evicted

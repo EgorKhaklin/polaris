@@ -4721,9 +4721,11 @@ def check_atlas_console(root: pathlib.Path) -> list[Finding]:
     atlas = _read(root, "polaris_web/templates/atlas.html")
     if not atlas:
         return _fail("atlas_console", "polaris_web/templates/atlas.html is missing")
-    # Overview is the DEFAULT view (its tab is selected on first paint).
-    if 'data-atlas-view-tab="overview"' not in atlas or 'data-atlas-view-tab="map"' not in atlas:
-        return _fail("atlas_console", "atlas.html must have Overview and Map view tabs")
+    # Overview is the DEFAULT view (its tab is selected on first paint); the
+    # Breakdown (v9.249) and Map tabs are the other views.
+    for tab in ('overview', 'breakdown', 'map'):
+        if f'data-atlas-view-tab="{tab}"' not in atlas:
+            return _fail("atlas_console", f"atlas.html must have the {tab} view tab")
     m = re.search(r'data-atlas-view-tab="overview"[^>]*aria-selected="true"'
                   r'|aria-selected="true"[^>]*data-atlas-view-tab="overview"', atlas)
     if not m and 'atlas-tab-active' not in atlas:
@@ -4733,9 +4735,9 @@ def check_atlas_console(root: pathlib.Path) -> list[Finding]:
     if not _read(root, "polaris_web/static/atlas-console.js"):
         return _fail("atlas_console", "polaris_web/static/atlas-console.js is missing")
 
-    # The two bounded aggregates, non-geographic (no lat/lon in their contract).
+    # The bounded aggregates, non-geographic (no lat/lon in their contract).
     sql = _read(root, "polaris_sql/11_atlas.sql")
-    for fn_name in ("atlas_volume_series", "atlas_breakdown"):
+    for fn_name in ("atlas_volume_series", "atlas_breakdown", "atlas_crosstab"):
         body = re.search(rf"CREATE OR REPLACE FUNCTION {fn_name}\(.*?\$\$;", sql, re.S)
         if not body:
             return _fail("atlas_console", f"11_atlas.sql must define {fn_name}")
@@ -4744,9 +4746,9 @@ def check_atlas_console(root: pathlib.Path) -> list[Finding]:
             return _fail("atlas_console", f"{fn_name} must not return a location column (C6): the "
                          "analytical console counts zero-knowledge events but never locates them")
 
-    # The two endpoints, replica-routed and capped.
+    # The analytical endpoints, replica-routed and capped.
     app = _read(root, "polaris_web/app.py")
-    for route in ("/api/atlas/series", "/api/atlas/breakdown"):
+    for route in ("/api/atlas/series", "/api/atlas/breakdown", "/api/atlas/crosstab"):
         if f"@app.route('{route}')" not in app:
             return _fail("atlas_console", f"app.py must expose {route}")
     # both must be replica-read routes (analytical reads, no read-your-writes need)
@@ -4758,11 +4760,14 @@ def check_atlas_console(root: pathlib.Path) -> list[Finding]:
     if "_ATLAS_BREAKDOWN_DIMENSIONS" not in app:
         return _fail("atlas_console", "the breakdown dimensions must be whitelisted server-side "
                      "(_ATLAS_BREAKDOWN_DIMENSIONS)")
+    if "_ATLAS_CROSSTAB_ROWS" not in app or "_ATLAS_CROSSTAB_COLS" not in app:
+        return _fail("atlas_console", "the cross-tab row/column dimensions must be whitelisted "
+                     "server-side (_ATLAS_CROSSTAB_ROWS / _ATLAS_CROSSTAB_COLS)")
     return _ok("atlas_console",
-               "the Atlas opens on a bounded analytical Overview (the globe is a tab); two "
-               "non-geographic aggregates (atlas_volume_series, atlas_breakdown) feed it, both "
-               "capped (C8) and location-free so zero-knowledge events are counted but never "
-               "located (C6)")
+               "the Atlas opens on a bounded analytical Overview (the globe is a tab), with a "
+               "Breakdown view of cross-tabs; three non-geographic aggregates (atlas_volume_series, "
+               "atlas_breakdown, atlas_crosstab) feed it, all capped (C8) and location-free so "
+               "zero-knowledge events are counted but never located (C6)")
 
 
 # ---------------------------------------------------------------------------

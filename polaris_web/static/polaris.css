@@ -3211,6 +3211,9 @@ textarea.sql {
 /* ---- View panels: exactly one visible; the other must honor [hidden]. ---- */
 .atlas-view { flex: 1; min-height: 0; }
 .atlas-view[hidden] { display: none !important; }
+/* Any element toggled via the hidden attribute inside the console must obey it,
+   even when its own class sets a display (e.g. .ov-error/.ov-kpi are flex). */
+.atlas-shell [hidden] { display: none !important; }
 .atlas-view-overview { overflow-y: auto; }
 .atlas-view-map { display: flex; flex-direction: column; }
 
@@ -3411,3 +3414,80 @@ textarea.sql {
 @media (max-width: 720px) {
     .ov-grid { grid-template-columns: 1fr; }
 }
+
+/* ---- Breakdown view (roadmap P2.3, v9.249) ---- */
+.bd-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    padding: 14px;
+    align-content: start;
+}
+.bd-ranked-card { grid-column: 1 / -1; }
+.ov-card-hint { font-size: 10px; color: var(--ink-faint); font-family: var(--font-mono); }
+
+.bd-table { display: flex; flex-direction: column; }
+.bd-row {
+    display: grid;
+    grid-template-columns: minmax(110px, 26%) 1fr 54px 58px 58px;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--line);
+}
+.bd-row:last-child { border-bottom: none; }
+.bd-row-head {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    border-bottom: 1px solid var(--line-strong);
+}
+.bd-row-label { color: var(--ink-dim); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bd-row-barhead { color: var(--ink-faint); }
+.bd-row-vol { font-family: var(--font-mono); font-size: 12px; color: var(--ink); text-align: right; }
+.bd-row-rate { font-family: var(--font-mono); font-size: 12px; color: var(--ink-dim); text-align: right; }
+.bd-rate-high { color: var(--red); font-weight: 700; }
+.bd-row-share { font-family: var(--font-mono); font-size: 12px; color: var(--ink-faint); text-align: right; }
+
+.bd-matrix-grid {
+    display: grid;
+    gap: 3px;
+    align-items: stretch;
+    overflow-x: auto;
+}
+.bd-mx-corner { }
+.bd-mx-colhead {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    color: var(--ink-faint);
+    text-align: center;
+    padding: 2px 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.bd-mx-rowhead {
+    font-size: 12px;
+    color: var(--ink-dim);
+    display: flex;
+    align-items: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    padding-right: 6px;
+}
+.bd-mx-cell {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--ink);
+    text-align: center;
+    padding: 7px 4px;
+    border-radius: 3px;
+    background: transparent;
+    min-width: 0;
+}
+.bd-mx-strong { font-weight: 700; }
+.bd-mx-total { color: var(--ink-dim); font-weight: 700; background: transparent !important; }

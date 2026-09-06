@@ -88,9 +88,9 @@ state machine.
 
 | Ship | Version | Scope | Status |
 |---|---|---|---|
-| 1 | v9.248 | Console shell + Overview view (default); globe and feed become tabs; `atlas_breakdown` aggregate; SVG chart module; aesthetic cleanup | in progress |
-| 2 | v9.249 | Breakdown view (categorical composition + cross-tabs) | planned |
-| 3 | v9.250 | Map redesign (region choropleth default + region drill + globe toggle) | planned |
+| 1 | v9.248 | Console shell + Overview view (default); globe and feed become tabs; `atlas_breakdown` aggregate; SVG chart module; aesthetic cleanup | done |
+| 2 | v9.249 | Breakdown view: slice a dimension (ranked table, failure-rate sortable) + two cross-tabs (× outcome, × disclosure) shaded by row share; `atlas_crosstab` aggregate | done |
+| 3 | v9.250 | Map redesign (region choropleth default + region drill + globe toggle) | next |
 | 4 | v9.251 | Trends view (stack-by-dimension series + hour-by-weekday heatmap) | planned |
 | 5 | v9.252 | Subject investigation promoted (timeline + summary, "open in Atlas" from token pages) + docs rewrite (`atlas-scaling.md` into a full `atlas.md`) + e2e/benchmark updates | planned |
 

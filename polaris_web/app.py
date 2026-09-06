@@ -2387,6 +2387,89 @@ def api_atlas_breakdown():
     return jsonify(payload)
 
 
+# The row/column dimensions each stream's cross-tab accepts (whitelisted here so
+# a malformed ?row=/?col= can never reach the SQL CASE as anything but a known
+# value). The column dimension is deliberately low-cardinality so the cell count
+# stays bounded (C8); the rows are capped at _ATLAS_MAX_CATEGORIES.
+_ATLAS_CROSSTAB_ROWS = {
+    'verification': ('agency', 'context', 'jurisdiction', 'algorithm'),
+    'lifecycle':    ('agency', 'event_type'),
+}
+_ATLAS_CROSSTAB_COLS = {
+    'verification': ('outcome', 'disclosure'),
+    'lifecycle':    ('event_type',),
+}
+# Canonical column order per column dimension (so the matrix reads left-to-right
+# in a sensible order rather than alphabetically).
+_ATLAS_COL_ORDER = {
+    'outcome':    ['SUCCESS', 'FAILURE', 'EXPIRED', 'UNAUTHORIZED'],
+    'disclosure': ['ZERO_KNOWLEDGE', 'SELECTIVE', 'FULL'],
+    'event_type': ['ISSUED', 'ACTIVATED', 'DEACTIVATED', 'DEVICE_BOUND',
+                   'DEVICE_REVOKED', 'REVOKED', 'LOST', 'EXPIRED', 'REPLACED'],
+}
+
+
+@app.route('/api/atlas/crosstab')
+@security.login_required
+@replica_reads
+def api_atlas_crosstab():
+    """A 2-D categorical pivot for the Breakdown view: `?row=` by `?col=`.
+
+    Returns the top-K rows of the row dimension (by volume, capped at
+    _ATLAS_MAX_CATEGORIES) crossed with the column dimension, as
+    `{rows:[{label,total}], cols:[label], cells:[{row,col,n}]}`. Both
+    dimensions are whitelisted per stream. Non-geographic; zero-knowledge
+    events are counted like any other (C6)."""
+    try:
+        kind = request.args.get('kind', 'verification')
+        if kind not in _ATLAS_CROSSTAB_ROWS:
+            raise ValueError("kind must be 'verification' or 'lifecycle'")
+        row_dim = (request.args.get('row') or '').strip().lower()
+        col_dim = (request.args.get('col') or '').strip().lower()
+        if row_dim not in _ATLAS_CROSSTAB_ROWS[kind]:
+            raise ValueError(f"row must be one of {list(_ATLAS_CROSSTAB_ROWS[kind])} for {kind}")
+        if col_dim not in _ATLAS_CROSSTAB_COLS[kind]:
+            raise ValueError(f"col must be one of {list(_ATLAS_CROSSTAB_COLS[kind])} for {kind}")
+        limit = min(int(request.args.get('limit', str(_ATLAS_MAX_CATEGORIES))),
+                    _ATLAS_MAX_CATEGORIES)
+        if limit <= 0:
+            raise ValueError("limit must be positive")
+        f = _parse_atlas_filters(request.args)
+    except ValueError as e:
+        return jsonify(error=str(e)), 400
+
+    cache_key = ('crosstab', kind, row_dim, col_dim, limit, _filter_cache_key(f))
+    cached = _atlas_cache_get(cache_key)
+    if cached is not None:
+        return jsonify(cached)
+
+    rows = query("""
+        SELECT row_label, col_label, n_total
+        FROM atlas_crosstab(%s, %s, %s, %s, %s, %s, %s, %s, %s)
+    """, (row_dim, col_dim, f['since'], limit, kind, f['outcomes'],
+          f['disclosure'], f['contexts'], f['agencies']))
+
+    # Assemble the matrix: row order by total desc, columns in canonical order
+    # (falling back to sorted for any label not in the canonical list).
+    row_totals, seen_cols = {}, set()
+    for r in rows:
+        row_totals[r['row_label']] = row_totals.get(r['row_label'], 0) + int(r['n_total'])
+        seen_cols.add(r['col_label'])
+    ordered_rows = sorted(row_totals.items(), key=lambda kv: (-kv[1], kv[0]))
+    canon = _ATLAS_COL_ORDER.get(col_dim, [])
+    ordered_cols = [c for c in canon if c in seen_cols] + sorted(seen_cols - set(canon))
+
+    payload = dict(
+        kind=kind, row=row_dim, col=col_dim, window=f['window'], limit=limit,
+        rows=[{'label': lbl, 'total': tot} for lbl, tot in ordered_rows],
+        cols=ordered_cols,
+        cells=[{'row': r['row_label'], 'col': r['col_label'], 'n': int(r['n_total'])}
+               for r in rows],
+    )
+    _atlas_cache_set(cache_key, payload)
+    return jsonify(payload)
+
+
 # ----------------------------------------------------------------------------
 # SUBJECT FOCUS (v9.148) — single-subject investigation on the map.
 #
