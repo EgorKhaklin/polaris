@@ -5,6 +5,46 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.246 — 2026-09-06 (read-replica routing)
+
+Roadmap P2.2. The HA profile (v9.243) keeps a streaming replica behind the
+router's `/replica` endpoint; nothing read from it. Now the read-only surfaces
+do.
+
+**What routes.** The analytical reads with no read-your-writes requirement: the
+atlas API, the verification list, the token export. They carry a
+`@replica_reads` decorator that marks their SELECTs eligible for the replica; a
+committing query is never routed there. Correctness-critical reads (a
+verification decision, issuance, a token's current state) stay on the primary,
+untouched.
+
+**The staleness contract, explicit.** A read routed to the replica is at most
+`POLARIS_REPLICA_MAX_LAG_S` seconds behind the primary (default 10). Beyond
+that, or if the replica is unreachable, the read falls back to the primary
+(fresh) and the surface stays up; the fallback is counted on
+`polaris_replica_failback_total`. Every routed response says where it was
+served (`X-Polaris-Data-Source`) and how far behind (`X-Polaris-Replica-Lag-
+Seconds`); `/api/health` gains a `database_replica` component (lag, serving),
+informational so a lagging replica never degrades overall health.
+
+**The path.** The app dials the pooler's `polaris_ro` database, which the
+entrypoint serves onward to `POLARIS_DB_REPLICA_HOST:PORT`; on the HA profile
+that is `pg-router:5433`, so a failover moves the replica the router picks and
+the app's read path follows without a reconnect to a named member. Same
+pooler, same pinned certificate. Single node (no replica configured) is
+unaffected: every read uses the primary, no header, no behaviour change.
+
+**Proven.** Six new tests: single node unchanged, a replica serving and
+reporting its source and lag, failback when the replica is unreachable, a
+write never routed to the replica, and the health component present-or-absent
+without degrading the roll-up. `polaris-failover-drill.sh` asserts the app
+serves reads from the replica (`database_replica` healthy) on the booted HA
+stack. `check_read_replica_routing` pins the routing, the contract, the pooler
+read database, the HA wiring and the drill. All 471 app tests pass unchanged.
+123 checks.
+
+---
+
 ## v9.245 — 2026-09-05 (event-table partitioning)
 
 Roadmap P2.1, the first of the scale-architecture rows. The four append-only

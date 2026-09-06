@@ -236,6 +236,14 @@ R0=$(other "$L0")
 replica_streaming "$R0" "$L0" || fail "$R0 is not a streaming replica of $L0 before the drill ($(cluster_field "$L0" role "$R0")/$(cluster_field "$L0" state "$R0"))"
 echo "  leader $L0, replica $R0 streaming, timeline $(cluster_field "$L0" timeline "$L0")"
 
+# v9.246 (roadmap P2.2): the app routes its read-only surfaces to the replica
+# through the pooler's polaris_ro database -> pg-router:5433. /api/health reports
+# the replica's reachability and lag; assert the app is actually serving reads
+# from it (healthy + within the staleness contract).
+RH=$(curl -sk "$URL/api/health" 2>/dev/null | python3 -c "import json,sys; r=(json.load(sys.stdin).get('checks') or {}).get('database_replica'); print('%s/%s' % (r.get('status'), r.get('serving_reads')) if r else 'absent')" 2>/dev/null || echo err)
+echo "  read replica routing: database_replica=$RH"
+[[ "$RH" == "healthy/True" ]] || fail "the app is not routing reads to the replica (database_replica=$RH; expected healthy/True)"
+
 # The marker table the writer fills, created on the leader by the superuser
 # over the local socket (pg_hba: local trust, like the stock image).
 docker exec "polaris-$L0" psql -h /var/run/postgresql -U postgres -d polaris -v ON_ERROR_STOP=1 -q \

@@ -863,10 +863,32 @@ the application changes.
 **Inflection:** the atlas API (`/api/atlas/*`) dominates request volume AND
 p99 latency is above 200ms.
 
-**Status:** the HA profile keeps a streaming replica behind `pg-router:5433`
-([FAILOVER.md](FAILOVER.md)); routing `/api/atlas/*` reads to it does not
-(roadmap P2.2). Until it does, scale Postgres vertically
-(more vCPU + SSD IO).
+**Status (v9.246, roadmap P2.2):** shipped. When a replica is configured the
+app routes its read-only surfaces (the atlas API, the verification list, the
+token export) to it; correctness-critical reads (a verification decision,
+issuance, a token's current state) stay on the primary. On the HA profile the
+app dials the pooler's `polaris_ro` database, routed to the router's
+`/replica` endpoint (`pg-router:5433`); a failover moves the replica the
+router picks. Single node (no replica configured) is unaffected: every read
+uses the primary.
+
+**Configure it.** Set `POLARIS_DB_REPLICA_NAME` (the pooler's read database,
+`polaris_ro` on the HA profile) on the app, and `POLARIS_DB_REPLICA_HOST` /
+`POLARIS_DB_REPLICA_PORT` on the pooler so it serves `<db>_ro` onward to the
+replica. Unset means single node.
+
+**The staleness contract.** A read routed to the replica is eventually
+consistent: at most `POLARIS_REPLICA_MAX_LAG_S` seconds behind the primary
+(default 10). Beyond that, or if the replica is unreachable, the read falls
+back to the primary (fresh) so the surface stays available; the fallback is
+counted on `polaris_replica_failback_total`. These surfaces do not guarantee
+read-your-writes, which is why only analytical reads route there. Every routed
+response carries `X-Polaris-Data-Source` (`replica` or `primary-failback`) and,
+when served from the replica, `X-Polaris-Replica-Lag-Seconds`; `/api/health`
+reports the replica's lag and whether it is serving reads under the contract (a
+lagging replica is informational, not unhealthy). `polaris-failover-drill.sh`
+asserts the app serves reads from the replica, and that the surfaces stay up
+across a failover.
 
 ### The HA profile: living with Patroni
 

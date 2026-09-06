@@ -4577,6 +4577,54 @@ def check_event_table_partitioning(root: pathlib.Path) -> list[Finding]:
                "append-only holds across a partition, an attach, and a detach")
 
 
+def check_read_replica_routing(root: pathlib.Path) -> list[Finding]:
+    """Roadmap P2.2 (v9.246): the read-only surfaces (atlas, lists, exports)
+    route to a streaming replica when configured, under an explicit staleness
+    contract, with failback to the primary; correctness-critical reads stay on
+    the primary; single node is unaffected."""
+    app = _read(root, "polaris_web/app.py")
+    if not app:
+        return _fail("read_replica", "polaris_web/app.py is missing")
+    for needle in ("DB_CONFIG_REPLICA", "def replica_reads(", "REPLICA_MAX_LAG_S",
+                   "def _replica_lag_seconds(", "X-Polaris-Data-Source", "primary-failback",
+                   "_METRICS_REPLICA_FAILBACK", "database_replica"):
+        if needle not in app:
+            return _fail("read_replica", f"app.py must implement read-replica routing ({needle!r}): a replica config, "
+                         "the @replica_reads decorator, a staleness bound, a failback path, the data-source header, "
+                         "the failback metric, and the health component")
+    # the read-only surfaces carry the decorator; a correctness path must not
+    if app.count("@replica_reads") < 6:
+        return _fail("read_replica", "the read-only surfaces (the atlas endpoints, the export, the verification list) "
+                     "must be decorated @replica_reads")
+    for route in ("def api_atlas_stats(", "def tokens_export(", "def verifications_list("):
+        i = app.find(route)
+        if i < 0 or "@replica_reads" not in app[max(0, i - 200):i]:
+            return _fail("read_replica", f"a read-only surface is not @replica_reads-decorated near {route!r}")
+    # a write is never routed to the read-only replica
+    if "fetch in ('all', 'one')" not in app:
+        return _fail("read_replica", "query() must route only reads (fetch all/one) to the replica, never a write")
+    # the pooler serves a read-only database, and the HA overlay wires it end to end
+    pgb = _read(root, "polaris_web/pgbouncer-entrypoint.sh")
+    ha = _read(root, "polaris_web/docker-compose.ha.yml")
+    if not pgb or "_ro = host=" not in pgb or "POLARIS_DB_REPLICA_HOST" not in pgb:
+        return _fail("read_replica", "pgbouncer-entrypoint.sh must serve a <db>_ro database routed to the replica host")
+    if not ha or "POLARIS_DB_REPLICA_NAME: polaris_ro" not in ha or "POLARIS_DB_REPLICA_PORT: '5433'" not in ha:
+        return _fail("read_replica", "docker-compose.ha.yml must point the app at polaris_ro and the pooler at the "
+                     "router's replica endpoint (5433)")
+    # the failover drill proves the wiring end to end on the HA stack
+    drill = _read(root, "scripts/polaris-failover-drill.sh")
+    if not drill or "database_replica=" not in drill or "healthy/True" not in drill:
+        return _fail("read_replica", "polaris-failover-drill.sh must assert the app serves reads from the replica "
+                     "(database_replica healthy/True)")
+    doc = _read(root, "docs/operator/OPERATIONS.md")
+    if not doc or "staleness contract" not in doc.lower():
+        return _fail("read_replica", "OPERATIONS.md must document the staleness contract")
+    return _ok("read_replica",
+               "the read-only surfaces route to a streaming replica under a staleness contract (max lag with failback "
+               "to the primary, the data-source header, the health component), a write is never routed there, the "
+               "pooler serves a read-only database, and the failover drill proves the app serves reads from the replica")
+
+
 # ---------------------------------------------------------------------------
 # Image builds — every container image CI builds goes through
 # scripts/polaris-image-build.sh, which retries a build that failed on someone
@@ -5085,6 +5133,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_chaos_program,
     check_ha_automation,
     check_event_table_partitioning,
+    check_read_replica_routing,
     check_stated_counts,
     check_c1c10_objects_resolve,
     check_helm_chart_version_current,

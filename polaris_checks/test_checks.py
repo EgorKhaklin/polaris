@@ -3429,6 +3429,51 @@ def test_event_table_partitioning_check_discriminates(tmp_path):
     assert checks.check_event_table_partitioning(tmp_path)[0].level == "FAIL", "must FAIL when CI does not run the drill"
 
 
+def test_read_replica_routing_check_discriminates(tmp_path):
+    PAD = '\nx = 1\nx = 1\nx = 1\nx = 1\nx = 1\nx = 1\nx = 1\nx = 1\nx = 1\nx = 1\nx = 1\nx = 1\nx = 1\nx = 1\nx = 1\nx = 1\nx = 1\nx = 1\nx = 1\nx = 1\nx = 1\nx = 1\nx = 1\nx = 1\nx = 1\nx = 1\nx = 1\nx = 1\nx = 1\nx = 1\nx = 1\nx = 1\nx = 1\nx = 1\nx = 1\nx = 1\nx = 1\nx = 1\nx = 1\nx = 1\n'
+    _surfaces = ["api_atlas_clusters","api_atlas_points","api_atlas_stats","api_atlas_timeline",
+                 "api_atlas_subject","tokens_export","verifications_list"]
+    _defs = "".join(f"@replica_reads\ndef {n}(): pass\n{PAD}" for n in _surfaces)
+    APP = ("DB_CONFIG_REPLICA = None\ndef replica_reads(fn): return fn\nREPLICA_MAX_LAG_S = 10\n"
+           "def _replica_lag_seconds(conn): pass\nX-Polaris-Data-Source\nprimary-failback\n"
+           "_METRICS_REPLICA_FAILBACK\ndatabase_replica\nfetch in ('all', 'one')\n" + _defs)
+    PGB = "${DB_NAME}_ro = host=${REPLICA_HOST}\nPOLARIS_DB_REPLICA_HOST\n"
+    HA = "POLARIS_DB_REPLICA_NAME: polaris_ro\nPOLARIS_DB_REPLICA_PORT: '5433'\n"
+    DRILL = "database_replica=$RH\nhealthy/True\n"
+    OPS = "The staleness contract: reads may lag.\n"
+    good = {
+        "polaris_web/app.py": APP,
+        "polaris_web/pgbouncer-entrypoint.sh": PGB,
+        "polaris_web/docker-compose.ha.yml": HA,
+        "scripts/polaris-failover-drill.sh": DRILL,
+        "docs/operator/OPERATIONS.md": OPS,
+    }
+    def write(overrides=None):
+        files = dict(good); files.update(overrides or {})
+        for rel, body in files.items():
+            f = tmp_path / rel; f.parent.mkdir(parents=True, exist_ok=True); f.write_text(body)
+    write()
+    assert checks.check_read_replica_routing(tmp_path)[0].level == "OK", "must PASS on the good fixture"
+    # no failback path
+    write({"polaris_web/app.py": APP.replace("primary-failback", "")})
+    assert checks.check_read_replica_routing(tmp_path)[0].level == "FAIL", "must FAIL without a failback path"
+    # a read-only surface not decorated
+    write({"polaris_web/app.py": APP.replace("@replica_reads\ndef api_atlas_stats():", "def api_atlas_stats():", 1)})
+    assert checks.check_read_replica_routing(tmp_path)[0].level == "FAIL", "must FAIL when a read-only surface is undecorated"
+    # a write could be routed to the replica
+    write({"polaris_web/app.py": APP.replace("fetch in ('all', 'one')", "fetch in ('all','one','none')")})
+    assert checks.check_read_replica_routing(tmp_path)[0].level == "FAIL", "must FAIL when a write can be routed to the replica"
+    # the pooler serves no read database
+    write({"polaris_web/pgbouncer-entrypoint.sh": "no ro database here\n"})
+    assert checks.check_read_replica_routing(tmp_path)[0].level == "FAIL", "must FAIL when the pooler serves no read database"
+    # the drill does not assert replica serving
+    write({"scripts/polaris-failover-drill.sh": "echo nothing\n"})
+    assert checks.check_read_replica_routing(tmp_path)[0].level == "FAIL", "must FAIL when the drill does not prove replica serving"
+    # the contract is undocumented
+    write({"docs/operator/OPERATIONS.md": "nothing about routing\n"})
+    assert checks.check_read_replica_routing(tmp_path)[0].level == "FAIL", "must FAIL when the staleness contract is undocumented"
+
+
 def test_helm_reference_profile_check_discriminates(tmp_path):
     HELPERS = "runAsNonRoot: true\nseccompProfile:\n  type: RuntimeDefault\ncapabilities:\n  drop: [\"ALL\"]\nallowPrivilegeEscalation: false\n"
     NP = ("name: x-default-deny\npolicyTypes: [Ingress, Egress]\nname: x-allow-dns\n" + "kind: NetworkPolicy\n" * 7

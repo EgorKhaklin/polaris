@@ -54,6 +54,7 @@ Test: python3 test_app.py
 """
 
 import os
+import functools
 import sys
 import time
 import shutil
@@ -166,6 +167,13 @@ try:
         'polaris_quota_refusals_total',
         'Writes refused by an AgencyQuota cap, by kind and agency',
         labelnames=('kind', 'agency_id'),
+        registry=_METRICS_REGISTRY,
+    )
+    # v9.246 (roadmap P2.2) — a read-only surface fell back from the replica to
+    # the primary (replica unreachable, or lag beyond the staleness contract).
+    _METRICS_REPLICA_FAILBACK = _PromCounter(
+        'polaris_replica_failback_total',
+        'Read-only queries that fell back from the replica to the primary',
         registry=_METRICS_REGISTRY,
     )
 except ImportError:
@@ -396,36 +404,167 @@ _db_sslrootcert = os.environ.get('POLARIS_DB_SSLROOTCERT', '').strip()
 if _db_sslrootcert:
     DB_CONFIG['sslrootcert'] = _db_sslrootcert
 
+# v9.246 (roadmap P2.2) — read-replica routing. The read-only analytical
+# surfaces (the atlas, the verification list, the token export) route to a
+# streaming replica when one is configured, under an explicit staleness
+# contract; correctness-critical reads (a verification decision, issuance, a
+# token's current state) always use the primary. A replica is configured by
+# POLARIS_DB_REPLICA_NAME (the pooler's read-only database, on the HA profile
+# `polaris_ro` -> pg-router:5433) and/or POLARIS_DB_REPLICA_HOST/PORT; unset
+# means single node and every read uses the primary. Same pooler, same pinned
+# cert, so the app<->pooler TLS is unchanged.
+_replica_name = os.environ.get('POLARIS_DB_REPLICA_NAME', '').strip()
+_replica_host = os.environ.get('POLARIS_DB_REPLICA_HOST', '').strip()
+if _replica_name or _replica_host:
+    DB_CONFIG_REPLICA = dict(DB_CONFIG)
+    if _replica_name:
+        DB_CONFIG_REPLICA['database'] = _replica_name
+    if _replica_host:
+        DB_CONFIG_REPLICA['host'] = _replica_host
+    _replica_port = os.environ.get('POLARIS_DB_REPLICA_PORT', '').strip()
+    if _replica_port:
+        DB_CONFIG_REPLICA['port'] = int(_replica_port)
+else:
+    DB_CONFIG_REPLICA = None
 
-def get_db():
+# The staleness contract: a read routed to the replica may be at most this many
+# seconds behind the primary. Beyond it, the read falls back to the primary
+# (fresh) rather than serve data staler than the contract allows.
+REPLICA_MAX_LAG_S = float(os.environ.get('POLARIS_REPLICA_MAX_LAG_S', '10'))
+
+
+def replica_configured():
+    """True when a read replica is configured (routing is otherwise a no-op)."""
+    return DB_CONFIG_REPLICA is not None
+
+
+def _replica_reads_requested():
+    """True inside a @replica_reads route (its reads are replica-eligible)."""
+    try:
+        return bool(getattr(g, '_replica_reads', False))
+    except Exception:
+        return False
+
+
+def replica_reads(fn):
+    """Decorator for a read-only-surface route (the atlas, lists, exports):
+    marks its SELECTs eligible for the read replica under the staleness
+    contract. A no-op when no replica is configured. Apply only to routes that
+    never write and never need read-your-writes."""
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        if DB_CONFIG_REPLICA is not None:
+            try:
+                g._replica_reads = True
+            except Exception:
+                pass
+        return fn(*args, **kwargs)
+    return wrapper
+
+
+def get_db(readonly=False):
     """
-    Open a fresh connection per request. For production we would use a
-    connection pool (e.g. psycopg2.pool.SimpleConnectionPool) but for this
-    interface a per-request connection is simpler and adequate.
+    Open a fresh connection per request. `readonly=True` connects to the
+    configured read replica (a read-only session, so a stray write fails loudly)
+    when one exists; otherwise it is the primary. For production we would use a
+    connection pool but a per-request connection is simpler and adequate here.
     """
+    if readonly and DB_CONFIG_REPLICA is not None:
+        conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG_REPLICA)
+        conn.set_session(readonly=True)
+        return conn
     return psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
 
 
-def query(sql, params=None, fetch='all'):
+def _replica_lag_seconds(conn):
+    """Seconds the replica is behind the primary. 0.0 when the peer is not in
+    recovery (a single-node router pointed at the leader), and 0.0 when the
+    replica has replayed everything it received: comparing received to replayed
+    WAL avoids the classic idle-replica overestimate, where `now() -
+    last_replay_timestamp` grows while the primary is simply not committing."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT pg_is_in_recovery() AS in_rec, "
+            "CASE WHEN pg_last_wal_receive_lsn() IS NOT DISTINCT FROM pg_last_wal_replay_lsn() "
+            "     THEN 0.0 "
+            "     ELSE COALESCE(EXTRACT(EPOCH FROM (now() - pg_last_xact_replay_timestamp()))::float8, 0.0) "
+            "END AS lag")
+        r = cur.fetchone()
+    if not r or not r['in_rec']:
+        return 0.0
+    return 0.0 if r['lag'] is None else float(r['lag'])
+
+
+def _note_read_source(source, lag=None):
+    """Record where a read was served from, for the response header + metric."""
+    try:
+        g._db_read_source = source
+        if lag is not None:
+            g._db_replica_lag = lag
+    except Exception:
+        pass  # outside a request context (startup, a script): nothing to record
+
+
+def _run_query(conn, sql, params, fetch):
+    with conn.cursor() as cur:
+        cur.execute(sql, params or ())
+        if fetch == 'all':
+            return cur.fetchall()
+        elif fetch == 'one':
+            return cur.fetchone()
+        elif fetch == 'none':
+            conn.commit()
+            return cur.rowcount
+        elif fetch == 'returning':
+            conn.commit()
+            return cur.fetchone()
+
+
+def query(sql, params=None, fetch='all', readonly=False):
     """
     Run a parameterized query and return results.
     fetch: 'all' returns list of dicts; 'one' returns single dict or None;
            'none' returns rowcount (for INSERT/UPDATE/DELETE).
+    readonly: route to the read replica under the staleness contract when one is
+              configured; on any replica failure, or lag beyond REPLICA_MAX_LAG_S,
+              fall back to the primary (fresh). Only for reads with no
+              read-your-writes requirement (the atlas, lists, exports). A route
+              decorated @replica_reads sets this for its reads implicitly.
     """
+    # a @replica_reads route marks all its reads eligible; a write (fetch that
+    # commits) is never routed to the read-only replica even so.
+    prefer = readonly or (DB_CONFIG_REPLICA is not None and _replica_reads_requested())
+    if prefer and fetch in ('all', 'one') and DB_CONFIG_REPLICA is not None:
+        conn = None
+        try:
+            conn = get_db(readonly=True)
+            lag = _replica_lag_seconds(conn)
+            if lag is None or lag > REPLICA_MAX_LAG_S:
+                raise RuntimeError(f"replica lag {lag} exceeds contract {REPLICA_MAX_LAG_S}s")
+            result = _run_query(conn, sql, params, fetch)
+            _note_read_source('replica', lag=lag)
+            return result
+        except Exception:
+            # failback: the replica is unreachable or staler than the contract.
+            # Serve fresh from the primary; the surface stays available.
+            _note_read_source('primary-failback')
+            if _PROM_AVAILABLE:
+                try:
+                    _METRICS_REPLICA_FAILBACK.inc()
+                except Exception:
+                    pass
+        finally:
+            if conn is not None:
+                conn.close()
+        conn = get_db(readonly=False)
+        try:
+            return _run_query(conn, sql, params, fetch)
+        finally:
+            conn.close()
+
     conn = get_db()
     try:
-        with conn.cursor() as cur:
-            cur.execute(sql, params or ())
-            if fetch == 'all':
-                return cur.fetchall()
-            elif fetch == 'one':
-                return cur.fetchone()
-            elif fetch == 'none':
-                conn.commit()
-                return cur.rowcount
-            elif fetch == 'returning':
-                conn.commit()
-                return cur.fetchone()
+        return _run_query(conn, sql, params, fetch)
     finally:
         conn.close()
 
@@ -652,6 +791,21 @@ def _bound_flashes(response):
 def _security_after_request(response):
     """Apply security headers (CSP, HSTS, etc.) to every response."""
     return security.apply_security_headers(response)
+
+
+@app.after_request
+def _data_source_after_request(response):
+    """v9.246 (roadmap P2.2) — the staleness contract, made visible. When a
+    read was routed to the replica, say so and how far behind it was; a
+    fallback to the primary is reported as primary. Absent when the request
+    did no replica-eligible read."""
+    source = getattr(g, '_db_read_source', None)
+    if source:
+        response.headers['X-Polaris-Data-Source'] = source
+        lag = getattr(g, '_db_replica_lag', None)
+        if lag is not None:
+            response.headers['X-Polaris-Replica-Lag-Seconds'] = f"{lag:.1f}"
+    return response
 
 
 # v8.93 — Prometheus metrics request-tagging hooks. Tag every served
@@ -1890,6 +2044,7 @@ def _filter_cache_key(filters):
 
 @app.route('/api/atlas/clusters')
 @security.login_required
+@replica_reads
 def api_atlas_clusters():
     """Spatial aggregation endpoint. Returns ≤ _ATLAS_MAX_CLUSTERS bins.
     R8-5: result cached for _ATLAS_CACHE_TTL_SECONDS to absorb hot polling.
@@ -1948,6 +2103,7 @@ def api_atlas_clusters():
 
 @app.route('/api/atlas/points')
 @security.login_required
+@replica_reads
 def api_atlas_points():
     """Individual event points in the bbox. Used at high zoom when the
     cluster count is below the cluster→point threshold. v8.3 honors the
@@ -1995,6 +2151,7 @@ def api_atlas_points():
 
 @app.route('/api/atlas/stats')
 @security.login_required
+@replica_reads
 def api_atlas_stats():
     """The four HUD signals scoped to the visible bbox.
     R8-5: cached for _ATLAS_CACHE_TTL_SECONDS.
@@ -2036,6 +2193,7 @@ def api_atlas_stats():
 
 @app.route('/api/atlas/timeline')
 @security.login_required
+@replica_reads
 def api_atlas_timeline():
     """Bucket counts for the histogram strip below the toolbar.
 
@@ -2113,6 +2271,7 @@ def api_atlas_timeline():
 @app.route('/api/atlas/subjects/search')
 @security.login_required
 @security.require_role('admin', 'auditor')
+@replica_reads
 def api_atlas_subject_search():
     """Typeahead for the subject-focus picker. Name search only; returns the
     individual_id the caller then focuses. At national scale this wants a
@@ -2134,6 +2293,7 @@ def api_atlas_subject_search():
 @app.route('/api/atlas/subject')
 @security.login_required
 @security.require_role('admin', 'auditor')
+@replica_reads
 def api_atlas_subject():
     """Return ONE subject's located events for the focused map view.
 
@@ -2250,6 +2410,34 @@ def _health_check_database():
         }
     except Exception as exc:
         return {'status': 'unhealthy', 'error': str(exc)[:160]}
+
+
+def _health_check_replica():
+    """v9.246 (roadmap P2.2) — the read replica's reachability and lag against
+    the staleness contract. Present only when a replica is configured. A replica
+    that is unreachable or beyond the contract is 'degraded', not 'unhealthy':
+    reads fall back to the primary, so the surface stays up."""
+    if DB_CONFIG_REPLICA is None:
+        return None
+    conn = None
+    try:
+        t0 = _time.time()
+        conn = get_db(readonly=True)
+        lag = _replica_lag_seconds(conn)
+        latency_ms = round((_time.time() - t0) * 1000.0, 1)
+        within = lag is not None and lag <= REPLICA_MAX_LAG_S
+        return {
+            'status': 'healthy' if within else 'degraded',
+            'lag_seconds': None if lag is None else round(lag, 1),
+            'max_lag_seconds': REPLICA_MAX_LAG_S,
+            'latency_ms': latency_ms,
+            'serving_reads': within,
+        }
+    except Exception as exc:
+        return {'status': 'degraded', 'serving_reads': False, 'error': str(exc)[:160]}
+    finally:
+        if conn is not None:
+            conn.close()
 
 
 def _health_check_redis():
@@ -2438,6 +2626,13 @@ def _compute_readiness():
             'misses': _atlas_cache_stats['misses'],
         }
 
+    # v9.246 (roadmap P2.2) — the read replica, when configured. Informational:
+    # a degraded replica does not degrade overall health (reads fall back to the
+    # primary), so it is reported AFTER the roll-up, like atlas_cache.
+    _replica_health = _health_check_replica()
+    if _replica_health is not None:
+        checks['database_replica'] = _replica_health
+
     body = {
         'status': overall,
         'version': POLARIS_VERSION,
@@ -2613,6 +2808,7 @@ def metrics():
 
 @app.route('/api/atlas/events')
 @security.login_required
+@replica_reads
 def api_atlas_events():
     """Paginated unified event feed (verifications + lifecycle), most-recent
     first. Cursor format: 'TIMESTAMP|EVENT_ID' (URL-encoded)."""
@@ -3790,6 +3986,7 @@ def _jsonable_rows(rows):
 
 @app.route('/api/tokens/<int:tok_id>/export')
 @security.login_required
+@replica_reads
 def tokens_export(tok_id):
     """Download everything the operator may already see for one token, as a
     JSON file. This is an export of the token-detail view, not new access: it
@@ -4574,6 +4771,7 @@ def uc6_migrate():
 
 @app.route('/verifications')
 @security.login_required
+@replica_reads
 def verifications_list():
     """
     Browse VerificationEvent with filters. UPDATE/DELETE not exposed

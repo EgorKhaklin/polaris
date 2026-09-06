@@ -44,8 +44,8 @@ RPO and RTO; a retention engine that holds the retention decision as data with
 a floor no configuration reaches, per class and per jurisdiction, enforced by
 the purge and drilled end to end in CI; a sealed secrets store; opt-in
 distributed tracing with dashboards as code; SBOMs and SLSA provenance on every
-release; CVE gates on dependencies and images; a coverage floor; 122 invariant
-checks (v9.245) each with a detection test; eighteen operator runbooks and ledgers; and the bound on
+release; CVE gates on dependencies and images; a coverage floor; 123 invariant
+checks (v9.246) each with a detection test; eighteen operator runbooks and ledgers; and the bound on
 every claim in [docs/PRODUCTION-READINESS.md](docs/PRODUCTION-READINESS.md).
 
 **Do not have:** hardware tokens (the physical artifact is modeled, not built);
@@ -160,7 +160,7 @@ server-side; 99.95% availability.
 | ID | Item | Size | Risk | Blocked by | Definition of done |
 |---|---|---|---|---|---|
 | [x] P2.1 | Event-table partitioning (v9.245) | L | high | P1.4 | The four append-only event tables are monthly range-partitioned on `event_timestamp` (composite PK, DEFAULT catch-all); `uc_ensure_event_partitions` premakes months and `uc_detach_event_partitions_before` detaches old ones (re-adding the append-only trigger so C1 holds across the detach); the online migration converts a pre-v9.245 database in place by attaching its table as DEFAULT (no copy) and reverts by departitioning; `polaris-partition-drill.sh` proves append-only across a partition, an attach and a detach on every push. [partitioning.md](docs/design/partitioning.md), pinned by `check_event_table_partitioning` |
-| [ ] P2.2 | Read-replica routing | M | med | P2.1 | Read-only surfaces (atlas, reports, exports) route to replicas under an explicit staleness contract; failback tested |
+| [x] P2.2 | Read-replica routing (v9.246) | M | med | P2.1 | The read-only surfaces (the atlas API, the verification list, the token export) route to a streaming replica under an explicit staleness contract (`POLARIS_REPLICA_MAX_LAG_S`, the `X-Polaris-Data-Source` / lag headers, a health component) with failback to the primary; correctness-critical reads stay on the primary; on the HA profile the app dials the pooler's `polaris_ro` -> `pg-router:5433`. Single node is unaffected. `polaris-failover-drill.sh` proves it. Pinned by `check_read_replica_routing` |
 | [ ] P2.3 | Atlas v2 on PostGIS | L | med | P2.1 | Server-side clustering at scale replaces the bespoke binning; 10M-event map interaction inside p95 targets; the C8 caps retained |
 | [ ] P2.4 | Bulk enrollment pipeline | L | med | P2.1 | COPY-based batch issuance for authority migrations, benchmarked; every imported row still passes the full constraint set |
 | [ ] P2.5 | Epoch pipeline at scale | L | high | P0.7 | Incremental Merkle maintenance, parallel proving, witness parity at production depth; an epoch cadence spec published |

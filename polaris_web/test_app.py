@@ -8804,3 +8804,63 @@ class FlashBoundTests(PolarisTestCase):
         self.assertEqual(r.status_code, 200)
         self.assertHTML(r, 'Verification event', 'is recorded')
 
+
+class ReplicaRoutingTests(PolarisTestCase):
+    """v9.246 (roadmap P2.2) — read-replica routing under the staleness contract."""
+
+    def setUp(self):
+        super().setUp()
+        self._login('admin')
+        self._saved_replica = flask_app.DB_CONFIG_REPLICA
+        with flask_app._atlas_cache_lock:   # the atlas cache would mask which backend served a read
+            flask_app._atlas_cache.clear()
+
+    def tearDown(self):
+        flask_app.DB_CONFIG_REPLICA = self._saved_replica
+        super().tearDown()
+
+    def test_no_replica_no_data_source_header(self):
+        # single node: reads use the primary, no staleness header
+        flask_app.DB_CONFIG_REPLICA = None
+        r = self.client.get('/api/atlas/stats?bbox=-89,-179,89,179')
+        self.assertEqual(r.status_code, 200)
+        self.assertNotIn('X-Polaris-Data-Source', r.headers)
+
+    def test_replica_serves_and_reports_source(self):
+        # a stand-in replica (the same test DB): a read routes to it and the
+        # response declares the source and the lag (0, since it is not in recovery)
+        flask_app.DB_CONFIG_REPLICA = dict(flask_app.DB_CONFIG)
+        r = self.client.get('/api/atlas/stats?bbox=-89,-179,89,179&window=all')
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.headers.get('X-Polaris-Data-Source'), 'replica')
+        self.assertIn('X-Polaris-Replica-Lag-Seconds', r.headers)
+
+    def test_failback_to_primary_when_replica_unreachable(self):
+        # a bogus replica: the read still succeeds, served from the primary
+        flask_app.DB_CONFIG_REPLICA = dict(flask_app.DB_CONFIG, database='polaris_no_such_ro')
+        r = self.client.get('/api/atlas/stats?bbox=-89,-179,89,179&window=all')
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.headers.get('X-Polaris-Data-Source'), 'primary-failback')
+
+    def test_write_path_never_routed_to_replica(self):
+        # even inside a replica-eligible context, a committing query stays on the
+        # primary (the guard excludes fetch that writes); a direct write succeeds
+        flask_app.DB_CONFIG_REPLICA = dict(flask_app.DB_CONFIG)
+        n = flask_app.query(
+            "UPDATE AppUser SET failed_login_count = failed_login_count WHERE 1=0",
+            fetch='none', readonly=True)
+        self.assertEqual(n, 0)
+
+    def test_health_includes_replica_when_configured(self):
+        flask_app.DB_CONFIG_REPLICA = dict(flask_app.DB_CONFIG)
+        data = self.client.get('/api/health').get_json()
+        self.assertIn('database_replica', data['checks'])
+        self.assertIn(data['checks']['database_replica']['status'], ('healthy', 'degraded'))
+        # a lagging/absent replica must NOT make the whole system unhealthy
+        self.assertIn(data['status'], ('healthy', 'degraded'))
+
+    def test_health_omits_replica_when_unconfigured(self):
+        flask_app.DB_CONFIG_REPLICA = None
+        data = self.client.get('/api/health').get_json()
+        self.assertNotIn('database_replica', data['checks'])
+

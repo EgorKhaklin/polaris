@@ -195,9 +195,24 @@ services:
   pgbouncer:
     environment:
       POLARIS_DB_HOST: pg-router
+      # v9.246 (roadmap P2.2) — the read-only database routed to a replica via
+      # the router's /replica endpoint (5433). The app dials polaris_ro for the
+      # atlas, lists and exports; a failover moves the replica the router picks.
+      POLARIS_DB_REPLICA_HOST: pg-router
+      POLARIS_DB_REPLICA_PORT: '5433'
     depends_on:
       pg-router:
         condition: service_healthy
+
+  # v9.246 (roadmap P2.2) — the app routes its read-only surfaces (atlas, lists,
+  # exports) to the replica through the pooler's polaris_ro database, under the
+  # staleness contract; correctness-critical reads stay on the primary.
+  app:
+    environment:
+      POLARIS_DB_REPLICA_NAME: polaris_ro
+  app-green:
+    environment:
+      POLARIS_DB_REPLICA_NAME: polaris_ro
 
 networks:
   polaris-dcs:
