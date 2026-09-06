@@ -5,6 +5,54 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.253 — 2026-09-06 (Atlas Map v2: aggregation first, globe optional)
+
+Roadmap P2.3, ship 6: the map stops being an always-on globe strewn with raw
+points and becomes an aggregation-first thematic map, the way an operations map
+works when there are millions of events and thousands of agencies.
+
+**Three layers, a default that scales.** A layer-mode control sits on the map:
+Regions, Density, Points. **Regions** is the new default: one proportional
+symbol per requesting-agency jurisdiction, at that jurisdiction's activity
+centroid, sized by volume and tinted when the failure rate runs high. It is not
+viewport-bound, so it shows the whole national picture at a glance instead of
+whatever happens to be on screen. **Density** is a pointy-top hexbin surface of
+located activity, graduated by count, honest where thousands of raw points would
+be a smear. **Points** is the existing cluster-to-point drill. Click any
+aggregate to fly in and drop to Points.
+
+**The globe is now an option, not the view.** The map opens flat and legible; a
+Globe toggle switches to the sphere projection for those who want it. The
+spinning globe is no longer the thing you fight to read data through.
+
+**Zero-knowledge, counted or excluded, never located.** The Density surface
+excludes zero-knowledge events entirely, exactly like the cluster and point
+layers (a hex holding one ZK event would pin it). The Regions layer is the
+interesting case: a jurisdiction is a regulatory grouping, not a coordinate, so
+a zero-knowledge verification is **counted** in its jurisdiction's total, yet
+its centroid is built only from located, non-ZK events. A jurisdiction whose
+activity is entirely zero-knowledge is reported as counted-but-unplaceable and
+surfaced in the legend, never placed on the map (C6).
+
+**Bounded and server-side, like everything else.** Two new aggregates,
+`atlas_hexbin` (the standard pixel→axial→cube-round hex binning, done in SQL)
+and `atlas_geo_jurisdictions`, both replica-routed and capped
+(`_ATLAS_MAX_CLUSTERS`, and a new `_ATLAS_MAX_REGIONS`, C8). Their endpoints are
+`/api/atlas/hexbin` and `/api/atlas/geo/jurisdictions`.
+
+**Proven.** `check_atlas_console` now pins the three map modes, the projection
+toggle, both aggregates, and both replica-routed endpoints;
+`check_c6_atlas_redacts_zk_location` pins the hexbin ZK exclusion and the
+jurisdiction centroid's located-only derivation; `check_c8_atlas_caps` gains the
+regions cap; all with detection perturbations. Six new `AtlasConsoleAPITests`
+cover the hexbin shape/bbox/ZK-exclusion and the jurisdiction
+counts-but-never-locates contract, including a ZK-only jurisdiction proven
+unplaceable; a new Playwright e2e opens the map on Regions/flat, switches modes,
+and toggles the globe. Schema unchanged; the check layer is 125; the app is 79
+routes.
+
+---
+
 ## v9.252 — 2026-09-06 (Atlas: the records grid, and click to filter)
 
 Roadmap P2.3, ship 5: the console gains the view every operator eventually

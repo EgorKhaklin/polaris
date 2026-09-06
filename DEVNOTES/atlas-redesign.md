@@ -67,8 +67,8 @@ Breakdown + cross-tabs (v9.249).
 | 3 | v9.250 | **Breakdown scale-hardening.** The sliced-dimension list became a searchable, internally-scrolling explorer (server-side `p_search`, honest truncation footer) with the cross-tabs beside it, so it survives thousands of categories instead of a flat dump. (The wider professional design-system pass and the agency typeahead moved into ships 4-6, where the global filter and map are rebuilt anyway.) | done |
 | 4 | v9.251 | **Global faceted filter foundation.** One persistent query state (stream / window / facets: context, outcome, disclosure, agency) drives the Overview + Breakdown; facet dropdowns with live counts (standard faceting); agency typeahead (`atlas_agency_facet`); removable filter chips + Clear all; per-view stream/window controls removed. (Click-any-category cross-filtering and the deeper design-system/de-game-ify pass carry into ships 5-6 with the data grid and map.) | done |
 | 5 | v9.252 | **Scale records grid + cross-filtering.** A keyset-paginated events grid (`atlas_records`, cursor not offset, ZK-redacted) that survives millions of rows and honours the global filter; click-any-category-to-filter from every Overview chart. (Entity omni-search across agencies/tokens and the design-system/de-game-ify pass carry into ships 6-9, where the map and the entity workspace are built anyway.) | done |
-| 6 | v9.253 | **Map v2.** Region choropleth by jurisdiction (default) + hexbin density + drill to points; globe an option, not the default | next |
-| 7 | v9.254 | **Trends.** Multi-series time analysis (brush/zoom, crosshair, compare-to-previous), hour×weekday heatmap, stack-by-dimension | planned |
+| 6 | v9.253 | **Map v2.** Aggregation-first map: a layer-mode control (Regions by jurisdiction = default proportional symbols, `atlas_geo_jurisdictions`, ZK counted/never located; Density = pointy-top hexbin, `atlas_hexbin`, ZK excluded; Points = the cluster→point drill) with click-to-drill, and the globe demoted to an opt-in projection toggle (flat default). A filled-polygon choropleth over a vendored ISO-3166 boundary tileset is a future enhancement; proportional symbols are the honest, boundary-free form for point-based agency data. | done |
+| 7 | v9.254 | **Trends.** Multi-series time analysis (brush/zoom, crosshair, compare-to-previous), hour×weekday heatmap, stack-by-dimension | next |
 | 8 | v9.255 | **Investigate (entity workspace).** Search any entity (subject / agency / token) → linked timeline + geography + relations + activity; warrant- and agency-audit as a real entity view | planned |
 | 9 | v9.256 | **Alerts + saved views + final production pass.** Surfaced needs-attention queries; saveable filter/view state; accessibility, responsive and 2M+ performance pass | planned |
 
@@ -79,8 +79,9 @@ table, an unpaginated list, or a decorative flourish.
 ## Server aggregates so far (all bounded, non-geographic unless noted)
 
 `atlas_volume_series`, `atlas_breakdown`, `atlas_crosstab`, `atlas_agency_facet`
-(the typeahead facet), and `atlas_records` (the keyset-paginated, ZK-redacted
-records grid) (see
+(the typeahead facet), `atlas_records` (the keyset-paginated, ZK-redacted
+records grid), and the Map v2 pair `atlas_hexbin` (density, ZK-excluded) +
+`atlas_geo_jurisdictions` (the Regions rollup, ZK counted but never located) (see
 [docs/design/atlas-scaling.md](../docs/design/atlas-scaling.md)). New ships add:
 faceted-count endpoints, entity search + paginated grids, choropleth/hexbin,
 multi-series time, entity-timeline, each capped and C6/C8-clean.

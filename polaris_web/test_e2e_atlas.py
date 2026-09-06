@@ -182,6 +182,37 @@ class TestAtlasGlobeE2E(unittest.TestCase):
         finally:
             page.close()
 
+    def test_map_v2_modes_and_globe_toggle(self):
+        """v9.253 (Map v2): the map is aggregation-first. It must open on the
+        Regions layer (jurisdiction rollup) with a FLAT projection, switch
+        between Regions/Density/Points, and toggle the globe on. Catches: the
+        mode wiring, the default-mode/default-projection flip, the layer
+        sources failing to build, and the projection toggle."""
+        page = self._context.new_page()
+        try:
+            self._login_and_goto(page)
+            page.click('[data-atlas-view-tab="map"]')
+            page.wait_for_selector("#atlas-map", state="visible", timeout=3000)
+            page.wait_for_timeout(2800)  # lazy boot + first aggregate fetch
+            # Regions is the default active mode; the projection starts flat.
+            self.assertEqual(page.get_attribute('[data-atlas-mapmode="regions"]', 'aria-pressed'), 'true',
+                "the map must open on the Regions layer (aggregation-first)")
+            proj0 = page.evaluate("() => { try { return window.atlasMap.getProjection().type } catch(e){ return 'n/a' } }")
+            self.assertEqual(proj0, 'mercator', "the map must open FLAT, not on the globe")
+            self.assertFalse(page.is_visible('[data-atlas-error]'),
+                "the Map error banner must stay hidden when the aggregate loads")
+            # Density then Points activate their modes.
+            page.click('[data-atlas-mapmode="density"]'); page.wait_for_timeout(1200)
+            self.assertEqual(page.get_attribute('[data-atlas-mapmode="density"]', 'aria-pressed'), 'true')
+            page.click('[data-atlas-mapmode="points"]'); page.wait_for_timeout(1200)
+            self.assertEqual(page.get_attribute('[data-atlas-mapmode="points"]', 'aria-pressed'), 'true')
+            # The globe is an opt-in toggle.
+            page.click('[data-atlas-projection]'); page.wait_for_timeout(1500)
+            proj1 = page.evaluate("() => { try { return window.atlasMap.getProjection().type } catch(e){ return 'n/a' } }")
+            self.assertEqual(proj1, 'globe', "the globe toggle must switch the projection to a sphere")
+        finally:
+            page.close()
+
     def test_breakdown_tab_renders_table_and_crosstab(self):
         """v9.249: the Breakdown tab must reveal its panel and populate the
         ranked table plus a cross-tab matrix, with no error banner. Catches:

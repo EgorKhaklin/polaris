@@ -48,6 +48,7 @@
     var TONE_COLORS = {
         cluster: '#5dd6ff', selective: '#b094eb', full: '#ffc861', alert: '#ff7478'
     };
+    var EMPTY_FC = { type: 'FeatureCollection', features: [] };
 
     // -- Unified filter state (mirrors the v8.3 model the API speaks) ---------
     var filterState = {
@@ -87,11 +88,20 @@
     try { window.atlasMap = map; } catch (e) { /* noop */ }
 
     var renderMode = 'cluster';
+    // v9.253 (Map v2): the map is aggregation-first. mapMode selects the layer
+    // shown — 'regions' (jurisdiction rollup, the DEFAULT) | 'density' (hexbin)
+    // | 'points' (the cluster->point drill). Projection defaults to FLAT; the
+    // globe becomes an opt-in toggle rather than the always-on view, so the
+    // console opens on a legible thematic map, not a spinning sphere.
+    var mapMode = 'regions';
+    var projection = 'flat';
+    function applyProjection() {
+        try { map.setProjection({ type: projection === 'globe' ? 'globe' : 'mercator' }); }
+        catch (e) { /* older engine: mercator only */ }
+    }
 
     map.on('style.load', function () {
-        // Globe projection (ADL-style sphere that flattens to a street map as
-        // you zoom). Set after the style loads so it is not overridden.
-        try { map.setProjection({ type: 'globe' }); } catch (e) { /* mercator fallback */ }
+        applyProjection();
         // Globe atmosphere glow, tuned to the console palette.
         try {
             map.setSky({
@@ -101,6 +111,8 @@
             });
         } catch (e) { /* older style spec */ }
         addEventLayers();
+        updateModeUI();
+        updateLegendForMode();
         scheduleFetch();
         loadEventFeed();
         loadTimeline();
@@ -166,6 +178,62 @@
         });
         map.on('click', 'atlas-points', function (e) { selectFeature(e.features[0]); });
         ['atlas-clusters', 'atlas-points'].forEach(function (id) {
+            map.on('mouseenter', id, function () { map.getCanvas().style.cursor = 'pointer'; });
+            map.on('mouseleave', id, function () { map.getCanvas().style.cursor = ''; });
+        });
+
+        // --- Density layer (v9.253): a hexbin surface of located activity. ----
+        // Filled hexagons graduated by count give an honest density read at
+        // continental scale where thousands of raw points would be a smear.
+        map.addSource('atlas-hexes', { type: 'geojson', data: EMPTY_FC });
+        map.addLayer({
+            id: 'atlas-hex-fill', type: 'fill', source: 'atlas-hexes',
+            paint: {
+                'fill-color': ['interpolate', ['linear'], ['get', 'dens'],
+                    0, '#0d2233', 0.25, '#134a63', 0.5, '#1f7fa6', 0.75, '#39b6d8', 1, '#8ef0ff'],
+                'fill-opacity': 0.55
+            }
+        });
+        map.addLayer({
+            id: 'atlas-hex-stroke', type: 'line', source: 'atlas-hexes',
+            paint: { 'line-color': '#8ef0ff', 'line-width': 0.6, 'line-opacity': 0.35 }
+        });
+
+        // --- Regions layer (v9.253): the DEFAULT. Proportional symbols at each
+        // jurisdiction's activity centroid, sized by volume, tinted red when the
+        // failure rate runs high. The count INCLUDES zero-knowledge events; the
+        // position never does (C6, enforced in atlas_geo_jurisdictions). --------
+        map.addSource('atlas-regions', { type: 'geojson', data: EMPTY_FC });
+        map.addLayer({
+            id: 'atlas-region-fill', type: 'circle', source: 'atlas-regions',
+            paint: {
+                'circle-radius': ['interpolate', ['linear'], ['get', 'count'],
+                    1, 10, 100, 20, 1000, 32, 10000, 46, 100000, 60],
+                'circle-color': ['case', ['>=', ['get', 'failRate'], 0.15], TONE_COLORS.alert, TONE_COLORS.cluster],
+                'circle-opacity': 0.20,
+                'circle-stroke-width': 1.6,
+                'circle-stroke-color': ['case', ['>=', ['get', 'failRate'], 0.15], TONE_COLORS.alert, TONE_COLORS.cluster],
+                'circle-stroke-opacity': 0.9
+            }
+        });
+        map.addLayer({
+            id: 'atlas-region-count', type: 'symbol', source: 'atlas-regions',
+            layout: {
+                'text-field': ['get', 'label'], 'text-size': 11,
+                'text-font': ['Open Sans Bold'], 'text-allow-overlap': true
+            },
+            paint: { 'text-color': '#eaf4ff', 'text-halo-color': '#050a12', 'text-halo-width': 1 }
+        });
+
+        // Drill: a click on any aggregate flies in and drops to the Points view.
+        map.on('click', 'atlas-region-fill', function (e) {
+            drillToPoints(e.features[0].geometry.coordinates, 6);
+        });
+        map.on('click', 'atlas-hex-fill', function (e) {
+            var g = e.features[0].geometry.coordinates[0];
+            drillToPoints(g[0], Math.max(6, map.getZoom() + 2));
+        });
+        ['atlas-region-fill', 'atlas-hex-fill'].forEach(function (id) {
             map.on('mouseenter', id, function () { map.getCanvas().style.cursor = 'pointer'; });
             map.on('mouseleave', id, function () { map.getCanvas().style.cursor = ''; });
         });
@@ -250,23 +318,55 @@
         fetchTimer = setTimeout(fetchData, 200);
     }
 
+    // Hex size (circumradius, degrees) by zoom — mirrors chooseGrid's ramp so a
+    // Density hex is a sensible bin at each scale. The client renders with the
+    // SAME size it sends, so the lattice tiles perfectly.
+    function chooseHexSize(z) {
+        if (z >= 12) return 0.03;
+        if (z >= 10) return 0.08;
+        if (z >= 8)  return 0.25;
+        if (z >= 6)  return 0.7;
+        if (z >= 4)  return 1.6;
+        if (z >= 2)  return 3.5;
+        return 6;
+    }
+
+    // fetchData dispatches by mapMode. Each mode owns its dedup key, its layer,
+    // and its legend; the HUD stats fetch (viewport totals) runs in every mode.
     function fetchData() {
         if (!map.getSource || !map.getSource('atlas-events')) return;
         if (focusedSubject) return;   // subject-focus owns the map; no operational fetch
         var bbox = currentBbox();
-        var grid = chooseGrid(map.getZoom());
         var kind = apiKind();
         var filterQS = serializeFilters();
-        var key = kind + '|' + bbox.map(function (v) { return v.toFixed(3); }).join(',')
-                  + '|' + grid + '|' + filterQS;
+        var bboxParam = bbox.join(',');
+        var b3 = bbox.map(function (v) { return v.toFixed(3); }).join(',');
+
+        var key;
+        if (mapMode === 'regions')      key = 'regions|' + kind + '|' + filterQS;         // not viewport-bound
+        else if (mapMode === 'density') key = 'density|' + kind + '|' + b3 + '|' + chooseHexSize(map.getZoom()) + '|' + filterQS;
+        else                            key = 'points|'  + kind + '|' + b3 + '|' + chooseGrid(map.getZoom()) + '|' + filterQS;
         if (key === lastFetchKey) return;
         lastFetchKey = key;
 
         if (inflight) inflight.abort();
         inflight = (typeof AbortController !== 'undefined') ? new AbortController() : null;
         var signal = inflight ? inflight.signal : undefined;
-        var bboxParam = bbox.join(',');
 
+        clearLayersExcept(mapMode);
+        if (mapMode === 'regions')      fetchRegions(kind, filterQS, signal);
+        else if (mapMode === 'density') fetchDensity(bboxParam, kind, filterQS, signal);
+        else                            fetchPoints(bboxParam, kind, filterQS, signal);
+
+        apiCall('/api/atlas/stats?bbox=' + encodeURIComponent(bboxParam) + '&' + filterQS, signal)
+            .then(updateStats)
+            .catch(function (err) { if (err.name !== 'AbortError') { /* HUD stale; non-fatal */ } });
+    }
+
+    // -- Points mode: the existing cluster->point drill (aggregate at a --------
+    // distance, individual reticles once a cell holds few enough events). ------
+    function fetchPoints(bboxParam, kind, filterQS, signal) {
+        var grid = chooseGrid(map.getZoom());
         apiCall('/api/atlas/clusters?bbox=' + encodeURIComponent(bboxParam) +
                 '&grid=' + grid + '&kind=' + kind + '&' + filterQS, signal)
             .then(function (data) {
@@ -275,8 +375,7 @@
                                    '&kind=' + kind + '&limit=500&' + filterQS, signal)
                         .then(function (pts) {
                             renderMode = 'point';
-                            var feats = (pts.points || []).map(function (p) { return pointFeature(p, kind); });
-                            setFeatures(feats);
+                            setFeatures((pts.points || []).map(function (p) { return pointFeature(p, kind); }));
                         });
                 }
                 renderMode = 'cluster';
@@ -285,10 +384,100 @@
             .catch(function (err) {
                 if (err.name !== 'AbortError') { lastFetchKey = null; showAtlasError(err); }
             });
+    }
 
-        apiCall('/api/atlas/stats?bbox=' + encodeURIComponent(bboxParam) + '&' + filterQS, signal)
-            .then(updateStats)
-            .catch(function (err) { if (err.name !== 'AbortError') { /* HUD stale; non-fatal */ } });
+    // -- Regions mode (DEFAULT): jurisdiction proportional symbols. Not --------
+    // viewport-bound; shows every jurisdiction. Counts include ZK, positions
+    // never do; the legend surfaces the ZK-only, unplaceable count (C6). -------
+    function fetchRegions(kind, filterQS, signal) {
+        apiCall('/api/atlas/geo/jurisdictions?kind=' + kind + '&' + filterQS, signal)
+            .then(function (data) {
+                var feats = (data.regions || []).map(regionFeature);
+                var src = map.getSource('atlas-regions');
+                if (src) src.setData({ type: 'FeatureCollection', features: feats });
+                setUnplaceable(data.n_unplaceable || 0, data.n_unplaceable_events || 0);
+                toggleEmptyHint(feats.length === 0 && (data.n_unplaceable || 0) === 0);
+                hideAtlasError();
+            })
+            .catch(function (err) {
+                if (err.name !== 'AbortError') { lastFetchKey = null; showAtlasError(err); }
+            });
+    }
+
+    // -- Density mode: a hexbin surface of located, non-ZK activity. -----------
+    function fetchDensity(bboxParam, kind, filterQS, signal) {
+        var size = chooseHexSize(map.getZoom());
+        apiCall('/api/atlas/hexbin?bbox=' + encodeURIComponent(bboxParam) +
+                '&size=' + size + '&kind=' + kind + '&' + filterQS, signal)
+            .then(function (data) {
+                var hexes = data.hexes || [];
+                var maxN = 1;
+                hexes.forEach(function (h) { if (h.n_total > maxN) maxN = h.n_total; });
+                var feats = hexes.map(function (h) { return hexFeature(h, size, maxN); });
+                var src = map.getSource('atlas-hexes');
+                if (src) src.setData({ type: 'FeatureCollection', features: feats });
+                toggleEmptyHint(feats.length === 0);
+                hideAtlasError();
+            })
+            .catch(function (err) {
+                if (err.name !== 'AbortError') { lastFetchKey = null; showAtlasError(err); }
+            });
+    }
+
+    // Empty a source. On mode switch the stale layer must clear so two
+    // aggregates never paint at once.
+    function clearLayersExcept(mode) {
+        if (mode !== 'points'  && map.getSource('atlas-events'))  map.getSource('atlas-events').setData(EMPTY_FC);
+        if (mode !== 'regions' && map.getSource('atlas-regions')) map.getSource('atlas-regions').setData(EMPTY_FC);
+        if (mode !== 'density' && map.getSource('atlas-hexes'))   map.getSource('atlas-hexes').setData(EMPTY_FC);
+    }
+
+    // -- Aggregate feature builders (Regions + Density) -----------------------
+    function regionFeature(r) {
+        var fr = r.n_total ? (r.n_failure / r.n_total) : 0;
+        return {
+            type: 'Feature',
+            geometry: { type: 'Point', coordinates: [r.centroid_lon, r.centroid_lat] },
+            properties: {
+                juris: r.jurisdiction, count: r.n_total, label: r.jurisdiction + ' ' + fmtCount(r.n_total),
+                failRate: fr, zk: r.n_zk || 0, located: r.n_located || 0
+            }
+        };
+    }
+    function hexPolygon(lon, lat, size) {
+        var ring = [];
+        for (var i = 0; i < 6; i++) {
+            var a = Math.PI / 180 * (60 * i + 30);   // pointy-top vertices
+            ring.push([lon + size * Math.cos(a), lat + size * Math.sin(a)]);
+        }
+        ring.push(ring[0]);
+        return [ring];
+    }
+    function hexFeature(h, size, maxN) {
+        // dens is a 0..1 density on a sqrt scale so a few hot hexes do not wash
+        // the rest to the floor colour.
+        var dens = maxN > 0 ? Math.sqrt(h.n_total / maxN) : 0;
+        return {
+            type: 'Feature',
+            geometry: { type: 'Polygon', coordinates: hexPolygon(h.lon, h.lat, size) },
+            properties: { count: h.n_total, failN: h.n_failure || 0, dens: dens }
+        };
+    }
+
+    // Switch the active layer. Drill and the mode chips both route through here.
+    function setMode(mode) {
+        if (mode !== 'regions' && mode !== 'density' && mode !== 'points') return;
+        mapMode = mode;
+        updateModeUI();
+        updateLegendForMode();
+        refetchAll();
+    }
+    function drillToPoints(center, zoom) {
+        mapMode = 'points';
+        updateModeUI();
+        updateLegendForMode();
+        map.flyTo({ center: center, zoom: Math.max(map.getZoom(), zoom || 6), speed: 1.1 });
+        refetchAll();   // moveend will also fire; the dedup key absorbs the double
     }
 
     function setFeatures(features) {
@@ -663,6 +852,43 @@
         });
     });
 
+    // -- Map v2 (v9.253): layer-mode segmented control + projection toggle -----
+    document.querySelectorAll('[data-atlas-mapmode]').forEach(function (b) {
+        b.addEventListener('click', function () { setMode(b.dataset.atlasMapmode); });
+    });
+    function updateModeUI() {
+        document.querySelectorAll('[data-atlas-mapmode]').forEach(function (b) {
+            var on = b.dataset.atlasMapmode === mapMode;
+            b.classList.toggle('toolbar-chip-active', on);
+            b.setAttribute('aria-pressed', on ? 'true' : 'false');
+        });
+    }
+    var projBtn = document.querySelector('[data-atlas-projection]');
+    if (projBtn) projBtn.addEventListener('click', function () {
+        projection = (projection === 'globe') ? 'flat' : 'globe';
+        projBtn.classList.toggle('toolbar-chip-active', projection === 'globe');
+        projBtn.setAttribute('aria-pressed', projection === 'globe' ? 'true' : 'false');
+        applyProjection();
+    });
+
+    // Legend + the ZK-only "counted, not placed" readout are mode-specific.
+    function updateLegendForMode() {
+        document.querySelectorAll('[data-legend-mode]').forEach(function (el) {
+            el.hidden = (el.getAttribute('data-legend-mode') !== mapMode);
+        });
+    }
+    function setUnplaceable(nJur, nEvents) {
+        var el = document.querySelector('[data-atlas-unplaceable]');
+        if (!el) return;
+        if (nJur > 0) {
+            el.hidden = false;
+            el.textContent = nJur + ' jurisdiction' + (nJur === 1 ? '' : 's') + ' counted, not placed ('
+                           + fmtCount(nEvents) + ' zero-knowledge event' + (nEvents === 1 ? '' : 's') + ')';
+        } else {
+            el.hidden = true;
+        }
+    }
+
     // =========================================================================
     // Subject focus (v9.148), single-subject investigation (admin/auditor).
     // Search a person, drop everything else, plot only their disclosed events
@@ -676,7 +902,8 @@
     var bannerEl = document.querySelector('[data-atlas-subject-banner]');
 
     function setOperationalLayers(visible) {
-        ['atlas-clusters', 'atlas-cluster-count', 'atlas-points'].forEach(function (id) {
+        ['atlas-clusters', 'atlas-cluster-count', 'atlas-points',
+         'atlas-region-fill', 'atlas-region-count', 'atlas-hex-fill', 'atlas-hex-stroke'].forEach(function (id) {
             if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', visible ? 'visible' : 'none');
         });
     }

@@ -1806,6 +1806,12 @@ _ATLAS_MAX_EVENTS   = 500
 # the analytical payload the same way the cluster/point/event caps bound the
 # map (C8): a dimension can only have so many rows sent to the browser.
 _ATLAS_MAX_CATEGORIES = 50
+# v9.253 (roadmap P2.3, Map v2): the Regions layer rolls verification volume up
+# by requesting-agency jurisdiction (ISO 3166-2). The count of distinct
+# jurisdictions is bounded by the standard (a few hundred at national+
+# international scale), but the response is hard-capped like every other atlas
+# surface (C8). The hexbin Density layer reuses the cluster cap.
+_ATLAS_MAX_REGIONS = 500
 
 
 # =============================================================================
@@ -2158,6 +2164,104 @@ def api_atlas_points():
         count=len(rows),
         points=[dict(r) for r in rows],
     )
+
+
+@app.route('/api/atlas/hexbin')
+@security.login_required
+@replica_reads
+def api_atlas_hexbin():
+    """Map v2 Density layer (roadmap P2.3, v9.253): located verification events
+    binned into a pointy-top hex grid of size ?size= (degrees) within the bbox,
+    the top-K densest centres by count (≤ _ATLAS_MAX_CLUSTERS, C8). C6: ZK
+    verifications are excluded entirely, like the cluster map. Cached like the
+    other spatial aggregates."""
+    try:
+        min_lat, min_lon, max_lat, max_lon = _parse_bbox(request.args.get('bbox'))
+        size = float(request.args.get('size', '5'))
+        if size <= 0 or size > 90:
+            raise ValueError("size must be in (0, 90] decimal degrees")
+        kind = request.args.get('kind', 'verification')
+        if kind not in ('verification', 'lifecycle'):
+            raise ValueError("kind must be 'verification' or 'lifecycle'")
+        f = _parse_atlas_filters(request.args)
+    except ValueError as e:
+        return jsonify(error=str(e)), 400
+
+    cache_key = ('hexbin', kind, min_lat, min_lon, max_lat, max_lon, size,
+                 _filter_cache_key(f))
+    cached = _atlas_cache_get(cache_key)
+    if cached is not None:
+        return jsonify(cached)
+
+    # atlas_hexbin bins verification events only (located, non-ZK); a lifecycle
+    # request returns an empty surface rather than an error, so the client can
+    # fall back to Points for that stream.
+    rows = query("""
+        SELECT lat, lon, n_total, n_failure
+        FROM atlas_hexbin(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+    """, (min_lat, min_lon, max_lat, max_lon, size, _ATLAS_MAX_CLUSTERS,
+          f['since'], kind, f['outcomes'], f['disclosure'], f['contexts'], f['agencies']))
+
+    payload = dict(
+        kind=kind,
+        bbox=[min_lat, min_lon, max_lat, max_lon],
+        size=size,
+        window=f['window'],
+        count=len(rows),
+        hexes=[dict(r) for r in rows],
+    )
+    _atlas_cache_set(cache_key, payload)
+    return jsonify(payload)
+
+
+@app.route('/api/atlas/geo/jurisdictions')
+@security.login_required
+@replica_reads
+def api_atlas_geo_jurisdictions():
+    """Map v2 Regions layer (roadmap P2.3, v9.253) — the DEFAULT map view.
+    Verification (or lifecycle) volume rolled up by the requesting agency's
+    jurisdiction (ISO 3166-2), top-K by volume (≤ _ATLAS_MAX_REGIONS, C8). Not
+    viewport-bound: the Regions layer shows every jurisdiction, not just the
+    ones on screen. C6: a jurisdiction is a regulatory grouping, not a
+    coordinate, so a zero-knowledge verification is COUNTED in its jurisdiction
+    (n_zk) yet never located — the centroid derives from located, non-ZK events
+    only, and a ZK-only jurisdiction has a null centroid (counted, unplaceable).
+    Cached like the other rollups."""
+    try:
+        kind = request.args.get('kind', 'verification')
+        if kind not in ('verification', 'lifecycle'):
+            raise ValueError("kind must be 'verification' or 'lifecycle'")
+        f = _parse_atlas_filters(request.args)
+    except ValueError as e:
+        return jsonify(error=str(e)), 400
+
+    cache_key = ('geojur', kind, _filter_cache_key(f))
+    cached = _atlas_cache_get(cache_key)
+    if cached is not None:
+        return jsonify(cached)
+
+    rows = query("""
+        SELECT jurisdiction, n_total, n_failure, n_zk, n_located, centroid_lat, centroid_lon
+        FROM atlas_geo_jurisdictions(%s, %s, %s, %s, %s, %s, %s)
+    """, (f['since'], _ATLAS_MAX_REGIONS, kind,
+          f['outcomes'], f['disclosure'], f['contexts'], f['agencies']))
+
+    # Split the placeable jurisdictions (a centroid) from the ZK-only /
+    # unlocatable ones, which are reported as a count the legend can surface
+    # without ever putting them on the map (C6).
+    placeable = [dict(r) for r in rows if r['centroid_lat'] is not None]
+    unplaceable = [dict(r) for r in rows if r['centroid_lat'] is None]
+    payload = dict(
+        kind=kind,
+        window=f['window'],
+        count=len(rows),
+        n_unplaceable=len(unplaceable),
+        n_unplaceable_events=sum(r['n_total'] for r in unplaceable),
+        regions=placeable,
+        unplaceable=unplaceable,
+    )
+    _atlas_cache_set(cache_key, payload)
+    return jsonify(payload)
 
 
 @app.route('/api/atlas/stats')

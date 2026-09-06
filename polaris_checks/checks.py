@@ -1881,11 +1881,12 @@ def check_c8_atlas_caps(root: pathlib.Path) -> list[Finding]:
     # v9.248: the analytical console added a bounded categorical roll-up; its
     # top-K cap joins the map's cluster/point/event caps under C8.
     missing = [c for c in ("_ATLAS_MAX_CLUSTERS", "_ATLAS_MAX_POINTS",
-                           "_ATLAS_MAX_EVENTS", "_ATLAS_MAX_CATEGORIES") if c not in app]
+                           "_ATLAS_MAX_EVENTS", "_ATLAS_MAX_CATEGORIES",
+                           "_ATLAS_MAX_REGIONS") if c not in app]
     if missing:
         return _fail("c8_atlas_caps", "missing atlas hard-cap constant(s): " + ", ".join(missing) + " (C8)")
     return _ok("c8_atlas_caps", "/api/atlas/* endpoints have hard result-set caps (C8): "
-               "clusters, points, events, and categories")
+               "clusters, points, events, categories, and regions")
 
 
 # ---------------------------------------------------------------------------
@@ -2601,10 +2602,30 @@ def check_local_clock_convention(root: pathlib.Path) -> list[Finding]:
 def check_c6_atlas_redacts_zk_location(root: pathlib.Path) -> list[Finding]:
     atlas = _read(root, "polaris_sql/11_atlas.sql")
     excludes = atlas.count("disclosure_level <> 'ZERO_KNOWLEDGE'")
-    if excludes < 2:
+    if excludes < 3:
         return _fail("c6_atlas_zk",
-                     "atlas verification points + clusters must exclude ZERO_KNOWLEDGE "
-                     f"(found {excludes} exclusion clause(s), need >=2) (C6)")
+                     "atlas verification points + clusters + hexbin must exclude ZERO_KNOWLEDGE "
+                     f"(found {excludes} exclusion clause(s), need >=3) (C6)")
+    # v9.253: the Density (hexbin) surface is a spatial aggregate; like the
+    # cluster/point layers it must exclude ZK entirely (a hex holding a single
+    # ZK event would pin it).
+    hexbin = re.search(r"CREATE OR REPLACE FUNCTION atlas_hexbin\(.*?\$\$;", atlas, re.S)
+    if not hexbin or "disclosure_level <> 'ZERO_KNOWLEDGE'" not in hexbin.group(0):
+        return _fail("c6_atlas_zk",
+                     "atlas_hexbin (the Map v2 Density layer) must exclude ZERO_KNOWLEDGE events "
+                     "so a hex never pins a zero-knowledge verification (C6)")
+    # The Regions layer (atlas_geo_jurisdictions) is the exception that proves
+    # the rule: it COUNTS ZK (n_zk) but its centroid must be built only from
+    # located, non-ZK events, so ZK is counted yet never located.
+    geojur = re.search(r"CREATE OR REPLACE FUNCTION atlas_geo_jurisdictions\(.*?\$\$;", atlas, re.S)
+    if geojur:
+        body = geojur.group(0)
+        if "n_zk" not in body:
+            return _fail("c6_atlas_zk", "atlas_geo_jurisdictions must count ZK (n_zk)")
+        if not re.search(r"avg\(ve\.latitude\)\s+FILTER[^)]*<>\s*'ZERO_KNOWLEDGE'", body, re.S):
+            return _fail("c6_atlas_zk",
+                         "atlas_geo_jurisdictions centroid must be built from located, non-ZK events "
+                         "only (a ZK-only jurisdiction is counted but unplaceable) (C6)")
     if "THEN NULL ELSE tv.latitude" not in atlas:
         return _fail("c6_atlas_zk",
                      "atlas_recent_events must NULL lat/lon for ZERO_KNOWLEDGE rows (C6)")
@@ -4758,6 +4779,17 @@ def check_atlas_console(root: pathlib.Path) -> list[Finding]:
         return _fail("atlas_console", "the Records view must be a data grid (data-rec-grid) with a "
                      "keyset 'load more' control (data-rec-more) so it survives millions of events")
 
+    # v9.253 (Map v2): the map is aggregation-first — a layer-mode control
+    # (Regions by jurisdiction is the DEFAULT | Density hexbin | Points drill)
+    # with the globe demoted to an opt-in projection toggle, not the always-on
+    # view that made thousands of raw points a clutter nightmare at scale.
+    for mode in ('regions', 'density', 'points'):
+        if f'data-atlas-mapmode="{mode}"' not in atlas:
+            return _fail("atlas_console", f"the Map must offer the {mode} layer mode (data-atlas-mapmode)")
+    if "data-atlas-projection" not in atlas:
+        return _fail("atlas_console", "the globe must be an opt-in projection toggle "
+                     "(data-atlas-projection), not the default map view")
+
     # The bounded aggregates, non-geographic (no lat/lon in their contract).
     sql = _read(root, "polaris_sql/11_atlas.sql")
     if "p_search" not in sql:
@@ -4786,10 +4818,18 @@ def check_atlas_console(root: pathlib.Path) -> list[Finding]:
         return _fail("atlas_console", "atlas_records must redact zero-knowledge rows (C6): the subject "
                      "is withheld as '(zero-knowledge)' and the location is not shown")
 
+    # v9.253: the Map v2 aggregates — a hexbin density surface and a
+    # jurisdiction rollup. Their C6 posture (hexbin excludes ZK; the rollup
+    # counts ZK but never locates it) is pinned by check_c6_atlas_redacts_zk_location.
+    for fn_name in ("atlas_hexbin", "atlas_geo_jurisdictions"):
+        if f"CREATE OR REPLACE FUNCTION {fn_name}(" not in sql:
+            return _fail("atlas_console", f"11_atlas.sql must define {fn_name} (Map v2)")
+
     # The analytical endpoints, replica-routed and capped.
     app = _read(root, "polaris_web/app.py")
     for route in ("/api/atlas/series", "/api/atlas/breakdown", "/api/atlas/crosstab",
-                  "/api/atlas/facet/agencies", "/api/atlas/records"):
+                  "/api/atlas/facet/agencies", "/api/atlas/records",
+                  "/api/atlas/hexbin", "/api/atlas/geo/jurisdictions"):
         if f"@app.route('{route}')" not in app:
             return _fail("atlas_console", f"app.py must expose {route}")
     # both must be replica-read routes (analytical reads, no read-your-writes need)
@@ -4809,13 +4849,19 @@ def check_atlas_console(root: pathlib.Path) -> list[Finding]:
     rec_head = app.rsplit("@app.route('/api/atlas/records')", 1)[-1].split("def api_atlas_records", 1)[0]
     if "@replica_reads" not in rec_head:
         return _fail("atlas_console", "api_atlas_records must be @replica_reads")
+    # The Map v2 endpoints are replica reads too (analytical, no read-your-writes).
+    for route, fn in (("/api/atlas/hexbin", "def api_atlas_hexbin"),
+                      ("/api/atlas/geo/jurisdictions", "def api_atlas_geo_jurisdictions")):
+        head = app.rsplit(f"@app.route('{route}')", 1)[-1].split(fn, 1)[0]
+        if "@replica_reads" not in head:
+            return _fail("atlas_console", f"{fn[4:]} must be @replica_reads")
     return _ok("atlas_console",
                "the Atlas is a coordinated analytical console: a global faceted filter bar (with an "
-               "agency typeahead) drives a bounded Overview, a searchable Breakdown of cross-tabs, and "
-               "a keyset-paginated Records grid; four non-geographic aggregates (atlas_volume_series, "
-               "atlas_breakdown, atlas_crosstab, atlas_agency_facet) plus a ZK-redacted atlas_records "
-               "feed it, all capped (C8) and location-free so zero-knowledge events are counted but "
-               "never located (C6)")
+               "agency typeahead) drives a bounded Overview, a searchable Breakdown of cross-tabs, a "
+               "keyset-paginated Records grid, and an aggregation-first Map (Regions by jurisdiction "
+               "default | Density hexbin | Points drill, globe opt-in); the non-geographic rollups plus "
+               "atlas_records, atlas_hexbin and atlas_geo_jurisdictions feed it, all capped (C8) so "
+               "zero-knowledge events are counted but never located (C6)")
 
 
 # ---------------------------------------------------------------------------

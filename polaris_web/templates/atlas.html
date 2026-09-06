@@ -305,6 +305,17 @@
             </div>
             {% endif %}
 
+            <div class="chip-group atlas-mapmode" role="group" aria-label="Map layer">
+                <button class="toolbar-chip" type="button" data-atlas-mapmode="regions"
+                        aria-pressed="true" title="Volume by jurisdiction">Regions</button>
+                <button class="toolbar-chip" type="button" data-atlas-mapmode="density"
+                        aria-pressed="false" title="Hexbin density of located activity">Density</button>
+                <button class="toolbar-chip" type="button" data-atlas-mapmode="points"
+                        aria-pressed="false" title="Individual located events">Points</button>
+            </div>
+            <button class="toolbar-chip toolbar-chip-modifier" type="button"
+                    data-atlas-projection aria-pressed="false" title="Toggle globe projection">◐ Globe</button>
+
             <span class="toolbar-spacer"></span>
 
             <div class="chip-group" aria-label="Zoom controls">
@@ -362,12 +373,27 @@
                     <button type="button" class="subject-banner-clear" data-atlas-subject-clear>✕ Clear focus</button>
                 </div>
 
-                <div class="globe-legend" aria-label="Marker colour legend">
-                    <span class="legend-item"><span class="legend-dot legend-cluster"></span>cluster of events · click to zoom</span>
-                    <span class="legend-item"><span class="legend-dot legend-selective"></span>selective disclosure</span>
-                    <span class="legend-item"><span class="legend-dot legend-full"></span>full disclosure</span>
-                    <span class="legend-item"><span class="legend-dot legend-alert"></span>failure / revocation</span>
-                    <span class="legend-item legend-note">zero-knowledge verifications are never plotted</span>
+                <div class="globe-legend" aria-label="Map legend">
+                    {# Regions (default): proportional symbols by jurisdiction #}
+                    <div class="legend-mode" data-legend-mode="regions">
+                        <span class="legend-item"><span class="legend-dot legend-cluster"></span>jurisdiction volume · size = count · click to drill</span>
+                        <span class="legend-item"><span class="legend-dot legend-alert"></span>elevated failure rate</span>
+                        <span class="legend-item legend-note" data-atlas-unplaceable hidden></span>
+                        <span class="legend-item legend-note">zero-knowledge events are counted, never located</span>
+                    </div>
+                    {# Density: hexbin surface #}
+                    <div class="legend-mode" data-legend-mode="density" hidden>
+                        <span class="legend-item"><span class="legend-ramp"></span>fewer → more located events</span>
+                        <span class="legend-item legend-note">zero-knowledge verifications are never plotted</span>
+                    </div>
+                    {# Points: the individual-event drill #}
+                    <div class="legend-mode" data-legend-mode="points" hidden>
+                        <span class="legend-item"><span class="legend-dot legend-cluster"></span>cluster of events · click to zoom</span>
+                        <span class="legend-item"><span class="legend-dot legend-selective"></span>selective disclosure</span>
+                        <span class="legend-item"><span class="legend-dot legend-full"></span>full disclosure</span>
+                        <span class="legend-item"><span class="legend-dot legend-alert"></span>failure / revocation</span>
+                        <span class="legend-item legend-note">zero-knowledge verifications are never plotted</span>
+                    </div>
                 </div>
 
                 <div class="atlas-error-chip" data-atlas-error hidden>

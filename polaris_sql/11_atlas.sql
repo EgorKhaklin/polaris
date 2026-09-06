@@ -1130,3 +1130,186 @@ COMMENT ON FUNCTION atlas_records IS
   'filter, keyset-paginated by (event_timestamp, event_id) DESC so it scales to '
   'millions. C6: a zero-knowledge verification is a row but its subject and '
   'location are withheld. Capped at the API (_ATLAS_MAX_EVENTS).';
+
+
+-- ----------------------------------------------------------------------------
+-- atlas_geo_jurisdictions (v9.253, Map v2 "Regions" layer — the DEFAULT view)
+--
+-- Verification (or lifecycle) volume rolled up by the REQUESTING AGENCY's
+-- jurisdiction (ISO 3166-2), the same non-locating grouping atlas_breakdown
+-- already offers for its 'jurisdiction' dimension. A jurisdiction is a
+-- regulatory grouping, NOT a coordinate, so a zero-knowledge verification IS
+-- counted in its jurisdiction's total (n_zk) exactly like the breakdown, yet is
+-- NEVER located: the centroid is the average position of the jurisdiction's
+-- LOCATED, non-ZK events only. A jurisdiction whose activity is entirely
+-- zero-knowledge has a NULL centroid — counted but unplaceable, which is the
+-- whole point (C6). Top-K by volume, capped by the API (C8).
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION atlas_geo_jurisdictions(
+    p_since      TIMESTAMP DEFAULT NULL,
+    p_limit      INTEGER   DEFAULT 200,
+    p_kind       TEXT      DEFAULT 'verification',
+    p_outcomes   TEXT      DEFAULT NULL,
+    p_disclosure TEXT      DEFAULT NULL,
+    p_contexts   TEXT      DEFAULT NULL,
+    p_agencies   TEXT      DEFAULT NULL
+) RETURNS TABLE (
+    jurisdiction TEXT,
+    n_total      BIGINT,
+    n_failure    BIGINT,
+    n_zk         BIGINT,
+    n_located    BIGINT,
+    centroid_lat DOUBLE PRECISION,
+    centroid_lon DOUBLE PRECISION
+)
+LANGUAGE sql
+STABLE
+AS $$
+    WITH geo_v AS (
+        SELECT
+            ag.jurisdiction::TEXT AS jurisdiction,
+            count(*)                                                       AS n_total,
+            count(*) FILTER (WHERE ve.outcome = 'FAILURE')                 AS n_failure,
+            count(*) FILTER (WHERE ve.disclosure_level = 'ZERO_KNOWLEDGE') AS n_zk,
+            count(*) FILTER (WHERE ve.disclosure_level <> 'ZERO_KNOWLEDGE'
+                              AND ve.latitude IS NOT NULL
+                              AND ve.longitude IS NOT NULL)                AS n_located,
+            avg(ve.latitude)  FILTER (WHERE ve.disclosure_level <> 'ZERO_KNOWLEDGE'
+                              AND ve.latitude IS NOT NULL)                 AS centroid_lat,
+            avg(ve.longitude) FILTER (WHERE ve.disclosure_level <> 'ZERO_KNOWLEDGE'
+                              AND ve.longitude IS NOT NULL)                AS centroid_lon
+        FROM VerificationEvent ve
+        JOIN      Agency              ag ON ve.requesting_agency_id = ag.agency_id
+        JOIN      VerificationContext vc ON ve.context_id           = vc.context_id
+        WHERE p_kind = 'verification'
+          AND (p_since      IS NULL OR ve.event_timestamp   >= p_since)
+          AND (p_outcomes   IS NULL OR ve.outcome            = ANY(string_to_array(p_outcomes, ',')))
+          AND (p_disclosure IS NULL OR ve.disclosure_level   = ANY(string_to_array(p_disclosure, ',')))
+          AND (p_contexts   IS NULL OR vc.context_type        = ANY(string_to_array(p_contexts, ',')))
+          AND (p_agencies   IS NULL OR ve.requesting_agency_id::text = ANY(string_to_array(p_agencies, ',')))
+        GROUP BY ag.jurisdiction
+    ),
+    geo_l AS (
+        SELECT
+            COALESCE(ag.jurisdiction::TEXT, '(system)')                  AS jurisdiction,
+            count(*)                                                     AS n_total,
+            count(*) FILTER (WHERE le.event_type IN ('REVOKED','LOST'))  AS n_failure,
+            0::BIGINT                                                    AS n_zk,
+            0::BIGINT                                                    AS n_located,
+            NULL::DOUBLE PRECISION                                       AS centroid_lat,
+            NULL::DOUBLE PRECISION                                       AS centroid_lon
+        FROM TokenLifecycleEvent le
+        LEFT JOIN Agency ag ON le.actor_agency_id = ag.agency_id
+        WHERE p_kind = 'lifecycle'
+          AND (p_since    IS NULL OR le.event_timestamp >= p_since)
+          AND (p_agencies IS NULL OR le.actor_agency_id::text = ANY(string_to_array(p_agencies, ',')))
+        GROUP BY COALESCE(ag.jurisdiction::TEXT, '(system)')
+    )
+    SELECT g.jurisdiction, g.n_total, g.n_failure, g.n_zk, g.n_located, g.centroid_lat, g.centroid_lon
+    FROM (
+        SELECT * FROM geo_v
+        UNION ALL
+        SELECT * FROM geo_l
+    ) g
+    ORDER BY g.n_total DESC
+    LIMIT GREATEST(p_limit, 0);
+$$;
+
+COMMENT ON FUNCTION atlas_geo_jurisdictions IS
+  'Map v2 Regions layer: volume by requesting-agency jurisdiction (ISO 3166-2). '
+  'Counts zero-knowledge events in the jurisdiction total like atlas_breakdown, '
+  'but the centroid derives from located non-ZK events only, so ZK is counted '
+  'and never located (C6). Top-K by volume, API-capped (C8).';
+
+
+-- ----------------------------------------------------------------------------
+-- atlas_hexbin (v9.253, Map v2 "Density" layer)
+--
+-- Bins located verification events into a POINTY-TOP hexagonal grid of size
+-- p_size (circumradius, in degrees of lon/lat) and returns the top-K densest
+-- hex centres with their counts. A hexagonal lattice tiles the plane without
+-- the axis-aligned artefacts of a square grid, so a density surface reads
+-- honestly. The binning is the standard pixel->axial->cube-round->axial
+-- (Red Blob Games) done in lon/lat space. C6 is identical to atlas_clusters:
+-- ZERO_KNOWLEDGE events are excluded entirely (a hex holding a single ZK event
+-- would pin it), so the surface is of located, non-ZK activity only. Top-K by
+-- count caps the wire and renderer (C8) however fine p_size is.
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION atlas_hexbin(
+    p_min_lat    DOUBLE PRECISION,
+    p_min_lon    DOUBLE PRECISION,
+    p_max_lat    DOUBLE PRECISION,
+    p_max_lon    DOUBLE PRECISION,
+    p_size       DOUBLE PRECISION,
+    p_limit      INTEGER,
+    p_since      TIMESTAMP DEFAULT NULL,
+    p_kind       TEXT      DEFAULT 'verification',
+    p_outcomes   TEXT      DEFAULT NULL,
+    p_disclosure TEXT      DEFAULT NULL,
+    p_contexts   TEXT      DEFAULT NULL,
+    p_agencies   TEXT      DEFAULT NULL
+) RETURNS TABLE (
+    lat        DOUBLE PRECISION,   -- hex centre latitude
+    lon        DOUBLE PRECISION,   -- hex centre longitude
+    n_total    BIGINT,
+    n_failure  BIGINT
+)
+LANGUAGE sql
+STABLE
+AS $$
+    WITH src AS (
+        SELECT ve.latitude AS y, ve.longitude AS x, ve.outcome AS outcome
+        FROM VerificationEvent ve
+        JOIN VerificationContext vc ON ve.context_id = vc.context_id
+        WHERE p_kind = 'verification'
+          AND ve.latitude IS NOT NULL AND ve.longitude IS NOT NULL
+          AND ve.disclosure_level <> 'ZERO_KNOWLEDGE'          -- C6
+          AND ve.latitude BETWEEN p_min_lat AND p_max_lat
+          AND (
+                (p_min_lon <= p_max_lon AND ve.longitude BETWEEN p_min_lon AND p_max_lon)
+             OR (p_min_lon  > p_max_lon AND (ve.longitude >= p_min_lon OR ve.longitude <= p_max_lon))
+          )
+          AND (p_since      IS NULL OR ve.event_timestamp   >= p_since)
+          AND (p_outcomes   IS NULL OR ve.outcome            = ANY(string_to_array(p_outcomes, ',')))
+          AND (p_disclosure IS NULL OR ve.disclosure_level   = ANY(string_to_array(p_disclosure, ',')))
+          AND (p_contexts   IS NULL OR vc.context_type        = ANY(string_to_array(p_contexts, ',')))
+          AND (p_agencies   IS NULL OR ve.requesting_agency_id::text = ANY(string_to_array(p_agencies, ',')))
+    ),
+    frac AS (
+        SELECT outcome,
+               (sqrt(3.0)/3.0 * x - 1.0/3.0 * y) / p_size AS qf,
+               (2.0/3.0 * y) / p_size                     AS rf
+        FROM src
+    ),
+    diffs AS (
+        SELECT outcome, qf, rf,
+               round(qf)        AS rx0,
+               round(-qf - rf)  AS ry0,
+               round(rf)        AS rz0,
+               abs(round(qf)        - qf)         AS dx,
+               abs(round(-qf - rf)  - (-qf - rf)) AS dy,
+               abs(round(rf)        - rf)         AS dz
+        FROM frac
+    ),
+    hexed AS (
+        SELECT
+            CASE WHEN dx > dy AND dx > dz THEN (-ry0 - rz0) ELSE rx0 END          AS q,
+            CASE WHEN (dx > dy AND dx > dz) OR (dy > dz) THEN rz0 ELSE (-rx0 - ry0) END AS r,
+            outcome
+        FROM diffs
+    )
+    SELECT
+        p_size * (3.0/2.0 * r)                             AS lat,
+        p_size * (sqrt(3.0) * q + sqrt(3.0)/2.0 * r)       AS lon,
+        count(*)                                           AS n_total,
+        count(*) FILTER (WHERE outcome = 'FAILURE')        AS n_failure
+    FROM hexed
+    GROUP BY q, r
+    ORDER BY n_total DESC
+    LIMIT GREATEST(p_limit, 0);
+$$;
+
+COMMENT ON FUNCTION atlas_hexbin IS
+  'Map v2 Density layer: located verification events binned into a pointy-top '
+  'hex grid of size p_size (degrees), top-K densest centres by count. Excludes '
+  'ZERO_KNOWLEDGE entirely (C6), API-capped (C8).';

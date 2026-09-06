@@ -171,11 +171,17 @@ def test_c8_atlas_caps_check_fails_without_constants(tmp_path):
         "_ATLAS_MAX_CLUSTERS=5000\n_ATLAS_MAX_POINTS=2000\n_ATLAS_MAX_EVENTS=500\n")
     out = checks.check_c8_atlas_caps(tmp_path)
     assert out[0].level == "FAIL", "must FAIL when the category cap is missing"
+    # v9.253: the Map v2 Regions cap joins C8.
     (tmp_path / "polaris_web" / "app.py").write_text(
         "_ATLAS_MAX_CLUSTERS=5000\n_ATLAS_MAX_POINTS=2000\n"
         "_ATLAS_MAX_EVENTS=500\n_ATLAS_MAX_CATEGORIES=50\n")
     out = checks.check_c8_atlas_caps(tmp_path)
-    assert out[0].level == "OK", "must PASS with all four caps present"
+    assert out[0].level == "FAIL", "must FAIL when the regions cap is missing"
+    (tmp_path / "polaris_web" / "app.py").write_text(
+        "_ATLAS_MAX_CLUSTERS=5000\n_ATLAS_MAX_POINTS=2000\n"
+        "_ATLAS_MAX_EVENTS=500\n_ATLAS_MAX_CATEGORIES=50\n_ATLAS_MAX_REGIONS=500\n")
+    out = checks.check_c8_atlas_caps(tmp_path)
+    assert out[0].level == "OK", "must PASS with all five caps present"
 
 
 def test_c9_concurrency_check_fails_without_threading_tests(tmp_path):
@@ -295,6 +301,34 @@ def test_c6_atlas_zk_check_fails_when_zk_location_not_redacted(tmp_path):
         "SELECT ve.*, ve.requestor_location FROM VerificationEvent ve;\n")
     out = checks.check_c6_atlas_redacts_zk_location(tmp_path)
     assert out[0].level == "FAIL", "must FAIL when ZK location is not excluded/redacted at the atlas read paths"
+
+    # v9.253: a passing fixture exercises the three spatial exclusions (clusters,
+    # points, hexbin), the hexbin- and jurisdiction-specific assertions, and the
+    # recent-events redaction.
+    HEX = ("CREATE OR REPLACE FUNCTION atlas_hexbin(p_x DOUBLE PRECISION) RETURNS TABLE (lat DOUBLE PRECISION)\n"
+           "AS $$ SELECT 1 WHERE ve.disclosure_level <> 'ZERO_KNOWLEDGE' $$;\n")
+    GEO = ("CREATE OR REPLACE FUNCTION atlas_geo_jurisdictions(p_x TIMESTAMP) RETURNS TABLE (n_zk BIGINT)\n"
+           "AS $$ SELECT avg(ve.latitude) FILTER (WHERE ve.disclosure_level <> 'ZERO_KNOWLEDGE'), count(*) AS n_zk $$;\n")
+    good_atlas = (
+        "SELECT 1 WHERE ve.disclosure_level <> 'ZERO_KNOWLEDGE';  -- clusters\n"
+        "SELECT 1 WHERE ve.disclosure_level <> 'ZERO_KNOWLEDGE';  -- points\n"
+        + HEX + GEO +
+        "CASE WHEN zk THEN NULL ELSE tv.latitude END\n")
+    good_app = "CASE WHEN zk THEN NULL ELSE ve.requestor_location END\n"
+    (tmp_path / "polaris_sql" / "11_atlas.sql").write_text(good_atlas)
+    (tmp_path / "polaris_web" / "app.py").write_text(good_app)
+    assert checks.check_c6_atlas_redacts_zk_location(tmp_path)[0].level == "OK", \
+        "must PASS when clusters/points/hexbin exclude ZK and the rollup counts-but-never-locates it"
+    # the hexbin drops its ZK exclusion -> a hex could pin a ZK event (C6 fail)
+    (tmp_path / "polaris_sql" / "11_atlas.sql").write_text(
+        good_atlas.replace(HEX, HEX.replace("WHERE ve.disclosure_level <> 'ZERO_KNOWLEDGE'", "")))
+    assert checks.check_c6_atlas_redacts_zk_location(tmp_path)[0].level == "FAIL", \
+        "must FAIL when atlas_hexbin stops excluding ZERO_KNOWLEDGE"
+    # the jurisdiction centroid stops excluding ZK -> ZK becomes locatable (C6 fail)
+    (tmp_path / "polaris_sql" / "11_atlas.sql").write_text(
+        good_atlas.replace("avg(ve.latitude) FILTER (WHERE ve.disclosure_level <> 'ZERO_KNOWLEDGE')", "avg(ve.latitude)"))
+    assert checks.check_c6_atlas_redacts_zk_location(tmp_path)[0].level == "FAIL", \
+        "must FAIL when atlas_geo_jurisdictions centroid includes ZERO_KNOWLEDGE events"
 
 
 def test_aor_privilege_boundary_check_discriminates(tmp_path):
@@ -3578,6 +3612,10 @@ def test_atlas_console_check_discriminates(tmp_path):
              '<button data-atlas-view-tab="map" aria-selected="false">Map</button>\n'
              '<input data-bd-search><div class="bd-scroll"><div data-bd-ranked></div></div>\n'
              '<table data-rec-grid><tbody data-rec-body></tbody></table><button data-rec-more>Load more</button>\n'
+             '<button data-atlas-mapmode="regions" aria-pressed="true">Regions</button>\n'
+             '<button data-atlas-mapmode="density">Density</button>\n'
+             '<button data-atlas-mapmode="points">Points</button>\n'
+             '<button data-atlas-projection>Globe</button>\n'
              '<div data-atlas-globalbar><div data-gf-facet="context"></div>'
              '<input data-gf-agency-search></div>\n'
              '<script src="atlas-console.js"></script>\n')
@@ -3590,11 +3628,20 @@ def test_atlas_console_check_discriminates(tmp_path):
                "    p_since TIMESTAMP, p_cursor_ts TIMESTAMP, p_cursor_id INTEGER, p_limit INTEGER\n"
                ") RETURNS TABLE (\n    event_id INTEGER, subject TEXT, location TEXT\n)\n"
                "LANGUAGE sql\nSTABLE\nAS $$ SELECT 1, '(zero-knowledge)', NULL $$;\n")
+    # Map v2 (v9.253): the hexbin excludes ZK; the jurisdiction rollup counts
+    # ZK (n_zk) but builds its centroid from located non-ZK events only.
+    HEXBIN = ("CREATE OR REPLACE FUNCTION atlas_hexbin(\n    p_x DOUBLE PRECISION\n) RETURNS TABLE (\n"
+              "    lat DOUBLE PRECISION, lon DOUBLE PRECISION, n_total BIGINT, n_failure BIGINT\n)\n"
+              "LANGUAGE sql\nSTABLE\nAS $$ SELECT 1 WHERE disclosure_level <> 'ZERO_KNOWLEDGE' $$;\n")
+    GEOJUR = ("CREATE OR REPLACE FUNCTION atlas_geo_jurisdictions(\n    p_x TIMESTAMP\n) RETURNS TABLE (\n"
+              "    jurisdiction TEXT, n_total BIGINT, n_zk BIGINT, n_located BIGINT,\n"
+              "    centroid_lat DOUBLE PRECISION, centroid_lon DOUBLE PRECISION\n)\n"
+              "LANGUAGE sql\nSTABLE\nAS $$ SELECT avg(ve.latitude) FILTER (WHERE ve.disclosure_level <> 'ZERO_KNOWLEDGE') $$;\n")
     SQL = (sqlfn("atlas_volume_series", "    bucket_ts TIMESTAMP, n_total BIGINT, n_failure BIGINT, n_zk BIGINT")
            + sqlfn("atlas_breakdown", "    label TEXT, n_total BIGINT, n_failure BIGINT", ",\n    p_search TEXT DEFAULT NULL")
            + sqlfn("atlas_crosstab", "    row_label TEXT, col_label TEXT, n_total BIGINT")
            + sqlfn("atlas_agency_facet", "    agency_id INTEGER, name TEXT, n_total BIGINT")
-           + RECORDS)
+           + RECORDS + HEXBIN + GEOJUR)
     APP = ("_ATLAS_MAX_CLUSTERS=5000\n_ATLAS_MAX_POINTS=2000\n_ATLAS_MAX_EVENTS=500\n_ATLAS_MAX_CATEGORIES=50\n"
            "_ATLAS_BREAKDOWN_DIMENSIONS={'verification': ('agency',)}\n"
            "_ATLAS_CROSSTAB_ROWS={'verification': ('agency',)}\n"
@@ -3603,7 +3650,9 @@ def test_atlas_console_check_discriminates(tmp_path):
            "@app.route('/api/atlas/breakdown')\n@replica_reads\ndef api_atlas_breakdown():\n    pass\n"
            "@app.route('/api/atlas/crosstab')\n@replica_reads\ndef api_atlas_crosstab():\n    pass\n"
            "@app.route('/api/atlas/facet/agencies')\n@replica_reads\ndef api_atlas_facet_agencies():\n    pass\n"
-           "@app.route('/api/atlas/records')\n@replica_reads\ndef api_atlas_records():\n    pass\n")
+           "@app.route('/api/atlas/records')\n@replica_reads\ndef api_atlas_records():\n    pass\n"
+           "@app.route('/api/atlas/hexbin')\n@replica_reads\ndef api_atlas_hexbin():\n    pass\n"
+           "@app.route('/api/atlas/geo/jurisdictions')\n@replica_reads\ndef api_atlas_geo_jurisdictions():\n    pass\n")
     good = {
         "polaris_web/templates/atlas.html": ATLAS,
         "polaris_web/static/atlas-console.js": "/* console */\n",
@@ -3686,6 +3735,25 @@ def test_atlas_console_check_discriminates(tmp_path):
     # the records endpoint is not replica-routed
     write({"polaris_web/app.py": APP.replace("@app.route('/api/atlas/records')\n@replica_reads", "@app.route('/api/atlas/records')")})
     assert checks.check_atlas_console(tmp_path)[0].level == "FAIL", "must FAIL when api_atlas_records is not @replica_reads"
+    # v9.253: a Map layer mode is absent (Regions/Density/Points)
+    for mode in ('regions', 'density', 'points'):
+        write({"polaris_web/templates/atlas.html": ATLAS.replace('data-atlas-mapmode="' + mode + '"', 'data-atlas-mapmode="other"')})
+        assert checks.check_atlas_console(tmp_path)[0].level == "FAIL", f"must FAIL when the {mode} map mode is absent"
+    # the globe is not an opt-in projection toggle
+    write({"polaris_web/templates/atlas.html": ATLAS.replace("data-atlas-projection", "data-atlas-other")})
+    assert checks.check_atlas_console(tmp_path)[0].level == "FAIL", "must FAIL when the globe projection toggle is absent"
+    # a Map v2 SQL function is absent
+    write({"polaris_sql/11_atlas.sql": SQL.replace("CREATE OR REPLACE FUNCTION atlas_hexbin(", "CREATE OR REPLACE FUNCTION atlas_other(")})
+    assert checks.check_atlas_console(tmp_path)[0].level == "FAIL", "must FAIL when atlas_hexbin is absent"
+    write({"polaris_sql/11_atlas.sql": SQL.replace("CREATE OR REPLACE FUNCTION atlas_geo_jurisdictions(", "CREATE OR REPLACE FUNCTION atlas_other(")})
+    assert checks.check_atlas_console(tmp_path)[0].level == "FAIL", "must FAIL when atlas_geo_jurisdictions is absent"
+    # a Map v2 endpoint is absent / not replica-routed
+    write({"polaris_web/app.py": APP.replace("@app.route('/api/atlas/hexbin')", "@app.route('/api/atlas/other')")})
+    assert checks.check_atlas_console(tmp_path)[0].level == "FAIL", "must FAIL when the hexbin endpoint is absent"
+    write({"polaris_web/app.py": APP.replace("@app.route('/api/atlas/geo/jurisdictions')", "@app.route('/api/atlas/other')")})
+    assert checks.check_atlas_console(tmp_path)[0].level == "FAIL", "must FAIL when the geo/jurisdictions endpoint is absent"
+    write({"polaris_web/app.py": APP.replace("@app.route('/api/atlas/hexbin')\n@replica_reads", "@app.route('/api/atlas/hexbin')")})
+    assert checks.check_atlas_console(tmp_path)[0].level == "FAIL", "must FAIL when api_atlas_hexbin is not @replica_reads"
 
 
 def test_helm_reference_profile_check_discriminates(tmp_path):

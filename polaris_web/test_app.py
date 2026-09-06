@@ -5773,6 +5773,95 @@ class AtlasConsoleAPITests(PolarisTestCase):
         self.assertEqual(
             self.client.get('/api/atlas/records?window=all&kind=gender').status_code, 400)
 
+    # -- v9.253: Map v2 — the Density (hexbin) + Regions (jurisdiction) layers --
+
+    def test_hexbin_shape_and_bbox_and_no_zk_leak(self):
+        r = self.client.get('/api/atlas/hexbin?bbox=-89,-179,89,179&size=5&window=all&kind=verification')
+        self.assertEqual(r.status_code, 200)
+        d = r.get_json()
+        self.assertEqual(d['count'], len(d['hexes']))
+        self.assertLessEqual(len(d['hexes']), flask_app._ATLAS_MAX_CLUSTERS)  # C8
+        for h in d['hexes']:
+            for k in ('lat', 'lon', 'n_total', 'n_failure'):
+                self.assertIn(k, h)
+            self.assertGreater(h['n_total'], 0)
+        # a tiny empty-ocean bbox yields no hexes (the bbox actually filters)
+        empty = self.client.get('/api/atlas/hexbin?bbox=-5,-5,5,5&size=5&window=all&kind=verification')
+        self.assertEqual(empty.get_json()['count'], 0)
+
+    def test_hexbin_excludes_zero_knowledge(self):
+        # C6: the density surface is located, non-ZK activity. Bin the whole
+        # world; the total binned must equal the located non-ZK verifications,
+        # never the ZK ones.
+        r = self.client.get('/api/atlas/hexbin?bbox=-89,-179,89,179&size=90&window=all&kind=verification')
+        binned = sum(h['n_total'] for h in r.get_json()['hexes'])
+        conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        with conn.cursor() as cur:
+            cur.execute("""SELECT count(*) AS n FROM VerificationEvent
+                           WHERE latitude IS NOT NULL AND longitude IS NOT NULL
+                             AND disclosure_level <> 'ZERO_KNOWLEDGE'""")
+            located_non_zk = cur.fetchone()['n']
+        conn.close()
+        self.assertEqual(binned, located_non_zk,
+            "the hexbin must bin exactly the located non-ZK verifications (C6)")
+
+    def test_hexbin_rejects_bad_params(self):
+        self.assertEqual(self.client.get('/api/atlas/hexbin?bbox=-89,-179,89,179&size=0').status_code, 400)
+        self.assertEqual(self.client.get('/api/atlas/hexbin?bbox=-89,-179,89,179&size=5&kind=gender').status_code, 400)
+
+    def test_geo_jurisdictions_counts_zk_but_never_locates(self):
+        r = self.client.get('/api/atlas/geo/jurisdictions?window=all&kind=verification')
+        self.assertEqual(r.status_code, 200)
+        d = r.get_json()
+        self.assertLessEqual(d['count'], flask_app._ATLAS_MAX_REGIONS)  # C8
+        # every PLACEABLE region has a centroid; the count includes ZK, but the
+        # located count (which the centroid is built from) never exceeds total.
+        saw_zk = False
+        for reg in d['regions']:
+            for k in ('jurisdiction', 'n_total', 'n_failure', 'n_zk', 'n_located',
+                      'centroid_lat', 'centroid_lon'):
+                self.assertIn(k, reg)
+            self.assertIsNotNone(reg['centroid_lat'], "a placed region must have a centroid")
+            self.assertLessEqual(reg['n_located'], reg['n_total'])
+            # C6: the centroid is derived only from located events; ZK adds to
+            # the total but not to n_located.
+            self.assertLessEqual(reg['n_located'] + reg['n_zk'], reg['n_total'])
+            if reg['n_zk'] > 0:
+                saw_zk = True
+                self.assertLess(reg['n_located'], reg['n_total'],
+                    "a jurisdiction with ZK activity must count more than it locates (C6)")
+        self.assertTrue(saw_zk, "the seed has zero-knowledge verifications counted by jurisdiction")
+
+    def test_geo_jurisdictions_zk_only_region_is_counted_not_placed(self):
+        # A jurisdiction whose located events are all removed (only ZK remain)
+        # must appear as UNPLACEABLE: counted, no centroid, never on the map.
+        conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        with conn.cursor() as cur:
+            # find an agency in a jurisdiction with no other agencies, give it a
+            # single ZK verification and no located ones in a private window.
+            cur.execute("SELECT agency_id, jurisdiction FROM Agency ORDER BY agency_id LIMIT 1")
+            ag = cur.fetchone()
+            cur.execute("""INSERT INTO VerificationEvent
+                (token_id, requesting_agency_id, context_id, event_timestamp, outcome,
+                 disclosure_level, latitude, longitude)
+                VALUES (NULL, %s, 1, CURRENT_TIMESTAMP - INTERVAL '10 minutes',
+                        'SUCCESS', 'ZERO_KNOWLEDGE', NULL, NULL)""", (ag['agency_id'],))
+        conn.commit(); conn.close()
+        # 1h window: only our ZK row is in range for this agency's jurisdiction
+        r = self.client.get('/api/atlas/geo/jurisdictions?window=1h&kind=verification'
+                            '&agencies=' + str(ag['agency_id']))
+        d = r.get_json()
+        self.assertEqual(d['regions'], [], "a ZK-only jurisdiction must not be placed on the map (C6)")
+        self.assertGreaterEqual(d['n_unplaceable'], 1)
+        self.assertGreaterEqual(d['n_unplaceable_events'], 1)
+
+    def test_geo_and_hexbin_honour_global_filter(self):
+        allr = self.client.get('/api/atlas/geo/jurisdictions?window=all&kind=verification').get_json()
+        failr = self.client.get('/api/atlas/geo/jurisdictions?window=all&kind=verification&outcomes=FAILURE').get_json()
+        alltot = sum(x['n_total'] for x in allr['regions'] + allr['unplaceable'])
+        failtot = sum(x['n_total'] for x in failr['regions'] + failr['unplaceable'])
+        self.assertLess(failtot, alltot, "an outcome filter must narrow the Regions layer")
+
 
 class AtlasFilterAPITests(PolarisTestCase):
     """v8.3 (A+C): the temporal-lens + operational-filter primitives must

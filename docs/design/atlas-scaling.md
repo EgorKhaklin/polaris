@@ -35,6 +35,8 @@ agency tallies) without ever carrying its location (C6):
 | `atlas_crosstab(row_dim, col_dim, since, limit, kind, …)` | 2-D pivot (Breakdown view): top-K rows x a low-cardinality column dimension | `_ATLAS_MAX_CATEGORIES` rows |
 | `atlas_agency_facet(since, limit, kind, search, …)` | the global filter's agency facet: agencies with (id, name, count) for the typeahead, honouring the other active facets | `_ATLAS_MAX_CATEGORIES` |
 | `atlas_records(since, cursor_ts, cursor_id, limit, kind, …)` | the records grid: raw event rows behind the charts, keyset-paginated (a `(ts, id)` cursor, not an OFFSET, so a deep page stays O(page)); ZK rows are counted but their subject/location are withheld (C6) | `_ATLAS_MAX_EVENTS` |
+| `atlas_hexbin(minlat, minlon, maxlat, maxlon, size, limit, since, kind, …)` | Map v2 Density layer: located verification events binned into a pointy-top hex grid, top-K densest centres by count; excludes ZK entirely like the cluster/point layers (C6) | `_ATLAS_MAX_CLUSTERS` |
+| `atlas_geo_jurisdictions(since, limit, kind, …)` | Map v2 Regions layer (default): volume by requesting-agency jurisdiction (ISO 3166-2); COUNTS ZK (n_zk) but the centroid derives from located non-ZK events only, so a ZK-only jurisdiction is counted yet unplaceable (C6) | `_ATLAS_MAX_REGIONS` |
 
 Their endpoints (`/api/atlas/series`, `/api/atlas/breakdown`) are
 `@replica_reads` and capped, and the charts are hand-rolled inline SVG / CSS

@@ -208,6 +208,52 @@ falls below the cluster→point threshold.
 
 Response shape mirrors clusters but with `points` array instead.
 
+### `GET /api/atlas/hexbin`
+
+Map v2 Density layer (roadmap P2.3, v9.253): located verification events binned
+into a **pointy-top hexagonal** grid within the bbox, the top-K densest hex
+centres by count (`≤ _ATLAS_MAX_CLUSTERS`, C8). The binning is the standard
+pixel→axial→cube-round done in lon/lat space; the client renders each hex with
+the same `size` it sends, so the lattice tiles. C6: `ZERO_KNOWLEDGE` events are
+excluded entirely, exactly like the cluster/point layers. `@replica_reads`.
+
+| param | type | default | notes |
+|---|---|---|---|
+| `bbox` | csv-floats | required | `S,W,N,E` |
+| `size` | float | `5` | hex circumradius in degrees, `(0, 90]` |
+| `kind` | enum | `verification` | lifecycle yields an empty surface |
+| filters | | | `window`/`outcomes`/`disclosure`/`contexts`/`agencies` |
+
+```json
+{ "kind": "verification", "size": 1.6, "count": 3,
+  "hexes": [ {"lat": 36.0, "lon": -93.53, "n_total": 42, "n_failure": 3} ] }
+```
+
+### `GET /api/atlas/geo/jurisdictions`
+
+Map v2 Regions layer (roadmap P2.3, v9.253) — the **default** map view.
+Verification volume rolled up by the requesting agency's jurisdiction
+(ISO 3166-2), top-K by volume (`≤ _ATLAS_MAX_REGIONS = 500`, C8). **Not
+viewport-bound**: it shows every jurisdiction. C6: a jurisdiction is a
+regulatory grouping, not a coordinate, so a zero-knowledge verification is
+**counted** in `n_zk` yet **never located** — the `centroid` derives from
+located, non-ZK events only. A jurisdiction whose activity is entirely
+zero-knowledge has no centroid and is returned under `unplaceable` (counted, but
+never on the map), summarized by `n_unplaceable` / `n_unplaceable_events`.
+`@replica_reads`.
+
+| param | type | default | notes |
+|---|---|---|---|
+| `kind` | enum | `verification` | or `lifecycle` (actor-agency jurisdiction) |
+| filters | | | `window`/`outcomes`/`disclosure`/`contexts`/`agencies` |
+
+```json
+{ "kind": "verification", "count": 2, "n_unplaceable": 0, "n_unplaceable_events": 0,
+  "regions": [ {"jurisdiction": "US", "n_total": 4210, "n_failure": 51, "n_zk": 1380,
+                "n_located": 2830, "centroid_lat": 37.2, "centroid_lon": -95.4} ],
+  "unplaceable": [] }
+```
+
 ### `GET /api/atlas/stats`
 
 Four HUD signals scoped to the visible bbox.

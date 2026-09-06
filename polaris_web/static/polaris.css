@@ -3744,3 +3744,19 @@ textarea.sql {
 /* Cross-filtering: Overview category bars filter the whole console on click */
 .ov-bar-row-click { cursor: pointer; border-radius: 4px; padding: 2px 4px; margin: 0 -4px; }
 .ov-bar-row-click:hover { background: var(--bg2); }
+
+/* ============================================================================
+ * Atlas Map v2 (v9.253): layer-mode control, mode-aware legend, density ramp
+ * ==========================================================================*/
+.atlas-mapmode { gap: 2px; }
+.atlas-mapmode .toolbar-chip { border-radius: 0; margin: 0; }
+.atlas-mapmode .toolbar-chip:first-child { border-top-left-radius: 6px; border-bottom-left-radius: 6px; }
+.atlas-mapmode .toolbar-chip:last-child { border-top-right-radius: 6px; border-bottom-right-radius: 6px; }
+
+.legend-mode { display: flex; flex-direction: column; gap: 4px; }
+.legend-ramp {
+    display: inline-block; width: 42px; height: 10px; border-radius: 2px; vertical-align: middle;
+    margin-right: 6px;
+    background: linear-gradient(90deg, #0d2233 0%, #134a63 25%, #1f7fa6 50%, #39b6d8 75%, #8ef0ff 100%);
+    border: 1px solid rgba(142, 240, 255, 0.3);
+}
