@@ -314,6 +314,35 @@ capped at `_ATLAS_MAX_CATEGORIES`. Non-geographic (C6). `@replica_reads`.
 }
 ```
 
+### `GET /api/atlas/records`
+
+The records data grid (roadmap P2.3, v9.252): the raw event rows behind the
+charts, matching the global filter. One row per event with `event_id`, `ts`,
+`agency`, `category`, `outcome`, `disclosure`, `subject`, `location`, and
+`tone`. Paging is **keyset, not offset**: pass `?cursor=TIMESTAMP|EVENT_ID` from
+the previous response's `next_cursor` to fetch the next (older) page, so a deep
+page costs the same as the first. `kind` is `verification` (default) or
+`lifecycle`; `limit` is capped at `_ATLAS_MAX_EVENTS` (C8); the usual
+`window`/`outcomes`/`disclosure`/`contexts`/`agencies` filter params apply.
+`next_cursor` is `null` on the last page. C6: a zero-knowledge verification is a
+row, but its `subject` reads `(zero-knowledge)` and its `location` is `null`, so
+the grid counts it without ever locating or identifying it. `@replica_reads`.
+
+```json
+{
+  "kind": "verification", "count": 50,
+  "next_cursor": "2026-09-06T10:41:21|8123",
+  "records": [
+    {"event_id": 8172, "ts": "2026-09-06T10:44:02", "agency": "First National Bank",
+     "category": "Banking", "outcome": "SUCCESS", "disclosure": "SELECTIVE",
+     "subject": "Ada Lovelace", "location": "New York, NY", "tone": "ok"},
+    {"event_id": 8171, "ts": "2026-09-06T10:43:55", "agency": "Transit Authority",
+     "category": "Transit", "outcome": "SUCCESS", "disclosure": "ZERO_KNOWLEDGE",
+     "subject": "(zero-knowledge)", "location": null, "tone": "ok"}
+  ]
+}
+```
+
 ### `GET /api/atlas/cache-stats`
 
 Cache observability for R8-5. Returns hit/miss/expired/evicted

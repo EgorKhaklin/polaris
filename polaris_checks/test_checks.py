@@ -3574,18 +3574,27 @@ def test_bulk_enrollment_check_discriminates(tmp_path):
 def test_atlas_console_check_discriminates(tmp_path):
     ATLAS = ('<button data-atlas-view-tab="overview" aria-selected="true" class="atlas-tab atlas-tab-active">Overview</button>\n'
              '<button data-atlas-view-tab="breakdown" aria-selected="false">Breakdown</button>\n'
+             '<button data-atlas-view-tab="records" aria-selected="false">Records</button>\n'
              '<button data-atlas-view-tab="map" aria-selected="false">Map</button>\n'
              '<input data-bd-search><div class="bd-scroll"><div data-bd-ranked></div></div>\n'
+             '<table data-rec-grid><tbody data-rec-body></tbody></table><button data-rec-more>Load more</button>\n'
              '<div data-atlas-globalbar><div data-gf-facet="context"></div>'
              '<input data-gf-agency-search></div>\n'
              '<script src="atlas-console.js"></script>\n')
     def sqlfn(name, ret, extra_args=""):
         return (f"CREATE OR REPLACE FUNCTION {name}(\n    p_x INTEGER{extra_args}\n) RETURNS TABLE (\n{ret}\n)\n"
                 f"LANGUAGE sql\nSTABLE\nAS $$ SELECT 1 $$;\n")
+    # atlas_records is keyset-paginated (a cursor pair, not an OFFSET) and
+    # redacts zero-knowledge rows — spelled out rather than via sqlfn().
+    RECORDS = ("CREATE OR REPLACE FUNCTION atlas_records(\n"
+               "    p_since TIMESTAMP, p_cursor_ts TIMESTAMP, p_cursor_id INTEGER, p_limit INTEGER\n"
+               ") RETURNS TABLE (\n    event_id INTEGER, subject TEXT, location TEXT\n)\n"
+               "LANGUAGE sql\nSTABLE\nAS $$ SELECT 1, '(zero-knowledge)', NULL $$;\n")
     SQL = (sqlfn("atlas_volume_series", "    bucket_ts TIMESTAMP, n_total BIGINT, n_failure BIGINT, n_zk BIGINT")
            + sqlfn("atlas_breakdown", "    label TEXT, n_total BIGINT, n_failure BIGINT", ",\n    p_search TEXT DEFAULT NULL")
            + sqlfn("atlas_crosstab", "    row_label TEXT, col_label TEXT, n_total BIGINT")
-           + sqlfn("atlas_agency_facet", "    agency_id INTEGER, name TEXT, n_total BIGINT"))
+           + sqlfn("atlas_agency_facet", "    agency_id INTEGER, name TEXT, n_total BIGINT")
+           + RECORDS)
     APP = ("_ATLAS_MAX_CLUSTERS=5000\n_ATLAS_MAX_POINTS=2000\n_ATLAS_MAX_EVENTS=500\n_ATLAS_MAX_CATEGORIES=50\n"
            "_ATLAS_BREAKDOWN_DIMENSIONS={'verification': ('agency',)}\n"
            "_ATLAS_CROSSTAB_ROWS={'verification': ('agency',)}\n"
@@ -3593,7 +3602,8 @@ def test_atlas_console_check_discriminates(tmp_path):
            "@app.route('/api/atlas/series')\n@replica_reads\ndef api_atlas_series():\n    pass\n"
            "@app.route('/api/atlas/breakdown')\n@replica_reads\ndef api_atlas_breakdown():\n    pass\n"
            "@app.route('/api/atlas/crosstab')\n@replica_reads\ndef api_atlas_crosstab():\n    pass\n"
-           "@app.route('/api/atlas/facet/agencies')\n@replica_reads\ndef api_atlas_facet_agencies():\n    pass\n")
+           "@app.route('/api/atlas/facet/agencies')\n@replica_reads\ndef api_atlas_facet_agencies():\n    pass\n"
+           "@app.route('/api/atlas/records')\n@replica_reads\ndef api_atlas_records():\n    pass\n")
     good = {
         "polaris_web/templates/atlas.html": ATLAS,
         "polaris_web/static/atlas-console.js": "/* console */\n",
@@ -3653,6 +3663,29 @@ def test_atlas_console_check_discriminates(tmp_path):
     # the agency facet endpoint is absent
     write({"polaris_web/app.py": APP.replace("@app.route('/api/atlas/facet/agencies')", "@app.route('/api/atlas/facet/other')")})
     assert checks.check_atlas_console(tmp_path)[0].level == "FAIL", "must FAIL when the agency facet endpoint is absent"
+    # v9.252: the Records tab is absent
+    write({"polaris_web/templates/atlas.html": ATLAS.replace('data-atlas-view-tab="records"', 'data-atlas-view-tab="other"')})
+    assert checks.check_atlas_console(tmp_path)[0].level == "FAIL", "must FAIL when the Records tab is absent"
+    # the Records grid or its keyset 'load more' control is absent
+    write({"polaris_web/templates/atlas.html": ATLAS.replace("data-rec-grid", "data-rec-other")})
+    assert checks.check_atlas_console(tmp_path)[0].level == "FAIL", "must FAIL when the Records grid is absent"
+    write({"polaris_web/templates/atlas.html": ATLAS.replace("data-rec-more", "data-rec-other")})
+    assert checks.check_atlas_console(tmp_path)[0].level == "FAIL", "must FAIL when the keyset 'load more' control is absent"
+    # atlas_records is absent
+    write({"polaris_sql/11_atlas.sql": SQL.replace("CREATE OR REPLACE FUNCTION atlas_records(", "CREATE OR REPLACE FUNCTION atlas_other(")})
+    assert checks.check_atlas_console(tmp_path)[0].level == "FAIL", "must FAIL when atlas_records is absent"
+    # atlas_records is OFFSET-paginated, not keyset (a scale regression)
+    write({"polaris_sql/11_atlas.sql": SQL.replace("p_cursor_ts TIMESTAMP, p_cursor_id INTEGER, ", "")})
+    assert checks.check_atlas_console(tmp_path)[0].level == "FAIL", "must FAIL when atlas_records is not keyset-paginated"
+    # atlas_records does not redact zero-knowledge rows (C6)
+    write({"polaris_sql/11_atlas.sql": SQL.replace("'(zero-knowledge)'", "i.legal_name")})
+    assert checks.check_atlas_console(tmp_path)[0].level == "FAIL", "must FAIL when atlas_records does not redact ZK rows"
+    # the records endpoint is absent
+    write({"polaris_web/app.py": APP.replace("@app.route('/api/atlas/records')", "@app.route('/api/atlas/other')")})
+    assert checks.check_atlas_console(tmp_path)[0].level == "FAIL", "must FAIL when the records endpoint is absent"
+    # the records endpoint is not replica-routed
+    write({"polaris_web/app.py": APP.replace("@app.route('/api/atlas/records')\n@replica_reads", "@app.route('/api/atlas/records')")})
+    assert checks.check_atlas_console(tmp_path)[0].level == "FAIL", "must FAIL when api_atlas_records is not @replica_reads"
 
 
 def test_helm_reference_profile_check_discriminates(tmp_path):

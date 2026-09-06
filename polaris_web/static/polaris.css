@@ -3679,3 +3679,68 @@ textarea.sql {
 }
 .gf-chip-x:hover { color: var(--red); }
 .gf-clear { margin-left: 4px; }
+
+/* ---- Records grid (roadmap P2.3, v9.252): a scale data grid, filter-aware,
+   keyset-paginated, sticky header, dense and legible ---- */
+.atlas-view-records { display: flex; flex-direction: column; min-height: 0; }
+.rec-head {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    padding: 12px 14px 8px;
+    flex: 0 0 auto;
+}
+.rec-count { font-family: var(--font-mono); font-size: 11px; color: var(--ink-faint); }
+.rec-grid-wrap { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 0 14px; }
+.rec-grid {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+.rec-grid thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--bg1);
+    text-align: left;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--line-strong);
+    white-space: nowrap;
+}
+.rec-row { color: var(--ink-dim); }
+.rec-row:nth-child(even) { background: rgba(255, 255, 255, 0.014); }
+.rec-row:hover { background: var(--bg2); color: var(--ink); }
+.rec-td {
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 220px;
+}
+.rec-td-ts { font-family: var(--font-mono); font-size: 11px; color: var(--ink-faint); }
+.rec-td-outcome, .rec-td-disclosure, .rec-td-category {
+    display: flex; align-items: center; gap: 6px;
+}
+.rec-dot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; display: inline-block; }
+.rec-td-zk { color: var(--ink-faint); font-style: italic; }
+.rec-foot {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    flex: 0 0 auto;
+    border-top: 1px solid var(--line);
+}
+.rec-status { font-family: var(--font-mono); font-size: 11px; color: var(--ink-faint); }
+.atlas-view-records .ov-foot { flex: 0 0 auto; margin-top: 0; }
+
+/* Cross-filtering: Overview category bars filter the whole console on click */
+.ov-bar-row-click { cursor: pointer; border-radius: 4px; padding: 2px 4px; margin: 0 -4px; }
+.ov-bar-row-click:hover { background: var(--bg2); }

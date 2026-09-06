@@ -23,6 +23,9 @@
                     id="atlas-tab-breakdown" aria-selected="false"
                     data-atlas-view-tab="breakdown" aria-controls="atlas-panel-breakdown">Breakdown</button>
             <button class="atlas-tab" type="button" role="tab"
+                    id="atlas-tab-records" aria-selected="false"
+                    data-atlas-view-tab="records" aria-controls="atlas-panel-records">Records</button>
+            <button class="atlas-tab" type="button" role="tab"
                     id="atlas-tab-map" aria-selected="false"
                     data-atlas-view-tab="map" aria-controls="atlas-panel-map">Map</button>
         </div>
@@ -210,6 +213,27 @@
             <button type="button" class="toolbar-chip" data-bd-retry>Retry</button>
         </div>
         <p class="ov-foot">Every figure is a bounded server-side aggregate (top-K rows, low-cardinality columns). A cross-tab cell is shaded by its share of the row, so an anomalous slice (a high failure or full-disclosure share for one agency or context) stands out. Zero-knowledge is counted in every tally but never located (C6).</p>
+    </div>
+
+    {# ================= RECORDS (paginated grid, filter-aware) ================= #}
+    <div class="atlas-view atlas-view-records" id="atlas-panel-records"
+         role="tabpanel" aria-labelledby="atlas-tab-records" data-atlas-view-panel="records" hidden>
+        <div class="rec-head">
+            <span class="ov-card-title">Records</span>
+            <span class="rec-count" data-rec-count aria-live="polite"></span>
+        </div>
+        <div class="rec-grid-wrap">
+            <div data-rec-grid></div>
+        </div>
+        <div class="rec-foot">
+            <button type="button" class="toolbar-chip" data-rec-more hidden>Load more</button>
+            <span class="rec-status" data-rec-status aria-live="polite"></span>
+        </div>
+        <div class="ov-error" data-rec-error hidden>
+            <span data-rec-error-detail>Could not load records.</span>
+            <button type="button" class="toolbar-chip" data-rec-retry>Retry</button>
+        </div>
+        <p class="ov-foot">Records match the global filter and are keyset-paginated newest-first, so the grid scales to millions of events without ever loading them all. Zero-knowledge verifications appear as activity but their subject and location are withheld (C6).</p>
     </div>
 
     {# ================= MAP (the former globe, now a tab) ================= #}

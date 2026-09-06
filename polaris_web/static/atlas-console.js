@@ -88,6 +88,7 @@
     if (gb) gb.hidden = (name === 'map');
     // Reload the shown analytical view so a filter set on another tab applies.
     if (name === 'breakdown') loadBreakdown();
+    else if (name === 'records') loadRecords(true);
     else if (name === 'overview' && typeof loadOverview === 'function') loadOverview();
     try { history.replaceState(null, '', '#' + name); } catch (e) { /* ignore */ }
   }
@@ -235,7 +236,7 @@
   }
 
   // Horizontal bars: fill width is n_total / max, split into success + failure.
-  function renderBars(mount, cats) {
+  function renderBars(mount, cats, onClick) {
     mount.textContent = '';
     if (!cats || !cats.length) {
       mount.appendChild(el('div', { class: 'ov-empty', text: 'No data in this window.' }));
@@ -244,7 +245,11 @@
     var max = 1;
     cats.forEach(function (c) { if (c.n_total > max) max = c.n_total; });
     cats.forEach(function (c) {
-      var row = el('div', { class: 'ov-bar-row' });
+      var row = el('div', { class: 'ov-bar-row' + (onClick ? ' ov-bar-row-click' : '') });
+      if (onClick) {
+        row.title = 'Filter to ' + c.label;
+        row.addEventListener('click', function () { onClick(c.label); });
+      }
       row.appendChild(el('span', { class: 'ov-bar-label', title: c.label, text: c.label }));
       var track = el('span', { class: 'ov-bar-track' });
       var okN = Math.max(0, c.n_total - c.n_failure);
@@ -350,7 +355,12 @@
       apiCall('/api/atlas/breakdown?' + q + '&dimension=' + panel.dim + '&limit=12').then(function (data) {
         if (seq !== loadSeq) return;
         var cats = data.categories || [];
-        renderBars(mount, cats);
+        // Cross-filtering: a value-based facet dimension's bars filter the whole
+        // console on click (agency needs an id, so it is not click-to-filter here).
+        var onClick = FACET_PARAM[panel.dim]
+          ? function (label) { toggleFacetValue(panel.dim, label); }
+          : null;
+        renderBars(mount, cats, onClick);
         if (panel.mix) {
           var mixMount = $('[data-ov-mix="disclosure"]', overview);
           if (mixMount) renderMix(mixMount, cats);
@@ -516,7 +526,7 @@
       mount.appendChild(el('div', { class: 'ov-empty', text: 'No data in this window.' })); return;
     }
     var lut = {};
-    data.cells.forEach(function (c) { lut[c.row + ' ' + c.col] = c.n; });
+    data.cells.forEach(function (c) { lut[c.row + '\u0000' + c.col] = c.n; });
     var grid = el('div', { class: 'bd-matrix-grid' });
     grid.style.gridTemplateColumns = 'minmax(84px,1.3fr) repeat(' + data.cols.length + ', 1fr) auto';
     grid.appendChild(el('span', { class: 'bd-mx-corner' }));
@@ -525,7 +535,7 @@
     data.rows.forEach(function (r) {
       grid.appendChild(el('span', { class: 'bd-mx-rowhead', title: r.label, text: r.label }));
       data.cols.forEach(function (col) {
-        var n = lut[r.label + ' ' + col] || 0;
+        var n = lut[r.label + '\u0000' + col] || 0;
         var share = r.total ? n / r.total : 0;
         var cell = el('span', { class: 'bd-mx-cell', text: n ? fmtInt(n) : '·',
           title: r.label + ' · ' + prettyLabel(col) + ': ' + fmtInt(n) + ' (' + fmtPct(100 * share) + ' of row)' });
@@ -598,6 +608,94 @@
   }
 
   // =========================================================================
+  // Records view (v9.252): the drill from aggregates into the actual events —
+  // a keyset-paginated, filter-aware grid that scales to millions of rows.
+  // =========================================================================
+  var rec = $('[data-atlas-view-panel="records"]');
+  var REC_COLS = {
+    verification: [
+      { key: 'ts', label: 'Time' }, { key: 'agency', label: 'Agency' },
+      { key: 'category', label: 'Context' }, { key: 'outcome', label: 'Outcome', tone: true },
+      { key: 'disclosure', label: 'Disclosure', tone: true }, { key: 'subject', label: 'Subject' },
+      { key: 'location', label: 'Location' }
+    ],
+    lifecycle: [
+      { key: 'ts', label: 'Time' }, { key: 'agency', label: 'Actor' },
+      { key: 'category', label: 'Event type', tone: true }, { key: 'outcome', label: 'Reason' },
+      { key: 'subject', label: 'Subject' }
+    ]
+  };
+  var REC_TONE = {
+    SUCCESS: '#5fd9a2', FAILURE: '#f87171', EXPIRED: '#fbbf24', UNAUTHORIZED: '#f87171',
+    ZERO_KNOWLEDGE: '#a78bfa', SELECTIVE: '#38bdf8', FULL: '#fbbf24',
+    REVOKED: '#f87171', LOST: '#f87171', ISSUED: '#38bdf8', ACTIVATED: '#5fd9a2'
+  };
+  var recCursor = null, recTotal = 0, recLoading = false;
+
+  function recEnsureTable() {
+    var wrap = $('[data-rec-grid]', rec);
+    var body = $('[data-rec-body]', rec);
+    if (body) return body;   // already built for this stream
+    wrap.textContent = '';
+    var cols = REC_COLS[gfilters.stream];
+    var table = el('table', { class: 'rec-grid' });
+    var thead = el('thead'); var htr = el('tr');
+    cols.forEach(function (c) { htr.appendChild(el('th', { text: c.label })); });
+    thead.appendChild(htr); table.appendChild(thead);
+    body = el('tbody', { 'data-rec-body': '' });
+    table.appendChild(body); wrap.appendChild(table);
+    return body;
+  }
+  function recRow(r, cols) {
+    var tr = el('tr', { class: 'rec-row rec-tone-' + (r.tone || '') });
+    cols.forEach(function (c) {
+      var v = r[c.key];
+      var td = el('td', { class: 'rec-td rec-td-' + c.key });
+      if (c.key === 'ts') td.textContent = (v || '').replace('T', '  ');
+      else if (c.tone && v) {
+        var dot = el('i', { class: 'rec-dot' }); dot.style.background = REC_TONE[v] || '#8da6c4';
+        td.appendChild(dot); td.appendChild(el('span', { text: prettyLabel(v) }));
+      } else td.textContent = (v == null || v === '') ? '·' : v;
+      if (c.key === 'subject' && v === '(zero-knowledge)') td.classList.add('rec-td-zk');
+      tr.appendChild(td);
+    });
+    return tr;
+  }
+
+  function loadRecords(reset) {
+    if (!rec || recLoading) return;
+    recLoading = true;
+    var recErr = $('[data-rec-error]', rec); if (recErr) recErr.hidden = true;
+    if (reset) {
+      recCursor = null; recTotal = 0;
+      $('[data-rec-grid]', rec).textContent = '';   // rebuild for the (possibly new) stream
+    }
+    var body = recEnsureTable();
+    var cols = REC_COLS[gfilters.stream];
+    var status = $('[data-rec-status]', rec); if (status) status.textContent = 'Loading…';
+    var url = '/api/atlas/records?' + gfilterQuery() + '&limit=60' + (recCursor ? '&cursor=' + encodeURIComponent(recCursor) : '');
+    apiCall(url).then(function (data) {
+      recLoading = false;
+      (data.records || []).forEach(function (r) { body.appendChild(recRow(r, cols)); });
+      recTotal += (data.records || []).length;
+      recCursor = data.next_cursor || null;
+      var more = $('[data-rec-more]', rec); if (more) more.hidden = !recCursor;
+      var cnt = $('[data-rec-count]', rec); if (cnt) cnt.textContent = recTotal + (recCursor ? '+ records' : ' records') + ' · newest first';
+      if (status) status.textContent = recTotal === 0 ? 'No records match the current filter.' : (recCursor ? '' : 'End of records.');
+    }).catch(function (e) {
+      recLoading = false;
+      if (recErr) { recErr.hidden = false; var d = $('[data-rec-error-detail]', rec); if (d) d.textContent = 'Records failed: ' + e.message; }
+      if (status) status.textContent = '';
+    });
+  }
+  if (rec) {
+    var recMore = $('[data-rec-more]', rec);
+    if (recMore) recMore.addEventListener('click', function () { loadRecords(false); });
+    var recRetry = $('[data-rec-retry]', rec);
+    if (recRetry) recRetry.addEventListener('click', function () { loadRecords(true); });
+  }
+
+  // =========================================================================
   // Global filter bar: stream + window + facets, applied to every view.
   // =========================================================================
   var gbar = $('[data-atlas-globalbar]');
@@ -616,6 +714,7 @@
     renderGfChips();
     if (overview && !overview.hidden) loadOverview();
     else if (bd && !bd.hidden) loadBreakdown();
+    else if (rec && !rec.hidden) loadRecords(true);
   }
 
   // The context/outcome/disclosure facets apply to verifications only; on the

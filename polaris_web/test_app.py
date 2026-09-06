@@ -5713,6 +5713,66 @@ class AtlasConsoleAPITests(PolarisTestCase):
         bd = self.client.get('/api/atlas/breakdown?window=all&dimension=agency&outcomes=FAILURE')
         self.assertEqual(bd.status_code, 200)
 
+    # -- v9.252: the records data grid (keyset-paginated, ZK-redacted) ---------
+
+    def test_records_shape_and_keyset_pagination(self):
+        # Page one, then page two via the returned cursor. Keyset pagination
+        # means page two is strictly older events — no overlap, no OFFSET.
+        r1 = self.client.get('/api/atlas/records?window=all&kind=verification&limit=5')
+        self.assertEqual(r1.status_code, 200)
+        d1 = r1.get_json()
+        self.assertEqual(d1['count'], len(d1['records']))
+        self.assertLessEqual(len(d1['records']), 5)
+        for rec in d1['records']:
+            for k in ('event_id', 'ts', 'agency', 'category', 'outcome', 'disclosure',
+                      'subject', 'location', 'tone'):
+                self.assertIn(k, rec)
+        # rows are newest-first by (ts, event_id)
+        keys = [(rec['ts'], rec['event_id']) for rec in d1['records']]
+        self.assertEqual(keys, sorted(keys, reverse=True), "records must be newest-first")
+        if d1['next_cursor']:
+            r2 = self.client.get('/api/atlas/records?window=all&kind=verification&limit=5'
+                                 '&cursor=' + d1['next_cursor'])
+            self.assertEqual(r2.status_code, 200)
+            ids1 = {rec['event_id'] for rec in d1['records']}
+            ids2 = {rec['event_id'] for rec in r2.get_json()['records']}
+            self.assertFalse(ids1 & ids2, "keyset page two must not repeat page one's rows")
+
+    def test_records_redacts_zero_knowledge(self):
+        # C6: a zero-knowledge verification is a row, but its subject is withheld
+        # and it carries no location — exactly as the map never plots it.
+        r = self.client.get('/api/atlas/records?window=all&kind=verification&limit=500')
+        self.assertEqual(r.status_code, 200)
+        zk = [rec for rec in r.get_json()['records']
+              if rec['disclosure'] == 'ZERO_KNOWLEDGE']
+        self.assertTrue(zk, "the seed has zero-knowledge verifications")
+        for rec in zk:
+            self.assertEqual(rec['subject'], '(zero-knowledge)',
+                             "a ZK verification's subject must be withheld (C6)")
+            self.assertIsNone(rec['location'], "a ZK verification carries no location (C6)")
+
+    def test_records_honours_global_filter(self):
+        # The grid is coordinated with the rest of the console: an outcome
+        # filter reaches the SQL and every returned row matches it.
+        r = self.client.get('/api/atlas/records?window=all&kind=verification'
+                            '&outcomes=FAILURE&limit=500')
+        self.assertEqual(r.status_code, 200)
+        recs = r.get_json()['records']
+        self.assertTrue(recs, "the seed has FAILURE verifications")
+        for rec in recs:
+            self.assertEqual(rec['outcome'], 'FAILURE', "the filter must reach the records SQL")
+
+    def test_records_capped_at_max_events(self):
+        r = self.client.get('/api/atlas/records?window=all&kind=verification&limit=100000')
+        self.assertEqual(r.status_code, 200)
+        self.assertLessEqual(r.get_json()['count'], flask_app._ATLAS_MAX_EVENTS)
+
+    def test_records_rejects_bad_cursor(self):
+        self.assertEqual(
+            self.client.get('/api/atlas/records?window=all&cursor=notacursor').status_code, 400)
+        self.assertEqual(
+            self.client.get('/api/atlas/records?window=all&kind=gender').status_code, 400)
+
 
 class AtlasFilterAPITests(PolarisTestCase):
     """v8.3 (A+C): the temporal-lens + operational-filter primitives must

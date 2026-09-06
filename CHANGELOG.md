@@ -5,6 +5,45 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.252 — 2026-09-06 (Atlas: the records grid, and click to filter)
+
+Roadmap P2.3, ship 5: the console gains the view every operator eventually
+needs, the raw rows behind the charts, built to survive millions of them.
+
+**A records data grid that scales.** The new Records tab is a server-paginated
+stream of the events matching the global filter, one row per verification or
+lifecycle event with its agency, category, outcome, disclosure, subject, and
+location. Paging is keyset, not offset: each page carries a cursor
+(`TIMESTAMP|EVENT_ID`) and the next page resumes from it, so page one thousand
+costs the same as page one instead of making the database count past everything
+before it. The new `atlas_records` function does the same two-stage top-N it
+does for the map, and the `/api/atlas/records` endpoint is replica-routed and
+capped at the event limit (C8). Zero-knowledge rows are real rows, but their
+subject reads `(zero-knowledge)` and they carry no location, exactly as the map
+never plots them (C6).
+
+**Click a category to filter.** Every category bar in the Overview is now a
+filter control. Click the Banking context or the FAILURE outcome and the whole
+console narrows to it, chip and all, the way cross-filtering works in a real
+analytics workbench. The agency dimension stays a typeahead (it needs an id, not
+a label), but every value-based dimension filters on click.
+
+**A latent corruption, fixed.** The cross-tab lookup key in `atlas-console.js`
+had been built with a literal NUL byte as its separator (a `\0` that a heredoc
+wrote as a raw `0x00`), which made the served script a binary blob to every text
+tool that touched it. The separator is now a `\u0000` escape: the same key at
+runtime, a clean ASCII source file.
+
+**Proven.** `check_atlas_console` now pins the Records tab, the grid, the keyset
+`atlas_records` (cursor, not offset) with its ZK redaction, and the
+replica-routed endpoint, with detection perturbations for each; five new
+`AtlasConsoleAPITests` cover the shape, keyset pagination, the ZK redaction, the
+filter coordination, and the cap; a new Playwright e2e opens the tab, renders the
+grid, and pages it. Schema unchanged; the check layer is 125; the app is 77
+routes.
+
+---
+
 ## v9.251 — 2026-09-06 (Atlas: one coordinated, faceted query)
 
 Roadmap P2.3, ship 4: the step where the console stops being separate views

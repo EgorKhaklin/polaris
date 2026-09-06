@@ -2511,6 +2511,57 @@ def api_atlas_facet_agencies():
     return jsonify(payload)
 
 
+@app.route('/api/atlas/records')
+@security.login_required
+@replica_reads
+def api_atlas_records():
+    """The records grid: one stream of events matching the global filter,
+    keyset-paginated (roadmap P2.3, v9.252). Cursor is `TIMESTAMP|EVENT_ID` from
+    the previous page's `next_cursor`; capped at _ATLAS_MAX_EVENTS. C6: a
+    zero-knowledge verification is a row but its subject and location are
+    withheld (the SQL redacts them)."""
+    try:
+        kind = request.args.get('kind', 'verification')
+        if kind not in ('verification', 'lifecycle'):
+            raise ValueError("kind must be 'verification' or 'lifecycle'")
+        limit = min(int(request.args.get('limit', '50')), _ATLAS_MAX_EVENTS)
+        if limit <= 0:
+            raise ValueError("limit must be positive")
+        cur_ts, cur_id = None, None
+        cursor = request.args.get('cursor')
+        if cursor:
+            parts = cursor.split('|')
+            if len(parts) != 2:
+                raise ValueError("cursor must be TIMESTAMP|EVENT_ID")
+            cur_ts, cur_id = parts[0], int(parts[1])
+        f = _parse_atlas_filters(request.args)
+    except ValueError as e:
+        return jsonify(error=str(e)), 400
+
+    rows = query("""
+        SELECT event_id,
+               to_char(event_timestamp, 'YYYY-MM-DD"T"HH24:MI:SS') AS ts,
+               agency_name, category, outcome, disclosure, subject, location, tone
+        FROM atlas_records(%s, %s, %s, %s, %s, %s, %s, %s, %s)
+    """, (f['since'], cur_ts, cur_id, limit, kind,
+          f['outcomes'], f['disclosure'], f['contexts'], f['agencies']))
+
+    next_cursor = None
+    if rows and len(rows) == limit:
+        last = rows[-1]
+        next_cursor = last['ts'] + '|' + str(last['event_id'])
+    return jsonify(
+        kind=kind, count=len(rows), next_cursor=next_cursor,
+        records=[
+            {'event_id': r['event_id'], 'ts': r['ts'], 'agency': r['agency_name'],
+             'category': r['category'], 'outcome': r['outcome'],
+             'disclosure': r['disclosure'], 'subject': r['subject'],
+             'location': r['location'], 'tone': r['tone']}
+            for r in rows
+        ],
+    )
+
+
 # ----------------------------------------------------------------------------
 # SUBJECT FOCUS (v9.148) — single-subject investigation on the map.
 #

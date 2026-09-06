@@ -231,6 +231,31 @@ class TestAtlasGlobeE2E(unittest.TestCase):
         finally:
             page.close()
 
+    def test_records_tab_renders_grid_and_keyset_pages(self):
+        """v9.252: the Records tab must reveal a data grid, populate it, and
+        page it with the keyset 'load more' control (not an OFFSET). Catches:
+        the tab wiring, the /api/atlas/records fetch, the row render, and the
+        cursor-append pagination."""
+        page = self._context.new_page()
+        try:
+            self._login_and_goto(page)
+            page.click('[data-atlas-view-tab="records"]')
+            page.wait_for_selector('[data-atlas-view-panel="records"]', state="visible", timeout=3000)
+            page.wait_for_selector('[data-rec-body] .rec-row', timeout=4000)
+            self.assertFalse(page.is_visible('[data-rec-error]'),
+                "the Records error banner must stay hidden when the fetch succeeds")
+            before = len(page.query_selector_all('[data-rec-body] .rec-row'))
+            self.assertGreater(before, 0, "the grid must render at least one record row")
+            # keyset 'load more' appends the next page without dropping page one
+            if page.is_visible('[data-rec-more]'):
+                page.click('[data-rec-more]')
+                page.wait_for_timeout(1000)
+                after = len(page.query_selector_all('[data-rec-body] .rec-row'))
+                self.assertGreater(after, before,
+                    "the keyset 'load more' must append the next page of rows")
+        finally:
+            page.close()
+
     def test_atlas_page_has_no_inline_script_csp_violations(self):
         """The page must not log any CSP violations to the console.
         Per CLAUDE.md C5 + pre-known-gotcha #5: script-src 'self' is

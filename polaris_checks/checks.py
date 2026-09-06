@@ -4722,8 +4722,8 @@ def check_atlas_console(root: pathlib.Path) -> list[Finding]:
     if not atlas:
         return _fail("atlas_console", "polaris_web/templates/atlas.html is missing")
     # Overview is the DEFAULT view (its tab is selected on first paint); the
-    # Breakdown (v9.249) and Map tabs are the other views.
-    for tab in ('overview', 'breakdown', 'map'):
+    # Breakdown (v9.249), Records (v9.252) and Map tabs are the other views.
+    for tab in ('overview', 'breakdown', 'records', 'map'):
         if f'data-atlas-view-tab="{tab}"' not in atlas:
             return _fail("atlas_console", f"atlas.html must have the {tab} view tab")
     m = re.search(r'data-atlas-view-tab="overview"[^>]*aria-selected="true"'
@@ -4752,6 +4752,12 @@ def check_atlas_console(root: pathlib.Path) -> list[Finding]:
         return _fail("atlas_console", "the agency facet must be a server typeahead (data-gf-agency-search), "
                      "not a flat chip flyout, so it survives thousands of agencies")
 
+    # v9.252: the Records view is a keyset-paginated data grid (a "load more"
+    # cursor, not an offset, so page N is O(page) not O(N*page) at scale).
+    if "data-rec-grid" not in atlas or "data-rec-more" not in atlas:
+        return _fail("atlas_console", "the Records view must be a data grid (data-rec-grid) with a "
+                     "keyset 'load more' control (data-rec-more) so it survives millions of events")
+
     # The bounded aggregates, non-geographic (no lat/lon in their contract).
     sql = _read(root, "polaris_sql/11_atlas.sql")
     if "p_search" not in sql:
@@ -4766,10 +4772,24 @@ def check_atlas_console(root: pathlib.Path) -> list[Finding]:
             return _fail("atlas_console", f"{fn_name} must not return a location column (C6): the "
                          "analytical console counts zero-knowledge events but never locates them")
 
+    # v9.252: the row-level records function is keyset-paginated (a cursor pair,
+    # not an OFFSET) and redacts zero-knowledge rows — the subject and location
+    # are withheld exactly as the map never plots a ZK event (C6).
+    recs = re.search(r"CREATE OR REPLACE FUNCTION atlas_records\(.*?\$\$;", sql, re.S)
+    if not recs:
+        return _fail("atlas_console", "11_atlas.sql must define atlas_records (the records data grid)")
+    recs_body = recs.group(0)
+    if "p_cursor_ts" not in recs_body or "p_cursor_id" not in recs_body:
+        return _fail("atlas_console", "atlas_records must be keyset-paginated (a p_cursor_ts/p_cursor_id "
+                     "cursor, not an OFFSET) so deep pages stay O(page) at millions of events")
+    if "(zero-knowledge)" not in recs_body:
+        return _fail("atlas_console", "atlas_records must redact zero-knowledge rows (C6): the subject "
+                     "is withheld as '(zero-knowledge)' and the location is not shown")
+
     # The analytical endpoints, replica-routed and capped.
     app = _read(root, "polaris_web/app.py")
     for route in ("/api/atlas/series", "/api/atlas/breakdown", "/api/atlas/crosstab",
-                  "/api/atlas/facet/agencies"):
+                  "/api/atlas/facet/agencies", "/api/atlas/records"):
         if f"@app.route('{route}')" not in app:
             return _fail("atlas_console", f"app.py must expose {route}")
     # both must be replica-read routes (analytical reads, no read-your-writes need)
@@ -4784,12 +4804,18 @@ def check_atlas_console(root: pathlib.Path) -> list[Finding]:
     if "_ATLAS_CROSSTAB_ROWS" not in app or "_ATLAS_CROSSTAB_COLS" not in app:
         return _fail("atlas_console", "the cross-tab row/column dimensions must be whitelisted "
                      "server-side (_ATLAS_CROSSTAB_ROWS / _ATLAS_CROSSTAB_COLS)")
+    # The records grid is a replica read like the aggregates (analytical, no
+    # read-your-writes need) and is bounded by the event cap (C8).
+    rec_head = app.rsplit("@app.route('/api/atlas/records')", 1)[-1].split("def api_atlas_records", 1)[0]
+    if "@replica_reads" not in rec_head:
+        return _fail("atlas_console", "api_atlas_records must be @replica_reads")
     return _ok("atlas_console",
                "the Atlas is a coordinated analytical console: a global faceted filter bar (with an "
-               "agency typeahead) drives a bounded Overview and a searchable Breakdown of cross-tabs; "
-               "four non-geographic aggregates (atlas_volume_series, atlas_breakdown, atlas_crosstab, "
-               "atlas_agency_facet) feed it, all capped (C8) and location-free so zero-knowledge "
-               "events are counted but never located (C6)")
+               "agency typeahead) drives a bounded Overview, a searchable Breakdown of cross-tabs, and "
+               "a keyset-paginated Records grid; four non-geographic aggregates (atlas_volume_series, "
+               "atlas_breakdown, atlas_crosstab, atlas_agency_facet) plus a ZK-redacted atlas_records "
+               "feed it, all capped (C8) and location-free so zero-knowledge events are counted but "
+               "never located (C6)")
 
 
 # ---------------------------------------------------------------------------
