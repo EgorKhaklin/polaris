@@ -7,8 +7,8 @@ holds and which invariant guards it. **Job:** every table in the schema
 and its migrations, grouped, with the constraint that makes each
 guarantee true.
 
-The Polaris schema is **30 tables** in `01_schema.sql` (v9.234), organized
-into six functional groups. A migrated deployment holds **34 tables**: those,
+The Polaris schema is **32 tables** in `01_schema.sql` (v9.247), organized
+into six functional groups. A migrated deployment holds **36 tables**: those,
 the `schema_version` migration registry that `00_migrations_table.sql`
 creates, and the three tables the migrations under `polaris_sql/migrations/`
 add to a running database (`OperatorWebauthnCredential`, `OperatorSession`,
@@ -34,11 +34,12 @@ add to a running database (`OperatorWebauthnCredential`, `OperatorSession`,
   QuantumObserverBinding is a scaffold with no planned use.
 - **Policy, federation and operations** (AgencyAlgorithmAuth,
   IssuerDiscretionPolicy, AgencyQuota, AgencyTrustAttestation,
-  RecoveryRequest, LifecycleArchiveCheckpoint): which agency may sign
-  under which algorithm, per-agency issuance and verification
-  ceilings, cross-agency trust, the two-phase holder recovery ceremony
-  after catastrophic loss (UC-9), and the audit-of-record row each
-  archive purge appends.
+  RecoveryRequest, LifecycleArchiveCheckpoint, BulkEnrollmentBatch,
+  BulkEnrollmentStaging): which agency may sign under which algorithm,
+  per-agency issuance and verification ceilings, cross-agency trust,
+  the two-phase holder recovery ceremony after catastrophic loss
+  (UC-9), the audit-of-record row each archive purge appends, and the
+  staging tables that issue a whole population set-based (P2.4).
 
 Schema is in `polaris_sql/01_schema.sql`. Indexes in
 `polaris_sql/02_indexes.sql`. Triggers (state machine, append-only,
@@ -292,6 +293,25 @@ records who, when and why, never the prior name. Append-only by trigger
 The single-use nonce store behind `/api/zk/verify`. A verified proof
 consumes `(epoch_id, context_id, nonce)`; a replay of the same bundle
 hits the primary key and is rejected. Holds no token or holder data.
+
+### `BulkEnrollmentBatch` (roadmap P2.4)
+
+One row per population import: the issuing agency, the algorithm, an
+optional note, and (once issued) `issued_at` and `rows_issued`. A batch
+is one agency under one algorithm, which is what lets `uc_bulk_issue`
+authorize the whole import once. A batch whose `issued_at` is set is
+refused a second issue.
+
+### `BulkEnrollmentStaging` (roadmap P2.4)
+
+One row per person to enroll, carrying the same fields a single
+issuance takes plus scratch columns (`individual_id`, `token_id`) the
+procedure fills in. `COPY` loads it; `uc_bulk_issue` reads it and
+issues the batch set-based through the full constraint set. `batch_id`
+references the batch but does not cascade (staging is cleaned
+explicitly, never swept by a parent delete). A staged `individual_id`
+left NULL is a new person; set, it correlates a re-card to an existing
+one, which is what makes C3 reachable across a batch.
 
 ## Records & substrate tables
 

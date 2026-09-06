@@ -155,6 +155,8 @@ CHANGELOG entry for the version carries the detail.
 | The HA profile runs the database under Patroni with a leader lease in etcd and HAProxy routing on the role endpoints; the failover drill loses the leader, cuts it off from the lease store, switches over and crashes an etcd member under a live write stream against ceilings on every push; the split-brain analysis is written | v9.243 | `check_ha_automation` |
 | The Helm profile runs the same Patroni members with the cluster's API as the lease store and the same router; the kind drill deletes the leader pod, freezes the leader's container and switches over under a live write stream, and asserts every acknowledged insert present | v9.244 | `check_helm_reference_profile` |
 | The four append-only event tables are monthly range-partitioned; a manager premakes and detaches months (re-adding the append-only trigger so C1 holds across the detach), an online migration converts a pre-v9.245 database in place, and a drill proves append-only across a partition, an attach and a detach on every push | v9.245 | `check_event_table_partitioning` |
+| The read-only surfaces (the atlas API, the verification list, the token export) route to a streaming replica under an explicit staleness contract with failback to the primary; correctness-critical reads stay on the primary; the failover drill proves the app serves reads from the replica | v9.246 | `check_read_replica_routing` |
+| A whole population stages with `COPY` and issues set-based in one transaction through `uc_bulk_issue`, every row through the full constraint set and a single violation rolling the batch back; a drill proves throughput, all-or-none atomicity, and C3 across the batch on every push | v9.247 | `check_bulk_enrollment` |
 
 ---
 

@@ -4625,6 +4625,89 @@ def check_read_replica_routing(root: pathlib.Path) -> list[Finding]:
                "pooler serves a read-only database, and the failover drill proves the app serves reads from the replica")
 
 
+def check_bulk_enrollment(root: pathlib.Path) -> list[Finding]:
+    """Roadmap P2.4 (v9.247): the bulk enrollment pipeline. Records are staged
+    with COPY into BulkEnrollmentStaging and issued SET-BASED in one
+    transaction by uc_bulk_issue -- every row through the full constraint set,
+    a single violation rolling the whole batch back. A staged individual_id
+    left NULL is a new person; set, it correlates a re-card to an existing one,
+    which is what makes C3 (uq_one_active_per_person) reachable across a batch.
+    A CI drill proves throughput, all-or-none atomicity, C3 across the batch,
+    and the issue/auth/empty refusals."""
+    schema = _read(root, "polaris_sql/01_schema.sql")
+    if not schema:
+        return _fail("bulk_enrollment", "polaris_sql/01_schema.sql is missing")
+    for t in ("BulkEnrollmentBatch", "BulkEnrollmentStaging"):
+        if f"CREATE TABLE IF NOT EXISTS {t} (" not in schema:
+            return _fail("bulk_enrollment", f"01_schema.sql must define {t}")
+    # staging references the batch but must NOT cascade (the audit rule: staging
+    # is cleaned explicitly, never swept by a parent delete).
+    stg = re.search(r"CREATE TABLE IF NOT EXISTS BulkEnrollmentStaging \((?:(?!CREATE TABLE).)*?\);", schema, re.S)
+    if not stg:
+        return _fail("bulk_enrollment", "BulkEnrollmentStaging block not found in 01_schema.sql")
+    if "REFERENCES BulkEnrollmentBatch(batch_id)" not in stg.group(0):
+        return _fail("bulk_enrollment", "BulkEnrollmentStaging.batch_id must reference BulkEnrollmentBatch")
+    if "ON DELETE CASCADE" in stg.group(0):
+        return _fail("bulk_enrollment", "BulkEnrollmentStaging must not cascade from the batch (staging is cleaned explicitly)")
+
+    proc = _read(root, "polaris_sql/05_procedures.sql")
+    if "PROCEDURE uc_bulk_issue" not in proc:
+        return _fail("bulk_enrollment", "05_procedures.sql must define uc_bulk_issue")
+    _m = re.search(r"CREATE OR REPLACE PROCEDURE uc_bulk_issue.*?END \$\$;", proc, re.S)
+    body = _m.group(0) if _m else proc
+    # the same authorization gate uc1 applies, checked once for the batch
+    if "AgencyAlgorithmAuth" not in body or "'ISSUE'" not in body or "'BOTH'" not in body:
+        return _fail("bulk_enrollment", "uc_bulk_issue must gate on AgencyAlgorithmAuth (ISSUE/BOTH), like uc1")
+    if "insufficient_privilege" not in body:
+        return _fail("bulk_enrollment", "uc_bulk_issue must raise insufficient_privilege for an unauthorized agency")
+    if "already issued" not in body or "issued_at IS NOT NULL" not in body:
+        return _fail("bulk_enrollment", "uc_bulk_issue must refuse a batch that was already issued")
+    # new-person vs re-card correlation is what makes C3 reachable across a batch
+    if "COALESCE(individual_id" not in body:
+        return _fail("bulk_enrollment", "uc_bulk_issue must COALESCE a staged individual_id (NULL = new person, set = re-card)")
+    if "NOT EXISTS" not in body:
+        return _fail("bulk_enrollment", "uc_bulk_issue must skip the Individual insert for a correlated (existing) individual")
+    # set-based issue through the full constraint set, then activate
+    for needle in ("INSERT INTO Individual", "INSERT INTO IdentityToken", "'RESERVE'",
+                   "INSERT INTO TokenSignature", "INSERT INTO TokenLifecycleEvent", "'ACTIVE'"):
+        if needle not in body:
+            return _fail("bulk_enrollment", f"uc_bulk_issue must perform the set-based issue step {needle!r}")
+
+    up = _read(root, "polaris_sql/migrations/2026-09-06-001-bulk-enrollment.up.sql")
+    down = _read(root, "polaris_sql/migrations/2026-09-06-001-bulk-enrollment.down.sql")
+    if not up or "BulkEnrollmentStaging" not in up or "BulkEnrollmentBatch" not in up:
+        return _fail("bulk_enrollment", "the up migration (2026-09-06-001) must add the batch + staging tables")
+    if not down or "DROP TABLE IF EXISTS BulkEnrollmentStaging" not in down or "DROP PROCEDURE IF EXISTS uc_bulk_issue" not in down:
+        return _fail("bulk_enrollment", "the down migration must drop the staging table and uc_bulk_issue")
+
+    drill = _read(root, "scripts/polaris-bulk-drill.sh")
+    ci = _read(root, ".github/workflows/ci.yml")
+    if not drill:
+        return _fail("bulk_enrollment", "scripts/polaris-bulk-drill.sh is missing")
+    # the drill must stage with COPY, measure throughput, and exercise each guard
+    for needle in ("\\copy", "uc_bulk_issue", "BULK_THROUGHPUT", "unique_violation",
+                   "insufficient_privilege", "invalid_parameter_value", "ROLLBACK"):
+        if needle not in drill:
+            return _fail("bulk_enrollment", f"polaris-bulk-drill.sh must exercise {needle!r}: COPY, throughput, "
+                         "atomicity/C3, the auth and already-issued refusals, and roll back")
+    if "polaris-bulk-drill.sh" not in ci:
+        return _fail("bulk_enrollment", "ci.yml must run scripts/polaris-bulk-drill.sh")
+
+    # the operator surface: a CLI that stages an extract with COPY and issues it
+    cli = _read(root, "polaris_cli/polaris.py")
+    if "def cmd_bulk_enroll" not in cli or "'bulk-enroll'" not in cli:
+        return _fail("bulk_enrollment", "polaris_cli/polaris.py must expose the bulk-enroll command (cmd_bulk_enroll + a HANDLERS entry)")
+    if "copy_expert" not in cli:
+        return _fail("bulk_enrollment", "the bulk-enroll command must stage the extract with COPY (copy_expert), not row-by-row inserts")
+    return _ok("bulk_enrollment",
+               "records stage with COPY into BulkEnrollmentStaging and issue set-based through uc_bulk_issue (the uc1 "
+               "authorization gate once per batch, every row through the full constraint set, a single violation rolling "
+               "the batch back); a staged individual_id correlates a re-card to an existing person, making C3 reachable "
+               "across a batch; a migration adds and reverts it; the bulk-enroll CLI stages an extract with COPY and "
+               "issues the batch; and a CI drill proves throughput, all-or-none atomicity, C3 across the batch, and the "
+               "issue/auth/empty refusals")
+
+
 # ---------------------------------------------------------------------------
 # Image builds — every container image CI builds goes through
 # scripts/polaris-image-build.sh, which retries a build that failed on someone
@@ -5134,6 +5217,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_ha_automation,
     check_event_table_partitioning,
     check_read_replica_routing,
+    check_bulk_enrollment,
     check_stated_counts,
     check_c1c10_objects_resolve,
     check_helm_chart_version_current,

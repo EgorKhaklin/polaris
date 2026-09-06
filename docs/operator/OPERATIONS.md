@@ -261,6 +261,60 @@ SELECT username, webauthn_required_after
  ORDER BY webauthn_required_after;
 ```
 
+### Bulk enrollment (population onboarding)
+
+Onboarding an authority's existing population is a set-based operation, not a
+loop over the single-issue path. Records are staged with `COPY` and the whole
+batch is issued in one transaction: every row passes the same constraint set a
+single issuance passes, and a single violation rolls the entire batch back (all
+issued, or none). One batch is one issuing agency under one algorithm. The
+mechanism is [bulk-enrollment.md](../design/bulk-enrollment.md).
+
+**The extract.** A pipe-delimited file, one line per person, columns in order:
+
+```
+legal_name|date_of_birth|jurisdiction|biometric_binding_type|token_value|physical_serial|permitted_contexts
+```
+
+`biometric_binding_type` is one of `NONE`/`FINGERPRINT`/`FACE`/`IRIS`;
+`permitted_contexts` is a Postgres array literal (`{}` or `{1,4}`). Each row's
+`token_value` and `physical_serial` are the credential's own identifiers and
+must be unique across the registry.
+
+**Dry run first.** Stage and validate the extract without issuing; it rolls
+back and reports the row count:
+
+```bash
+polaris-id bulk-enroll ./population.csv --agency 1 --algorithm 1 --dry-run
+```
+
+**Issue the batch.** The issuing agency must hold `ISSUE` or `BOTH` on the
+algorithm (`AgencyAlgorithmAuth`); an unauthorized agency is refused with exit
+3 and nothing is issued:
+
+```bash
+polaris-id bulk-enroll ./population.csv --agency 1 --algorithm 1 --note '2026 Q3 migration'
+# -> ✓ Batch #7: issued and activated 240418 tokens set-based (agency 1, algorithm 1).
+```
+
+A duplicate serial anywhere in the file, or two rows for one person, takes the
+**whole** batch down (exit 3, nothing issued): fix the extract and re-run. The
+batch row itself is rolled back on failure, so a failed run leaves no trace.
+
+**After a run.** Issued tokens are ordinary `IdentityToken` rows and are
+`ACTIVE` immediately. The staging rows are scratch and can be removed once you
+have confirmed the import; they do not cascade from the batch, so clear them
+explicitly:
+
+```sql
+DELETE FROM BulkEnrollmentStaging WHERE batch_id = 7;
+```
+
+To onboard people who are already in the registry (a re-card), set the staged
+`individual_id` to the existing person; C3 still holds, so their prior token
+must already be inactive (lost, revoked, or expired) or the batch rolls back.
+Retiring the old credential is a separate, audited step.
+
 ### Retire a cryptographic algorithm
 
 An algorithm is retired by its `deprecation_date`. Once the date has passed,

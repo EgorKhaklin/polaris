@@ -15,6 +15,7 @@ Run:
 import os
 import sys
 import subprocess
+import tempfile
 import unittest
 import psycopg2
 from psycopg2.extras import RealDictCursor
@@ -305,6 +306,71 @@ class IssueCommandTests(CLIBaseTestCase):
                          f"Expected 2 lifecycle events, got {len(events)}: {events}")
         self.assertEqual(events[0]['event_type'], 'ISSUED')
         self.assertEqual(events[1]['event_type'], 'ACTIVATED')
+
+
+# ============================================================================
+# bulk-enroll (roadmap P2.4)
+# ============================================================================
+
+class BulkEnrollCommandTests(CLIBaseTestCase):
+
+    def _extract(self, rows):
+        """Write a pipe-delimited extract to a temp file and return its path.
+        Each row is a 7-tuple matching the bulk-enroll column order."""
+        fh = tempfile.NamedTemporaryFile('w', suffix='.csv', delete=False, dir='/tmp')
+        for r in rows:
+            fh.write('|'.join(r) + '\n')
+        fh.close()
+        self.addCleanup(os.unlink, fh.name)
+        return fh.name
+
+    def _count(self, like):
+        conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT status, count(*) AS n FROM IdentityToken "
+                            "WHERE token_value LIKE %s GROUP BY status", (like,))
+                return {row['status']: row['n'] for row in cur.fetchall()}
+        finally:
+            conn.close()
+
+    def test_bulk_enroll_issues_batch_set_based(self):
+        csv = self._extract([
+            ('Bulk One',   '1990-01-01', 'US-PA', 'FINGERPRINT', 'BULKCLI-TOK-1', 'BULKCLI-SER-1', '{1,4}'),
+            ('Bulk Two',   '1988-07-12', 'US-CA', 'FACE',        'BULKCLI-TOK-2', 'BULKCLI-SER-2', '{1}'),
+            ('Bulk Three', '1995-11-30', 'US-NY', 'IRIS',        'BULKCLI-TOK-3', 'BULKCLI-SER-3', '{}'),
+        ])
+        r = run_cli('bulk-enroll', csv, '--agency', '1', '--algorithm', '1', '--note', 'cli suite')
+        self.assertIn('issued and activated 3 tokens', r.stdout)
+        self.assertEqual(self._count('BULKCLI-TOK-%'), {'ACTIVE': 3})
+
+    def test_bulk_enroll_dry_run_issues_nothing(self):
+        csv = self._extract([
+            ('Dry One', '1990-01-01', 'US-PA', 'FINGERPRINT', 'BULKDRY-TOK-1', 'BULKDRY-SER-1', '{}'),
+        ])
+        r = run_cli('bulk-enroll', csv, '--agency', '1', '--algorithm', '1', '--dry-run')
+        self.assertIn('Dry run', r.stdout)
+        self.assertEqual(self._count('BULKDRY-TOK-%'), {})
+
+    def test_bulk_enroll_unauthorized_agency_fails(self):
+        # Agency 4 (TSA) holds only VERIFY on algorithm 1; it cannot issue.
+        csv = self._extract([
+            ('No Auth', '1990-01-01', 'US-PA', 'FINGERPRINT', 'BULKUA-TOK-1', 'BULKUA-SER-1', '{}'),
+        ])
+        r = run_cli('bulk-enroll', csv, '--agency', '4', '--algorithm', '1', expect_success=False)
+        self.assertEqual(r.returncode, 3)
+        self.assertIn('not authorized to issue', r.stderr)
+        self.assertEqual(self._count('BULKUA-TOK-%'), {})
+
+    def test_bulk_enroll_duplicate_serial_rolls_back_whole_batch(self):
+        # Two rows share a physical serial: the batch is all-or-none, so NONE issue.
+        csv = self._extract([
+            ('Dup One', '1990-01-01', 'US-PA', 'FACE', 'BULKDUP-TOK-1', 'BULKDUP-SER-X', '{}'),
+            ('Dup Two', '1990-01-01', 'US-PA', 'FACE', 'BULKDUP-TOK-2', 'BULKDUP-SER-X', '{}'),
+        ])
+        r = run_cli('bulk-enroll', csv, '--agency', '1', '--algorithm', '1', expect_success=False)
+        self.assertEqual(r.returncode, 3)
+        self.assertEqual(self._count('BULKDUP-TOK-%'), {})
 
 
 # ============================================================================

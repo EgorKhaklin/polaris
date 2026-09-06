@@ -24,6 +24,7 @@ drift from what the program accepts):
     recovery-initiate  UC-9 phase 1: open a catastrophic-loss recovery ceremony
     recovery-complete  UC-9 phase 2: approve or reject a pending recovery request
     transition         Apply a state-machine transition to a token
+    bulk-enroll        P2.4: stage an extract with COPY and issue the batch set-based
     user-list          List application users (web auth accounts)
     user-create        Create a new application user
     user-passwd        Change a user's password (also clears lockout)
@@ -1330,6 +1331,88 @@ def cmd_transition(args):
 
 
 # ----------------------------------------------------------------------------
+# COMMAND: bulk-enroll (roadmap P2.4)
+#
+# Onboarding an authority's existing population one `issue` at a time is
+# millions of round trips. bulk-enroll stages a pipe-delimited extract with
+# COPY (client-side, the psql \copy path) and issues the whole batch set-based
+# in ONE transaction through uc_bulk_issue: every row runs the full constraint
+# set, and a single violation rolls the entire batch back (all issued, or
+# none). The extract columns, in order, are:
+#     legal_name|date_of_birth|jurisdiction|biometric_binding_type|
+#     token_value|physical_serial|permitted_contexts
+# permitted_contexts is a Postgres array literal ({} or {1,4}); the biometric
+# type is one of NONE/FINGERPRINT/FACE/IRIS. A row's individual is created
+# fresh (first enrollment); pre-correlating a re-card to an existing person is
+# a database-side concern (a staged individual_id) not exposed on this path.
+# ----------------------------------------------------------------------------
+
+_BULK_STAGING_COLS = (
+    "legal_name", "date_of_birth", "jurisdiction", "biometric_binding_type",
+    "token_value", "physical_serial", "permitted_contexts",
+)
+
+
+def cmd_bulk_enroll(args):
+    if not os.path.isfile(args.csv):
+        sys.stderr.write(red(f"No such extract file: {args.csv}\n"))
+        sys.exit(1)
+    cols = ", ".join(_BULK_STAGING_COLS)
+    conn = connect()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO BulkEnrollmentBatch (issuing_agency_id, algorithm_id, note) "
+                "VALUES (%s, %s, %s) RETURNING batch_id",
+                (args.agency, args.algorithm, args.note),
+            )
+            batch_id = cur.fetchone()["batch_id"]
+            # Stage client-side (COPY FROM STDIN, the \copy path) into a scratch
+            # table, then attach every row to the batch. ON COMMIT DROP clears
+            # the scratch when we commit.
+            # A scratch table shaped as exactly the staged columns (types from
+            # BulkEnrollmentStaging, no NOT NULL/PK to satisfy) so the COPY of a
+            # batch-agnostic extract lands cleanly; ON COMMIT DROP clears it.
+            cur.execute(
+                f"CREATE TEMP TABLE _bulk_in ON COMMIT DROP AS "
+                f"SELECT {cols} FROM BulkEnrollmentStaging WITH NO DATA"
+            )
+            with open(args.csv, "r", encoding="utf-8") as fh:
+                cur.copy_expert(
+                    f"COPY _bulk_in ({cols}) FROM STDIN WITH (FORMAT csv, DELIMITER '|')",
+                    fh,
+                )
+            cur.execute(f"SELECT count(*) AS n FROM _bulk_in")
+            staged = cur.fetchone()["n"]
+            if staged == 0:
+                conn.rollback()
+                sys.stderr.write(red("The extract staged zero rows; nothing to issue.\n"))
+                sys.exit(1)
+            cur.execute(
+                f"INSERT INTO BulkEnrollmentStaging (batch_id, {cols}) "
+                f"SELECT %s, {cols} FROM _bulk_in",
+                (batch_id,),
+            )
+            if args.dry_run:
+                conn.rollback()
+                print(green(f"✓ Dry run: {staged} rows staged and validated for batch #{batch_id}; rolled back, nothing issued."))
+                return
+            cur.execute("CALL uc_bulk_issue(%s)", (batch_id,))
+            cur.execute(
+                "SELECT rows_issued FROM BulkEnrollmentBatch WHERE batch_id = %s", (batch_id,)
+            )
+            issued = cur.fetchone()["rows_issued"]
+            conn.commit()
+        print(green(f"✓ Batch #{batch_id}: issued and activated {issued} tokens set-based (agency {args.agency}, algorithm {args.algorithm})."))
+    except psycopg2.Error as e:
+        conn.rollback()
+        sys.stderr.write(red(f"Bulk enrollment rejected (whole batch rolled back): {db_error_message(e)}\n"))
+        sys.exit(3)
+    finally:
+        conn.close()
+
+
+# ----------------------------------------------------------------------------
 # Argument parser
 # ----------------------------------------------------------------------------
 
@@ -1514,6 +1597,18 @@ def build_parser():
     p_t.add_argument('--actor',  type=int, help='Actor agency ID for the audit row')
     p_t.add_argument('--reason', default='CLI_TRANSITION')
 
+    # bulk-enroll (roadmap P2.4)
+    p_be = sub.add_parser('bulk-enroll',
+                          help='P2.4: stage a pipe-delimited extract with COPY and issue the whole batch set-based')
+    p_be.add_argument('csv',
+                      help="Pipe-delimited extract: legal_name|date_of_birth|jurisdiction|"
+                           "biometric_binding_type|token_value|physical_serial|permitted_contexts")
+    p_be.add_argument('--agency',    type=int, required=True, help='Issuing agency ID (must hold ISSUE/BOTH on the algorithm)')
+    p_be.add_argument('--algorithm', type=int, required=True, help='Cryptographic algorithm ID')
+    p_be.add_argument('--note',      help='Optional batch note (recorded on BulkEnrollmentBatch)')
+    p_be.add_argument('--dry-run',   action='store_true',
+                      help='Stage and validate the extract, then roll back without issuing')
+
     # user-list
     sub.add_parser('user-list', help='List application users (web auth accounts)')
 
@@ -1609,6 +1704,7 @@ HANDLERS = {
     'recovery-initiate': cmd_recovery_initiate,
     'recovery-complete': cmd_recovery_complete,
     'transition':       cmd_transition,
+    'bulk-enroll':      cmd_bulk_enroll,
     'user-list':        cmd_user_list,
     'user-create':      cmd_user_create,
     'user-passwd':      cmd_user_passwd,

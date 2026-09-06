@@ -224,6 +224,19 @@ jobs:
       - name: Partition drill (monthly partitions + append-only across attach/detach + online conversion)
         run: bash scripts/polaris-partition-drill.sh
 
+      # v9.247 (roadmap P2.4) — bulk enrollment, exercised. Onboarding a
+      # population one uc1_issue at a time is millions of round trips; the bulk
+      # path stages records with COPY and issues them set-based in one
+      # transaction through uc_bulk_issue. The drill COPYs 5000 records, issues
+      # them (every row ACTIVE, signed, ISSUED+ACTIVATED, over a rows/s floor),
+      # then proves the batch is all-or-none: a duplicate serial and two rows
+      # for one person (C3) each roll the whole batch back, and the already-
+      # issued, unauthorized, and empty-batch refusals all hold. Every test
+      # rolls back (it mints no append-only events to clean up). Pinned by
+      # check_bulk_enrollment.
+      - name: Bulk-enrollment drill (COPY + set-based issue, atomic all-or-none, C3 across the batch)
+        run: bash scripts/polaris-bulk-drill.sh
+
       - name: Abuse-controls drill (quota under load + alert unit tests, redis backend)
         env:
           POLARIS_RATE_LIMIT_BACKEND: redis

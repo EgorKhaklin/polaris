@@ -5,6 +5,53 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.247 — 2026-09-06 (bulk enrollment)
+
+Roadmap P2.4. Onboarding an authority's existing population is the one workload
+at a scale nothing else in Polaris meets: every other issuance path is one
+person at a time, and a migration is millions. Running the single-issue path a
+million times is a million transactions and a million chances for a partial
+failure to leave the import half done. This ships the set-based path.
+
+**Stage, then issue whole.** Records stage with `COPY` into the new
+`BulkEnrollmentStaging` (a batch is one issuing agency under one algorithm,
+recorded in `BulkEnrollmentBatch`), and `uc_bulk_issue` issues the whole batch
+in one transaction: the `uc1` authorization gate checked once for the batch,
+the keys pre-assigned, then one `INSERT ... SELECT` per table (Individual,
+IdentityToken in RESERVE, TokenSignature, the ISSUED events) and one `UPDATE`
+to ACTIVE. Every row runs the same per-row triggers, foreign keys, CHECKs, and
+unique constraints a single issuance runs. Because it is one transaction, a
+single violating row rolls back every row: the import lands whole, or not at
+all.
+
+**C3 reachable across a batch.** A staged `individual_id` left NULL is a new
+person; set, it correlates a re-card to an existing one, and the Individual
+insert skips a person who already exists. That is what puts C3
+(`uq_one_active_per_person`) genuinely in the path: two staged rows for one
+person, or a re-card of someone still holding an active token, produce two
+active tokens for one individual, which the partial unique index rejects at
+activation, which rolls the batch back. The bulk path retires nothing on its
+own.
+
+**Operator surface.** `polaris-id bulk-enroll <extract> --agency N --algorithm
+N` stages a pipe-delimited extract with client-side `COPY` and issues the
+batch, with `--dry-run` to stage and validate without issuing. An unauthorized
+agency or a duplicate serial takes the whole batch down with exit 3 and leaves
+no trace.
+
+**Measured, and proven every push.** On the development database at v9.247,
+5000 records staged and issued in about 1.1 seconds (~4500 rows/s), every token
+active, signed, and event-logged. `polaris-bulk-drill.sh` (new, in the
+`product-test` job) re-measures the rate over a deliberately low CI floor and
+proves the batch is all-or-none: a duplicate serial and two rows for one person
+each roll the whole batch back, and the already-issued, unauthorized, and
+empty-batch refusals all hold. Every test rolls back, so the drill mints no
+append-only events to clean up. Pinned by `check_bulk_enrollment` (with a
+detection test) and four `bulk-enroll` cases in the CLI suite. The schema is
+now 32 tables (36 migrated); the check layer is 124.
+
+---
+
 ## v9.246 — 2026-09-06 (read-replica routing)
 
 Roadmap P2.2. The HA profile (v9.243) keeps a streaming replica behind the

@@ -3474,6 +3474,93 @@ def test_read_replica_routing_check_discriminates(tmp_path):
     assert checks.check_read_replica_routing(tmp_path)[0].level == "FAIL", "must FAIL when the staleness contract is undocumented"
 
 
+def test_bulk_enrollment_check_discriminates(tmp_path):
+    SCHEMA = (
+        "CREATE TABLE IF NOT EXISTS BulkEnrollmentBatch (\n"
+        "    batch_id SERIAL PRIMARY KEY,\n"
+        "    issuing_agency_id INTEGER NOT NULL REFERENCES Agency(agency_id)\n);\n"
+        "CREATE TABLE IF NOT EXISTS BulkEnrollmentStaging (\n"
+        "    staging_id BIGSERIAL PRIMARY KEY,\n"
+        "    batch_id INTEGER NOT NULL REFERENCES BulkEnrollmentBatch(batch_id),\n"
+        "    individual_id INTEGER\n);\n"
+    )
+    PROC = (
+        "CREATE OR REPLACE PROCEDURE uc_bulk_issue(p_batch_id INTEGER, INOUT p_rows_issued INTEGER DEFAULT NULL)\n"
+        "LANGUAGE plpgsql AS $$\nBEGIN\n"
+        "    IF EXISTS (SELECT 1 FROM BulkEnrollmentBatch WHERE batch_id = p_batch_id AND issued_at IS NOT NULL) THEN\n"
+        "        RAISE EXCEPTION 'already issued' USING ERRCODE = 'invalid_parameter_value'; END IF;\n"
+        "    SELECT authorization_type FROM AgencyAlgorithmAuth WHERE 1=1;\n"
+        "    IF v_auth NOT IN ('ISSUE','BOTH') THEN RAISE EXCEPTION 'no' USING ERRCODE = 'insufficient_privilege'; END IF;\n"
+        "    UPDATE BulkEnrollmentStaging SET individual_id = COALESCE(individual_id, nextval('individual_individual_id_seq'));\n"
+        "    INSERT INTO Individual (individual_id) SELECT individual_id FROM BulkEnrollmentStaging s\n"
+        "      WHERE NOT EXISTS (SELECT 1 FROM Individual i WHERE i.individual_id = s.individual_id);\n"
+        "    INSERT INTO IdentityToken (status) SELECT 'RESERVE' FROM BulkEnrollmentStaging;\n"
+        "    INSERT INTO TokenSignature (token_id) SELECT token_id FROM BulkEnrollmentStaging;\n"
+        "    INSERT INTO TokenLifecycleEvent (event_type) SELECT 'ISSUED' FROM BulkEnrollmentStaging;\n"
+        "    UPDATE IdentityToken SET status = 'ACTIVE';\n"
+        "END $$;\n"
+    )
+    UP = "CREATE TABLE IF NOT EXISTS BulkEnrollmentBatch (batch_id SERIAL);\nCREATE TABLE IF NOT EXISTS BulkEnrollmentStaging (staging_id BIGSERIAL);\n"
+    DOWN = "DROP PROCEDURE IF EXISTS uc_bulk_issue(INTEGER, INTEGER);\nDROP TABLE IF EXISTS BulkEnrollmentStaging CASCADE;\nDROP TABLE IF EXISTS BulkEnrollmentBatch CASCADE;\n"
+    DRILL = (r"\copy bulk_in FROM '/x' csv" "\n"
+             "CALL uc_bulk_issue(v_b);\nRAISE NOTICE 'BULK_THROUGHPUT rows=1';\n"
+             "EXCEPTION WHEN unique_violation THEN NULL;\n"
+             "WHEN insufficient_privilege THEN NULL;\nWHEN invalid_parameter_value THEN NULL;\nROLLBACK;\n")
+    CI = "run: bash scripts/polaris-bulk-drill.sh\n"
+    CLI = "def cmd_bulk_enroll(args):\n    cur.copy_expert('COPY ...', fh)\nHANDLERS = {'bulk-enroll': cmd_bulk_enroll}\n"
+    good = {
+        "polaris_sql/01_schema.sql": SCHEMA,
+        "polaris_sql/05_procedures.sql": PROC,
+        "polaris_sql/migrations/2026-09-06-001-bulk-enrollment.up.sql": UP,
+        "polaris_sql/migrations/2026-09-06-001-bulk-enrollment.down.sql": DOWN,
+        "scripts/polaris-bulk-drill.sh": DRILL,
+        ".github/workflows/ci.yml": CI,
+        "polaris_cli/polaris.py": CLI,
+    }
+    def write(overrides=None):
+        files = dict(good); files.update(overrides or {})
+        for rel, body in files.items():
+            f = tmp_path / rel; f.parent.mkdir(parents=True, exist_ok=True); f.write_text(body)
+    write()
+    assert checks.check_bulk_enrollment(tmp_path)[0].level == "OK", "must PASS on the good fixture"
+    # a staging table missing
+    write({"polaris_sql/01_schema.sql": SCHEMA.replace("CREATE TABLE IF NOT EXISTS BulkEnrollmentStaging (", "CREATE TABLE IF NOT EXISTS Other (")})
+    assert checks.check_bulk_enrollment(tmp_path)[0].level == "FAIL", "must FAIL when a bulk table is missing"
+    # staging cascades from the batch (forbidden: staging is cleaned explicitly)
+    write({"polaris_sql/01_schema.sql": SCHEMA.replace("REFERENCES BulkEnrollmentBatch(batch_id),", "REFERENCES BulkEnrollmentBatch(batch_id) ON DELETE CASCADE,")})
+    assert checks.check_bulk_enrollment(tmp_path)[0].level == "FAIL", "must FAIL when staging cascades from the batch"
+    # the authorization gate absent
+    write({"polaris_sql/05_procedures.sql": PROC.replace("AgencyAlgorithmAuth", "SomeOtherTable")})
+    assert checks.check_bulk_enrollment(tmp_path)[0].level == "FAIL", "must FAIL without the AgencyAlgorithmAuth gate"
+    # the already-issued guard absent
+    write({"polaris_sql/05_procedures.sql": PROC.replace("issued_at IS NOT NULL", "1=2")})
+    assert checks.check_bulk_enrollment(tmp_path)[0].level == "FAIL", "must FAIL without the already-issued guard"
+    # the new-person/re-card correlation absent (C3 would be unreachable across a batch)
+    write({"polaris_sql/05_procedures.sql": PROC.replace("COALESCE(individual_id,", "(")})
+    assert checks.check_bulk_enrollment(tmp_path)[0].level == "FAIL", "must FAIL without the individual_id correlation"
+    # a set-based issue step absent
+    write({"polaris_sql/05_procedures.sql": PROC.replace("INSERT INTO TokenSignature", "INSERT INTO NothingHere")})
+    assert checks.check_bulk_enrollment(tmp_path)[0].level == "FAIL", "must FAIL when the signature insert is missing"
+    # the down migration cannot revert
+    write({"polaris_sql/migrations/2026-09-06-001-bulk-enrollment.down.sql": "DROP TABLE x;\n"})
+    assert checks.check_bulk_enrollment(tmp_path)[0].level == "FAIL", "must FAIL when the down does not drop staging + the procedure"
+    # the drill does not stage with COPY
+    write({"scripts/polaris-bulk-drill.sh": DRILL.replace(r"\copy", "insert")})
+    assert checks.check_bulk_enrollment(tmp_path)[0].level == "FAIL", "must FAIL when the drill does not COPY"
+    # the drill does not exercise atomicity/C3
+    write({"scripts/polaris-bulk-drill.sh": DRILL.replace("unique_violation", "nope")})
+    assert checks.check_bulk_enrollment(tmp_path)[0].level == "FAIL", "must FAIL when the drill does not prove all-or-none"
+    # CI does not run the drill
+    write({".github/workflows/ci.yml": "run: echo nope\n"})
+    assert checks.check_bulk_enrollment(tmp_path)[0].level == "FAIL", "must FAIL when CI does not run the drill"
+    # the operator CLI command is absent
+    write({"polaris_cli/polaris.py": "HANDLERS = {'issue': cmd_issue}\n"})
+    assert checks.check_bulk_enrollment(tmp_path)[0].level == "FAIL", "must FAIL when the bulk-enroll CLI command is absent"
+    # the CLI issues row-by-row instead of staging with COPY
+    write({"polaris_cli/polaris.py": "def cmd_bulk_enroll(args):\n    pass\nHANDLERS = {'bulk-enroll': cmd_bulk_enroll}\n"})
+    assert checks.check_bulk_enrollment(tmp_path)[0].level == "FAIL", "must FAIL when the CLI does not stage with COPY"
+
+
 def test_helm_reference_profile_check_discriminates(tmp_path):
     HELPERS = "runAsNonRoot: true\nseccompProfile:\n  type: RuntimeDefault\ncapabilities:\n  drop: [\"ALL\"]\nallowPrivilegeEscalation: false\n"
     NP = ("name: x-default-deny\npolicyTypes: [Ingress, Egress]\nname: x-allow-dns\n" + "kind: NetworkPolicy\n" * 7

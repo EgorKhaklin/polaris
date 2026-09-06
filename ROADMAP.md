@@ -29,7 +29,7 @@ XL (multi-arc). Risk is delivery risk, not security risk.
 
 ## Where we are (inventory at v9.236)
 
-**Have, working, CI-proven:** a 30-table constraint-enforced schema (34 tables
+**Have, working, CI-proven:** a 32-table constraint-enforced schema (36 tables
 in a migrated deployment) with append-only audit; a 72-route application with
 WebAuthn operator MFA, a server-side session registry, per-role network policy,
 per-agency quotas and the Atlas; an operator CLI; Plonky2 ZK Merkle inclusion
@@ -44,7 +44,7 @@ RPO and RTO; a retention engine that holds the retention decision as data with
 a floor no configuration reaches, per class and per jurisdiction, enforced by
 the purge and drilled end to end in CI; a sealed secrets store; opt-in
 distributed tracing with dashboards as code; SBOMs and SLSA provenance on every
-release; CVE gates on dependencies and images; a coverage floor; 123 invariant
+release; CVE gates on dependencies and images; a coverage floor; 124 invariant
 checks (v9.246) each with a detection test; eighteen operator runbooks and ledgers; and the bound on
 every claim in [docs/PRODUCTION-READINESS.md](docs/PRODUCTION-READINESS.md).
 
@@ -162,7 +162,7 @@ server-side; 99.95% availability.
 | [x] P2.1 | Event-table partitioning (v9.245) | L | high | P1.4 | The four append-only event tables are monthly range-partitioned on `event_timestamp` (composite PK, DEFAULT catch-all); `uc_ensure_event_partitions` premakes months and `uc_detach_event_partitions_before` detaches old ones (re-adding the append-only trigger so C1 holds across the detach); the online migration converts a pre-v9.245 database in place by attaching its table as DEFAULT (no copy) and reverts by departitioning; `polaris-partition-drill.sh` proves append-only across a partition, an attach and a detach on every push. [partitioning.md](docs/design/partitioning.md), pinned by `check_event_table_partitioning` |
 | [x] P2.2 | Read-replica routing (v9.246) | M | med | P2.1 | The read-only surfaces (the atlas API, the verification list, the token export) route to a streaming replica under an explicit staleness contract (`POLARIS_REPLICA_MAX_LAG_S`, the `X-Polaris-Data-Source` / lag headers, a health component) with failback to the primary; correctness-critical reads stay on the primary; on the HA profile the app dials the pooler's `polaris_ro` -> `pg-router:5433`. Single node is unaffected. `polaris-failover-drill.sh` proves it. Pinned by `check_read_replica_routing` |
 | [ ] P2.3 | Atlas v2 on PostGIS | L | med | P2.1 | Server-side clustering at scale replaces the bespoke binning; 10M-event map interaction inside p95 targets; the C8 caps retained |
-| [ ] P2.4 | Bulk enrollment pipeline | L | med | P2.1 | COPY-based batch issuance for authority migrations, benchmarked; every imported row still passes the full constraint set |
+| [x] P2.4 | Bulk enrollment pipeline (v9.247) | L | med | P2.1 | An authority's population stages with `COPY` into `BulkEnrollmentStaging` and issues SET-BASED in one transaction through `uc_bulk_issue`: the `uc1` authorization gate once per batch (one agency, one algorithm), the keys pre-assigned, then one `INSERT ... SELECT` per table through the full constraint set and one `UPDATE` to activate, so every imported row passes exactly what a single issuance passes and a single violation rolls the whole batch back (all issued, or none). A staged `individual_id` correlates a re-card to an existing person, which is what makes C3 reachable across a batch. The `bulk-enroll` CLI runs it from a pipe-delimited extract; `polaris-bulk-drill.sh` proves throughput (~4500 rows/s local at v9.247, floored in CI), all-or-none atomicity, C3 across the batch, and the issue/auth/empty refusals on every push. [bulk-enrollment.md](docs/design/bulk-enrollment.md), pinned by `check_bulk_enrollment` |
 | [ ] P2.5 | Epoch pipeline at scale | L | high | P0.7 | Incremental Merkle maintenance, parallel proving, witness parity at production depth; an epoch cadence spec published |
 | [ ] P2.6 | Status distribution v1 | L | high | P2.5 | Signed, versioned, short-lived status artifacts (revocation and validity) distributable via CDN and verifiable offline; freshness rules specified; this is the backbone of P3.6 |
 | [x] P2.7 | HA automation (v9.243) | L | high | P1.10 | The HA profile (`docker-compose.ha.yml`) runs the database under Patroni with a leader lease in a three-member etcd and HAProxy routing on the role endpoints; `polaris-failover-drill.sh` loses the leader, cuts it off from the lease store, switches over and crashes an etcd member under a live write stream on every push; [FAILOVER.md](docs/operator/FAILOVER.md) carries the measured numbers and the split-brain analysis. The member hosts are the operator's placement. Pinned by `check_ha_automation` |
