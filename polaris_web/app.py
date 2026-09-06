@@ -2473,6 +2473,44 @@ def api_atlas_crosstab():
     return jsonify(payload)
 
 
+@app.route('/api/atlas/facet/agencies')
+@security.login_required
+@replica_reads
+def api_atlas_facet_agencies():
+    """The agency facet for the global filter (roadmap P2.3, v9.251).
+
+    Agencies with `(agency_id, name, n_total)` matching an optional `?q=`
+    search, honouring the other active facets (outcome/disclosure/context) but
+    not the agency selection. A chip flyout of every agency does not survive
+    thousands of them; the operator types and the server returns the matches
+    with their activity counts, capped. Non-geographic (C6); operational pivot,
+    never an attribute of a person."""
+    try:
+        kind = request.args.get('kind', 'verification')
+        if kind not in ('verification', 'lifecycle'):
+            raise ValueError("kind must be 'verification' or 'lifecycle'")
+        limit = min(int(request.args.get('limit', '20')), _ATLAS_MAX_CATEGORIES)
+        search = (request.args.get('q') or '').strip()[:60] or None
+        f = _parse_atlas_filters(request.args)
+    except ValueError as e:
+        return jsonify(error=str(e)), 400
+
+    cache_key = ('facet_agencies', kind, limit, search, _filter_cache_key(f))
+    cached = _atlas_cache_get(cache_key)
+    if cached is not None:
+        return jsonify(cached)
+
+    rows = query("""
+        SELECT agency_id, name, n_total
+        FROM atlas_agency_facet(%s, %s, %s, %s, %s, %s, %s)
+    """, (f['since'], limit, kind, search, f['outcomes'], f['disclosure'], f['contexts']))
+    payload = dict(kind=kind, count=len(rows), results=[
+        {'agency_id': r['agency_id'], 'name': r['name'], 'n_total': int(r['n_total'])}
+        for r in rows])
+    _atlas_cache_set(cache_key, payload)
+    return jsonify(payload)
+
+
 # ----------------------------------------------------------------------------
 # SUBJECT FOCUS (v9.148) — single-subject investigation on the map.
 #

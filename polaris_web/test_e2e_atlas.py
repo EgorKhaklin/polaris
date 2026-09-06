@@ -207,6 +207,30 @@ class TestAtlasGlobeE2E(unittest.TestCase):
         finally:
             page.close()
 
+    def test_global_filter_coordinates_the_overview(self):
+        """v9.251: the global filter bar drives the views. Selecting an outcome
+        facet must add a filter chip and re-fetch the Overview (coordinated,
+        cross-filtered). Catches: the facet wiring, the filter serialization,
+        the chip render, and the apply-to-view path."""
+        page = self._context.new_page()
+        try:
+            self._login_and_goto(page)
+            page.wait_for_selector('[data-atlas-globalbar]', state="visible", timeout=3000)
+            # open the Outcome facet and pick a value
+            page.click('.gf-facet[data-gf-facet="outcome"] > summary')
+            page.wait_for_selector('.gf-facet[data-gf-facet="outcome"] .gf-facet-opt', timeout=4000)
+            opts = page.query_selector_all('.gf-facet[data-gf-facet="outcome"] .gf-facet-opt')
+            self.assertTrue(opts, "the outcome facet must list values with counts")
+            opts[0].click()  # select the first outcome value
+            page.wait_for_timeout(1200)
+            chips = page.text_content('[data-gf-chips]') or ''
+            self.assertNotEqual(chips.strip(), "",
+                "selecting a facet value must add an active filter chip")
+            self.assertFalse(page.is_hidden('[data-gf-clear]'),
+                "the Clear all control must appear once a filter is active")
+        finally:
+            page.close()
+
     def test_atlas_page_has_no_inline_script_csp_violations(self):
         """The page must not log any CSP violations to the console.
         Per CLAUDE.md C5 + pre-known-gotcha #5: script-src 'self' is

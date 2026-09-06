@@ -4742,12 +4742,22 @@ def check_atlas_console(root: pathlib.Path) -> list[Finding]:
         return _fail("atlas_console", "the Breakdown must have a search box (data-bd-search) and an "
                      "internally-scrolling list (bd-scroll) so it survives thousands of categories")
 
+    # v9.251: one global faceted filter bar coordinates the analytical views,
+    # with a server typeahead for the agency facet (a chip flyout of every
+    # agency does not survive thousands of them).
+    if "data-atlas-globalbar" not in atlas or "data-gf-facet" not in atlas:
+        return _fail("atlas_console", "the console must have a global filter bar (data-atlas-globalbar) "
+                     "with facets (data-gf-facet) coordinating the views")
+    if "data-gf-agency-search" not in atlas:
+        return _fail("atlas_console", "the agency facet must be a server typeahead (data-gf-agency-search), "
+                     "not a flat chip flyout, so it survives thousands of agencies")
+
     # The bounded aggregates, non-geographic (no lat/lon in their contract).
     sql = _read(root, "polaris_sql/11_atlas.sql")
     if "p_search" not in sql:
         return _fail("atlas_console", "atlas_breakdown must accept p_search (a label filter) so a "
                      "single slice is findable among thousands")
-    for fn_name in ("atlas_volume_series", "atlas_breakdown", "atlas_crosstab"):
+    for fn_name in ("atlas_volume_series", "atlas_breakdown", "atlas_crosstab", "atlas_agency_facet"):
         body = re.search(rf"CREATE OR REPLACE FUNCTION {fn_name}\(.*?\$\$;", sql, re.S)
         if not body:
             return _fail("atlas_console", f"11_atlas.sql must define {fn_name}")
@@ -4758,7 +4768,8 @@ def check_atlas_console(root: pathlib.Path) -> list[Finding]:
 
     # The analytical endpoints, replica-routed and capped.
     app = _read(root, "polaris_web/app.py")
-    for route in ("/api/atlas/series", "/api/atlas/breakdown", "/api/atlas/crosstab"):
+    for route in ("/api/atlas/series", "/api/atlas/breakdown", "/api/atlas/crosstab",
+                  "/api/atlas/facet/agencies"):
         if f"@app.route('{route}')" not in app:
             return _fail("atlas_console", f"app.py must expose {route}")
     # both must be replica-read routes (analytical reads, no read-your-writes need)
@@ -4774,10 +4785,11 @@ def check_atlas_console(root: pathlib.Path) -> list[Finding]:
         return _fail("atlas_console", "the cross-tab row/column dimensions must be whitelisted "
                      "server-side (_ATLAS_CROSSTAB_ROWS / _ATLAS_CROSSTAB_COLS)")
     return _ok("atlas_console",
-               "the Atlas opens on a bounded analytical Overview (the globe is a tab), with a "
-               "Breakdown view of cross-tabs; three non-geographic aggregates (atlas_volume_series, "
-               "atlas_breakdown, atlas_crosstab) feed it, all capped (C8) and location-free so "
-               "zero-knowledge events are counted but never located (C6)")
+               "the Atlas is a coordinated analytical console: a global faceted filter bar (with an "
+               "agency typeahead) drives a bounded Overview and a searchable Breakdown of cross-tabs; "
+               "four non-geographic aggregates (atlas_volume_series, atlas_breakdown, atlas_crosstab, "
+               "atlas_agency_facet) feed it, all capped (C8) and location-free so zero-knowledge "
+               "events are counted but never located (C6)")
 
 
 # ---------------------------------------------------------------------------

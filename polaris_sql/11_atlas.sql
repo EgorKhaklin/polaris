@@ -955,3 +955,67 @@ COMMENT ON FUNCTION atlas_crosstab IS
   'the row dimension by volume (p_limit == _ATLAS_MAX_CATEGORIES); columns are '
   'a low-cardinality categorical, so the cells are bounded (C8). Non-geographic '
   '(C6): zero-knowledge events are counted, never located.';
+
+
+-- ----------------------------------------------------------------------------
+-- atlas_agency_facet  (roadmap P2.3, v9.251 — the global faceted filter)
+--
+-- The agency facet needs (agency_id, name, count): the id to drive the filter
+-- (the filter param is a CSV of agency_id) and the count so the operator sees
+-- how much activity each agency carries in the current filter context. Counts
+-- honour every OTHER active facet (outcome/disclosure/context) but NOT the
+-- agency selection itself, which is standard faceting (you can still see and
+-- add other agencies). A name/jurisdiction search makes it a typeahead that
+-- survives thousands of agencies. Top-K by volume (capped at the API).
+--
+-- Non-geographic (C6): a zero-knowledge verification counts toward its
+-- requesting agency, never a location.
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION atlas_agency_facet(
+    p_since      TIMESTAMP,
+    p_limit      INTEGER,
+    p_kind       TEXT      DEFAULT 'verification',
+    p_search     TEXT      DEFAULT NULL,
+    p_outcomes   TEXT      DEFAULT NULL,
+    p_disclosure TEXT      DEFAULT NULL,
+    p_contexts   TEXT      DEFAULT NULL
+) RETURNS TABLE (
+    agency_id   INTEGER,
+    name        TEXT,
+    n_total     BIGINT
+)
+LANGUAGE sql
+STABLE
+AS $$
+    SELECT agency_id, name, n_total FROM (
+        SELECT ag.agency_id, ag.name::TEXT AS name, count(*)::BIGINT AS n_total
+        FROM VerificationEvent ve
+        JOIN Agency ag ON ve.requesting_agency_id = ag.agency_id
+        LEFT JOIN VerificationContext vc ON ve.context_id = vc.context_id
+        WHERE p_kind = 'verification'
+          AND (p_since      IS NULL OR ve.event_timestamp >= p_since)
+          AND (p_outcomes   IS NULL OR ve.outcome         = ANY(string_to_array(p_outcomes, ',')))
+          AND (p_disclosure IS NULL OR ve.disclosure_level = ANY(string_to_array(p_disclosure, ',')))
+          AND (p_contexts   IS NULL OR vc.context_type     = ANY(string_to_array(p_contexts, ',')))
+          AND (p_search     IS NULL OR ag.name ILIKE '%' || p_search || '%'
+                                    OR ag.jurisdiction ILIKE '%' || p_search || '%')
+        GROUP BY ag.agency_id, ag.name
+        UNION ALL
+        SELECT ag.agency_id, ag.name::TEXT AS name, count(*)::BIGINT AS n_total
+        FROM TokenLifecycleEvent le
+        JOIN Agency ag ON le.actor_agency_id = ag.agency_id
+        WHERE p_kind = 'lifecycle'
+          AND (p_since  IS NULL OR le.event_timestamp >= p_since)
+          AND (p_search IS NULL OR ag.name ILIKE '%' || p_search || '%'
+                                OR ag.jurisdiction ILIKE '%' || p_search || '%')
+        GROUP BY ag.agency_id, ag.name
+    ) facet
+    ORDER BY n_total DESC, name ASC
+    LIMIT p_limit;
+$$;
+
+COMMENT ON FUNCTION atlas_agency_facet IS
+  'Roadmap P2.3 (global filter): agencies with (id, name, count) for the agency '
+  'facet/typeahead, honouring the other active facets but not the agency '
+  'selection, searchable by name/jurisdiction, top-K by volume. Non-geographic '
+  '(C6). Capped at the API (_ATLAS_MAX_CATEGORIES).';

@@ -5,6 +5,38 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.251 — 2026-09-06 (Atlas: one coordinated, faceted query)
+
+Roadmap P2.3, ship 4: the step where the console stops being separate views
+with their own controls and becomes one coordinated operational tool, the way a
+real analytics workbench works.
+
+**A global filter bar drives every view.** Stream, time window, and facets
+(context, outcome, disclosure, agency) now live in one persistent query state
+above the tabs. Change a filter and the Overview and the Breakdown both re-fetch
+against it. Each facet dropdown lists its values with live counts (computed with
+every other active facet applied but not itself, standard faceting), the agency
+facet is a server typeahead that survives thousands of agencies, and every
+selection appears as a removable chip with a Clear all.
+
+**It is all bounded and server-side.** The filters serialize into the same
+params every atlas aggregate already accepts, so filtering stays O(bounded)
+regardless of scale. One new aggregate, `atlas_agency_facet`, returns agencies
+with `(id, name, count)` for the typeahead; its endpoint
+`/api/atlas/facet/agencies` is replica-routed and capped, and it is
+non-geographic so a zero-knowledge verification counts toward its agency but is
+never located (C6). The per-view stream/window controls are gone; the Breakdown
+keeps only its own slice/sort/search options.
+
+**Proven.** `check_atlas_console` now pins the global filter bar, the agency
+typeahead, the facet endpoint, and `atlas_agency_facet` (location-free), with
+detection perturbations; four new `AtlasConsoleAPITests` cover the facet and
+that a filter narrows every aggregate; a new Playwright e2e opens a facet,
+selects a value, and asserts the chip and Clear all appear. Schema unchanged;
+the check layer is 125; the app is 76 routes.
+
+---
+
 ## v9.250 — 2026-09-06 (Atlas Breakdown, scale-hardened)
 
 Roadmap P2.3, ship 3. Direction came in to raise the whole Atlas to

@@ -3552,3 +3552,130 @@ textarea.sql {
     .bd-layout { grid-template-columns: 1fr; }
     .bd-explorer { max-height: 46vh; }
 }
+
+/* ===========================================================================
+ * Global filter bar (roadmap P2.3, v9.251) — one query state, faceted,
+ * coordinated across the Overview and Breakdown. Professional, dense, scale-safe.
+ * ======================================================================== */
+.atlas-globalbar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 7px 14px;
+    border-bottom: 1px solid var(--line);
+    background: rgba(3, 10, 19, 0.45);
+}
+.atlas-globalbar[hidden] { display: none !important; }
+.atlas-globalbar .cmd-label { margin-left: 4px; }
+
+.gf-facets { display: flex; gap: 4px; }
+.gf-facet { position: relative; }
+.gf-facet[hidden] { display: none !important; }
+.gf-facet > summary {
+    list-style: none;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+.gf-facet > summary::-webkit-details-marker { display: none; }
+.gf-facet[open] > summary { border-color: var(--cyan-deep); color: var(--ink); }
+.gf-facet-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 8px;
+    background: var(--cyan-deep);
+    color: #04121c;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 700;
+}
+.gf-facet-badge[hidden] { display: none; }
+
+.gf-facet-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    z-index: 40;
+    min-width: 240px;
+    max-height: 320px;
+    overflow-y: auto;
+    background: var(--bg1);
+    border: 1px solid var(--line-strong);
+    border-radius: 8px;
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+    padding: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.gf-facet-opt {
+    display: grid;
+    grid-template-columns: 18px 1fr auto;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    background: transparent;
+    border: none;
+    border-radius: 5px;
+    color: var(--ink-dim);
+    font-family: var(--font-ui);
+    font-size: 12px;
+    text-align: left;
+    padding: 6px 8px;
+    cursor: pointer;
+}
+.gf-facet-opt:hover { background: var(--bg2); color: var(--ink); }
+.gf-facet-opt-on { color: var(--ink); }
+.gf-facet-check { color: var(--cyan); font-size: 13px; }
+.gf-facet-optlabel { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gf-facet-optcount { font-family: var(--font-mono); font-size: 11px; color: var(--ink-faint); }
+.gf-facet-empty { padding: 8px; font-size: 12px; color: var(--ink-faint); text-align: center; }
+
+.gf-facet-agency-menu { min-width: 280px; }
+.gf-agency-input {
+    width: 100%;
+    box-sizing: border-box;
+    background: var(--bg0);
+    border: 1px solid var(--line-strong);
+    border-radius: 6px;
+    color: var(--ink);
+    font-family: var(--font-ui);
+    font-size: 13px;
+    padding: 7px 10px;
+    margin-bottom: 6px;
+}
+.gf-agency-input:focus { outline: none; border-color: var(--cyan-deep); }
+.gf-agency-results { display: flex; flex-direction: column; gap: 2px; }
+
+/* Active filter chips */
+.gf-active { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+.gf-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--cyan-tint);
+    border: 1px solid rgba(93, 214, 255, 0.35);
+    border-radius: 5px;
+    padding: 2px 4px 2px 8px;
+    font-size: 11px;
+    color: var(--ink);
+    max-width: 220px;
+}
+.gf-chip-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gf-chip-x {
+    background: transparent;
+    border: none;
+    color: var(--ink-dim);
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    padding: 0 2px;
+}
+.gf-chip-x:hover { color: var(--red); }
+.gf-clear { margin-left: 4px; }

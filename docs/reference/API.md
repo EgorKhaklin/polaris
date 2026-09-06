@@ -298,6 +298,22 @@ zero-knowledge events are counted (C6). `@replica_reads`.
 }
 ```
 
+### `GET /api/atlas/facet/agencies`
+
+The agency facet for the global filter bar (roadmap P2.3, v9.251). Agencies
+with `(agency_id, name, n_total)` matching an optional `?q=` name/jurisdiction
+search, honouring the other active facets (outcome/disclosure/context via the
+standard filter params) but not the agency selection. A chip flyout of every
+agency does not survive thousands of them, so this is a server typeahead;
+capped at `_ATLAS_MAX_CATEGORIES`. Non-geographic (C6). `@replica_reads`.
+
+```json
+{
+  "kind": "verification", "count": 2,
+  "results": [ {"agency_id": 5, "name": "First National Bank", "n_total": 18420} ]
+}
+```
+
 ### `GET /api/atlas/cache-stats`
 
 Cache observability for R8-5. Returns hit/miss/expired/evicted

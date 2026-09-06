@@ -3576,20 +3576,24 @@ def test_atlas_console_check_discriminates(tmp_path):
              '<button data-atlas-view-tab="breakdown" aria-selected="false">Breakdown</button>\n'
              '<button data-atlas-view-tab="map" aria-selected="false">Map</button>\n'
              '<input data-bd-search><div class="bd-scroll"><div data-bd-ranked></div></div>\n'
+             '<div data-atlas-globalbar><div data-gf-facet="context"></div>'
+             '<input data-gf-agency-search></div>\n'
              '<script src="atlas-console.js"></script>\n')
     def sqlfn(name, ret, extra_args=""):
         return (f"CREATE OR REPLACE FUNCTION {name}(\n    p_x INTEGER{extra_args}\n) RETURNS TABLE (\n{ret}\n)\n"
                 f"LANGUAGE sql\nSTABLE\nAS $$ SELECT 1 $$;\n")
     SQL = (sqlfn("atlas_volume_series", "    bucket_ts TIMESTAMP, n_total BIGINT, n_failure BIGINT, n_zk BIGINT")
            + sqlfn("atlas_breakdown", "    label TEXT, n_total BIGINT, n_failure BIGINT", ",\n    p_search TEXT DEFAULT NULL")
-           + sqlfn("atlas_crosstab", "    row_label TEXT, col_label TEXT, n_total BIGINT"))
+           + sqlfn("atlas_crosstab", "    row_label TEXT, col_label TEXT, n_total BIGINT")
+           + sqlfn("atlas_agency_facet", "    agency_id INTEGER, name TEXT, n_total BIGINT"))
     APP = ("_ATLAS_MAX_CLUSTERS=5000\n_ATLAS_MAX_POINTS=2000\n_ATLAS_MAX_EVENTS=500\n_ATLAS_MAX_CATEGORIES=50\n"
            "_ATLAS_BREAKDOWN_DIMENSIONS={'verification': ('agency',)}\n"
            "_ATLAS_CROSSTAB_ROWS={'verification': ('agency',)}\n"
            "_ATLAS_CROSSTAB_COLS={'verification': ('outcome',)}\n"
            "@app.route('/api/atlas/series')\n@replica_reads\ndef api_atlas_series():\n    pass\n"
            "@app.route('/api/atlas/breakdown')\n@replica_reads\ndef api_atlas_breakdown():\n    pass\n"
-           "@app.route('/api/atlas/crosstab')\n@replica_reads\ndef api_atlas_crosstab():\n    pass\n")
+           "@app.route('/api/atlas/crosstab')\n@replica_reads\ndef api_atlas_crosstab():\n    pass\n"
+           "@app.route('/api/atlas/facet/agencies')\n@replica_reads\ndef api_atlas_facet_agencies():\n    pass\n")
     good = {
         "polaris_web/templates/atlas.html": ATLAS,
         "polaris_web/static/atlas-console.js": "/* console */\n",
@@ -3640,6 +3644,15 @@ def test_atlas_console_check_discriminates(tmp_path):
     # atlas_breakdown cannot filter by label
     write({"polaris_sql/11_atlas.sql": SQL.replace("p_search", "p_other")})
     assert checks.check_atlas_console(tmp_path)[0].level == "FAIL", "must FAIL when atlas_breakdown has no label filter"
+    # the global filter bar is absent
+    write({"polaris_web/templates/atlas.html": ATLAS.replace("data-atlas-globalbar", "data-atlas-other")})
+    assert checks.check_atlas_console(tmp_path)[0].level == "FAIL", "must FAIL without the global filter bar"
+    # the agency facet is a flat flyout, not a typeahead
+    write({"polaris_web/templates/atlas.html": ATLAS.replace("data-gf-agency-search", "data-gf-agency-flyout")})
+    assert checks.check_atlas_console(tmp_path)[0].level == "FAIL", "must FAIL when the agency facet is not a typeahead"
+    # the agency facet endpoint is absent
+    write({"polaris_web/app.py": APP.replace("@app.route('/api/atlas/facet/agencies')", "@app.route('/api/atlas/facet/other')")})
+    assert checks.check_atlas_console(tmp_path)[0].level == "FAIL", "must FAIL when the agency facet endpoint is absent"
 
 
 def test_helm_reference_profile_check_discriminates(tmp_path):

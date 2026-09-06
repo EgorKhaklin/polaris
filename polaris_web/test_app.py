@@ -5685,6 +5685,34 @@ class AtlasConsoleAPITests(PolarisTestCase):
         self.assertEqual(r.status_code, 200)
         self.assertTrue(r.get_json()['truncated'], "truncated must be true when the cap is hit")
 
+    def test_agency_facet_shape_and_search(self):
+        # v9.251: the agency facet returns (agency_id, name, n_total) with a search.
+        r = self.client.get('/api/atlas/facet/agencies?window=all&q=national')
+        self.assertEqual(r.status_code, 200)
+        results = r.get_json()['results']
+        self.assertTrue(results, "the search should match seed agencies")
+        for a in results:
+            self.assertIn('agency_id', a); self.assertIn('name', a); self.assertIn('n_total', a)
+            self.assertIn('national', a['name'].lower())
+            self.assertNotIn('lat', a); self.assertNotIn('lon', a)   # C6: never a location
+
+    def test_agency_facet_capped(self):
+        r = self.client.get('/api/atlas/facet/agencies?window=all&limit=100000')
+        self.assertEqual(r.status_code, 200)
+        self.assertLessEqual(len(r.get_json()['results']), flask_app._ATLAS_MAX_CATEGORIES)
+
+    def test_global_filter_narrows_every_aggregate(self):
+        # A facet filter must flow through the aggregates (coordinated views):
+        # filtering to FAILURE returns fewer than the unfiltered total.
+        alln = sum(p['n_total'] for p in
+                   self.client.get('/api/atlas/series?window=all&buckets=24').get_json()['points'])
+        failn = sum(p['n_total'] for p in
+                    self.client.get('/api/atlas/series?window=all&buckets=24&outcomes=FAILURE').get_json()['points'])
+        self.assertLess(failn, alln, "an outcome filter must narrow the series")
+        # and the breakdown honours it too
+        bd = self.client.get('/api/atlas/breakdown?window=all&dimension=agency&outcomes=FAILURE')
+        self.assertEqual(bd.status_code, 200)
+
 
 class AtlasFilterAPITests(PolarisTestCase):
     """v8.3 (A+C): the temporal-lens + operational-filter primitives must

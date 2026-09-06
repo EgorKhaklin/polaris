@@ -31,31 +31,58 @@
         <span class="toolbar-live"><span class="live-dot"></span>LIVE</span>
     </div>
 
+    {# ---- Global filter bar: one query state drives Overview + Breakdown ---- #}
+    <div class="atlas-globalbar" data-atlas-globalbar aria-label="Filters">
+        <div class="chip-group" role="radiogroup" aria-label="Event stream">
+            <button class="toolbar-chip toolbar-chip-active" type="button" role="radio"
+                    aria-checked="true" data-gf-stream="verification">Verifications</button>
+            <button class="toolbar-chip" type="button" role="radio"
+                    aria-checked="false" data-gf-stream="lifecycle">Lifecycle</button>
+        </div>
+        <span class="chip-divider" aria-hidden="true"></span>
+        <span class="cmd-label">WINDOW</span>
+        <div class="chip-group" role="radiogroup" aria-label="Time window">
+            <button class="toolbar-chip" type="button" role="radio" aria-checked="false" data-gf-window="1h">1h</button>
+            <button class="toolbar-chip" type="button" role="radio" aria-checked="false" data-gf-window="24h">24h</button>
+            <button class="toolbar-chip" type="button" role="radio" aria-checked="false" data-gf-window="7d">7d</button>
+            <button class="toolbar-chip" type="button" role="radio" aria-checked="false" data-gf-window="30d">30d</button>
+            <button class="toolbar-chip toolbar-chip-active" type="button" role="radio" aria-checked="true" data-gf-window="all">All</button>
+        </div>
+        <span class="chip-divider" aria-hidden="true"></span>
+        <span class="cmd-label">FILTER</span>
+        <div class="gf-facets">
+            <details class="gf-facet" data-gf-facet="context">
+                <summary class="toolbar-chip">Context <span class="gf-facet-badge" data-gf-facet-count></span></summary>
+                <div class="gf-facet-menu" data-gf-facet-menu role="group" aria-label="Filter by context"></div>
+            </details>
+            <details class="gf-facet" data-gf-facet="outcome">
+                <summary class="toolbar-chip">Outcome <span class="gf-facet-badge" data-gf-facet-count></span></summary>
+                <div class="gf-facet-menu" data-gf-facet-menu role="group" aria-label="Filter by outcome"></div>
+            </details>
+            <details class="gf-facet" data-gf-facet="disclosure">
+                <summary class="toolbar-chip">Disclosure <span class="gf-facet-badge" data-gf-facet-count></span></summary>
+                <div class="gf-facet-menu" data-gf-facet-menu role="group" aria-label="Filter by disclosure"></div>
+            </details>
+            <details class="gf-facet gf-facet-agency" data-gf-facet="agency">
+                <summary class="toolbar-chip">Agency <span class="gf-facet-badge" data-gf-facet-count></span></summary>
+                <div class="gf-facet-menu gf-facet-agency-menu" role="group" aria-label="Filter by agency">
+                    <input type="search" class="gf-agency-input" data-gf-agency-search
+                           placeholder="Search agencies…" maxlength="60" autocomplete="off">
+                    <div class="gf-agency-results" data-gf-agency-results></div>
+                </div>
+            </details>
+        </div>
+        <span class="toolbar-spacer"></span>
+        <div class="gf-active" data-gf-chips aria-live="polite"></div>
+        <button class="toolbar-chip gf-clear" type="button" data-gf-clear hidden>Clear all</button>
+    </div>
+
     {# ================= OVERVIEW (default) ================= #}
     <div class="atlas-view atlas-view-overview" id="atlas-panel-overview"
          role="tabpanel" aria-labelledby="atlas-tab-overview" data-atlas-view-panel="overview"
          data-atlas-since-all="{{ health.oldest_event or '' }}">
 
-        {# Compact controls: stream + window. Filters land in a later ship. #}
-        <div class="ov-controls" aria-label="Overview controls">
-            <div class="chip-group" role="radiogroup" aria-label="Event stream">
-                <button class="toolbar-chip toolbar-chip-active" type="button" role="radio"
-                        aria-checked="true" data-ov-stream="verification">Verifications</button>
-                <button class="toolbar-chip" type="button" role="radio"
-                        aria-checked="false" data-ov-stream="lifecycle">Lifecycle</button>
-            </div>
-            <span class="chip-divider" aria-hidden="true"></span>
-            <span class="cmd-label">WINDOW</span>
-            <div class="chip-group" role="radiogroup" aria-label="Time window">
-                <button class="toolbar-chip" type="button" role="radio" aria-checked="false" data-ov-window="1h">1h</button>
-                <button class="toolbar-chip" type="button" role="radio" aria-checked="false" data-ov-window="24h">24h</button>
-                <button class="toolbar-chip" type="button" role="radio" aria-checked="false" data-ov-window="7d">7d</button>
-                <button class="toolbar-chip" type="button" role="radio" aria-checked="false" data-ov-window="30d">30d</button>
-                <button class="toolbar-chip toolbar-chip-active" type="button" role="radio" aria-checked="true" data-ov-window="all">All</button>
-            </div>
-            <span class="toolbar-spacer"></span>
-            <span class="ov-scope" data-ov-scope aria-live="polite"></span>
-        </div>
+        {# Stream + window + facets live in the global filter bar above. #}
 
         <div class="ov-grid">
             {# KPI strip. Initial values are server-rendered so the first paint is
@@ -135,23 +162,9 @@
     <div class="atlas-view atlas-view-overview" id="atlas-panel-breakdown"
          role="tabpanel" aria-labelledby="atlas-tab-breakdown" data-atlas-view-panel="breakdown" hidden>
 
-        <div class="ov-controls" aria-label="Breakdown controls">
-            <div class="chip-group" role="radiogroup" aria-label="Event stream">
-                <button class="toolbar-chip toolbar-chip-active" type="button" role="radio"
-                        aria-checked="true" data-bd-stream="verification">Verifications</button>
-                <button class="toolbar-chip" type="button" role="radio"
-                        aria-checked="false" data-bd-stream="lifecycle">Lifecycle</button>
-            </div>
-            <span class="chip-divider" aria-hidden="true"></span>
-            <span class="cmd-label">WINDOW</span>
-            <div class="chip-group" role="radiogroup" aria-label="Time window">
-                <button class="toolbar-chip" type="button" role="radio" aria-checked="false" data-bd-window="1h">1h</button>
-                <button class="toolbar-chip" type="button" role="radio" aria-checked="false" data-bd-window="24h">24h</button>
-                <button class="toolbar-chip" type="button" role="radio" aria-checked="false" data-bd-window="7d">7d</button>
-                <button class="toolbar-chip" type="button" role="radio" aria-checked="false" data-bd-window="30d">30d</button>
-                <button class="toolbar-chip toolbar-chip-active" type="button" role="radio" aria-checked="true" data-bd-window="all">All</button>
-            </div>
-            <span class="chip-divider" aria-hidden="true"></span>
+        {# Stream + window + facets are global (above); these controls are the
+           Breakdown's own view options. #}
+        <div class="ov-controls" aria-label="Breakdown options">
             <span class="cmd-label">SLICE BY</span>
             <div class="chip-group" role="radiogroup" aria-label="Slice dimension" data-bd-dim-group></div>
             <span class="toolbar-spacer"></span>

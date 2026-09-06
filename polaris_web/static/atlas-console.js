@@ -82,7 +82,13 @@
       });
       mapBooted = true;
     }
+    // The global filter bar drives Overview + Breakdown; the map has its own
+    // controls until its redesign, so hide the bar there.
+    var gb = document.querySelector('[data-atlas-globalbar]');
+    if (gb) gb.hidden = (name === 'map');
+    // Reload the shown analytical view so a filter set on another tab applies.
     if (name === 'breakdown') loadBreakdown();
+    else if (name === 'overview' && typeof loadOverview === 'function') loadOverview();
     try { history.replaceState(null, '', '#' + name); } catch (e) { /* ignore */ }
   }
   $$('[data-atlas-view-tab]').forEach(function (t) {
@@ -92,12 +98,46 @@
   if ((location.hash || '').replace('#', '') === 'map') showView('map');
 
   // =========================================================================
+  // Global filter state: ONE query drives the Overview and the Breakdown
+  // (coordinated, cross-filtered views). Stream, time window, and the facets
+  // (context / outcome / disclosure / agency) all live here and serialize into
+  // the same server params every atlas aggregate already accepts, so filtering
+  // stays a bounded server-side operation at any scale. The map keeps its own
+  // controls until its redesign ship.
+  // =========================================================================
+  var gfilters = {
+    stream: 'verification', window: 'all',
+    contexts: [], outcomes: [], disclosure: [], agencies: []   // agencies: [{id,name}]
+  };
+  var FACET_PARAM = { context: 'contexts', outcome: 'outcomes', disclosure: 'disclosure' };
+
+  function gfilterQuery() {
+    var p = ['window=' + encodeURIComponent(gfilters.window), 'kind=' + encodeURIComponent(gfilters.stream)];
+    if (gfilters.contexts.length)   p.push('contexts=' + gfilters.contexts.map(encodeURIComponent).join(','));
+    if (gfilters.outcomes.length)   p.push('outcomes=' + gfilters.outcomes.map(encodeURIComponent).join(','));
+    if (gfilters.disclosure.length) p.push('disclosure=' + gfilters.disclosure.map(encodeURIComponent).join(','));
+    if (gfilters.agencies.length)   p.push('agencies=' + gfilters.agencies.map(function (a) { return a.id; }).join(','));
+    return p.join('&');
+  }
+  // A facet's own menu counts every OTHER active facet but not itself (standard
+  // faceting: you can still see and add the other values of this dimension).
+  function facetContextQuery(exceptFacet) {
+    var t = 'window=' + encodeURIComponent(gfilters.window) + '&kind=' + encodeURIComponent(gfilters.stream);
+    if (exceptFacet !== 'context'    && gfilters.contexts.length)   t += '&contexts=' + gfilters.contexts.map(encodeURIComponent).join(',');
+    if (exceptFacet !== 'outcome'    && gfilters.outcomes.length)   t += '&outcomes=' + gfilters.outcomes.map(encodeURIComponent).join(',');
+    if (exceptFacet !== 'disclosure' && gfilters.disclosure.length) t += '&disclosure=' + gfilters.disclosure.map(encodeURIComponent).join(',');
+    if (exceptFacet !== 'agency'     && gfilters.agencies.length)   t += '&agencies=' + gfilters.agencies.map(function (a) { return a.id; }).join(',');
+    return t;
+  }
+
+  // =========================================================================
   // Overview state + controls
   // =========================================================================
   var overview = $('[data-atlas-view-panel="overview"]');
   if (!overview) return;
 
-  var state = { stream: 'verification', window: 'all' };
+  // Overview reads the global filter state (stream / window / facets).
+  var state = gfilters;
   var TONE = { total: '#38bdf8', fail: '#f87171', zk: '#a78bfa' };
 
   // The breakdown panels each view shows, per stream. A panel names its mount
@@ -115,27 +155,7 @@
     ]
   };
 
-  function setChipGroup(attr, value) {
-    $$('[' + attr + ']', overview).forEach(function (c) {
-      var on = c.getAttribute(attr) === value;
-      c.classList.toggle('toolbar-chip-active', on);
-      c.setAttribute('aria-checked', on ? 'true' : 'false');
-    });
-  }
-  $$('[data-ov-stream]', overview).forEach(function (c) {
-    c.addEventListener('click', function () {
-      state.stream = c.getAttribute('data-ov-stream');
-      setChipGroup('data-ov-stream', state.stream);
-      loadOverview();
-    });
-  });
-  $$('[data-ov-window]', overview).forEach(function (c) {
-    c.addEventListener('click', function () {
-      state.window = c.getAttribute('data-ov-window');
-      setChipGroup('data-ov-window', state.window);
-      loadOverview();
-    });
-  });
+  // (Stream + window are driven by the global filter bar, wired below.)
   var retry = $('[data-ov-retry]', overview);
   if (retry) retry.addEventListener('click', loadOverview);
 
@@ -301,7 +321,7 @@
     var seq = ++loadSeq;
     hideError();
     configurePanels();
-    var q = 'window=' + encodeURIComponent(state.window) + '&kind=' + encodeURIComponent(state.stream);
+    var q = gfilterQuery();
 
     // 1) the volume series drives the hero + the volume/failure/zk KPIs.
     apiCall('/api/atlas/series?' + q + '&buckets=48').then(function (data) {
@@ -375,7 +395,7 @@
   // outcome and disclosure so an anomalous profile stands out.
   // =========================================================================
   var bd = $('[data-atlas-view-panel="breakdown"]');
-  var bdState = { stream: 'verification', window: 'all', dim: 'agency', metric: 'volume', search: '' };
+  var bdState = { dim: 'agency', metric: 'volume', search: '' };  // stream/window are global
   var BD_DIMS = {
     verification: [
       { key: 'agency', label: 'Agency' }, { key: 'context', label: 'Context' },
@@ -410,7 +430,7 @@
     var group = $('[data-bd-dim-group]', bd);
     if (!group) return;
     group.textContent = '';
-    BD_DIMS[bdState.stream].forEach(function (d) {
+    BD_DIMS[gfilters.stream].forEach(function (d) {
       var b = el('button', { class: 'toolbar-chip', type: 'button', role: 'radio',
         'data-bd-dim': d.key, 'aria-checked': 'false', text: d.label });
       b.addEventListener('click', function () {
@@ -419,23 +439,12 @@
       group.appendChild(b);
     });
     // keep a valid selection when switching streams
-    if (!BD_DIMS[bdState.stream].some(function (d) { return d.key === bdState.dim; }))
-      bdState.dim = BD_DIMS[bdState.stream][0].key;
+    if (!BD_DIMS[gfilters.stream].some(function (d) { return d.key === bdState.dim; }))
+      bdState.dim = BD_DIMS[gfilters.stream][0].key;
     bdSetChips('data-bd-dim', bdState.dim);
   }
   if (bd) {
-    $$('[data-bd-stream]', bd).forEach(function (c) {
-      c.addEventListener('click', function () {
-        bdState.stream = c.getAttribute('data-bd-stream');
-        bdSetChips('data-bd-stream', bdState.stream); bdClearSearch(); bdBuildDimPicker(); loadBreakdown();
-      });
-    });
-    $$('[data-bd-window]', bd).forEach(function (c) {
-      c.addEventListener('click', function () {
-        bdState.window = c.getAttribute('data-bd-window');
-        bdSetChips('data-bd-window', bdState.window); loadBreakdown();
-      });
-    });
+    // (Stream + window are global, wired in the global filter bar below.)
     $$('[data-bd-metric]', bd).forEach(function (c) {
       c.addEventListener('click', function () {
         bdState.metric = c.getAttribute('data-bd-metric');
@@ -546,7 +555,7 @@
     var dim = bdState.dim;
     var title = $('[data-bd-ranked-title]', bd);
     if (title) title.textContent = 'By ' + dim;
-    var q = 'window=' + encodeURIComponent(bdState.window) + '&kind=' + encodeURIComponent(bdState.stream)
+    var q = gfilterQuery()
           + '&dimension=' + dim + '&limit=40'
           + (bdState.search ? '&search=' + encodeURIComponent(bdState.search) : '');
     apiCall('/api/atlas/breakdown?' + q).then(function (data) {
@@ -569,13 +578,13 @@
     loadRanked();
     var seq = ++bdXtabSeq;
     var dim = bdState.dim;
-    var q = 'window=' + encodeURIComponent(bdState.window) + '&kind=' + encodeURIComponent(bdState.stream);
-    var xtabs = BD_XTABS[bdState.stream];
+    var q = gfilterQuery();
+    var xtabs = BD_XTABS[gfilters.stream];
     ['outcome', 'disclosure'].forEach(function (colKey) {
       var card = $('[data-bd-xtab-card="' + colKey + '"]', bd);
       var conf = xtabs.filter(function (x) { return x.col === colKey; })[0];
       // for lifecycle, reuse the 'outcome' card slot to show the event_type matrix
-      if (!conf && colKey === 'outcome' && bdState.stream === 'lifecycle') conf = xtabs[0];
+      if (!conf && colKey === 'outcome' && gfilters.stream === 'lifecycle') conf = xtabs[0];
       if (card) card.hidden = !conf;
       if (!conf) return;
       var mount = $('[data-bd-crosstab="' + colKey + '"]', bd);
@@ -588,7 +597,168 @@
     });
   }
 
+  // =========================================================================
+  // Global filter bar: stream + window + facets, applied to every view.
+  // =========================================================================
+  var gbar = $('[data-atlas-globalbar]');
+
+  function setGfChips(attr, value) {
+    if (!gbar) return;
+    $$('[' + attr + ']', gbar).forEach(function (c) {
+      var on = c.getAttribute(attr) === value;
+      c.classList.toggle('toolbar-chip-active', on);
+      c.setAttribute('aria-checked', on ? 'true' : 'false');
+    });
+  }
+
+  // Reload whichever analytical view is visible (coordinated views).
+  function applyFilters() {
+    renderGfChips();
+    if (overview && !overview.hidden) loadOverview();
+    else if (bd && !bd.hidden) loadBreakdown();
+  }
+
+  // The context/outcome/disclosure facets apply to verifications only; on the
+  // lifecycle stream only the agency facet is meaningful.
+  function configureFacets() {
+    var isVerif = gfilters.stream === 'verification';
+    ['context', 'outcome', 'disclosure'].forEach(function (facet) {
+      var det = $('.gf-facet[data-gf-facet="' + facet + '"]', gbar);
+      if (det) { det.hidden = !isVerif; if (!isVerif) det.open = false; }
+    });
+    if (!isVerif) { gfilters.contexts = []; gfilters.outcomes = []; gfilters.disclosure = []; }
+  }
+
+  if (gbar) {
+    $$('[data-gf-stream]', gbar).forEach(function (c) {
+      c.addEventListener('click', function () {
+        gfilters.stream = c.getAttribute('data-gf-stream');
+        setGfChips('data-gf-stream', gfilters.stream);
+        configureFacets();
+        if (typeof bdBuildDimPicker === 'function') { bdClearSearch(); bdBuildDimPicker(); }
+        applyFilters();
+      });
+    });
+    $$('[data-gf-window]', gbar).forEach(function (c) {
+      c.addEventListener('click', function () {
+        gfilters.window = c.getAttribute('data-gf-window');
+        setGfChips('data-gf-window', gfilters.window);
+        applyFilters();
+      });
+    });
+
+    // context / outcome / disclosure facets: values + counts via the breakdown.
+    $$('.gf-facet[data-gf-facet]', gbar).forEach(function (det) {
+      var facet = det.getAttribute('data-gf-facet');
+      if (facet === 'agency') return;
+      det.addEventListener('toggle', function () { if (det.open) loadFacetMenu(det, facet); });
+    });
+
+    // agency facet: a server typeahead with counts (survives thousands).
+    var agencyDet = $('.gf-facet-agency', gbar);
+    if (agencyDet) {
+      var agInput = $('[data-gf-agency-search]', agencyDet);
+      var agResults = $('[data-gf-agency-results]', agencyDet);
+      var agTimer = null;
+      agencyDet._load = function () {
+        var qv = (agInput.value || '').trim();
+        apiCall('/api/atlas/facet/agencies?' + facetContextQuery('agency')
+                + (qv ? '&q=' + encodeURIComponent(qv) : '') + '&limit=20').then(function (data) {
+          agResults.textContent = '';
+          (data.results || []).forEach(function (a) {
+            var on = gfilters.agencies.some(function (x) { return x.id === a.agency_id; });
+            var row = facetOptRow(on, a.name, a.n_total, function () {
+              toggleAgency(a.agency_id, a.name); agencyDet._load();
+            });
+            agResults.appendChild(row);
+          });
+          if (!(data.results || []).length) agResults.appendChild(el('div', { class: 'gf-facet-empty', text: 'No agencies.' }));
+        }).catch(function () { agResults.textContent = 'Could not load agencies.'; });
+      };
+      agencyDet.addEventListener('toggle', function () { if (agencyDet.open) agencyDet._load(); });
+      agInput.addEventListener('input', function () { clearTimeout(agTimer); agTimer = setTimeout(agencyDet._load, 220); });
+    }
+
+    var gfClear = $('[data-gf-clear]');
+    if (gfClear) gfClear.addEventListener('click', function () {
+      gfilters.contexts = []; gfilters.outcomes = []; gfilters.disclosure = []; gfilters.agencies = [];
+      applyFilters();
+    });
+  }
+
+  function facetOptRow(on, label, count, onClick) {
+    var row = el('button', { class: 'gf-facet-opt' + (on ? ' gf-facet-opt-on' : ''), type: 'button' });
+    row.appendChild(el('span', { class: 'gf-facet-check', text: on ? '☑' : '☐' }));
+    row.appendChild(el('span', { class: 'gf-facet-optlabel', title: label, text: label }));
+    row.appendChild(el('span', { class: 'gf-facet-optcount', text: fmtInt(count) }));
+    row.addEventListener('click', onClick);
+    return row;
+  }
+  function loadFacetMenu(det, facet) {
+    var menu = $('[data-gf-facet-menu]', det);
+    if (!menu) return;
+    menu.textContent = 'Loading…';
+    apiCall('/api/atlas/breakdown?' + facetContextQuery(facet) + '&dimension=' + facet + '&limit=40').then(function (data) {
+      menu.textContent = '';
+      var selected = gfilters[FACET_PARAM[facet]];
+      (data.categories || []).forEach(function (c) {
+        menu.appendChild(facetOptRow(selected.indexOf(c.label) >= 0, prettyLabel(c.label), c.n_total, function () {
+          toggleFacetValue(facet, c.label); loadFacetMenu(det, facet);
+        }));
+      });
+      if (!(data.categories || []).length) menu.appendChild(el('div', { class: 'gf-facet-empty', text: 'No values.' }));
+    }).catch(function () { menu.textContent = 'Could not load.'; });
+  }
+  function toggleFacetValue(facet, value) {
+    var arr = gfilters[FACET_PARAM[facet]];
+    var i = arr.indexOf(value);
+    if (i >= 0) arr.splice(i, 1); else arr.push(value);
+    applyFilters();
+  }
+  function toggleAgency(id, name) {
+    var i = -1;
+    gfilters.agencies.forEach(function (a, idx) { if (a.id === id) i = idx; });
+    if (i >= 0) gfilters.agencies.splice(i, 1); else gfilters.agencies.push({ id: id, name: name });
+    applyFilters();
+  }
+  function updateFacetBadges() {
+    if (!gbar) return;
+    $$('.gf-facet[data-gf-facet]', gbar).forEach(function (det) {
+      var facet = det.getAttribute('data-gf-facet');
+      var n = facet === 'agency' ? gfilters.agencies.length : gfilters[FACET_PARAM[facet]].length;
+      var badge = $('[data-gf-facet-count]', det);
+      if (badge) { badge.textContent = n ? String(n) : ''; badge.hidden = !n; }
+    });
+  }
+  function renderGfChips() {
+    updateFacetBadges();
+    var box = $('[data-gf-chips]');
+    if (!box) return;
+    box.textContent = '';
+    var any = false;
+    function chip(label, onRemove) {
+      any = true;
+      var c = el('span', { class: 'gf-chip' });
+      c.appendChild(el('span', { class: 'gf-chip-label', title: label, text: label }));
+      var x = el('button', { class: 'gf-chip-x', type: 'button', 'aria-label': 'Remove ' + label, text: '×' });
+      x.addEventListener('click', onRemove);
+      c.appendChild(x); box.appendChild(c);
+    }
+    ['context', 'outcome', 'disclosure'].forEach(function (facet) {
+      gfilters[FACET_PARAM[facet]].slice().forEach(function (v) {
+        chip(facet + ': ' + prettyLabel(v), function () { toggleFacetValue(facet, v); });
+      });
+    });
+    gfilters.agencies.slice().forEach(function (a) {
+      chip(a.name, function () { toggleAgency(a.id, a.name); });
+    });
+    var clear = $('[data-gf-clear]');
+    if (clear) clear.hidden = !any;
+  }
+
   // initial paint
+  configureFacets();
+  renderGfChips();
   loadOverview();
 
   // LIVE refresh (shared cadence with the map). Skip when the tab is hidden.
