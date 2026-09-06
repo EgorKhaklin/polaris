@@ -2358,25 +2358,28 @@ def api_atlas_breakdown():
                     _ATLAS_MAX_CATEGORIES)
         if limit <= 0:
             raise ValueError("limit must be positive")
+        # v9.250: a case-insensitive label search so one slice is findable among
+        # thousands. Bounded length (defence in depth; it is a bound parameter).
+        search = (request.args.get('search') or '').strip()[:60] or None
         f = _parse_atlas_filters(request.args)
     except ValueError as e:
         return jsonify(error=str(e)), 400
 
-    cache_key = ('breakdown', kind, dimension, limit, _filter_cache_key(f))
+    cache_key = ('breakdown', kind, dimension, limit, search, _filter_cache_key(f))
     cached = _atlas_cache_get(cache_key)
     if cached is not None:
         return jsonify(cached)
 
     rows = query("""
         SELECT label, n_total, n_failure
-        FROM atlas_breakdown(%s, %s, %s, %s, %s, %s, %s, %s)
+        FROM atlas_breakdown(%s, %s, %s, %s, %s, %s, %s, %s, %s)
         ORDER BY n_total DESC, label ASC
     """, (dimension, f['since'], limit, kind, f['outcomes'],
-          f['disclosure'], f['contexts'], f['agencies']))
+          f['disclosure'], f['contexts'], f['agencies'], search))
 
     payload = dict(
         kind=kind, dimension=dimension, window=f['window'], limit=limit,
-        count=len(rows),
+        search=search, truncated=(len(rows) == limit), count=len(rows),
         categories=[
             {'label': r['label'], 'n_total': int(r['n_total']),
              'n_failure': int(r['n_failure'])}

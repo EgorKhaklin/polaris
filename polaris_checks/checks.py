@@ -4735,8 +4735,18 @@ def check_atlas_console(root: pathlib.Path) -> list[Finding]:
     if not _read(root, "polaris_web/static/atlas-console.js"):
         return _fail("atlas_console", "polaris_web/static/atlas-console.js is missing")
 
+    # v9.250: the Breakdown is scale-hardened — its dimension list is searchable
+    # (a label filter finds one slice among thousands) and scrolls inside its own
+    # card so the cross-tabs are never buried by a long list.
+    if "data-bd-search" not in atlas or "bd-scroll" not in atlas:
+        return _fail("atlas_console", "the Breakdown must have a search box (data-bd-search) and an "
+                     "internally-scrolling list (bd-scroll) so it survives thousands of categories")
+
     # The bounded aggregates, non-geographic (no lat/lon in their contract).
     sql = _read(root, "polaris_sql/11_atlas.sql")
+    if "p_search" not in sql:
+        return _fail("atlas_console", "atlas_breakdown must accept p_search (a label filter) so a "
+                     "single slice is findable among thousands")
     for fn_name in ("atlas_volume_series", "atlas_breakdown", "atlas_crosstab"):
         body = re.search(rf"CREATE OR REPLACE FUNCTION {fn_name}\(.*?\$\$;", sql, re.S)
         if not body:

@@ -5666,6 +5666,25 @@ class AtlasConsoleAPITests(PolarisTestCase):
         self.assertIn('ZERO_KNOWLEDGE', r.get_json()['cols'],
             "zero-knowledge must be counted in a disclosure cross-tab (C6: counted, never located)")
 
+    def test_breakdown_search_filters_labels(self):
+        # v9.250: a label search finds a slice among many. 'national' matches the
+        # seed's federal and bank agencies but not the county/state ones.
+        r = self.client.get('/api/atlas/breakdown?window=all&dimension=agency&search=national')
+        self.assertEqual(r.status_code, 200)
+        labels = [c['label'] for c in r.get_json()['categories']]
+        self.assertTrue(labels, "search should return the matching agencies")
+        self.assertTrue(all('national' in l.lower() for l in labels),
+            "every returned label must match the search term")
+        # a non-matching search returns nothing, not everything
+        r2 = self.client.get('/api/atlas/breakdown?window=all&dimension=agency&search=zznomatchzz')
+        self.assertEqual(r2.get_json()['categories'], [])
+
+    def test_breakdown_truncated_flag(self):
+        # limit=1 forces truncation on the seed's several contexts
+        r = self.client.get('/api/atlas/breakdown?window=all&dimension=context&limit=1')
+        self.assertEqual(r.status_code, 200)
+        self.assertTrue(r.get_json()['truncated'], "truncated must be true when the cap is hit")
+
 
 class AtlasFilterAPITests(PolarisTestCase):
     """v8.3 (A+C): the temporal-lens + operational-filter primitives must

@@ -1,99 +1,84 @@
-# Atlas redesign (roadmap P2.3)
+# Atlas redesign (roadmap P2.3): the operational intelligence workspace
 
-The sub-roadmap for rebuilding the Atlas as an analytical console. One ship per
-version, tracked here. Written 2026-09-06 (at v9.247).
+The sub-roadmap for rebuilding the Atlas into a professional, scale-ready
+analytical console. Rewritten 2026-09-06 (at v9.249) after direction to raise
+the bar to Palantir / TradingView grade. One ship per version, tracked here.
 
-## The thesis
+## The bar (VANTA's standing directive, 2026-09-06)
 
-Today the Atlas is a globe you look at: an always-on MapLibre canvas of
-server-clustered event bubbles. At national scale the bubbles read as
-overlapping "40k" circles that convey little, the individual-point view plots
-notional coordinates, and the geographic surface dominates a page whose real
-job is operational insight.
+The whole thing must feel **professional, real, and production-ready**: software
+a national authority actually operates, not a demo or a game HUD. See the
+`ui-quality-bar` memory. Concretely:
 
-The Atlas should be an analytical console you ask questions of. The geographic
-map is one tool inside it, kept where it genuinely earns its place: a scalable
-"where" view by jurisdiction, a drill into a single region, and above all the
-per-subject investigation map (a handful of interpretable points, which is what
-a map is actually good at). The globe stops being the front door.
+- **Palantir-grade investigation, TradingView-grade analytics.** Real tools,
+  options, configurability; coordinated, cross-filtered panels; saved state;
+  entity-centric drill-down.
+- **Scale-first.** Designed for millions of tokens and thousands-plus of
+  agencies. Never a flat dump or a single giant table (a clutter nightmare).
+  Every view is a bounded server aggregate; every list is searchable and
+  server-paginated/virtualized; every entity filter is a typeahead.
+- **Professional aesthetic.** A real design system (type scale, spacing grid,
+  muted operational palette, principled data-viz color scales). Drop the
+  game-y styling (neon glows, reticles, waveform/cockpit theatrics).
+- **Well organized, nothing cut off.** Clear IA, progressive disclosure, clean
+  overflow/scroll. Dense but legible.
+- **No corners cut.** Use current tools and techniques. This takes many ships
+  to complete correctly; quality over speed.
 
-## The production-readiness spine
+## What v9.249 exposed (why the bar had to rise)
 
-One rule makes it scale: every default view is a bounded, server-side
-aggregate. Time buckets, category counts, region counts, top-K. The browser
-never receives more than a few hundred rows regardless of ledger size. This
-extends the existing C8 caps rather than fighting them, and it is why the views
-survive the 2M-row stress set (30 global clusters, 90 days, ~40% zero-knowledge
-and unmappable) and 10M beyond it.
+At 54 agencies the console already broke down: the Breakdown became a flat 30+
+row list that pushed the cross-tabs off-screen; the agency filter was an endless
+chip flyout running past the viewport and occluding the feed; the map returned
+to overlapping count bubbles. None of it survives thousands of agencies. The
+Overview and Breakdown are sound *ideas* built on a foundation that is neither
+scale-ready nor professional. This arc fixes the foundation, then builds the
+advanced surfaces on it.
 
-Invariants held throughout:
-- **C8** (bounded results): every aggregate is capped; the cap constants are
-  named in `app.py` and pinned by `check_c8_atlas_caps`.
-- **C6** (zero-knowledge is counted, never located): ZK verifications
-  contribute to volume and disclosure-mix figures but are never plotted or
-  attributed to a subject. This is a feature, not a limitation: "40% of
-  activity is zero-knowledge and unmappable" is the privacy posture on display.
-- **C5** (no inline scripts): charts are hand-rolled inline SVG and CSS bars
-  (the pattern already in the repo), self-hosted. No CDN, no new dependency, no
-  weakening of `script-src 'self'`.
+## The vision
 
-## Decisions (locked 2026-09-06)
+The Atlas is Polaris's **operational intelligence workspace**: monitor and
+investigate identity activity across the whole system. Principles:
 
-- **Default view: Overview** (analytical at-a-glance). The globe is demoted to a
-  tab.
-- **Geography: region choropleth + drill.** The scalable "where" is
-  jurisdictional distribution (which states and agencies carry elevated
-  activity or failure), O(regions). Click a region to drill into the MapLibre
-  point map; the globe stays for per-subject journeys and as a toggle.
-- **Aesthetic: aligned with the v9.238 operations dashboard.** One clean
-  operator design language across both surfaces; reuse its KPI-tile and CSS-bar
-  primitives. Drop the cockpit theatrics (fake HDG/PIT/ZM readouts, the
-  waveform, SPIN). Keep the operational density the Atlas needs.
+1. **One query state, many coordinated views.** A global faceted filter/query
+   (time range, stream, and facets: agency, context, outcome, disclosure,
+   jurisdiction, algorithm) drives every view. Selecting in one view filters
+   all (linked, cross-filtered).
+2. **Server-side everything, bounded.** Aggregates for summaries; cursor
+   pagination + virtualization for detail; typeahead for entity pickers.
+3. **Progressive disclosure.** Summary → breakdown → entity investigation.
+4. **Configurable.** Saved filters/views; per-view options.
 
-## The console (view modes)
+## Constitutional invariants (unchanged, held every ship)
 
-| View | Answers | Scale |
-|---|---|---|
-| **Overview** (default) | How is it doing right now? | Hero volume time-series (success vs failure) + KPI cards with sparklines + top agencies / contexts / disclosure mix | ≤240 buckets, top-K |
-| **Trends** | What are the patterns over time? | Stack-by-dimension series + an hour-by-weekday activity heatmap | ≤168 cells |
-| **Breakdown** | Which slice is anomalous? | Categorical bars + cross-tabs (failure rate by agency, disclosure by context) | top-K per dimension |
-| **Map** | Where is activity / failure? | Region choropleth by jurisdiction; drill to MapLibre points; globe a toggle | O(regions) |
-| **Feed** | What is happening live? | The existing event stream + detail panel | keyset, ≤500 |
-| **Subject** (contextual) | What has this person done? | The per-subject journey map + timeline + summary; opened from search or a token page | one subject |
-
-Shared: a slim toolbar (stream, window, filters) reusing the existing filter
-state machine.
-
-## What already exists (reuse)
-
-- Bounded time-series (`atlas_timeline`, ≤240 buckets) and its endpoint.
-- Single-pass stats (`atlas_stats`: active tokens, anomalies, failures, full,
-  pq_pct, zk_pct, verifs, lifecycles).
-- The subject-investigation API (`atlas_subjects/search`, `atlas_subject`) and
-  the journey renderer in `atlas-map.js`.
-- The fetch/debounce/filter state machine, the event feed + detail panel, the
-  inline-SVG histogram primitive, MapLibre (self-hosted).
-
-## What is new (small, bounded)
-
-- SQL aggregates in `11_atlas.sql` (reach upgraded DBs via `--sync-objects`, no
-  migration): `atlas_breakdown` (top-K by dimension), a stacked-timeseries
-  variant, an hour-by-weekday heatmap, a by-jurisdiction aggregate.
-- Their capped `/api/atlas/*` endpoints, new cap constants, and C8-check
-  coverage.
-- A compact SVG chart module (`atlas-charts.js`): sparkline, area/line series,
-  bars, stacked bar, heatmap grid, choropleth.
+C8 (bounded results: caps on every aggregate; pagination caps on every grid),
+C6 (zero-knowledge counted but never located or attributed), C5 (no inline
+scripts; charts and grids hand-built or self-hosted, CSP-clean).
 
 ## Ships
 
+Done, on the old foundation (kept, then refit): Overview (v9.248),
+Breakdown + cross-tabs (v9.249).
+
 | Ship | Version | Scope | Status |
 |---|---|---|---|
-| 1 | v9.248 | Console shell + Overview view (default); globe and feed become tabs; `atlas_breakdown` aggregate; SVG chart module; aesthetic cleanup | done |
-| 2 | v9.249 | Breakdown view: slice a dimension (ranked table, failure-rate sortable) + two cross-tabs (× outcome, × disclosure) shaded by row share; `atlas_crosstab` aggregate | done |
-| 3 | v9.250 | Map redesign (region choropleth default + region drill + globe toggle) | next |
-| 4 | v9.251 | Trends view (stack-by-dimension series + hour-by-weekday heatmap) | planned |
-| 5 | v9.252 | Subject investigation promoted (timeline + summary, "open in Atlas" from token pages) + docs rewrite (`atlas-scaling.md` into a full `atlas.md`) + e2e/benchmark updates | planned |
+| 1 | v9.248 | Console shell + analytical Overview (default); globe→tab; `atlas_volume_series`/`atlas_breakdown`; SVG charts | done |
+| 2 | v9.249 | Breakdown view: slice + cross-tabs shaded by row share; `atlas_crosstab` | done |
+| 3 | v9.250 | **Breakdown scale-hardening.** The sliced-dimension list became a searchable, internally-scrolling explorer (server-side `p_search`, honest truncation footer) with the cross-tabs beside it, so it survives thousands of categories instead of a flat dump. (The wider professional design-system pass and the agency typeahead moved into ships 4-6, where the global filter and map are rebuilt anyway.) | done |
+| 4 | v9.251 | **Global faceted filter foundation + cross-filtering + professional design system.** One persistent query state across all views; facet chips with counts; entity typeahead (agency); click-any-category-to-filter; unify the per-view controls; the muted operational palette / type-space tokens / de-game-ify pass | next |
+| 5 | v9.252 | **Scale data grid + entity omni-search.** A reusable server-paginated, sortable, virtualized table (agencies / tokens / events) with typeahead; global search | planned |
+| 6 | v9.253 | **Map v2.** Region choropleth by jurisdiction (default) + hexbin density + drill to points; globe an option, not the default | planned |
+| 7 | v9.254 | **Trends.** Multi-series time analysis (brush/zoom, crosshair, compare-to-previous), hour×weekday heatmap, stack-by-dimension | planned |
+| 8 | v9.255 | **Investigate (entity workspace).** Search any entity (subject / agency / token) → linked timeline + geography + relations + activity; warrant- and agency-audit as a real entity view | planned |
+| 9 | v9.256 | **Alerts + saved views + final production pass.** Surfaced needs-attention queries; saveable filter/view state; accessibility, responsive and 2M+ performance pass | planned |
 
-The order after ship 1 is adjustable. PostGIS at 10M (the original P2.3 scope)
-remains a sub-item, gated on a PostGIS environment and a 10M dataset to measure
-the threefold win; it is orthogonal to this UX rebuild.
+Order after ship 3 is adjustable. The PostGIS-at-10M backend (original P2.3
+scope) folds into ship 6. Every ship holds the bar above; none ships a flat
+table, an unpaginated list, or a decorative flourish.
+
+## Server aggregates so far (all bounded, non-geographic unless noted)
+
+`atlas_volume_series`, `atlas_breakdown`, `atlas_crosstab` (see
+[docs/design/atlas-scaling.md](../docs/design/atlas-scaling.md)). New ships add:
+faceted-count endpoints, entity search + paginated grids, choropleth/hexbin,
+multi-series time, entity-timeline, each capped and C6/C8-clean.

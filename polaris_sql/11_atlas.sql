@@ -781,6 +781,12 @@ COMMENT ON FUNCTION atlas_volume_series IS
 -- p_dimension is whitelisted by the API before it reaches here; the CASE below
 -- maps only known values, so there is no dynamic SQL and no injection surface.
 -- ----------------------------------------------------------------------------
+-- v9.250 added p_search, changing the arity. DROP the pre-v9.250 8-arg
+-- signature so an in-place reload (--sync-objects) replaces it cleanly instead
+-- of leaving an ambiguous overload.
+DROP FUNCTION IF EXISTS atlas_breakdown(
+    TEXT, TIMESTAMP, INTEGER, TEXT, TEXT, TEXT, TEXT, TEXT);
+
 CREATE OR REPLACE FUNCTION atlas_breakdown(
     p_dimension  TEXT,                              -- verification: agency|context|outcome|disclosure|algorithm|jurisdiction ; lifecycle: agency|event_type
     p_since      TIMESTAMP,
@@ -789,7 +795,8 @@ CREATE OR REPLACE FUNCTION atlas_breakdown(
     p_outcomes   TEXT      DEFAULT NULL,
     p_disclosure TEXT      DEFAULT NULL,
     p_contexts   TEXT      DEFAULT NULL,
-    p_agencies   TEXT      DEFAULT NULL
+    p_agencies   TEXT      DEFAULT NULL,
+    p_search     TEXT      DEFAULT NULL   -- v9.250: case-insensitive label filter (find one slice among thousands)
 ) RETURNS TABLE (
     label       TEXT,
     n_total     BIGINT,
@@ -846,6 +853,7 @@ AS $$
         SELECT * FROM breakdown_l
     ) rolled
     WHERE label IS NOT NULL
+      AND (p_search IS NULL OR label ILIKE '%' || p_search || '%')
     ORDER BY n_total DESC, label ASC
     LIMIT p_limit;
 $$;

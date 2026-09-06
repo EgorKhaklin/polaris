@@ -5,6 +5,37 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.250 — 2026-09-06 (Atlas Breakdown, scale-hardened)
+
+Roadmap P2.3, ship 3. Direction came in to raise the whole Atlas to
+Palantir / TradingView grade, professional and built for millions of tokens and
+thousands-plus of agencies (see the rewritten arc in
+[DEVNOTES/atlas-redesign.md](DEVNOTES/atlas-redesign.md) and the `ui-quality-bar`
+standard). Testing the Breakdown at 54 agencies proved the point: it became a
+flat 30-plus row list that shoved the cross-tabs off-screen. This ship fixes
+that offender; the wider professional pass and the coordinated global-filter
+foundation follow in later ships.
+
+**The Breakdown is now a scale-ready explorer.** The sliced-dimension list moved
+into its own card with a **filter box** and an **internal scroll** (a sticky
+header), and the two cross-tabs sit **beside** it, always visible. Type to find
+one agency among thousands; the list never buries the analysis. A footer states
+the scope honestly ("Top 40 by volume, refine the filter to narrow", or the
+exact match count).
+
+**Server-side search.** `atlas_breakdown` gained a `p_search` label filter
+(case-insensitive), and `/api/atlas/breakdown` accepts `?search=` and returns a
+`truncated` flag, so search is a bounded server aggregate like everything else
+(C8) and finds low-volume slices the top-K list would never show.
+
+**Proven.** `check_atlas_console` now pins the searchable, internally-scrolling
+Breakdown and `atlas_breakdown`'s label filter (+ detection perturbations); two
+new `AtlasConsoleAPITests` cover search and the truncated flag; the Breakdown
+e2e case now types a search and asserts the footer reflects it. Schema
+unchanged; the check layer is 125; the app is 75 routes.
+
+---
+
 ## v9.249 — 2026-09-06 (Atlas Breakdown: find the anomalous slice)
 
 Roadmap P2.3, ship 2 of the Atlas rebuild. The Overview answers "how is it

@@ -162,23 +162,33 @@
             </div>
         </div>
 
-        <div class="bd-grid">
-            <div class="ov-card bd-ranked-card">
+        <div class="bd-layout">
+            <div class="ov-card bd-explorer">
                 <div class="ov-card-head">
                     <span class="ov-card-title" data-bd-ranked-title>By agency</span>
                     <span class="ov-legend"><span class="ov-legend-item"><i class="ov-swatch ov-swatch-total"></i>volume</span><span class="ov-legend-item"><i class="ov-swatch ov-swatch-fail"></i>failure rate</span></span>
                 </div>
-                <div class="bd-table" data-bd-ranked></div>
+                <div class="bd-search">
+                    <input type="search" data-bd-search class="bd-search-input"
+                           placeholder="Filter…" maxlength="60" autocomplete="off"
+                           aria-label="Filter the sliced dimension">
+                </div>
+                <div class="bd-scroll">
+                    <div class="bd-table" data-bd-ranked></div>
+                </div>
+                <div class="bd-explorer-foot" data-bd-count aria-live="polite"></div>
             </div>
-            <div class="ov-card" data-bd-xtab-card="outcome">
-                <div class="ov-card-head"><span class="ov-card-title" data-bd-xtab-title="outcome">Profile by outcome</span>
-                    <span class="ov-card-hint">cell shaded by its share of the row</span></div>
-                <div class="bd-matrix" data-bd-crosstab="outcome"></div>
-            </div>
-            <div class="ov-card" data-bd-xtab-card="disclosure">
-                <div class="ov-card-head"><span class="ov-card-title" data-bd-xtab-title="disclosure">Profile by disclosure</span>
-                    <span class="ov-card-hint">cell shaded by its share of the row</span></div>
-                <div class="bd-matrix" data-bd-crosstab="disclosure"></div>
+            <div class="bd-xtabs">
+                <div class="ov-card" data-bd-xtab-card="outcome">
+                    <div class="ov-card-head"><span class="ov-card-title" data-bd-xtab-title="outcome">Profile by outcome</span>
+                        <span class="ov-card-hint">cell shaded by its share of the row</span></div>
+                    <div class="bd-matrix" data-bd-crosstab="outcome"></div>
+                </div>
+                <div class="ov-card" data-bd-xtab-card="disclosure">
+                    <div class="ov-card-head"><span class="ov-card-title" data-bd-xtab-title="disclosure">Profile by disclosure</span>
+                        <span class="ov-card-hint">cell shaded by its share of the row</span></div>
+                    <div class="bd-matrix" data-bd-crosstab="disclosure"></div>
+                </div>
             </div>
         </div>
 

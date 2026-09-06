@@ -197,6 +197,13 @@ class TestAtlasGlobeE2E(unittest.TestCase):
             page.wait_for_selector('[data-bd-crosstab="outcome"] .bd-matrix-grid', timeout=4000)
             self.assertFalse(page.is_visible('[data-bd-error]'),
                 "the Breakdown error banner must stay hidden when the fetches succeed")
+            # v9.250: the dimension list is searchable (scale-hardening). Typing a
+            # term narrows it, and the footer reflects the match.
+            page.fill('[data-bd-search]', 'national')
+            page.wait_for_timeout(1500)  # debounce (220ms) + fetch
+            foot = (page.text_content('[data-bd-count]') or '').lower()
+            self.assertIn('national', foot,
+                "the Breakdown footer must reflect the search term")
         finally:
             page.close()
 

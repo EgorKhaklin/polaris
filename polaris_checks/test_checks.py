@@ -3575,12 +3575,13 @@ def test_atlas_console_check_discriminates(tmp_path):
     ATLAS = ('<button data-atlas-view-tab="overview" aria-selected="true" class="atlas-tab atlas-tab-active">Overview</button>\n'
              '<button data-atlas-view-tab="breakdown" aria-selected="false">Breakdown</button>\n'
              '<button data-atlas-view-tab="map" aria-selected="false">Map</button>\n'
+             '<input data-bd-search><div class="bd-scroll"><div data-bd-ranked></div></div>\n'
              '<script src="atlas-console.js"></script>\n')
-    def sqlfn(name, ret):
-        return (f"CREATE OR REPLACE FUNCTION {name}(\n    p_x INTEGER\n) RETURNS TABLE (\n{ret}\n)\n"
+    def sqlfn(name, ret, extra_args=""):
+        return (f"CREATE OR REPLACE FUNCTION {name}(\n    p_x INTEGER{extra_args}\n) RETURNS TABLE (\n{ret}\n)\n"
                 f"LANGUAGE sql\nSTABLE\nAS $$ SELECT 1 $$;\n")
     SQL = (sqlfn("atlas_volume_series", "    bucket_ts TIMESTAMP, n_total BIGINT, n_failure BIGINT, n_zk BIGINT")
-           + sqlfn("atlas_breakdown", "    label TEXT, n_total BIGINT, n_failure BIGINT")
+           + sqlfn("atlas_breakdown", "    label TEXT, n_total BIGINT, n_failure BIGINT", ",\n    p_search TEXT DEFAULT NULL")
            + sqlfn("atlas_crosstab", "    row_label TEXT, col_label TEXT, n_total BIGINT"))
     APP = ("_ATLAS_MAX_CLUSTERS=5000\n_ATLAS_MAX_POINTS=2000\n_ATLAS_MAX_EVENTS=500\n_ATLAS_MAX_CATEGORIES=50\n"
            "_ATLAS_BREAKDOWN_DIMENSIONS={'verification': ('agency',)}\n"
@@ -3630,6 +3631,15 @@ def test_atlas_console_check_discriminates(tmp_path):
     write({"polaris_sql/11_atlas.sql": SQL.replace("row_label TEXT, col_label TEXT, n_total BIGINT",
                                                    "row_label TEXT, lon DOUBLE PRECISION, n_total BIGINT")})
     assert checks.check_atlas_console(tmp_path)[0].level == "FAIL", "must FAIL when atlas_crosstab returns a location column"
+    # the Breakdown is not searchable (a scale regression)
+    write({"polaris_web/templates/atlas.html": ATLAS.replace("data-bd-search", "data-bd-other")})
+    assert checks.check_atlas_console(tmp_path)[0].level == "FAIL", "must FAIL when the Breakdown has no search box"
+    # the Breakdown list does not scroll internally
+    write({"polaris_web/templates/atlas.html": ATLAS.replace("bd-scroll", "bd-static")})
+    assert checks.check_atlas_console(tmp_path)[0].level == "FAIL", "must FAIL when the Breakdown list does not scroll internally"
+    # atlas_breakdown cannot filter by label
+    write({"polaris_sql/11_atlas.sql": SQL.replace("p_search", "p_other")})
+    assert checks.check_atlas_console(tmp_path)[0].level == "FAIL", "must FAIL when atlas_breakdown has no label filter"
 
 
 def test_helm_reference_profile_check_discriminates(tmp_path):

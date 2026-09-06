@@ -268,10 +268,15 @@ lifecycle: `agency|event_type`) and returns `{label, n_total, n_failure}`
 ordered by volume, capped at `_ATLAS_MAX_CATEGORIES` (50). Non-geographic;
 zero-knowledge events are counted like any other (C6). `@replica_reads`.
 
+`?search=` (v9.250) applies a case-insensitive label filter so a single slice
+is findable among thousands; `truncated` is true when the cap was reached (more
+match — narrow the search).
+
 ```json
 {
-  "kind": "verification", "dimension": "context", "window": "7d", "limit": 12, "count": 4,
-  "categories": [ {"label": "BANKING", "n_total": 18420, "n_failure": 210} ]
+  "kind": "verification", "dimension": "agency", "window": "7d", "limit": 40,
+  "search": "national", "truncated": false, "count": 2,
+  "categories": [ {"label": "US National Identity Service", "n_total": 18420, "n_failure": 210} ]
 }
 ```
 

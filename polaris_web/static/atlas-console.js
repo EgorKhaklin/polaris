@@ -375,7 +375,7 @@
   // outcome and disclosure so an anomalous profile stands out.
   // =========================================================================
   var bd = $('[data-atlas-view-panel="breakdown"]');
-  var bdState = { stream: 'verification', window: 'all', dim: 'agency', metric: 'volume' };
+  var bdState = { stream: 'verification', window: 'all', dim: 'agency', metric: 'volume', search: '' };
   var BD_DIMS = {
     verification: [
       { key: 'agency', label: 'Agency' }, { key: 'context', label: 'Context' },
@@ -414,7 +414,7 @@
       var b = el('button', { class: 'toolbar-chip', type: 'button', role: 'radio',
         'data-bd-dim': d.key, 'aria-checked': 'false', text: d.label });
       b.addEventListener('click', function () {
-        bdState.dim = d.key; bdSetChips('data-bd-dim', d.key); loadBreakdown();
+        bdState.dim = d.key; bdSetChips('data-bd-dim', d.key); bdClearSearch(); loadBreakdown();
       });
       group.appendChild(b);
     });
@@ -427,7 +427,7 @@
     $$('[data-bd-stream]', bd).forEach(function (c) {
       c.addEventListener('click', function () {
         bdState.stream = c.getAttribute('data-bd-stream');
-        bdSetChips('data-bd-stream', bdState.stream); bdBuildDimPicker(); loadBreakdown();
+        bdSetChips('data-bd-stream', bdState.stream); bdClearSearch(); bdBuildDimPicker(); loadBreakdown();
       });
     });
     $$('[data-bd-window]', bd).forEach(function (c) {
@@ -445,7 +445,24 @@
     });
     var bdRetry = $('[data-bd-retry]', bd);
     if (bdRetry) bdRetry.addEventListener('click', loadBreakdown);
+    var bdSearchEl = $('[data-bd-search]', bd);
+    if (bdSearchEl) {
+      var bdSearchTimer = null;
+      bdSearchEl.addEventListener('input', function () {
+        clearTimeout(bdSearchTimer);
+        bdSearchTimer = setTimeout(function () {
+          bdState.search = bdSearchEl.value.trim();
+          loadRanked();   // only the list re-fetches; the cross-tabs are unaffected by a label filter
+        }, 220);
+      });
+    }
     bdBuildDimPicker();
+  }
+
+  function bdClearSearch() {
+    bdState.search = '';
+    var elx = $('[data-bd-search]', bd);
+    if (elx) elx.value = '';
   }
 
   function renderRankedTable(mount, cats, metric) {
@@ -517,24 +534,42 @@
     box.hidden = false; var d = $('[data-bd-error-detail]', bd); if (d) d.textContent = msg;
   }
 
-  var bdSeq = 0, bdLastCats = null;
-  function loadBreakdown() {
+  var bdRankedSeq = 0, bdXtabSeq = 0, bdLastCats = null;
+
+  // The ranked dimension list. Re-fetched on its own for search (a label filter
+  // narrows the list without touching the cross-tabs), so thousands of agencies
+  // stay findable and the list scrolls inside its own card.
+  function loadRanked() {
     if (!bd) return;
-    var seq = ++bdSeq;
+    var seq = ++bdRankedSeq;
     var box = $('[data-bd-error]', bd); if (box) box.hidden = true;
-    var q = 'window=' + encodeURIComponent(bdState.window) + '&kind=' + encodeURIComponent(bdState.stream);
     var dim = bdState.dim;
     var title = $('[data-bd-ranked-title]', bd);
     if (title) title.textContent = 'By ' + dim;
-
-    // ranked breakdown of the sliced dimension
-    apiCall('/api/atlas/breakdown?' + q + '&dimension=' + dim + '&limit=30').then(function (data) {
-      if (seq !== bdSeq) return;
+    var q = 'window=' + encodeURIComponent(bdState.window) + '&kind=' + encodeURIComponent(bdState.stream)
+          + '&dimension=' + dim + '&limit=40'
+          + (bdState.search ? '&search=' + encodeURIComponent(bdState.search) : '');
+    apiCall('/api/atlas/breakdown?' + q).then(function (data) {
+      if (seq !== bdRankedSeq) return;
       bdLastCats = data.categories || [];
       renderRankedTable($('[data-bd-ranked]', bd), bdLastCats, bdState.metric);
-    }).catch(function (e) { if (seq === bdSeq) bdShowError('Breakdown failed: ' + e.message); });
+      var foot = $('[data-bd-count]', bd);
+      if (foot) {
+        var n = bdLastCats.length, s = bdState.search;
+        var plural = n === 1 ? dim : dim.replace(/y$/, 'ie') + 's';
+        if (n === 0) foot.textContent = s ? 'No ' + dim + ' matches "' + s + '".' : 'No data in this window.';
+        else if (data.truncated) foot.textContent = 'Top ' + n + ' by volume' + (s ? ' matching "' + s + '"' : '') + ' — refine the filter to narrow';
+        else foot.textContent = n + ' ' + plural + (s ? ' matching "' + s + '"' : '');
+      }
+    }).catch(function (e) { if (seq === bdRankedSeq) bdShowError('Breakdown failed: ' + e.message); });
+  }
 
-    // cross-tabs: sliced dimension x each column dimension for this stream
+  function loadBreakdown() {
+    if (!bd) return;
+    loadRanked();
+    var seq = ++bdXtabSeq;
+    var dim = bdState.dim;
+    var q = 'window=' + encodeURIComponent(bdState.window) + '&kind=' + encodeURIComponent(bdState.stream);
     var xtabs = BD_XTABS[bdState.stream];
     ['outcome', 'disclosure'].forEach(function (colKey) {
       var card = $('[data-bd-xtab-card="' + colKey + '"]', bd);
@@ -547,9 +582,9 @@
       var tEl = $('[data-bd-xtab-title="' + colKey + '"]', bd);
       if (tEl) tEl.textContent = conf.title;
       apiCall('/api/atlas/crosstab?' + q + '&row=' + dim + '&col=' + conf.col + '&limit=20').then(function (data) {
-        if (seq !== bdSeq) return;
+        if (seq !== bdXtabSeq) return;
         renderMatrix(mount, data);
-      }).catch(function (e) { if (seq === bdSeq) bdShowError('Cross-tab failed: ' + e.message); });
+      }).catch(function (e) { if (seq === bdXtabSeq) bdShowError('Cross-tab failed: ' + e.message); });
     });
   }
 

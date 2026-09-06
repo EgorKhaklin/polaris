@@ -3491,3 +3491,64 @@ textarea.sql {
 }
 .bd-mx-strong { font-weight: 700; }
 .bd-mx-total { color: var(--ink-dim); font-weight: 700; background: transparent !important; }
+
+/* ---- Breakdown v2: searchable, internally-scrolling explorer beside the
+   cross-tabs so neither is ever buried, at any agency count (v9.250) ---- */
+.bd-layout {
+    display: grid;
+    grid-template-columns: minmax(300px, 36%) 1fr;
+    gap: 12px;
+    padding: 14px;
+    align-items: start;
+}
+.bd-explorer {
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100vh - 210px);
+    min-height: 0;
+}
+.bd-search { margin-bottom: 8px; }
+.bd-search-input {
+    width: 100%;
+    box-sizing: border-box;
+    background: var(--bg0);
+    border: 1px solid var(--line-strong);
+    border-radius: 6px;
+    color: var(--ink);
+    font-family: var(--font-ui);
+    font-size: 13px;
+    padding: 7px 10px;
+}
+.bd-search-input:focus { outline: none; border-color: var(--cyan-deep); }
+.bd-search-input::placeholder { color: var(--ink-faint); }
+.bd-scroll {
+    overflow-y: auto;
+    flex: 1 1 auto;
+    min-height: 0;
+    margin: 0 -4px;
+    padding: 0 4px;
+}
+.bd-explorer-foot {
+    padding-top: 8px;
+    margin-top: 4px;
+    border-top: 1px solid var(--line);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    color: var(--ink-faint);
+    flex: 0 0 auto;
+}
+.bd-xtabs { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+
+/* the ranked table header sticks while the list scrolls under it */
+.bd-scroll .bd-row-head {
+    position: sticky;
+    top: 0;
+    background: var(--bg1);
+    z-index: 1;
+}
+
+@media (max-width: 900px) {
+    .bd-layout { grid-template-columns: 1fr; }
+    .bd-explorer { max-height: 46vh; }
+}
