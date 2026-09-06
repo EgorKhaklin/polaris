@@ -1,236 +1,310 @@
-{# AI-context: HUD slots use data-atlas-* attributes; JS auto-populates via updateAtlasStats(). Inline <script> blocked by CSP, use external .js. See docs/design/atlas-scaling.md.
-   Full-viewport console shell: command bar, stage and dock, status
-   bar. The page does not scroll; the globe is sized by its stage box (no
-   pixel cap), the node console docks beside the feed instead of floating
-   over the globe, and heading/pitch/zoom + the activity histogram live in
-   the bottom status bar. body-atlas (base.html) unlocks the full bleed. #}
+{# AI-context: the Atlas is a tabbed analytical console (roadmap P2.3, v9.248).
+   OVERVIEW is the default, bounded, non-geographic analytics view (charts fetched
+   from /api/atlas/series + /api/atlas/breakdown + /api/atlas/stats, rendered as
+   hand-rolled SVG / CSS bars by atlas-console.js). MAP is the former globe,
+   wrapped as a tab (atlas-map.js, booted lazily when the tab is first shown).
+   Inline <script> is blocked by CSP (C5); all logic is in external .js. HUD/KPI
+   slots use data-* attributes. See docs/design/atlas-scaling.md and
+   DEVNOTES/atlas-redesign.md. #}
 {% extends "base.html" %}
 {% block title %}Atlas{% endblock %}
 {% block body_class %} body-atlas{% endblock %}
 {% block content %}
 
-<section class="atlas-shell atlas-fullbleed" aria-label="Atlas operational console">
+<section class="atlas-shell atlas-fullbleed" aria-label="Atlas analytical console">
 
-    {# ---- Command bar: one row, every operational control ---- #}
-    <div class="atlas-commandbar" aria-label="Atlas filters and controls">
-        {% if atlas_provenance %}<div class="atlas-id-strip">{{ atlas_provenance }}</div>{% endif %}
-
-        <div class="chip-group" role="radiogroup" aria-label="View mode">
-            <button class="toolbar-chip toolbar-chip-active" type="button"
-                    role="radio" aria-checked="true" data-atlas-view="verification">Verifications</button>
-            <button class="toolbar-chip" type="button"
-                    role="radio" aria-checked="false" data-atlas-view="lifecycle">Lifecycle</button>
+    {# ---- Tab bar: view switch + provenance + live ---- #}
+    <div class="atlas-tabbar">
+        <div class="atlas-tabs" role="tablist" aria-label="Atlas views">
+            <button class="atlas-tab atlas-tab-active" type="button" role="tab"
+                    id="atlas-tab-overview" aria-selected="true"
+                    data-atlas-view-tab="overview" aria-controls="atlas-panel-overview">Overview</button>
+            <button class="atlas-tab" type="button" role="tab"
+                    id="atlas-tab-map" aria-selected="false"
+                    data-atlas-view-tab="map" aria-controls="atlas-panel-map">Map</button>
         </div>
-
-        <span class="chip-divider" aria-hidden="true"></span>
-
-        {# Default window is ALL: with notional/seed data the recent windows
-           are empty and the globe rendered blank on first load. #}
-        <span class="cmd-label">WINDOW</span>
-        <div class="chip-group" role="radiogroup" aria-label="Time window">
-            <button class="toolbar-chip" type="button"
-                    role="radio" aria-checked="false" data-atlas-window="1h">1h</button>
-            <button class="toolbar-chip" type="button"
-                    role="radio" aria-checked="false" data-atlas-window="24h">24h</button>
-            <button class="toolbar-chip" type="button"
-                    role="radio" aria-checked="false" data-atlas-window="7d">7d</button>
-            <button class="toolbar-chip" type="button"
-                    role="radio" aria-checked="false" data-atlas-window="30d">30d</button>
-            <button class="toolbar-chip toolbar-chip-active" type="button"
-                    role="radio" aria-checked="true" data-atlas-window="all">All</button>
-        </div>
-
-        <span class="chip-divider" aria-hidden="true"></span>
-
-        <div class="chip-group" aria-label="Modifiers">
-            <button class="toolbar-chip toolbar-chip-modifier" type="button"
-                    data-atlas-modifier="anomalies" aria-pressed="false"
-                    title="Show only failed verifications and full disclosures">+Anomalies</button>
-            <button class="toolbar-chip toolbar-chip-modifier" type="button"
-                    data-atlas-modifier="full" aria-pressed="false"
-                    title="Show only FULL-disclosure events">+FULL</button>
-            <button class="toolbar-chip toolbar-chip-modifier" type="button"
-                    data-atlas-modifier="pq" aria-pressed="false"
-                    title="Show only events signed under post-quantum algorithms">+PQ</button>
-        </div>
-
-        <details class="chip-context-picker">
-            <summary class="toolbar-chip toolbar-chip-context-summary"
-                     aria-label="Context filter">Context ▾</summary>
-            <div class="chip-context-menu" role="group" aria-label="Verification contexts">
-                {% for ctx in ['BANKING', 'EMPLOYMENT', 'HEALTHCARE', 'TRAVEL',
-                               'VOTING', 'MOTOR_VEHICLE', 'GOVERNMENT_BENEFITS'] %}
-                <button class="toolbar-chip toolbar-chip-context" type="button"
-                        data-atlas-context="{{ ctx }}" aria-pressed="false">{{ ctx.replace('_', ' ') }}</button>
-                {% endfor %}
-            </div>
-        </details>
-
-        {# Operational AGENCY filter: pivot the map by issuing or acting
-           agency. Operational, never demographic. (At national scale this
-           becomes a typeahead; a chip flyout is right for the demo roster.) #}
-        <details class="chip-context-picker">
-            <summary class="toolbar-chip toolbar-chip-context-summary"
-                     aria-label="Agency filter">Agency ▾</summary>
-            <div class="chip-context-menu" role="group" aria-label="Issuing or acting agencies">
-                {% for ag in agencies %}
-                <button class="toolbar-chip toolbar-chip-context" type="button"
-                        data-atlas-agency="{{ ag.agency_id }}" aria-pressed="false"
-                        title="{{ ag.agency_type }}">{{ ag.name }}</button>
-                {% endfor %}
-            </div>
-        </details>
-
-        {# Subject focus: single-subject warrant-audit investigation (UC-7).
-           Admin/auditor only; the endpoints enforce the same gate and audit-log
-           every access. This isolates ONE named subject, never filters the
-           population by attribute. ZK events stay withheld even here. #}
-        {% if current_user.role in ('admin', 'auditor') %}
-        <div class="atlas-subject-search">
-            <input type="search" id="atlas-subject-search" class="subject-search-input" data-atlas-subject-search
-                   placeholder="🔎 Focus subject…" maxlength="100" autocomplete="off"
-                   aria-label="Search a subject to investigate on the map">
-            <div class="subject-search-results" data-atlas-subject-results role="listbox" hidden></div>
-        </div>
-        {% endif %}
-
-        <span class="toolbar-spacer"></span>
-
-        <div class="chip-group" aria-label="Zoom controls">
-            <button class="toolbar-chip toolbar-chip-zoom" type="button"
-                    data-atlas-zoom-out aria-label="Zoom out">−</button>
-            <button class="toolbar-chip toolbar-chip-zoom" type="button"
-                    data-atlas-zoom-in aria-label="Zoom in">+</button>
-        </div>
-        <button class="toolbar-chip toolbar-spin" type="button" data-atlas-spin>Spin</button>
-        <button class="toolbar-chip" type="button" data-atlas-reset>Reset</button>
-        <button class="toolbar-chip toolbar-chip-fullscreen" type="button"
-                data-atlas-fullscreen aria-pressed="false"
-                title="Fullscreen console (F)">⛶ Full</button>
+        <span class="atlas-tabbar-spacer"></span>
+        {% if atlas_provenance %}<span class="atlas-tabbar-prov">{{ atlas_provenance }}</span>{% endif %}
         <span class="toolbar-live"><span class="live-dot"></span>LIVE</span>
     </div>
 
-    {# ---- Main: stage (globe) + dock (feed / node console) ---- #}
-    <div class="atlas-main">
-        <div class="globe-stage">
-            <div class="globe-hud globe-hud-tl">
-                <div class="hud-stack">
-                    <span class="hud-label">Active Tokens</span>
-                    <span class="hud-value" data-atlas-active-tokens>{{ health.tokens_active }}</span>
-                    <span class="hud-label hud-label-tight">{{ health.tokens_reserve }} reserve · {{ health.tokens_terminal }} terminal</span>
+    {# ================= OVERVIEW (default) ================= #}
+    <div class="atlas-view atlas-view-overview" id="atlas-panel-overview"
+         role="tabpanel" aria-labelledby="atlas-tab-overview" data-atlas-view-panel="overview"
+         data-atlas-since-all="{{ health.oldest_event or '' }}">
+
+        {# Compact controls: stream + window. Filters land in a later ship. #}
+        <div class="ov-controls" aria-label="Overview controls">
+            <div class="chip-group" role="radiogroup" aria-label="Event stream">
+                <button class="toolbar-chip toolbar-chip-active" type="button" role="radio"
+                        aria-checked="true" data-ov-stream="verification">Verifications</button>
+                <button class="toolbar-chip" type="button" role="radio"
+                        aria-checked="false" data-ov-stream="lifecycle">Lifecycle</button>
+            </div>
+            <span class="chip-divider" aria-hidden="true"></span>
+            <span class="cmd-label">WINDOW</span>
+            <div class="chip-group" role="radiogroup" aria-label="Time window">
+                <button class="toolbar-chip" type="button" role="radio" aria-checked="false" data-ov-window="1h">1h</button>
+                <button class="toolbar-chip" type="button" role="radio" aria-checked="false" data-ov-window="24h">24h</button>
+                <button class="toolbar-chip" type="button" role="radio" aria-checked="false" data-ov-window="7d">7d</button>
+                <button class="toolbar-chip" type="button" role="radio" aria-checked="false" data-ov-window="30d">30d</button>
+                <button class="toolbar-chip toolbar-chip-active" type="button" role="radio" aria-checked="true" data-ov-window="all">All</button>
+            </div>
+            <span class="toolbar-spacer"></span>
+            <span class="ov-scope" data-ov-scope aria-live="polite"></span>
+        </div>
+
+        <div class="ov-grid">
+            {# KPI strip. Initial values are server-rendered so the first paint is
+               not empty (and honest); atlas-console.js refreshes them per window. #}
+            <div class="ov-kpis" aria-label="Headline figures">
+                <div class="ov-kpi">
+                    <span class="ov-kpi-label">Verifications</span>
+                    <span class="ov-kpi-value" data-ov-kpi="volume">{{ health.verifications_total }}</span>
+                    <span class="ov-kpi-spark" data-ov-spark="volume"></span>
+                    <span class="ov-kpi-sub" data-ov-kpi-sub="volume">in window</span>
                 </div>
-                <div class="hud-stack hud-stack-gap">
-                    <span class="hud-label">Anomalies</span>
-                    <span class="hud-value-small">
-                        <span class="hud-anomaly-fail" data-atlas-failures>{{ health.failures }}</span>
-                        <span class="hud-anomaly-sep">·</span>
-                        <span class="hud-anomaly-full" data-atlas-full-disclosures>{{ health.full_disclosures }}</span>
+                <div class="ov-kpi">
+                    <span class="ov-kpi-label">Failure rate</span>
+                    <span class="ov-kpi-value" data-ov-kpi="failure-rate">—</span>
+                    <span class="ov-kpi-spark" data-ov-spark="failure"></span>
+                    <span class="ov-kpi-sub" data-ov-kpi-sub="failure-rate">non-success outcomes</span>
+                </div>
+                <div class="ov-kpi">
+                    <span class="ov-kpi-label">Zero-knowledge</span>
+                    <span class="ov-kpi-value" data-ov-kpi="zk">{{ health.zk_pct }}%</span>
+                    <span class="ov-kpi-spark" data-ov-spark="zk"></span>
+                    <span class="ov-kpi-sub">counted, never located</span>
+                </div>
+                <div class="ov-kpi">
+                    <span class="ov-kpi-label">Active tokens</span>
+                    <span class="ov-kpi-value" data-ov-kpi="active">{{ health.tokens_active }}</span>
+                    <span class="ov-kpi-sub">{{ health.tokens_reserve }} reserve · {{ health.tokens_terminal }} terminal</span>
+                </div>
+                <div class="ov-kpi">
+                    <span class="ov-kpi-label">Post-quantum</span>
+                    <span class="ov-kpi-value" data-ov-kpi="pq">{{ health.pq_pct }}%</span>
+                    <span class="ov-kpi-sub">active signing coverage</span>
+                </div>
+            </div>
+
+            {# Hero: the volume time-series, success vs failure. #}
+            <div class="ov-card ov-hero">
+                <div class="ov-card-head">
+                    <span class="ov-card-title" data-ov-hero-title>Verification volume</span>
+                    <span class="ov-legend">
+                        <span class="ov-legend-item"><i class="ov-swatch ov-swatch-total"></i>volume</span>
+                        <span class="ov-legend-item"><i class="ov-swatch ov-swatch-fail"></i>failures</span>
                     </span>
-                    <span class="hud-label hud-label-tight">failed verifs · full disclosures</span>
                 </div>
+                <div class="ov-hero-chart" data-ov-hero role="img"
+                     aria-label="Time series of event volume with failures overlaid"></div>
             </div>
 
-            <div class="globe-hud globe-hud-br">
-                <div class="hud-stack">
-                    <span class="hud-label">Post-Quantum</span>
-                    <span class="hud-value" data-atlas-pq-pct>{{ health.pq_pct }}%</span>
-                    <span class="hud-label hud-label-tight">active signing coverage</span>
-                </div>
-                <div class="hud-stack hud-stack-gap">
-                    <span class="hud-label">Zero-Knowledge</span>
-                    <span class="hud-value-small" data-atlas-zk-pct>{{ health.zk_pct }}%</span>
-                    <span class="hud-label hud-label-tight">verification disclosure</span>
-                </div>
+            {# Breakdown panels. #}
+            <div class="ov-card" data-ov-panel="context">
+                <div class="ov-card-head"><span class="ov-card-title">By context</span></div>
+                <div class="ov-bars" data-ov-breakdown="context"></div>
             </div>
-
-            {# MapLibre GL globe-to-street basemap (CARTO dark-matter,
-               free vector tiles). Events fetched per-viewport from
-               /api/atlas/* and plotted as a GeoJSON source; ZERO_KNOWLEDGE
-               events are never plotted (C6, enforced server-side). #}
-            <div class="atlas-globe">
-                <div id="atlas-map"
-                     class="atlas-map"
-                     data-basemap-style="{{ atlas_basemap_style }}"
-                     role="application"
-                     aria-label="Interactive map of Polaris token and verification activity. Drag to pan, scroll to zoom from globe to street level."></div>
+            <div class="ov-card" data-ov-panel="agency">
+                <div class="ov-card-head"><span class="ov-card-title">Top agencies</span></div>
+                <div class="ov-bars" data-ov-breakdown="agency"></div>
             </div>
-
-            {# Subject-focus banner: shown while one subject is isolated. #}
-            <div class="atlas-subject-banner" data-atlas-subject-banner role="status" hidden>
-                <span class="subject-banner-label">INVESTIGATING</span>
-                <span class="subject-banner-name" data-atlas-subject-name></span>
-                <span class="subject-banner-stats" data-atlas-subject-stats></span>
-                <button type="button" class="subject-banner-clear" data-atlas-subject-clear>✕ Clear focus</button>
+            <div class="ov-card" data-ov-panel="disclosure">
+                <div class="ov-card-head"><span class="ov-card-title">Disclosure mix</span></div>
+                <div class="ov-mix" data-ov-mix="disclosure"></div>
+                <div class="ov-bars ov-bars-compact" data-ov-breakdown="disclosure"></div>
             </div>
-
-            {# Tone legend: operators should not have to guess the color code. #}
-            <div class="globe-legend" aria-label="Marker colour legend">
-                <span class="legend-item"><span class="legend-dot legend-cluster"></span>cluster of events · click to zoom</span>
-                <span class="legend-item"><span class="legend-dot legend-selective"></span>selective disclosure</span>
-                <span class="legend-item"><span class="legend-dot legend-full"></span>full disclosure</span>
-                <span class="legend-item"><span class="legend-dot legend-alert"></span>failure / revocation</span>
-                <span class="legend-item legend-note">zero-knowledge verifications are never plotted</span>
-            </div>
-
-            {# Fetch-failure chip: hidden until a non-abort atlas fetch error.
-               The detail line names the likely cause (a 500 usually means the
-               DB's atlas functions are stale) so the failure is self-diagnosing. #}
-            <div class="atlas-error-chip" data-atlas-error hidden>
-                <div class="atlas-error-head">
-                    <span>ATLAS FEED INTERRUPTED</span>
-                    <button type="button" class="toolbar-chip" data-atlas-retry>Retry</button>
-                </div>
-                <span class="atlas-error-detail" data-atlas-error-detail></span>
-            </div>
-
-            {# Empty-viewport hint: a blank globe should explain itself. #}
-            <div class="atlas-empty-chip" data-atlas-empty hidden>
-                <span>NO EVENTS IN THIS VIEW: widen the time window, clear filters, or rotate to another region</span>
+            <div class="ov-card" data-ov-panel="outcome">
+                <div class="ov-card-head"><span class="ov-card-title">Outcome mix</span></div>
+                <div class="ov-bars" data-ov-breakdown="outcome"></div>
             </div>
         </div>
 
-        <aside class="atlas-dock" aria-label="Event feed and event detail">
-            <div class="dock-tabs">
-                <button class="dock-tab dock-tab-active" type="button" data-dock-tab="feed">
-                    Event Feed <span class="dock-tab-count" data-atlas-feed-count></span>
-                </button>
-                <button class="dock-tab" type="button" data-dock-tab="console">
-                    Event detail
-                </button>
-            </div>
-            <div class="dock-panel dock-panel-active" data-dock-panel="feed">
-                <div class="atlas-feed" data-atlas-event-feed-scroll>
-                    <ul class="atlas-feed-list" data-atlas-event-feed></ul>
-                </div>
-            </div>
-            <div class="dock-panel" data-dock-panel="console">
-                <div class="globe-detail" id="atlas-globe-detail" aria-live="polite">
-                    <span class="detail-kicker">Event detail</span>
-                    <strong>Drag to pan. Scroll to zoom from globe to street level.</strong>
-                    <span>Click any marker or feed entry to inspect token, lifecycle, and verification context. Clusters zoom in on click; zoom all the way down to streets and buildings. Read the exact coordinate under the cursor off CUR in the status bar. F for fullscreen.</span>
-                </div>
-            </div>
-        </aside>
+        <div class="ov-error" data-ov-error hidden>
+            <span data-ov-error-detail>Could not load analytics.</span>
+            <button type="button" class="toolbar-chip" data-ov-retry>Retry</button>
+        </div>
+        <p class="ov-foot">Every figure is a bounded server-side aggregate ({{ health.verifications_total }} events in the sample). Zero-knowledge verifications are counted in volume and disclosure but never located or attributed (C6).</p>
     </div>
 
-    {# ---- Status bar: classification · activity histogram · readouts ---- #}
-    <div class="atlas-statusbar">
-        <span class="cls-tag">POLARIS / OPERATIONAL ATLAS{% if atlas_provenance %} · {{ atlas_provenance }}{% endif %}</span>
-        <div class="atlas-timeline-strip" data-atlas-timeline
-             aria-label="Activity histogram for selected window"></div>
-        <div class="statusbar-readouts">
+    {# ================= MAP (the former globe, now a tab) ================= #}
+    <div class="atlas-view atlas-view-map" id="atlas-panel-map"
+         role="tabpanel" aria-labelledby="atlas-tab-map" data-atlas-view-panel="map" hidden>
+
+        {# ---- Command bar: one row, every operational control ---- #}
+        <div class="atlas-commandbar" aria-label="Atlas map filters and controls">
+            <div class="chip-group" role="radiogroup" aria-label="View mode">
+                <button class="toolbar-chip toolbar-chip-active" type="button"
+                        role="radio" aria-checked="true" data-atlas-view="verification">Verifications</button>
+                <button class="toolbar-chip" type="button"
+                        role="radio" aria-checked="false" data-atlas-view="lifecycle">Lifecycle</button>
+            </div>
+
+            <span class="chip-divider" aria-hidden="true"></span>
+
+            <span class="cmd-label">WINDOW</span>
+            <div class="chip-group" role="radiogroup" aria-label="Time window">
+                <button class="toolbar-chip" type="button" role="radio" aria-checked="false" data-atlas-window="1h">1h</button>
+                <button class="toolbar-chip" type="button" role="radio" aria-checked="false" data-atlas-window="24h">24h</button>
+                <button class="toolbar-chip" type="button" role="radio" aria-checked="false" data-atlas-window="7d">7d</button>
+                <button class="toolbar-chip" type="button" role="radio" aria-checked="false" data-atlas-window="30d">30d</button>
+                <button class="toolbar-chip toolbar-chip-active" type="button" role="radio" aria-checked="true" data-atlas-window="all">All</button>
+            </div>
+
+            <span class="chip-divider" aria-hidden="true"></span>
+
+            <div class="chip-group" aria-label="Modifiers">
+                <button class="toolbar-chip toolbar-chip-modifier" type="button"
+                        data-atlas-modifier="anomalies" aria-pressed="false"
+                        title="Show only failed verifications and full disclosures">+Anomalies</button>
+                <button class="toolbar-chip toolbar-chip-modifier" type="button"
+                        data-atlas-modifier="full" aria-pressed="false"
+                        title="Show only FULL-disclosure events">+FULL</button>
+                <button class="toolbar-chip toolbar-chip-modifier" type="button"
+                        data-atlas-modifier="pq" aria-pressed="false"
+                        title="Show only events signed under post-quantum algorithms">+PQ</button>
+            </div>
+
+            <details class="chip-context-picker">
+                <summary class="toolbar-chip toolbar-chip-context-summary" aria-label="Context filter">Context ▾</summary>
+                <div class="chip-context-menu" role="group" aria-label="Verification contexts">
+                    {% for ctx in ['BANKING', 'EMPLOYMENT', 'HEALTHCARE', 'TRAVEL',
+                                   'VOTING', 'MOTOR_VEHICLE', 'GOVERNMENT_BENEFITS'] %}
+                    <button class="toolbar-chip toolbar-chip-context" type="button"
+                            data-atlas-context="{{ ctx }}" aria-pressed="false">{{ ctx.replace('_', ' ') }}</button>
+                    {% endfor %}
+                </div>
+            </details>
+
+            <details class="chip-context-picker">
+                <summary class="toolbar-chip toolbar-chip-context-summary" aria-label="Agency filter">Agency ▾</summary>
+                <div class="chip-context-menu" role="group" aria-label="Issuing or acting agencies">
+                    {% for ag in agencies %}
+                    <button class="toolbar-chip toolbar-chip-context" type="button"
+                            data-atlas-agency="{{ ag.agency_id }}" aria-pressed="false"
+                            title="{{ ag.agency_type }}">{{ ag.name }}</button>
+                    {% endfor %}
+                </div>
+            </details>
+
+            {% if current_user.role in ('admin', 'auditor') %}
+            <div class="atlas-subject-search">
+                <input type="search" id="atlas-subject-search" class="subject-search-input" data-atlas-subject-search
+                       placeholder="🔎 Focus subject…" maxlength="100" autocomplete="off"
+                       aria-label="Search a subject to investigate on the map">
+                <div class="subject-search-results" data-atlas-subject-results role="listbox" hidden></div>
+            </div>
+            {% endif %}
+
+            <span class="toolbar-spacer"></span>
+
+            <div class="chip-group" aria-label="Zoom controls">
+                <button class="toolbar-chip toolbar-chip-zoom" type="button" data-atlas-zoom-out aria-label="Zoom out">−</button>
+                <button class="toolbar-chip toolbar-chip-zoom" type="button" data-atlas-zoom-in aria-label="Zoom in">+</button>
+            </div>
+            <button class="toolbar-chip" type="button" data-atlas-reset>Reset</button>
+            <button class="toolbar-chip toolbar-chip-fullscreen" type="button"
+                    data-atlas-fullscreen aria-pressed="false" title="Fullscreen console (F)">⛶ Full</button>
+        </div>
+
+        {# ---- Main: stage (map) + dock (feed / detail) ---- #}
+        <div class="atlas-main">
+            <div class="globe-stage">
+                <div class="globe-hud globe-hud-tl">
+                    <div class="hud-stack">
+                        <span class="hud-label">Active Tokens</span>
+                        <span class="hud-value" data-atlas-active-tokens>{{ health.tokens_active }}</span>
+                        <span class="hud-label hud-label-tight">{{ health.tokens_reserve }} reserve · {{ health.tokens_terminal }} terminal</span>
+                    </div>
+                    <div class="hud-stack hud-stack-gap">
+                        <span class="hud-label">Anomalies (in view)</span>
+                        <span class="hud-value-small">
+                            <span class="hud-anomaly-fail" data-atlas-failures>{{ health.failures }}</span>
+                            <span class="hud-anomaly-sep">·</span>
+                            <span class="hud-anomaly-full" data-atlas-full-disclosures>{{ health.full_disclosures }}</span>
+                        </span>
+                        <span class="hud-label hud-label-tight">failed verifs · full disclosures</span>
+                    </div>
+                </div>
+
+                <div class="globe-hud globe-hud-br">
+                    <div class="hud-stack">
+                        <span class="hud-label">Post-Quantum</span>
+                        <span class="hud-value" data-atlas-pq-pct>{{ health.pq_pct }}%</span>
+                        <span class="hud-label hud-label-tight">active signing coverage</span>
+                    </div>
+                    <div class="hud-stack hud-stack-gap">
+                        <span class="hud-label">Zero-Knowledge</span>
+                        <span class="hud-value-small" data-atlas-zk-pct>{{ health.zk_pct }}%</span>
+                        <span class="hud-label hud-label-tight">verification disclosure</span>
+                    </div>
+                </div>
+
+                <div class="atlas-globe">
+                    <div id="atlas-map" class="atlas-map"
+                         data-basemap-style="{{ atlas_basemap_style }}" role="application"
+                         aria-label="Interactive map of Polaris token and verification activity. Drag to pan, scroll to zoom from globe to street level."></div>
+                </div>
+
+                <div class="atlas-subject-banner" data-atlas-subject-banner role="status" hidden>
+                    <span class="subject-banner-label">INVESTIGATING</span>
+                    <span class="subject-banner-name" data-atlas-subject-name></span>
+                    <span class="subject-banner-stats" data-atlas-subject-stats></span>
+                    <button type="button" class="subject-banner-clear" data-atlas-subject-clear>✕ Clear focus</button>
+                </div>
+
+                <div class="globe-legend" aria-label="Marker colour legend">
+                    <span class="legend-item"><span class="legend-dot legend-cluster"></span>cluster of events · click to zoom</span>
+                    <span class="legend-item"><span class="legend-dot legend-selective"></span>selective disclosure</span>
+                    <span class="legend-item"><span class="legend-dot legend-full"></span>full disclosure</span>
+                    <span class="legend-item"><span class="legend-dot legend-alert"></span>failure / revocation</span>
+                    <span class="legend-item legend-note">zero-knowledge verifications are never plotted</span>
+                </div>
+
+                <div class="atlas-error-chip" data-atlas-error hidden>
+                    <div class="atlas-error-head">
+                        <span>ATLAS FEED INTERRUPTED</span>
+                        <button type="button" class="toolbar-chip" data-atlas-retry>Retry</button>
+                    </div>
+                    <span class="atlas-error-detail" data-atlas-error-detail></span>
+                </div>
+
+                <div class="atlas-empty-chip" data-atlas-empty hidden>
+                    <span>NO EVENTS IN THIS VIEW: widen the time window, clear filters, or rotate to another region</span>
+                </div>
+            </div>
+
+            <aside class="atlas-dock" aria-label="Event feed and event detail">
+                <div class="dock-tabs">
+                    <button class="dock-tab dock-tab-active" type="button" data-dock-tab="feed">
+                        Event Feed <span class="dock-tab-count" data-atlas-feed-count></span>
+                    </button>
+                    <button class="dock-tab" type="button" data-dock-tab="console">Event detail</button>
+                </div>
+                <div class="dock-panel dock-panel-active" data-dock-panel="feed">
+                    <div class="atlas-feed" data-atlas-event-feed-scroll>
+                        <ul class="atlas-feed-list" data-atlas-event-feed></ul>
+                    </div>
+                </div>
+                <div class="dock-panel" data-dock-panel="console">
+                    <div class="globe-detail" id="atlas-globe-detail" aria-live="polite">
+                        <span class="detail-kicker">Event detail</span>
+                        <strong>Drag to pan. Scroll to zoom from globe to street level.</strong>
+                        <span>Click any marker or feed entry to inspect token, lifecycle, and verification context. Clusters zoom in on click; zoom to street level for individual events.</span>
+                    </div>
+                </div>
+            </aside>
+        </div>
+
+        {# Slim status strip: classification + activity histogram + live cursor. #}
+        <div class="atlas-statusbar atlas-statusbar-slim">
+            <span class="cls-tag">POLARIS / ATLAS · MAP</span>
+            <div class="atlas-timeline-strip" data-atlas-timeline aria-label="Activity histogram for selected window"></div>
             <span class="sb-item"><span class="sb-key">CUR</span> <span class="sb-val sb-cursor" id="atlas-hud-cursor">--</span></span>
-            <span class="sb-item"><span class="sb-key">HDG</span> <span class="sb-val" id="atlas-hud-heading">000°</span></span>
-            <span class="sb-item"><span class="sb-key">PIT</span> <span class="sb-val" id="atlas-hud-pitch">+0°</span></span>
-            <span class="sb-item"><span class="sb-key">ZM</span> <span class="sb-val" id="atlas-hud-zoom">1.00x</span></span>
-            <span class="sb-item sb-clock" id="atlas-hud-time">--</span>
         </div>
     </div>
 
-    <!-- Atlas v6: data is fetched from /api/atlas/* on viewport changes.
-         The server still computes initial HUD signals for first-paint via
-         server-rendered template values; the JS overwrites them on first
-         fetch with bbox-scoped values. -->
     <script id="atlas-globe-data" type="application/json">[]</script>
 </section>
 
@@ -239,8 +313,11 @@
 {% block scripts %}
     {# MapLibre GL: self-hosted (static/vendor), no Mapbox token. The dark
        basemap tiles come from CARTO's free dark-matter vector tiles; the CSP
-       relaxation for those origins is scoped to this endpoint only. #}
+       relaxation for those origins is scoped to this endpoint only.
+       atlas-console.js owns the tab shell + the Overview charts and boots the
+       map lazily when the Map tab is first shown. #}
     <link rel="stylesheet" href="{{ url_for('static', filename='vendor/maplibre-gl.css') }}">
     <script src="{{ url_for('static', filename='vendor/maplibre-gl.js') }}"></script>
+    <script src="{{ url_for('static', filename='atlas-console.js') }}?v={{ polaris_version }}"></script>
     <script src="{{ url_for('static', filename='atlas-map.js') }}?v={{ polaris_version }}"></script>
 {% endblock %}

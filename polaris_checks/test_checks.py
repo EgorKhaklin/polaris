@@ -166,6 +166,16 @@ def test_c8_atlas_caps_check_fails_without_constants(tmp_path):
     (tmp_path / "polaris_web" / "app.py").write_text("# no atlas caps here\n")
     out = checks.check_c8_atlas_caps(tmp_path)
     assert out[0].level == "FAIL", "must FAIL when atlas hard-cap constants are missing"
+    # v9.248: the analytical-console category cap is part of C8 too.
+    (tmp_path / "polaris_web" / "app.py").write_text(
+        "_ATLAS_MAX_CLUSTERS=5000\n_ATLAS_MAX_POINTS=2000\n_ATLAS_MAX_EVENTS=500\n")
+    out = checks.check_c8_atlas_caps(tmp_path)
+    assert out[0].level == "FAIL", "must FAIL when the category cap is missing"
+    (tmp_path / "polaris_web" / "app.py").write_text(
+        "_ATLAS_MAX_CLUSTERS=5000\n_ATLAS_MAX_POINTS=2000\n"
+        "_ATLAS_MAX_EVENTS=500\n_ATLAS_MAX_CATEGORIES=50\n")
+    out = checks.check_c8_atlas_caps(tmp_path)
+    assert out[0].level == "OK", "must PASS with all four caps present"
 
 
 def test_c9_concurrency_check_fails_without_threading_tests(tmp_path):
@@ -3559,6 +3569,49 @@ def test_bulk_enrollment_check_discriminates(tmp_path):
     # the CLI issues row-by-row instead of staging with COPY
     write({"polaris_cli/polaris.py": "def cmd_bulk_enroll(args):\n    pass\nHANDLERS = {'bulk-enroll': cmd_bulk_enroll}\n"})
     assert checks.check_bulk_enrollment(tmp_path)[0].level == "FAIL", "must FAIL when the CLI does not stage with COPY"
+
+
+def test_atlas_console_check_discriminates(tmp_path):
+    ATLAS = ('<button data-atlas-view-tab="overview" aria-selected="true" class="atlas-tab atlas-tab-active">Overview</button>\n'
+             '<button data-atlas-view-tab="map" aria-selected="false">Map</button>\n'
+             '<script src="atlas-console.js"></script>\n')
+    def sqlfn(name, ret):
+        return (f"CREATE OR REPLACE FUNCTION {name}(\n    p_x INTEGER\n) RETURNS TABLE (\n{ret}\n)\n"
+                f"LANGUAGE sql\nSTABLE\nAS $$ SELECT 1 $$;\n")
+    SQL = (sqlfn("atlas_volume_series", "    bucket_ts TIMESTAMP, n_total BIGINT, n_failure BIGINT, n_zk BIGINT")
+           + sqlfn("atlas_breakdown", "    label TEXT, n_total BIGINT, n_failure BIGINT"))
+    APP = ("_ATLAS_MAX_CLUSTERS=5000\n_ATLAS_MAX_POINTS=2000\n_ATLAS_MAX_EVENTS=500\n_ATLAS_MAX_CATEGORIES=50\n"
+           "_ATLAS_BREAKDOWN_DIMENSIONS={'verification': ('agency',)}\n"
+           "@app.route('/api/atlas/series')\n@replica_reads\ndef api_atlas_series():\n    pass\n"
+           "@app.route('/api/atlas/breakdown')\n@replica_reads\ndef api_atlas_breakdown():\n    pass\n")
+    good = {
+        "polaris_web/templates/atlas.html": ATLAS,
+        "polaris_web/static/atlas-console.js": "/* console */\n",
+        "polaris_sql/11_atlas.sql": SQL,
+        "polaris_web/app.py": APP,
+    }
+    def write(overrides=None):
+        files = dict(good); files.update(overrides or {})
+        for rel, body in files.items():
+            f = tmp_path / rel; f.parent.mkdir(parents=True, exist_ok=True); f.write_text(body)
+    write()
+    assert checks.check_atlas_console(tmp_path)[0].level == "OK", "must PASS on the good fixture"
+    # Overview is not the default view
+    write({"polaris_web/templates/atlas.html": ATLAS.replace('aria-selected="true"', 'aria-selected="false"').replace('atlas-tab-active', 'atlas-tab')})
+    assert checks.check_atlas_console(tmp_path)[0].level == "FAIL", "must FAIL when Overview is not the default view"
+    # the console script is not loaded
+    write({"polaris_web/templates/atlas.html": ATLAS.replace('atlas-console.js', 'other.js')})
+    assert checks.check_atlas_console(tmp_path)[0].level == "FAIL", "must FAIL when atlas-console.js is not loaded"
+    # an aggregate leaks a location column (C6)
+    write({"polaris_sql/11_atlas.sql": SQL.replace("bucket_ts TIMESTAMP, n_total BIGINT, n_failure BIGINT, n_zk BIGINT",
+                                                   "bucket_ts TIMESTAMP, lat DOUBLE PRECISION, n_total BIGINT")})
+    assert checks.check_atlas_console(tmp_path)[0].level == "FAIL", "must FAIL when an aggregate returns a location column"
+    # an endpoint is missing
+    write({"polaris_web/app.py": APP.replace("@app.route('/api/atlas/breakdown')", "@app.route('/api/atlas/other')")})
+    assert checks.check_atlas_console(tmp_path)[0].level == "FAIL", "must FAIL when the breakdown endpoint is absent"
+    # the series endpoint is not replica-routed
+    write({"polaris_web/app.py": APP.replace("@app.route('/api/atlas/series')\n@replica_reads", "@app.route('/api/atlas/series')")})
+    assert checks.check_atlas_console(tmp_path)[0].level == "FAIL", "must FAIL when api_atlas_series is not @replica_reads"
 
 
 def test_helm_reference_profile_check_discriminates(tmp_path):

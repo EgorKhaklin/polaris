@@ -241,6 +241,40 @@ Histogram-strip bucket counts below the toolbar. Returns
 outcome/disclosure/context/event_types filters as
 `/api/atlas/clusters`. Added v8.50.
 
+### `GET /api/atlas/series`
+
+The Overview's total-volume time series (roadmap P2.3, v9.248). Unlike
+`/api/atlas/timeline` (located events only, for the map strip), this counts
+**every** event, so the volume is honest and zero-knowledge verifications are
+included in `n_total`/`n_zk` without a location (C6). Returns
+`{ts, n_total, n_failure, n_zk}` points over a `?window=` range with
+`?buckets=N` slices (hard-capped at 240). `?kind=verification|lifecycle`.
+Non-geographic; `@replica_reads`.
+
+```json
+{
+  "window": "7d", "kind": "verification", "buckets": 48,
+  "since": "2026-08-30T00:00:00", "until": "2026-09-06T00:00:00",
+  "points": [ {"ts": "2026-08-30T00:00:00", "n_total": 41230, "n_failure": 3310, "n_zk": 16400} ]
+}
+```
+
+### `GET /api/atlas/breakdown`
+
+The Overview/Breakdown top-K categorical roll-up (roadmap P2.3, v9.248).
+`?dimension=` groups the window's events by one whitelisted dimension
+(verification: `agency|context|outcome|disclosure|algorithm|jurisdiction`;
+lifecycle: `agency|event_type`) and returns `{label, n_total, n_failure}`
+ordered by volume, capped at `_ATLAS_MAX_CATEGORIES` (50). Non-geographic;
+zero-knowledge events are counted like any other (C6). `@replica_reads`.
+
+```json
+{
+  "kind": "verification", "dimension": "context", "window": "7d", "limit": 12, "count": 4,
+  "categories": [ {"label": "BANKING", "n_total": 18420, "n_failure": 210} ]
+}
+```
+
 ### `GET /api/atlas/cache-stats`
 
 Cache observability for R8-5. Returns hit/miss/expired/evicted

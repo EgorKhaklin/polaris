@@ -14,7 +14,31 @@ summaries, each a centroid and its counts, and the browser draws those instead
 of the events. When a zoom brings the count in view down to a handful, the
 client fetches the individual events instead.
 
-## Data path
+## The analytical console (v9.248, roadmap P2.3)
+
+As of v9.248 the Atlas opens on an **Overview**, not the globe. The Overview is
+a bounded, non-geographic analytics surface: a volume time-series with failures
+overlaid, KPI cards, and top-K breakdowns by context, agency, disclosure and
+outcome. The globe is a **Map** tab, kept for what a map is actually good at (a
+single subject's journey, a drill into one region) and booted lazily.
+
+The scaling principle is the same as the map's, applied to every view: the
+answer is a bounded server-side aggregate, never the raw events. Two functions
+back the Overview, both in `11_atlas.sql` and both deliberately **non-spatial**,
+so they count a zero-knowledge verification (in volume, in the disclosure and
+agency tallies) without ever carrying its location (C6):
+
+| Function | Purpose | Bound |
+|---|---|---|
+| `atlas_volume_series(since, buckets, kind, …)` | total-volume time series (counts EVERY event, unlike `atlas_timeline` which is located-only for the map strip) | ≤240 buckets |
+| `atlas_breakdown(dimension, since, limit, kind, …)` | top-K roll-up by one whitelisted dimension | `_ATLAS_MAX_CATEGORIES` (50) |
+
+Their endpoints (`/api/atlas/series`, `/api/atlas/breakdown`) are
+`@replica_reads` and capped, and the charts are hand-rolled inline SVG / CSS
+bars in `atlas-console.js` (no charting library, so `script-src 'self'` stays
+strict). The full rebuild plan is [DEVNOTES/atlas-redesign.md](../../DEVNOTES/atlas-redesign.md).
+
+## Data path (the Map view)
 
 ```
 a pan or zoom in the browser

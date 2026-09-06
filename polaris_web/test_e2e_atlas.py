@@ -145,26 +145,40 @@ class TestAtlasGlobeE2E(unittest.TestCase):
         finally:
             page.close()
 
-    def test_atlas_hud_renders_four_headline_figures(self):
-        """The HUD (`#atlas-hud`) must render the four headline figures
-        (Active Tokens, Anomalies, Post-Quantum %, Zero-Knowledge %).
-        Catches: data-island parse failure (no figures rendered), HUD
-        element rename, atlas-stats endpoint regression."""
+    def test_overview_is_default_view_with_headline_kpis(self):
+        """v9.248 (the analytical console): the Atlas opens on the OVERVIEW
+        tab (the globe is demoted to a tab), and the Overview's KPI strip
+        renders its headline figures with server-rendered values on first
+        paint. Catches: the default view flipping back to the map, the KPI
+        markup contract breaking, the /atlas health snapshot regressing."""
         page = self._context.new_page()
         try:
             self._login_and_goto(page)
-            # The four headline figures ride the data-* hooks the JS
-            # updates live (the v9.142 test-pinned-markup contract):
-            # rename-resistant in a way class names are not. First paint
-            # includes server-rendered values, so no async wait races.
-            page.wait_for_selector("[data-atlas-active-tokens]", timeout=3000)
-            for hook in ("data-atlas-active-tokens", "data-atlas-failures",
-                         "data-atlas-pq-pct", "data-atlas-zk-pct"):
-                el = page.query_selector(f"[{hook}]")
-                self.assertIsNotNone(el,
-                    f"Atlas HUD must render the [{hook}] figure")
+            # Overview panel is the visible default; the Map panel is hidden.
+            page.wait_for_selector('[data-atlas-view-panel="overview"]', state="visible", timeout=3000)
+            self.assertTrue(page.is_hidden('[data-atlas-view-panel="map"]'),
+                "the Map panel must start hidden (Overview is the default view)")
+            # The KPI figures ride data-ov-kpi hooks; the point-in-time ones are
+            # server-rendered so first paint is honest and non-empty.
+            for hook in ("volume", "active", "pq", "zk"):
+                el = page.query_selector(f'[data-ov-kpi="{hook}"]')
+                self.assertIsNotNone(el, f"Overview must render the [data-ov-kpi={hook}] figure")
                 self.assertNotEqual((el.text_content() or "").strip(), "",
-                    f"[{hook}] must carry a server-rendered value on first paint")
+                    f"[data-ov-kpi={hook}] must carry a value on first paint")
+        finally:
+            page.close()
+
+    def test_map_tab_reveals_the_globe(self):
+        """Clicking the Map tab must reveal the #atlas-map container (the map
+        boots lazily on first show). Catches: the tab wiring breaking, the
+        lazy-boot event never firing, the map panel staying hidden."""
+        page = self._context.new_page()
+        try:
+            self._login_and_goto(page)
+            page.click('[data-atlas-view-tab="map"]')
+            page.wait_for_selector("#atlas-map", state="visible", timeout=3000)
+            self.assertTrue(page.is_visible("#atlas-map"),
+                "the Map tab must reveal the #atlas-map container")
         finally:
             page.close()
 

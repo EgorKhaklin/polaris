@@ -19,6 +19,16 @@
     var mapEl = document.getElementById('atlas-map');
     if (!mapEl || !window.maplibregl) return;
 
+    // v9.248 (the analytical console): the Atlas opens on the Overview tab, so
+    // the map container starts hidden. A GL canvas cannot size itself inside a
+    // display:none container, and an always-live map is wasted work on a page
+    // that may never open the Map tab. So the whole map boots LAZILY: now if
+    // the container is already visible (map is the landing view), otherwise the
+    // first time atlas-console.js reveals the Map tab (polaris:atlas-map-show).
+    function boot() {
+        if (boot.done) return;
+        boot.done = true;
+
     var reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     // The basemap style comes from the deployment (POLARIS_ATLAS_BASEMAP_STYLE_URL,
@@ -893,4 +903,11 @@
             + ' / ' + p(d.getUTCHours()) + ':' + p(d.getUTCMinutes()) + ':' + p(d.getUTCSeconds()) + 'Z';
     }
     tickClock(); setInterval(tickClock, 1000);
+    }   // end boot()
+
+    // Boot now if the Map tab is the landing view (container already laid out),
+    // else defer until it is first shown. atlas-console.js dispatches the event
+    // after a frame, so the container is measurable when boot() runs.
+    if (mapEl.offsetParent !== null) boot();
+    else window.addEventListener('polaris:atlas-map-show', boot);
 })();

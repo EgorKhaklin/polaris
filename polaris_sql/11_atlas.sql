@@ -674,3 +674,184 @@ COMMENT ON FUNCTION atlas_timeline IS
   'Bucket counts for the Atlas histogram strip. Slices [p_since, NOW()] '
   'into p_buckets equal time bins and counts events per bin. Returns '
   'sparse rows (no row for empty buckets — the client zero-fills).';
+
+
+-- ----------------------------------------------------------------------------
+-- atlas_volume_series  (roadmap P2.3, v9.248 — the analytical console)
+--
+-- The NON-geographic companion to atlas_timeline. atlas_timeline counts only
+-- LOCATED events (lat/lon NOT NULL) because it drives the map's histogram
+-- strip; the Overview needs the TRUE total volume, including the ~40% of
+-- verifications that are zero-knowledge and carry no plottable location.
+--
+-- C6 holds: this is a pure count over time with no location, so a
+-- zero-knowledge event is COUNTED (n_zk, the privacy-posture signal) but never
+-- located or attributed. Slices [p_since, NOW()] into p_buckets equal bins;
+-- returns sparse rows (the client zero-fills). Bounded by p_buckets (the API
+-- caps it at 240).
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION atlas_volume_series(
+    p_since      TIMESTAMP,
+    p_buckets    INTEGER,
+    p_kind       TEXT      DEFAULT 'verification',   -- or 'lifecycle'
+    p_outcomes   TEXT      DEFAULT NULL,
+    p_disclosure TEXT      DEFAULT NULL,
+    p_contexts   TEXT      DEFAULT NULL,
+    p_agencies   TEXT      DEFAULT NULL
+) RETURNS TABLE (
+    bucket_ts   TIMESTAMP,
+    n_total     BIGINT,
+    n_failure   BIGINT,
+    n_zk        BIGINT
+)
+LANGUAGE sql
+STABLE
+AS $$
+    WITH params AS (
+        SELECT
+            p_since                                  AS t_start,
+            CURRENT_TIMESTAMP                        AS t_end,
+            GREATEST(p_buckets, 1)                   AS buckets,
+            (extract(epoch FROM (CURRENT_TIMESTAMP - p_since))
+             / GREATEST(p_buckets, 1))::DOUBLE PRECISION AS bucket_secs
+    ),
+    bucketed_v AS (
+        SELECT
+            (params.t_start
+                + (floor(extract(epoch FROM (ve.event_timestamp - params.t_start))
+                         / NULLIF(params.bucket_secs, 0)) * params.bucket_secs
+                  ) * INTERVAL '1 second'
+            )::TIMESTAMP                                            AS bucket_ts,
+            count(*)                                                AS n_total,
+            count(*) FILTER (WHERE ve.outcome <> 'SUCCESS')         AS n_failure,
+            count(*) FILTER (WHERE ve.disclosure_level = 'ZERO_KNOWLEDGE') AS n_zk
+        FROM VerificationEvent ve
+        LEFT JOIN VerificationContext vc ON ve.context_id = vc.context_id,
+             params
+        WHERE p_kind = 'verification'
+          AND ve.event_timestamp >= params.t_start
+          AND ve.event_timestamp <  params.t_end
+          AND (p_outcomes   IS NULL OR ve.outcome         = ANY(string_to_array(p_outcomes, ',')))
+          AND (p_disclosure IS NULL OR ve.disclosure_level = ANY(string_to_array(p_disclosure, ',')))
+          AND (p_contexts   IS NULL OR vc.context_type     = ANY(string_to_array(p_contexts, ',')))
+          AND (p_agencies   IS NULL OR ve.requesting_agency_id::text = ANY(string_to_array(p_agencies, ',')))
+        GROUP BY 1
+    ),
+    bucketed_l AS (
+        SELECT
+            (params.t_start
+                + (floor(extract(epoch FROM (le.event_timestamp - params.t_start))
+                         / NULLIF(params.bucket_secs, 0)) * params.bucket_secs
+                  ) * INTERVAL '1 second'
+            )::TIMESTAMP                                            AS bucket_ts,
+            count(*)                                                AS n_total,
+            count(*) FILTER (WHERE le.event_type IN ('REVOKED', 'LOST')) AS n_failure,
+            0::BIGINT                                               AS n_zk
+        FROM TokenLifecycleEvent le, params
+        WHERE p_kind = 'lifecycle'
+          AND le.event_timestamp >= params.t_start
+          AND le.event_timestamp <  params.t_end
+          AND (p_agencies IS NULL OR le.actor_agency_id::text = ANY(string_to_array(p_agencies, ',')))
+        GROUP BY 1
+    )
+    SELECT bucket_ts, n_total, n_failure, n_zk FROM bucketed_v
+    UNION ALL
+    SELECT bucket_ts, n_total, n_failure, n_zk FROM bucketed_l
+    ORDER BY bucket_ts;
+$$;
+
+COMMENT ON FUNCTION atlas_volume_series IS
+  'Non-geographic total-volume time series for the Atlas Overview. Counts ALL '
+  'events in [p_since, NOW()] (located or not), so it includes zero-knowledge '
+  'verifications in n_total and n_zk without ever locating them (C6). Bounded '
+  'by p_buckets (API-capped at 240).';
+
+
+-- ----------------------------------------------------------------------------
+-- atlas_breakdown  (roadmap P2.3, v9.248 — the analytical console)
+--
+-- Top-K categorical roll-up for the Overview and Breakdown views: counts all
+-- events in the window grouped by one whitelisted dimension, ordered by volume,
+-- capped at p_limit (the API caps it at _ATLAS_MAX_CATEGORIES). Non-geographic,
+-- so zero-knowledge events are counted like any other (C6): a ZK verification
+-- contributes to the agency/context/outcome/disclosure/jurisdiction tallies
+-- (jurisdiction is the REQUESTING agency's, always known) but the 'algorithm'
+-- dimension folds untokened ZK rows into a single labelled bucket.
+--
+-- p_dimension is whitelisted by the API before it reaches here; the CASE below
+-- maps only known values, so there is no dynamic SQL and no injection surface.
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION atlas_breakdown(
+    p_dimension  TEXT,                              -- verification: agency|context|outcome|disclosure|algorithm|jurisdiction ; lifecycle: agency|event_type
+    p_since      TIMESTAMP,
+    p_limit      INTEGER,
+    p_kind       TEXT      DEFAULT 'verification',
+    p_outcomes   TEXT      DEFAULT NULL,
+    p_disclosure TEXT      DEFAULT NULL,
+    p_contexts   TEXT      DEFAULT NULL,
+    p_agencies   TEXT      DEFAULT NULL
+) RETURNS TABLE (
+    label       TEXT,
+    n_total     BIGINT,
+    n_failure   BIGINT
+)
+LANGUAGE sql
+STABLE
+AS $$
+    WITH breakdown_v AS (
+        SELECT
+            CASE p_dimension
+                WHEN 'agency'       THEN ag.name::TEXT
+                WHEN 'context'      THEN vc.context_type::TEXT
+                WHEN 'outcome'      THEN ve.outcome::TEXT
+                WHEN 'disclosure'   THEN ve.disclosure_level::TEXT
+                WHEN 'jurisdiction' THEN ag.jurisdiction::TEXT
+                WHEN 'algorithm'    THEN COALESCE(ca.name::TEXT, 'Zero-knowledge (no token)')
+                ELSE ve.outcome::TEXT
+            END                                                     AS label,
+            count(*)                                                AS n_total,
+            count(*) FILTER (WHERE ve.outcome <> 'SUCCESS')         AS n_failure
+        FROM VerificationEvent ve
+        JOIN      Agency               ag ON ve.requesting_agency_id = ag.agency_id
+        JOIN      VerificationContext  vc ON ve.context_id           = vc.context_id
+        LEFT JOIN IdentityToken         t ON ve.token_id             = t.token_id
+        LEFT JOIN CryptographicAlgorithm ca ON t.algorithm_id        = ca.algorithm_id
+        WHERE p_kind = 'verification'
+          AND (p_since      IS NULL OR ve.event_timestamp >= p_since)
+          AND (p_outcomes   IS NULL OR ve.outcome         = ANY(string_to_array(p_outcomes, ',')))
+          AND (p_disclosure IS NULL OR ve.disclosure_level = ANY(string_to_array(p_disclosure, ',')))
+          AND (p_contexts   IS NULL OR vc.context_type     = ANY(string_to_array(p_contexts, ',')))
+          AND (p_agencies   IS NULL OR ve.requesting_agency_id::text = ANY(string_to_array(p_agencies, ',')))
+        GROUP BY 1
+    ),
+    breakdown_l AS (
+        SELECT
+            CASE p_dimension
+                WHEN 'agency'     THEN COALESCE(ag.name::TEXT, 'System / device')
+                WHEN 'event_type' THEN le.event_type::TEXT
+                ELSE le.event_type::TEXT
+            END                                                     AS label,
+            count(*)                                                AS n_total,
+            count(*) FILTER (WHERE le.event_type IN ('REVOKED', 'LOST')) AS n_failure
+        FROM TokenLifecycleEvent le
+        LEFT JOIN Agency ag ON le.actor_agency_id = ag.agency_id
+        WHERE p_kind = 'lifecycle'
+          AND (p_since    IS NULL OR le.event_timestamp >= p_since)
+          AND (p_agencies IS NULL OR le.actor_agency_id::text = ANY(string_to_array(p_agencies, ',')))
+        GROUP BY 1
+    )
+    SELECT label, n_total, n_failure FROM (
+        SELECT * FROM breakdown_v
+        UNION ALL
+        SELECT * FROM breakdown_l
+    ) rolled
+    WHERE label IS NOT NULL
+    ORDER BY n_total DESC, label ASC
+    LIMIT p_limit;
+$$;
+
+COMMENT ON FUNCTION atlas_breakdown IS
+  'Top-K categorical roll-up for the Atlas Overview/Breakdown. Groups events in '
+  'the window by one whitelisted dimension, ordered by volume, capped at '
+  'p_limit (API-capped at _ATLAS_MAX_CATEGORIES). Non-geographic; counts '
+  'zero-knowledge events like any other (C6), never locating them.';

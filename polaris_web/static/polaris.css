@@ -3167,3 +3167,247 @@ textarea.sql {
     white-space: nowrap;
 }
 .subject-banner-clear:hover { color: #fff; border-color: var(--gold); background: var(--gold-tint); }
+
+/* ===========================================================================
+ * Atlas analytical console (roadmap P2.3, v9.248)
+ * Tabbed shell (Overview / Map) with a clean, dashboard-aligned aesthetic.
+ * Charts are hand-rolled SVG + CSS bars (CSP-clean; no charting library).
+ * ======================================================================== */
+
+/* ---- View tabs ---- */
+.atlas-tabbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 14px;
+    border-bottom: 1px solid var(--line-strong);
+    background: rgba(3, 10, 19, 0.6);
+}
+.atlas-tabs { display: flex; gap: 2px; }
+.atlas-tab {
+    appearance: none;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--ink-dim);
+    font-family: var(--font-ui);
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    padding: 12px 14px 10px;
+    cursor: pointer;
+}
+.atlas-tab:hover { color: var(--ink); }
+.atlas-tab-active { color: var(--gold-bright); border-bottom-color: var(--gold); }
+.atlas-tabbar-spacer { flex: 1; }
+.atlas-tabbar-prov {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    color: var(--ink-faint);
+    text-transform: uppercase;
+}
+
+/* ---- View panels: exactly one visible; the other must honor [hidden]. ---- */
+.atlas-view { flex: 1; min-height: 0; }
+.atlas-view[hidden] { display: none !important; }
+.atlas-view-overview { overflow-y: auto; }
+.atlas-view-map { display: flex; flex-direction: column; }
+
+/* ---- Overview controls ---- */
+.ov-controls {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line);
+    background: rgba(3, 10, 19, 0.35);
+}
+.ov-scope {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--ink-faint);
+}
+
+/* ---- Overview grid ---- */
+.ov-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    padding: 14px;
+    align-content: start;
+}
+.ov-kpis {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+}
+.ov-hero { grid-column: 1 / -1; }
+
+/* ---- KPI cards ---- */
+.ov-kpi {
+    background: var(--bg1);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+.ov-kpi-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--ink-faint);
+}
+.ov-kpi-value {
+    font-family: var(--font-mono);
+    font-size: 26px;
+    font-weight: 700;
+    color: var(--ink);
+    line-height: 1.15;
+}
+.ov-kpi-spark { height: 26px; display: block; }
+.ov-kpi-spark svg { width: 100%; height: 26px; display: block; }
+.ov-kpi-sub { font-size: 11px; color: var(--ink-dim); }
+
+/* ---- Cards ---- */
+.ov-card {
+    background: var(--bg1);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px 14px;
+    min-width: 0;
+}
+.ov-card[hidden] { display: none !important; }
+.ov-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+}
+.ov-card-title {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--ink-dim);
+}
+
+/* ---- Hero time-series ---- */
+.ov-hero-chart { width: 100%; }
+.ov-hero-svg { width: 100%; height: 220px; display: block; }
+.ov-area { fill: rgba(93, 214, 255, 0.16); stroke: none; }
+.ov-line { fill: none; stroke: var(--cyan); stroke-width: 1.6; }
+.ov-line-fail { fill: none; stroke: var(--red); stroke-width: 1.4; opacity: 0.9; }
+.ov-gridline { stroke: rgba(141, 166, 196, 0.14); stroke-width: 1; }
+.ov-axis { fill: var(--ink-faint); font-family: var(--font-mono); font-size: 9px; }
+.ov-hero-range {
+    display: flex;
+    justify-content: space-between;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--ink-faint);
+    margin-top: 2px;
+}
+.ov-legend { display: flex; gap: 12px; }
+.ov-legend-item {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 11px; color: var(--ink-dim);
+}
+.ov-swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+.ov-swatch-total { background: var(--cyan); }
+.ov-swatch-fail { background: var(--red); }
+
+/* ---- Sparkline ---- */
+.ov-spark-svg { width: 100%; height: 26px; display: block; }
+
+/* ---- Horizontal bars ---- */
+.ov-bars { display: flex; flex-direction: column; gap: 7px; }
+.ov-bars-compact { margin-top: 10px; gap: 5px; }
+.ov-bar-row {
+    display: grid;
+    grid-template-columns: minmax(90px, 34%) 1fr auto;
+    align-items: center;
+    gap: 8px;
+}
+.ov-bar-label {
+    font-size: 12px;
+    color: var(--ink-dim);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.ov-bar-track {
+    display: flex;
+    height: 12px;
+    background: var(--bg2);
+    border-radius: 3px;
+    overflow: hidden;
+}
+.ov-bar-fill { background: var(--cyan); height: 100%; }
+.ov-bar-fill-fail { background: var(--red); height: 100%; }
+.ov-bar-val {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--ink);
+    text-align: right;
+    min-width: 40px;
+}
+
+/* ---- Disclosure mix (stacked bar) ---- */
+.ov-mix-bar {
+    display: flex;
+    height: 16px;
+    border-radius: 4px;
+    overflow: hidden;
+    background: var(--bg2);
+}
+.ov-mix-seg { height: 100%; }
+.ov-mix-legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 8px; }
+.ov-mix-li {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 11px; color: var(--ink-dim);
+}
+.ov-mix-dot { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+
+/* ---- Empty / error / footer ---- */
+.ov-empty {
+    font-size: 12px; color: var(--ink-faint);
+    padding: 14px 4px; text-align: center;
+}
+.ov-error {
+    display: flex; align-items: center; gap: 12px;
+    margin: 0 14px 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--red);
+    border-radius: 6px;
+    background: var(--red-tint);
+    color: var(--ink);
+    font-size: 12px;
+}
+.ov-foot {
+    margin: 0 14px 16px;
+    font-size: 11px;
+    color: var(--ink-faint);
+    line-height: 1.5;
+}
+
+/* ---- Slim map status bar ---- */
+.atlas-statusbar-slim {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+.atlas-statusbar-slim .atlas-timeline-strip { flex: 1; }
+
+/* ---- Narrow screens ---- */
+@media (max-width: 720px) {
+    .ov-grid { grid-template-columns: 1fr; }
+}

@@ -1878,10 +1878,14 @@ def check_c4_atomic_failed_login(root: pathlib.Path) -> list[Finding]:
 # ---------------------------------------------------------------------------
 def check_c8_atlas_caps(root: pathlib.Path) -> list[Finding]:
     app = _read(root, "polaris_web/app.py")
-    missing = [c for c in ("_ATLAS_MAX_CLUSTERS", "_ATLAS_MAX_POINTS", "_ATLAS_MAX_EVENTS") if c not in app]
+    # v9.248: the analytical console added a bounded categorical roll-up; its
+    # top-K cap joins the map's cluster/point/event caps under C8.
+    missing = [c for c in ("_ATLAS_MAX_CLUSTERS", "_ATLAS_MAX_POINTS",
+                           "_ATLAS_MAX_EVENTS", "_ATLAS_MAX_CATEGORIES") if c not in app]
     if missing:
         return _fail("c8_atlas_caps", "missing atlas hard-cap constant(s): " + ", ".join(missing) + " (C8)")
-    return _ok("c8_atlas_caps", "/api/atlas/* endpoints have hard result-set caps (C8)")
+    return _ok("c8_atlas_caps", "/api/atlas/* endpoints have hard result-set caps (C8): "
+               "clusters, points, events, and categories")
 
 
 # ---------------------------------------------------------------------------
@@ -4708,6 +4712,59 @@ def check_bulk_enrollment(root: pathlib.Path) -> list[Finding]:
                "issue/auth/empty refusals")
 
 
+def check_atlas_console(root: pathlib.Path) -> list[Finding]:
+    """Roadmap P2.3 (v9.248): the Atlas is an analytical console. The Overview
+    is the default view (bounded, non-geographic charts), the globe is a tab,
+    and two bounded server-side aggregates feed the analytics. Preserves C8
+    (the category cap) and C6 (the console counts zero-knowledge events but the
+    aggregates never carry a location)."""
+    atlas = _read(root, "polaris_web/templates/atlas.html")
+    if not atlas:
+        return _fail("atlas_console", "polaris_web/templates/atlas.html is missing")
+    # Overview is the DEFAULT view (its tab is selected on first paint).
+    if 'data-atlas-view-tab="overview"' not in atlas or 'data-atlas-view-tab="map"' not in atlas:
+        return _fail("atlas_console", "atlas.html must have Overview and Map view tabs")
+    m = re.search(r'data-atlas-view-tab="overview"[^>]*aria-selected="true"'
+                  r'|aria-selected="true"[^>]*data-atlas-view-tab="overview"', atlas)
+    if not m and 'atlas-tab-active' not in atlas:
+        return _fail("atlas_console", "the Overview tab must be the default (selected) view")
+    if "atlas-console.js" not in atlas:
+        return _fail("atlas_console", "atlas.html must load atlas-console.js")
+    if not _read(root, "polaris_web/static/atlas-console.js"):
+        return _fail("atlas_console", "polaris_web/static/atlas-console.js is missing")
+
+    # The two bounded aggregates, non-geographic (no lat/lon in their contract).
+    sql = _read(root, "polaris_sql/11_atlas.sql")
+    for fn_name in ("atlas_volume_series", "atlas_breakdown"):
+        body = re.search(rf"CREATE OR REPLACE FUNCTION {fn_name}\(.*?\$\$;", sql, re.S)
+        if not body:
+            return _fail("atlas_console", f"11_atlas.sql must define {fn_name}")
+        ret = re.search(r"RETURNS TABLE \((.*?)\)\s*LANGUAGE", body.group(0), re.S)
+        if ret and re.search(r"\b(lat|lon|latitude|longitude)\b", ret.group(1)):
+            return _fail("atlas_console", f"{fn_name} must not return a location column (C6): the "
+                         "analytical console counts zero-knowledge events but never locates them")
+
+    # The two endpoints, replica-routed and capped.
+    app = _read(root, "polaris_web/app.py")
+    for route in ("/api/atlas/series", "/api/atlas/breakdown"):
+        if f"@app.route('{route}')" not in app:
+            return _fail("atlas_console", f"app.py must expose {route}")
+    # both must be replica-read routes (analytical reads, no read-your-writes need)
+    seg = app.split("def api_atlas_series", 1)
+    if len(seg) == 2:
+        head = app.rsplit("@app.route('/api/atlas/series')", 1)[-1].split("def api_atlas_series", 1)[0]
+        if "@replica_reads" not in head:
+            return _fail("atlas_console", "api_atlas_series must be @replica_reads")
+    if "_ATLAS_BREAKDOWN_DIMENSIONS" not in app:
+        return _fail("atlas_console", "the breakdown dimensions must be whitelisted server-side "
+                     "(_ATLAS_BREAKDOWN_DIMENSIONS)")
+    return _ok("atlas_console",
+               "the Atlas opens on a bounded analytical Overview (the globe is a tab); two "
+               "non-geographic aggregates (atlas_volume_series, atlas_breakdown) feed it, both "
+               "capped (C8) and location-free so zero-knowledge events are counted but never "
+               "located (C6)")
+
+
 # ---------------------------------------------------------------------------
 # Image builds — every container image CI builds goes through
 # scripts/polaris-image-build.sh, which retries a build that failed on someone
@@ -5218,6 +5275,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_event_table_partitioning,
     check_read_replica_routing,
     check_bulk_enrollment,
+    check_atlas_console,
     check_stated_counts,
     check_c1c10_objects_resolve,
     check_helm_chart_version_current,

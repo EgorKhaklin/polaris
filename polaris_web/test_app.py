@@ -294,32 +294,32 @@ class AtlasTests(PolarisTestCase):
     def test_atlas_renders(self):
         r = self.client.get('/atlas')
         self.assertEqual(r.status_code, 200)
-        # The id strip is the Atlas's provenance label: outside production it
-        # says the data is notional (v9.206); production renders the
-        # operator's deployment label, or nothing.
-        self.assertHTML(r, '<div class="atlas-id-strip">NOTIONAL DATA</div>')
+        # v9.248: the provenance label rides the console tab bar. Outside
+        # production it says the data is notional (v9.206); production renders
+        # the operator's deployment label, or nothing.
+        self.assertHTML(r, '<span class="atlas-tabbar-prov">NOTIONAL DATA</span>')
 
     def test_atlas_provenance_follows_deployment_state(self):
-        """Production renders the operator-configured label on every
-        provenance surface, and never the notional-data label; without a
-        label it renders no id strip at all."""
+        """Production renders the operator-configured label on the provenance
+        surface, and never the notional-data label; without a label it renders
+        no provenance strip at all."""
         with patch.object(flask_app, '_PRODUCTION', True), \
              patch.object(flask_app, 'DEPLOYMENT_LABEL', 'COUNTY OF EXAMPLE'):
             body = self.client.get('/atlas').get_data(as_text=True)
-        self.assertIn('<div class="atlas-id-strip">COUNTY OF EXAMPLE</div>', body)
-        self.assertIn('OPERATIONAL ATLAS · COUNTY OF EXAMPLE', body)
+        self.assertIn('<span class="atlas-tabbar-prov">COUNTY OF EXAMPLE</span>', body)
         self.assertNotIn('NOTIONAL DATA', body)
         with patch.object(flask_app, '_PRODUCTION', True), \
              patch.object(flask_app, 'DEPLOYMENT_LABEL', ''):
             body = self.client.get('/atlas').get_data(as_text=True)
-        self.assertNotIn('atlas-id-strip', body)
+        self.assertNotIn('atlas-tabbar-prov', body)
         self.assertNotIn('NOTIONAL DATA', body)
 
-    def test_atlas_has_gotham_chrome(self):
-        """The reframed Atlas uses fullbleed layout, gold id-strip, and
-        the globe-data payload script."""
+    def test_atlas_has_console_chrome(self):
+        """v9.248: the console uses fullbleed layout, the Overview/Map view
+        tabs, and the globe-data payload script."""
         r = self.client.get('/atlas')
-        self.assertHTML(r, 'atlas-fullbleed', 'atlas-id-strip', 'atlas-globe-data')
+        self.assertHTML(r, 'atlas-fullbleed', 'data-atlas-view-tab="overview"',
+                        'data-atlas-view-tab="map"', 'atlas-globe-data')
 
     def test_atlas_hud_shows_operational_signals(self):
         """The HUD surfaces Active Tokens, Anomalies, Post-Quantum %, and
@@ -336,10 +336,13 @@ class AtlasTests(PolarisTestCase):
         self.assertHTML(r, 'Event Feed')
 
     def test_atlas_classification_banner_reframed(self):
-        """SCS-230 reference dropped; banner reads OPERATIONAL ATLAS."""
+        """v9.248: the console opens on the analytical Overview (the globe is a
+        tab); the SCS-230 reference stays dropped and the map strip is a slim,
+        theatrics-free label."""
         r = self.client.get('/atlas')
         body = r.get_data(as_text=True)
-        self.assertIn('OPERATIONAL ATLAS', body)
+        self.assertIn('data-atlas-view-panel="overview"', body)
+        self.assertIn('POLARIS / ATLAS', body)
         self.assertNotIn('SCS-230', body)
 
     def test_atlas_does_not_carry_dashboard_panels(self):
@@ -5563,6 +5566,71 @@ class AtlasAPITests(PolarisTestCase):
         self.assertGreaterEqual(data['misses'], 1, "first query should miss the cold cache")
         self.assertIn('hit_ratio', data)
         self.assertIn('ttl_seconds', data)
+
+
+class AtlasConsoleAPITests(PolarisTestCase):
+    """v9.248 (roadmap P2.3): the analytical console's two non-geographic,
+    bounded aggregates. These lock in:
+    - /api/atlas/series returns a total-volume time series counting EVERY
+      event (unlike the located-only timeline), so zero-knowledge events are
+      counted in n_total and n_zk without a location (C6)
+    - /api/atlas/breakdown returns a top-K categorical roll-up, capped at
+      _ATLAS_MAX_CATEGORIES (C8), sorted by volume
+    - the dimension is whitelisted per stream (a bad one is 400)
+    - zero-knowledge is counted in the disclosure breakdown, never dropped
+    """
+
+    def test_series_returns_volume_shape_and_counts_zk(self):
+        r = self.client.get('/api/atlas/series?window=all&kind=verification&buckets=24')
+        self.assertEqual(r.status_code, 200)
+        data = r.get_json()
+        self.assertIn('points', data)
+        total = sum(p['n_total'] for p in data['points'])
+        zk = sum(p['n_zk'] for p in data['points'])
+        self.assertGreater(total, 0, "the seed verifications should appear in the series")
+        self.assertGreater(zk, 0, "zero-knowledge verifications must be COUNTED in the series (C6: counted, never located)")
+        # the series must never carry a location
+        for p in data['points']:
+            self.assertNotIn('lat', p)
+            self.assertNotIn('lon', p)
+
+    def test_series_rejects_too_many_buckets(self):
+        r = self.client.get('/api/atlas/series?window=all&buckets=1000')
+        self.assertEqual(r.status_code, 400)
+
+    def test_breakdown_by_context_sorted_and_capped(self):
+        r = self.client.get('/api/atlas/breakdown?window=all&kind=verification&dimension=context&limit=5')
+        self.assertEqual(r.status_code, 200)
+        data = r.get_json()
+        cats = data['categories']
+        self.assertGreater(len(cats), 0)
+        self.assertLessEqual(len(cats), 5, "limit must cap the categories")
+        totals = [c['n_total'] for c in cats]
+        self.assertEqual(totals, sorted(totals, reverse=True), "categories must be ordered by volume")
+
+    def test_breakdown_limit_capped_at_max_categories(self):
+        # request far above the cap; the response must not exceed it
+        r = self.client.get('/api/atlas/breakdown?window=all&dimension=agency&limit=100000')
+        self.assertEqual(r.status_code, 200)
+        self.assertLessEqual(r.get_json()['limit'], flask_app._ATLAS_MAX_CATEGORIES)
+
+    def test_breakdown_disclosure_counts_zero_knowledge(self):
+        r = self.client.get('/api/atlas/breakdown?window=all&dimension=disclosure')
+        self.assertEqual(r.status_code, 200)
+        labels = {c['label'] for c in r.get_json()['categories']}
+        self.assertIn('ZERO_KNOWLEDGE', labels,
+            "zero-knowledge must be counted in the disclosure breakdown (C6: counted, never located)")
+
+    def test_breakdown_rejects_unknown_dimension(self):
+        r = self.client.get('/api/atlas/breakdown?window=all&dimension=gender')
+        self.assertEqual(r.status_code, 400)
+
+    def test_breakdown_lifecycle_dimensions_differ(self):
+        # lifecycle allows event_type; verification does not
+        r = self.client.get('/api/atlas/breakdown?window=all&kind=lifecycle&dimension=event_type')
+        self.assertEqual(r.status_code, 200)
+        r2 = self.client.get('/api/atlas/breakdown?window=all&kind=verification&dimension=event_type')
+        self.assertEqual(r2.status_code, 400, "event_type is not a verification dimension")
 
 
 class AtlasFilterAPITests(PolarisTestCase):

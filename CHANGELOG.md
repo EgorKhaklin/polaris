@@ -5,6 +5,49 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.248 — 2026-09-06 (the Atlas becomes an analytical console)
+
+Roadmap P2.3, ship 1 of the Atlas rebuild ([DEVNOTES/atlas-redesign.md](DEVNOTES/atlas-redesign.md)).
+The Atlas was a globe you looked at: an always-on canvas of server-clustered
+event bubbles that, at national scale, read as overlapping "40k" circles and
+buried the operational insight the page exists for. It is now a console you ask
+questions of.
+
+**Overview is the default.** The Atlas opens on a bounded, non-geographic
+analytics view: a volume time-series with failures overlaid, KPI cards with
+sparklines (verifications, failure rate, zero-knowledge share, active tokens,
+post-quantum coverage), and top breakdowns by context, agency, disclosure and
+outcome. Every figure is a server-side aggregate, so it survives the 2M-row
+stress set and beyond; the browser never receives more than a few hundred rows.
+
+**The globe is a tab.** The former map moves behind a Map tab, cleaned of the
+cockpit theatrics (the fake heading/pitch/zoom readouts, the waveform, Spin),
+and boots lazily the first time it is shown. It keeps everything it was good at:
+the live event feed, the per-subject investigation journey, the drill to street
+level.
+
+**Two new bounded aggregates**, both non-geographic and location-free:
+`atlas_volume_series` (total volume over time, counting EVERY event unlike the
+located-only timeline) and `atlas_breakdown` (top-K by one whitelisted
+dimension). Their endpoints `/api/atlas/series` and `/api/atlas/breakdown` are
+replica-routed and capped by a new `_ATLAS_MAX_CATEGORIES` (50).
+
+**The invariants hold, and one is now a feature.** C8: the category cap joins
+the cluster/point/event caps (`check_c8_atlas_caps`). C6: zero-knowledge
+verifications are COUNTED in volume, disclosure and every roll-up but never
+located or attributed: "37% of activity is zero-knowledge and unmappable" is
+the privacy posture on display. C5: the charts are hand-rolled inline SVG and
+CSS bars, self-hosted, so `script-src 'self'` is never relaxed and no charting
+CDN is added.
+
+**Proven.** `check_atlas_console` (+ detection test) pins the structure; seven
+`AtlasConsoleAPITests` pin the aggregates; the Playwright e2e suite gains two
+cases (Overview is the default, the Map tab reveals the globe) and stays
+CSP-clean. The schema is unchanged; the check layer is 125; the app is 74
+routes.
+
+---
+
 ## v9.247 — 2026-09-06 (bulk enrollment)
 
 Roadmap P2.4. Onboarding an authority's existing population is the one workload
