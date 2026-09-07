@@ -67,9 +67,27 @@ keeps the strict two-witness check since it verifies one signature per view.
 ## Under HA, failover, and rolling deploys
 
 Verification is stateless and read-only, so it inherits the HA properties the
-failover and rolling-deploy drills already prove: a verify request is served by
-any healthy replica, routed to a read path, and a rolling deploy replaces
-containers one colour at a time behind the edge. Certifying the verification
-throughput specifically through an induced failover and a rolling deploy (the
-load holds, zero verification errors across the transition) is the next step and
-closes the roadmap's P2.9.
+failover and rolling-deploy drills prove. Both drills now hold a REAL,
+authenticated verification load on `/api/tokens/<id>/verify` across the
+transition (`scripts/polaris-verify-load.py`, driven by the CI drills), so the
+claim is measured, not asserted:
+
+- **Rolling deploy (app-tier).** A rolling deploy replaces app containers one
+  colour at a time behind the retrying edge, so a verify request is always
+  served by a live colour. The drill certifies **zero dropped verifications**
+  across the rollover, the same bar its health traffic already meets.
+- **Failover (database-tier).** A verify request is a read; during a database
+  failover's window there is a gap where reads (verification included) fail,
+  exactly as writes do, because a promoted replica or a healed partition takes a
+  bounded time. The honest claim is therefore not zero-drop but **recovery**:
+  the drill induces four failures (a leader crash, a lease partition, a
+  switchover, an etcd crash) and, under a continuous verification load, asserts
+  that verification is **served again after every one of them** and kept serving
+  at rate throughout. The recovery rides the same replica-routing failback the
+  read path uses.
+
+Because the demo operator accounts are disabled in production, each drill first
+bootstraps a real admin (the scrypt hash is computed inside the app container,
+which carries werkzeug), then authenticates the load against it. This is the
+verification half of the roadmap's P2.9: real ML-DSA-65 verification holds
+through a rolling deploy and recovers through a failover, under load.

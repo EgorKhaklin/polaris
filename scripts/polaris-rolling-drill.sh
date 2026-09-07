@@ -74,12 +74,33 @@ curl -sk -o /dev/null -w '%{http_code}\n' "$URL/api/health" | grep -q 200 || fai
 BLUE0=$(cid app); GREEN0=$(cid app-green); [ -n "$BLUE0" ] && [ -n "$GREEN0" ] || fail "app containers not found"
 echo "  app=$BLUE0 app-green=$GREEN0"
 
-echo "== 1-2. rolling deploy under traffic =="
+# A real admin so the verification load can authenticate: production disables the
+# demo accounts (docker-init.sh), so we compute the scrypt hash in the app
+# container (it carries werkzeug; the CI runner does not) and insert it. P2.9:
+# the verify-AT-USE path must ride the rollover with ZERO dropped verifications.
+echo "== bootstrap: an operator for the verification load =="
+VPASS="drill-$(head -c 12 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+VHASH=$(compose exec -T -e P="$VPASS" app python3 -c \
+    "import os; from werkzeug.security import generate_password_hash as g; print(g(os.environ['P'], method='scrypt'))" 2>/dev/null | tr -d '\r') \
+    || fail "could not compute the operator hash in the app container"
+docker exec polaris-postgres psql -h /var/run/postgresql -U postgres -d polaris -v ON_ERROR_STOP=1 -c \
+    "INSERT INTO AppUser (username,password_hash,role,is_active,webauthn_required_after) VALUES ('polarisdrill','$VHASH','admin',TRUE,NULL) ON CONFLICT (username) DO UPDATE SET password_hash=EXCLUDED.password_hash, is_active=TRUE, locked_until=NULL, failed_login_count=0" >/dev/null \
+    || fail "could not bootstrap the drill admin on postgres"
+python3 "$ROOT/scripts/polaris-verify-load.py" --url "$URL" --login "polarisdrill:$VPASS" --once \
+    || fail "the verify-at-use endpoint did not answer 200 before the deploy"
+
+echo "== 1-2. rolling deploy under traffic (health + real verification) =="
 traffic_start "$WORK/deploy.json"
+# Modest rate (~3 rps): the health traffic above and this share the edge's
+# per-IP rate budget (1000/min in the CI Caddyfile), so verification must not
+# starve the health assertion. 429s are tolerated by the load, not counted.
+python3 "$ROOT/scripts/polaris-verify-load.py" --url "$URL" --login "polarisdrill:$VPASS" \
+    --threads 3 --interval 1.0 --out "$WORK/verify.json" & VERIFY_PID=$!
 # Full output, unfiltered: the first local run hid the deploy's fatal error
 # behind a grep for the lines I expected to see.
 ( cd "$ROOT" && POLARIS_DOMAIN="${POLARIS_DOMAIN:-localhost}" bash scripts/polaris-deploy.sh prod --no-pull ) 2>&1 | sed 's/^/    deploy: /' || true
 sleep 3
+kill -TERM "$VERIFY_PID" 2>/dev/null || true; wait "$VERIFY_PID" 2>/dev/null || true; VERIFY_PID=""
 traffic_stop "$WORK/deploy.json"
 BLUE1=$(cid app); GREEN1=$(cid app-green)
 python3 - "$WORK/deploy.json" "$BLUE0" "$BLUE1" "$GREEN0" "$GREEN1" <<'PYEOF'
@@ -90,6 +111,16 @@ assert s.get("served", 0) >= 150, "too few served requests to mean anything"
 assert b0 != b1 and g0 != g1, "both app containers must have been replaced"
 assert s["drops"] == 0, f"{s['drops']} requests dropped during the rolling deploy"
 print("  ZERO dropped requests; both colours replaced")
+PYEOF
+# P2.9: the same rollover, judged on the real cryptographic verification path.
+python3 - "$WORK/verify.json" <<'PYEOF'
+import json, sys
+s = json.load(open(sys.argv[1]))
+print(f"  verification during the rolling deploy: {s['requests']} requests, "
+      f"{s['served']} served, {s['drops']} drops, breakdown {s['by']}")
+assert s["served"] >= 40, f"only {s['served']} verifications served: too few to certify"
+assert s["drops"] == 0, f"{s['drops']} verification requests dropped during the rolling deploy"
+print("  ZERO verification requests dropped across the rollover")
 PYEOF
 
 echo "== 4. negative control: both colours stopped for 20s under traffic =="

@@ -79,6 +79,7 @@ diagnose() {  # what the cluster looked like when a scenario failed; the CI job 
 fail() { echo "::error::$*" >&2; diagnose; exit 1; }
 cleanup() {
     if [[ -n "${TRAFFIC_PID:-}" ]]; then kill -TERM "$TRAFFIC_PID" 2>/dev/null || true; wait "$TRAFFIC_PID" 2>/dev/null || true; fi
+    if [[ -n "${VERIFY_PID:-}" ]]; then kill -TERM "$VERIFY_PID" 2>/dev/null || true; wait "$VERIFY_PID" 2>/dev/null || true; fi
     docker rm -f "$WRITER" >/dev/null 2>&1 || true
     if [[ -n "$PARTITIONED" && -n "$DCS_NET" ]]; then
         docker network connect ${PARTITION_ALIAS_ARGS[@]+"${PARTITION_ALIAS_ARGS[@]}"} "$DCS_NET" "polaris-$PARTITIONED" >/dev/null 2>&1 || true
@@ -225,6 +226,10 @@ settle() {  # the write stream must be flowing and the replica current before a 
 traffic_start() { : > "$1"; python3 "$WORK/traffic.py" "$URL" "$1" & TRAFFIC_PID=$!; }
 traffic_stop()  { kill -TERM "$TRAFFIC_PID" 2>/dev/null || true; wait "$TRAFFIC_PID" 2>/dev/null || true; TRAFFIC_PID=""; }
 drops() { python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(d['drops'], 'of', d['requests'])" "$1"; }
+# The recovery probe (P2.9): after a failover, does the login-gated, replica-routed
+# verify-AT-USE endpoint answer 200 again? --once logs in fresh (proving the auth
+# write path recovered too) and retries, so it is called after writes have resumed.
+verify_recovered() { python3 "$ROOT/scripts/polaris-verify-load.py" --url "$URL" --login "polarisdrill:${VPASS:-}" --once; }
 
 echo "== failover drill: v$VERSION @ $GIT, against $URL =="
 edge_ok || fail "edge not healthy before the drill"
@@ -260,6 +265,25 @@ docker run -d --name "$WRITER" --network "$NET" \
 t=$(now); wait_for 30 writes_ok_since "$t" >/dev/null || { docker logs "$WRITER" 2>&1 | tail -5 >&2; fail "the writer never completed an insert through pgbouncer and HAProxy"; }
 echo "  writes flowing through pgbouncer -> pg-router -> $L0"
 
+# A real admin for the verification load: production disables the demo accounts,
+# so compute the scrypt hash in the app container (it carries werkzeug; the CI
+# runner does not) and insert it on the current leader (it replicates). P2.9: the
+# verify-AT-USE path must RECOVER after each failover, and keep serving under load.
+echo "== bootstrap: a verification load on /api/tokens/<id>/verify =="
+VPASS="drill-$(head -c 12 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+VHASH=$(compose exec -T -e P="$VPASS" app python3 -c \
+    "import os; from werkzeug.security import generate_password_hash as g; print(g(os.environ['P'], method='scrypt'))" 2>/dev/null | tr -d '\r') \
+    || fail "could not compute the operator hash in the app container"
+docker exec "polaris-$L0" psql -h /var/run/postgresql -U postgres -d polaris -v ON_ERROR_STOP=1 -c \
+    "INSERT INTO AppUser (username,password_hash,role,is_active,webauthn_required_after) VALUES ('polarisdrill','$VHASH','admin',TRUE,NULL) ON CONFLICT (username) DO UPDATE SET password_hash=EXCLUDED.password_hash, is_active=TRUE, locked_until=NULL, failed_login_count=0" >/dev/null \
+    || fail "could not bootstrap the drill admin on $L0"
+verify_recovered || fail "the verify-at-use endpoint did not answer 200 before the drill"
+# One steady verification load spanning ALL scenarios; asserted at the end. A
+# low rate (~2 rps): the per-scenario health traffic already runs near the edge's
+# per-IP rate budget, and 429s are tolerated (not drops), not counted as served.
+python3 "$ROOT/scripts/polaris-verify-load.py" --url "$URL" --login "polarisdrill:$VPASS" \
+    --threads 2 --interval 1.0 --out "$WORK/verify.json" & VERIFY_PID=$!
+
 # --- 1. the leader node is lost ------------------------------------------------------
 settle
 echo "== 1. the leader node ($L0) is lost: killed, and it stays down past the lease =="
@@ -278,6 +302,7 @@ echo "  promoted $L1 after ${p1}s; writes: ${fails1} failed (span ${gap1}s), lon
 le "$out1" "$CEIL_FAILOVER" || fail "write outage ${out1}s exceeds the ${CEIL_FAILOVER}s ceiling"
 no_lost_write "$acked0"
 [[ "$(cluster_field "$L1" timeline "$L0")" == "$tl1" ]] || fail "$L0 is on timeline $(cluster_field "$L1" timeline "$L0"), the leader on $tl1: it did not follow"
+verify_recovered || fail "verification did not recover after the leader was lost (scenario 1)"
 
 # --- 2. the leader is cut off from the lease store -------------------------------------
 settle
@@ -322,6 +347,7 @@ else
     echo "  $L1 demoted itself after ${d2}s; leaderless until the partition healed; $L2 held the lease ${p2}s after the partition began; writes: ${fails2} failed (span ${gap2}s), longest stall ${stall2}s, outage ${out2}s; $R2 streaming after ${j2}s; reads dropped $(drops "$WORK/s2.json")"
 fi
 no_lost_write "$acked0"
+verify_recovered || fail "verification did not recover after the lease partition (scenario 2)"
 
 # --- 3. a planned switchover ------------------------------------------------------------
 settle
@@ -340,6 +366,7 @@ echo "  $C3 leader after ${p3}s; writes: ${fails3} failed (span ${gap3}s), longe
 le "$out3" "$CEIL_SWITCHOVER" || fail "switchover write outage ${out3}s exceeds the ${CEIL_SWITCHOVER}s ceiling"
 no_lost_write "$(ok_count)"
 L1="$C3"
+verify_recovered || fail "verification did not recover after the switchover (scenario 3)"
 
 # --- 4. an etcd member crashes ----------------------------------------------------------
 settle
@@ -355,8 +382,25 @@ le "$stall4" 5 || fail "writes stalled ${stall4}s while one etcd member was down
 r4=$(wait_for "$CEIL_RESTART" container_healthy polaris-etcd1) || fail "etcd1 did not restart healthy within ${CEIL_RESTART}s"
 sleep 2; traffic_stop
 echo "  leader unchanged, 0 failed inserts, longest stall ${stall4}s; etcd1 back healthy after ${r4}s; reads dropped $(drops "$WORK/s4.json")"
+verify_recovered || fail "verification did not recover after the etcd member crash (scenario 4)"
 
 wait_for 30 edge_ok >/dev/null || fail "stack not healthy at the end of the drill"
+
+# P2.9: verification held under load across the whole failover sequence. Reads
+# (verification included) DO drop during a database failover's window, so this
+# does not assert zero drops the way the app-tier rolling drill does; it asserts
+# verification kept being SERVED at rate throughout and recovered after each
+# failover (the four verify_recovered probes above). The drop count is reported
+# next to the write outages so the two are comparable.
+if [[ -n "${VERIFY_PID:-}" ]]; then kill -TERM "$VERIFY_PID" 2>/dev/null || true; wait "$VERIFY_PID" 2>/dev/null || true; VERIFY_PID=""; fi
+python3 - "$WORK/verify.json" <<'PYEOF'
+import json, sys
+s = json.load(open(sys.argv[1]))
+print(f"  verification under load across the failover sequence: {s['requests']} requests, "
+      f"{s['served']} served, {s['drops']} dropped, breakdown {s['by']}")
+assert s["served"] >= 100, f"only {s['served']} verifications served across the drill: too few to certify"
+print("  verification was served at rate throughout and recovered after every failover")
+PYEOF
 python3 - "$OUT" "$p1" "$out1" "$fails1" "$stall1" "$j1" "$d2" "$outcome2" "$p2" "$out2" "$fails2" "$stall2" "$j2" "$p3" "$out3" "$fails3" "$stall3" "$j3" "$stall4" "$r4" <<'PYEOF'
 import json, sys
 o, p1, o1, f1, s1, j1, d2, oc2, p2, o2, f2, s2, j2, p3, o3, f3, s3, j3, s4, r4 = sys.argv[1:]

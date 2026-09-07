@@ -5,6 +5,47 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.259 — 2026-09-07 (Verification holds through HA: rolling deploy drops zero, failover recovers)
+
+v9.258 made real ML-DSA-65 verification fast (single-witness verify-at-use) and
+projected it fans out across an HA fleet. This ship proves the fleet claim where
+it is hardest to fake: both CI HA drills now hold a REAL, authenticated
+verification load on `GET /api/tokens/<id>/verify` across the transition, so the
+survival of the verification path through a rolling deploy and a database
+failover is measured, not asserted. This closes the roadmap's P2.9.
+
+**A new load generator, `scripts/polaris-verify-load.py`.** Pure stdlib, so it
+runs on a bare CI runner. It logs in once, keeps the session, and re-verifies a
+set of active tokens at a steady rate, with STRICT accounting: only HTTP 200 is
+served; 429 is the edge rate limiter (tolerated); everything else — a 302 (the
+session was lost), a 5xx (a backend gap during a failover), a transport error —
+is a DROP. A `--once` mode is the post-failover recovery probe. The accounting
+policy (`classify`) and the login/recovery flow are unit-tested against an
+in-process stub server (`scripts/test_verify_load.py`), run under coverage.
+
+**Two honest claims, because the two operations differ.** The rolling deploy is
+app-tier: a colour is always up behind the retrying edge, so the drill certifies
+**zero dropped verifications** across the rollover, the bar its health traffic
+already meets. A database failover is different: a verify request is a read, and
+during the failover window reads drop exactly as writes do, because a promoted
+replica or a healed partition takes a bounded time. So the failover drill does
+not assert zero — it asserts **recovery**: under a continuous verification load
+it induces four failures (a leader crash, a lease partition, a switchover, an
+etcd crash) and confirms verification returns 200 again after every one, and
+kept serving at rate throughout.
+
+**Bootstrapping a real operator.** Production disables the demo accounts, so each
+drill computes an scrypt hash inside the app container (which carries werkzeug;
+the CI runner does not) and inserts a real admin the load authenticates against.
+
+`check_verification_load_certified` pins the load generator's strict accounting,
+its test being run under coverage, and both drills' use of it (the rolling drill
+asserting zero verification drops, the failover drill probing recovery after
+each of the four scenarios plus a served floor); the detection test perturbs
+each. 127 invariant checks (was 126). Full suite green; coverage held.
+
+---
+
 ## v9.258 — 2026-09-07 (Single-witness verify-at-use: real PQ verification from hundreds to thousands/sec)
 
 The v9.257 benchmark established the honest cryptographic-verification number:

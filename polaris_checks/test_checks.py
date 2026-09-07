@@ -154,6 +154,60 @@ def test_pqc_wired_check_fails_when_issuance_bypasses_signing_module(tmp_path):
     assert checks.check_pqc_signing_wired(tmp_path)[0].level == "FAIL", "must FAIL when verify-at-use is not single-witness"
 
 
+def test_verification_load_certified_check_discriminates(tmp_path):
+    # P2.9 (v9.259): the HA drills hold an authenticated verify-at-use load. The
+    # good fixture has the load generator (strict accounting + --once), its test,
+    # the coverage wiring, and both drills asserting on it (rolling = zero drops,
+    # failover = recovery after each scenario + a served floor).
+    GEN = ("def classify(status):\n"
+           "    if status == 200: return \"served\", \"ok\"\n"
+           "    if status == 429: return \"tolerated\", \"http_429\"\n"
+           "    return \"drop\", \"transport\"\n"
+           "# GET /api/tokens/<id>/verify after POST /login; supports --once\n")
+    TEST = "def test_classify(): pass\n# also covers run_once\n"
+    COV = 'run "$ROOT/scripts" unittest test_verify_load\n'
+    ROLLING = ('python3 scripts/polaris-verify-load.py --out "$WORK/verify.json"\n'
+               '# assert 0 verification requests dropped across the rollover\n')
+    FAILOVER = ('python3 scripts/polaris-verify-load.py --out "$WORK/verify.json"\n'
+                'verify_recovered || fail "1"\n'
+                'verify_recovered || fail "2"\n'
+                'verify_recovered || fail "3"\n'
+                'verify_recovered || fail "4"\n'
+                'python3 -c \'assert s["served"] >= 200\'\n')
+    good = {"scripts/polaris-verify-load.py": GEN, "scripts/test_verify_load.py": TEST,
+            "scripts/polaris-coverage.sh": COV, "scripts/polaris-rolling-drill.sh": ROLLING,
+            "scripts/polaris-failover-drill.sh": FAILOVER}
+
+    def write(overrides=None):
+        files = dict(good); files.update(overrides or {})
+        for rel, body in files.items():
+            f = tmp_path / rel; f.parent.mkdir(parents=True, exist_ok=True); f.write_text(body)
+
+    write()
+    assert checks.check_verification_load_certified(tmp_path)[0].level == "OK", "must PASS on the good fixture"
+    # the load generator loses its strict accounting (429 no longer tolerated-not-dropped)
+    write({"scripts/polaris-verify-load.py": GEN.replace('    if status == 429: return "tolerated", "http_429"\n', "")})
+    assert checks.check_verification_load_certified(tmp_path)[0].level == "FAIL", "must FAIL without strict accounting"
+    # the recovery probe is gone
+    write({"scripts/polaris-verify-load.py": GEN.replace("--once", "--never")})
+    assert checks.check_verification_load_certified(tmp_path)[0].level == "FAIL", "must FAIL without a --once recovery probe"
+    # the generator has no test
+    write({"scripts/test_verify_load.py": "def test_nothing(): pass\n"})
+    assert checks.check_verification_load_certified(tmp_path)[0].level == "FAIL", "must FAIL when run_once is untested"
+    # coverage does not run the test
+    write({"scripts/polaris-coverage.sh": "run other\n"})
+    assert checks.check_verification_load_certified(tmp_path)[0].level == "FAIL", "must FAIL when the test is not under coverage"
+    # the rolling drill drops its verification assertion
+    write({"scripts/polaris-rolling-drill.sh": "python3 scripts/polaris-verify-load.py --out x\n"})
+    assert checks.check_verification_load_certified(tmp_path)[0].level == "FAIL", "must FAIL when the rollover drops the verify assertion"
+    # the failover drill probes recovery after only three of the four scenarios
+    write({"scripts/polaris-failover-drill.sh": FAILOVER.replace('verify_recovered || fail "4"\n', "")})
+    assert checks.check_verification_load_certified(tmp_path)[0].level == "FAIL", "must FAIL when a failover scenario has no recovery probe"
+    # the failover drill drops the served floor
+    write({"scripts/polaris-failover-drill.sh": FAILOVER.replace('assert s["served"] >= 200', "pass")})
+    assert checks.check_verification_load_certified(tmp_path)[0].level == "FAIL", "must FAIL when the served floor is gone"
+
+
 def test_signing_key_generation_check_discriminates(tmp_path):
     scripts = tmp_path / "scripts"
     scripts.mkdir()

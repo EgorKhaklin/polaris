@@ -126,7 +126,16 @@ The drill runs a writer through the real client path (pgbouncer, HAProxy,
 the leader) four times a second and logs every insert, so a scenario's
 write outage is what an application would have seen: a failed insert, or an
 insert that stalled in the pooler's queue. Reads run against the edge as in
-the other drills. Local reference run at v9.244 (the router's session
+the other drills. Since v9.259 the drill also holds a real authenticated
+verification load on `GET /api/tokens/<id>/verify` (the login-gated,
+replica-routed ML-DSA-65 verify-at-use path) across all four scenarios: reads,
+verification included, drop during a failover window exactly as writes do, so
+the drill does not assert zero verification drops the way the app-tier rolling
+deploy does. Instead it asserts RECOVERY — after each of the four induced
+failures a fresh verification returns 200 again — and that verification kept
+being served at rate throughout. That is the database-tier half of the
+verification-throughput certification (P2.9); see
+[verification-scaling.md](../design/verification-scaling.md). Local reference run at v9.244 (the router's session
 timeouts changed at v9.244, so the numbers were taken again), the ceilings
 the drill asserts on the right:
 

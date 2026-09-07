@@ -3830,6 +3830,58 @@ def check_zero_downtime_deploy(root: pathlib.Path) -> list[Finding]:
                "database recreation windows are measured against ceilings")
 
 
+def check_verification_load_certified(root: pathlib.Path) -> list[Finding]:
+    """Roadmap P2.9 (v9.259): the HA drills hold a REAL, authenticated
+    verify-AT-USE load (GET /api/tokens/<id>/verify, v9.258) across the
+    transitions, not just a health ping. The rolling deploy (app-tier) must drop
+    ZERO verifications; the failover (database-tier) drops during each window but
+    must RECOVER after every scenario and keep serving under load. Pin the load
+    generator's strict accounting, both drills' use of it, and its own test."""
+    gen = _read(root, "scripts/polaris-verify-load.py")
+    if not gen:
+        return _fail("verify_load", "scripts/polaris-verify-load.py is missing (the authenticated verify-at-use load)")
+    # It must exercise the real endpoint, authenticate, and account strictly:
+    # only 200 is served, 429 is tolerated, everything else (a 302 lost session,
+    # a 5xx failover gap, a transport error) is a DROP.
+    for needle in ("/api/tokens/", "/verify", "/login", "def classify",
+                   '"served", "ok"', '"tolerated", "http_429"', '"drop"'):
+        if needle not in gen:
+            return _fail("verify_load", f"polaris-verify-load.py must contain {needle!r}: it authenticates against "
+                         "/login and verifies /api/tokens/<id>/verify with strict served/tolerated/drop accounting")
+    if "--once" not in gen:
+        return _fail("verify_load", "polaris-verify-load.py needs a --once recovery probe (verify answers 200 again)")
+
+    test = _read(root, "scripts/test_verify_load.py")
+    if not test or "classify" not in test or "run_once" not in test:
+        return _fail("verify_load", "scripts/test_verify_load.py must test classify() and the run_once recovery probe")
+    cov = _read(root, "scripts/polaris-coverage.sh")
+    if "test_verify_load" not in cov:
+        return _fail("verify_load", "polaris-coverage.sh must run scripts/test_verify_load under coverage")
+
+    # The rolling drill (app-tier) certifies ZERO dropped verifications.
+    rolling = _read(root, "scripts/polaris-rolling-drill.sh")
+    if "polaris-verify-load.py" not in rolling or "verify.json" not in rolling \
+            or "verification requests dropped" not in rolling:
+        return _fail("verify_load", "polaris-rolling-drill.sh must hold a verify-at-use load and assert ZERO verification "
+                     "drops across the rollover")
+
+    # The failover drill (database-tier) certifies recovery after each scenario
+    # and sustained service under load (reads DO drop in a failover window, so it
+    # asserts recovery + a served floor, not zero drops).
+    failover = _read(root, "scripts/polaris-failover-drill.sh")
+    if "polaris-verify-load.py" not in failover or "verify_recovered" not in failover:
+        return _fail("verify_load", "polaris-failover-drill.sh must hold a verify-at-use load and probe verify_recovered")
+    if failover.count("verify_recovered || fail") < 4:
+        return _fail("verify_load", "polaris-failover-drill.sh must assert verification RECOVERED after each of the four "
+                     "failover scenarios")
+    if 'assert s["served"] >=' not in failover:
+        return _fail("verify_load", "polaris-failover-drill.sh must assert a served floor (verification kept serving "
+                     "under load across the failover sequence)")
+    return _ok("verify_load", "the HA drills hold an authenticated verify-at-use load: the rolling deploy drops zero "
+               "verifications, the failover recovers verification after every scenario and keeps serving under load; "
+               "the load generator's strict accounting is unit-tested and run under coverage")
+
+
 def check_helm_reference_profile(root: pathlib.Path) -> list[Finding]:
     """Roadmap P1.5: a Helm chart deploys the production topology with default-deny
     NetworkPolicies and the restricted Pod Security Standard, the postgres image
@@ -5506,6 +5558,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_secrets_lifecycle_sealed,
     check_migrations_expand_contract,
     check_zero_downtime_deploy,
+    check_verification_load_certified,
     check_helm_reference_profile,
     check_local_clock_convention,
     check_c6_atlas_redacts_zk_location,
