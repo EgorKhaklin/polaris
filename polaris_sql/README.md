@@ -2,8 +2,9 @@
 
 This directory contains the complete SQL realization of the Polaris
 database design specified in `docs/paper/polaris_project_report.pdf`. The schema
-is in BCNF (proven in §6.5 of the report), implements **32 tables** (v9.234; a migrated deployment holds 36, with the
-`schema_version` registry and the three migration-added tables)
+is in BCNF (proven in §6.5 of the report), implements **32 tables** (v9.234; a migrated deployment holds 39, with the
+`schema_version` registry, the three migration-added tables, and the three
+Athena curated tables)
 (12 core entities + `GenomicAnchor` from M2-4 + `QuantumObserverBinding`
 scaffold from M2-5 + `IssuerDiscretionPolicy` from M2-11 +
 `EnrollmentStatusEvent` from M2-9 + `RecoveryRequest` from M2-7 +

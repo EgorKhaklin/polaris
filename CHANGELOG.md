@@ -5,6 +5,47 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.266 — 2026-09-07 (Athena: the authority-and-constitution layer)
+
+Roadmap P6.8, the constrained ontology the assessment endorsed. Athena is a
+read-only semantic and provenance layer over the *authority* tables, plus a
+first-class model of the constitution: C1-C10 and the Vocation as queryable
+rows, each linked to the exact live mechanism that enforces it.
+[`polaris_sql/16_athena.sql`](polaris_sql/16_athena.sql),
+[docs/design/athena.md](docs/design/athena.md).
+
+**Governance questions become mechanical.** Ten object and eight edge views over
+`Agency`, `AgencyAlgorithmAuth`, `CryptographicAlgorithm`, `VerificationContext`,
+`AgencyTrustAttestation`, and `RetentionPolicy`, and four functions:
+`athena_authority_chain` (why may this agency issue under this algorithm),
+`athena_explain_proof` (what disclosure policy bounds this context),
+`athena_affected_by_algorithm` (the blast radius of a deprecation — authorized
+agencies, served contexts, post-quantum successors), and
+`athena_rule_enforcement` (which mechanism enforces a constitutional rule). Each
+view is a SELECT over an existing table, so Athena has no independent authority
+store; it describes and orchestrates authority, never manufactures it.
+
+**The constitution stops drifting from the code.** `athena_rule_enforcement`
+maps every rule to the exact trigger, partial unique index, named CHECK
+constraint, `check_*` function, or stored procedure that enforces it, and
+`check_athena_rule_enforcement_resolves` fails the build if any named mechanism
+no longer exists — closing the prose-drift gap `meta/constraint-lattice.md` has
+today. `AthenaOntologyTests.test_rule_enforcement_map_matches_live_catalog`
+proves each mechanism is present in the running catalog.
+
+**Person-legibility is structurally impossible.** Five checks, each with an
+adversarial detection test: `check_athena_no_person` (no person table/column, no
+per-person surrogate), `check_athena_read_only` (STABLE, non-mutating, never
+SECURITY DEFINER), `check_athena_functions_bounded` (every function LIMIT-capped;
+an event-touching one inherits the Atlas C8 window), `check_athena_non_sovereign`
+(authority edges resolve to real tables, current views exclude revoked authority,
+only descriptive curated tables), and the rule-enforcement resolver. The same
+ship removed the v9.19 `v_ontology_individual` / `v_ontology_individual_tokens`
+person-aggregating views; that single-entity data now lives only on the audited,
+login-gated `/investigate/individual/<id>` route. 135 checks (was 130); 39 tables
+in a migrated deployment (was 36, the three descriptive curated Athena tables).
+
+
 ## v9.265 — 2026-09-07 (Atlas Trends: temporal rhythm + composition over time)
 
 Ship 7 of the Atlas rebuild (P2.3): a Trends tab that answers "when does the

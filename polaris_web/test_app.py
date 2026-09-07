@@ -9455,3 +9455,148 @@ class ReplicaRoutingTests(PolarisTestCase):
         data = self.client.get('/api/health').get_json()
         self.assertNotIn('database_replica', data['checks'])
 
+
+
+class AthenaOntologyTests(PolarisTestCase):
+    """v9.266 (roadmap P6.8): Athena, the read-only authority-and-constitution
+    layer (polaris_sql/16_athena.sql). These runtime tests complement the static
+    polaris_checks (check_athena_*): the functions answer real governance
+    questions, no Athena view exposes a person column in the live catalog, the
+    'current' views filter revoked authority, and every rule->mechanism row in
+    athena_rule_enforcement resolves to a real object in the RUNNING database
+    (not merely the source text)."""
+
+    def _conn(self):
+        return psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+
+    def test_functions_answer_governance_questions(self):
+        conn = self._conn()
+        try:
+            with conn.cursor() as cur:
+                # authority chain resolves to the may_issue grant
+                cur.execute("SELECT agency_id, algorithm_id FROM AgencyAlgorithmAuth "
+                            "WHERE authorization_type IN ('ISSUE','BOTH') LIMIT 1")
+                grant = cur.fetchone()
+                self.assertIsNotNone(grant, "seed must hold an issuance grant")
+                cur.execute("SELECT relation FROM athena_authority_chain(%s, %s)",
+                            (grant['agency_id'], grant['algorithm_id']))
+                relations = {r['relation'] for r in cur.fetchall()}
+                self.assertIn('may_issue', relations,
+                              "the authority chain must show the issuance grant")
+                self.assertIn('agency', relations)
+
+                # blast radius of a deprecated algorithm names its PQ successors
+                cur.execute("SELECT algorithm_id FROM CryptographicAlgorithm "
+                            "WHERE deprecation_date IS NOT NULL LIMIT 1")
+                dep = cur.fetchone()
+                if dep:
+                    cur.execute("SELECT impact_kind FROM athena_affected_by_algorithm(%s)",
+                                (dep['algorithm_id'],))
+                    kinds = {r['impact_kind'] for r in cur.fetchall()}
+                    self.assertIn('successor_algorithm', kinds,
+                                  "a deprecated algorithm must name at least one successor")
+
+                # rule enforcement returns the mechanisms for a rule
+                cur.execute("SELECT mechanism_name FROM athena_rule_enforcement('C6')")
+                mechs = [r['mechanism_name'] for r in cur.fetchall()]
+                self.assertTrue(mechs, "C6 must resolve to at least one mechanism")
+
+                # explain_proof surfaces the three disclosure levels + ZK note
+                cur.execute("SELECT context_id FROM VerificationContext LIMIT 1")
+                ctx = cur.fetchone()
+                cur.execute("SELECT disclosure_level FROM athena_explain_proof(%s)",
+                            (ctx['context_id'],))
+                levels = {r['disclosure_level'] for r in cur.fetchall()}
+                self.assertEqual(levels, {'ZERO_KNOWLEDGE', 'SELECTIVE', 'FULL'})
+        finally:
+            conn.close()
+
+    def test_no_person_column_in_any_athena_object(self):
+        # The structural person-prohibition, verified against the LIVE catalog:
+        # no column of any v_athena_* view or athena_* table is person-shaped.
+        forbidden = ('individual', 'legal_name', 'date_of_birth', 'token_id',
+                     'token_value', 'duress', 'person', 'holder', 'citizen', 'subject')
+        conn = self._conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT table_name, column_name FROM information_schema.columns "
+                    "WHERE table_name LIKE 'v_athena\\_%' OR table_name LIKE 'athena\\_%'")
+                cols = cur.fetchall()
+                self.assertTrue(cols, "the Athena views/tables must exist")
+                for row in cols:
+                    low = row['column_name'].lower()
+                    for bad in forbidden:
+                        self.assertNotIn(
+                            bad, low,
+                            f"Athena object {row['table_name']} exposes a person-shaped "
+                            f"column `{row['column_name']}` (contains `{bad}`)")
+        finally:
+            conn.close()
+
+    def test_current_views_exclude_revoked_authority(self):
+        # Invariant 7: a revoked trust attestation must not surface as current.
+        conn = self._conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT agency_id FROM Agency ORDER BY agency_id LIMIT 2")
+                ags = [r['agency_id'] for r in cur.fetchall()]
+                cur.execute("SELECT context_id FROM VerificationContext LIMIT 1")
+                ctx = cur.fetchone()['context_id']
+                cur.execute("SELECT MIN(user_id) AS u FROM AppUser")
+                signer = cur.fetchone()['u']
+                self.assertEqual(len(ags), 2)
+                self.assertIsNotNone(signer)
+                # one current, one revoked-at-insert, between the same pair
+                cur.execute(
+                    "INSERT INTO AgencyTrustAttestation "
+                    "(attesting_agency_id, attested_agency_id, context_id, valid_until, signed_by) "
+                    "VALUES (%s,%s,%s, CURRENT_DATE + 90, %s) RETURNING attestation_id",
+                    (ags[0], ags[1], ctx, signer))
+                current_id = cur.fetchone()['attestation_id']
+                cur.execute(
+                    "INSERT INTO AgencyTrustAttestation "
+                    "(attesting_agency_id, attested_agency_id, context_id, valid_until, signed_by, "
+                    " revocation_date, revocation_reason) "
+                    "VALUES (%s,%s,%s, CURRENT_DATE + 90, %s, CURRENT_TIMESTAMP, 'revoked for test') "
+                    "RETURNING attestation_id",
+                    (ags[0], ags[1], ctx, signer))
+                revoked_id = cur.fetchone()['attestation_id']
+
+                cur.execute("SELECT attestation_id FROM v_athena_trust_agreement "
+                            "WHERE attestation_id IN (%s,%s)", (current_id, revoked_id))
+                surfaced = {r['attestation_id'] for r in cur.fetchall()}
+                self.assertIn(current_id, surfaced, "the current attestation must surface")
+                self.assertNotIn(revoked_id, surfaced, "the revoked attestation must be filtered (invariant 7)")
+        finally:
+            conn.rollback()   # leave no test attestations behind
+            conn.close()
+
+    def test_rule_enforcement_map_matches_live_catalog(self):
+        # Invariant 6, at runtime: every non-Python mechanism the constitution map
+        # names actually exists as an object in the running database.
+        conn = self._conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT rule_code, mechanism_kind, mechanism_name "
+                            "FROM athena_rule_enforcement ORDER BY rule_code")
+                rows = cur.fetchall()
+                self.assertTrue(rows, "the enforcement map must be seeded")
+                for r in rows:
+                    kind, name = r['mechanism_kind'], r['mechanism_name']
+                    if kind == 'CHECK_CONSTRAINT':
+                        cur.execute("SELECT 1 FROM pg_constraint WHERE conname = %s", (name,))
+                    elif kind == 'INDEX':
+                        cur.execute("SELECT 1 FROM pg_class WHERE relkind = 'i' AND relname = %s", (name,))
+                    elif kind == 'TRIGGER':
+                        cur.execute("SELECT 1 FROM pg_trigger WHERE tgname = %s "
+                                    "UNION ALL SELECT 1 FROM pg_proc WHERE proname = %s", (name, name))
+                    elif kind == 'PROCEDURE':
+                        cur.execute("SELECT 1 FROM pg_proc WHERE proname = %s", (name,))
+                    else:
+                        continue  # CHECK_FUNCTION is a Python object; the static check covers it
+                    self.assertIsNotNone(
+                        cur.fetchone(),
+                        f"{r['rule_code']} names {kind} `{name}`, absent from the live catalog")
+        finally:
+            conn.close()

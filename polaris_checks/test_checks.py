@@ -5173,3 +5173,133 @@ $$;
         "0 2 1 1 *   ${SCRIPTS_DIR}/polaris-rotate-logs.sh 2>&1 | logger\n")
     assert checks.check_retention_engine(tmp_path)[0].level == "FAIL", \
         "must FAIL when the installed cron line omits the actor the purge requires"
+
+
+# ===========================================================================
+# Athena (v9.266) detection tests — each of the five invariant checks must turn
+# red on the violation it exists to catch.
+# ===========================================================================
+
+def _athena_write(tmp_path, rel, body):
+    f = tmp_path / rel
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(body)
+    return f
+
+
+def test_athena_no_person_check_discriminates(tmp_path):
+    # Person-legibility must be structurally impossible: no person table/column,
+    # no stable per-person surrogate, and the v9.19 person views gone (ship #0).
+    GOOD = ("CREATE OR REPLACE VIEW v_athena_agency AS\n"
+            "  SELECT a.agency_id, a.name FROM Agency a;\n"
+            "CREATE OR REPLACE FUNCTION athena_x() RETURNS TABLE(n INT)\n"
+            "  LANGUAGE sql STABLE AS $b$ SELECT 1 LIMIT 1; $b$;\n")
+    _athena_write(tmp_path, "polaris_sql/15_ontology.sql",
+                  "CREATE OR REPLACE VIEW v_ontology_token AS SELECT 1;\n")
+    _athena_write(tmp_path, "polaris_sql/16_athena.sql", GOOD)
+    assert checks.check_athena_no_person(tmp_path)[0].level == "OK", "must PASS person-free"
+    # a person-column reference in structural SQL
+    _athena_write(tmp_path, "polaris_sql/16_athena.sql",
+                  GOOD.replace("a.agency_id, a.name FROM Agency a",
+                               "a.agency_id, t.individual_id FROM Agency a JOIN IdentityToken t ON true"))
+    assert checks.check_athena_no_person(tmp_path)[0].level == "FAIL", "must FAIL on individual_id"
+    # a stable per-person surrogate column
+    _athena_write(tmp_path, "polaris_sql/16_athena.sql",
+                  GOOD + "CREATE TABLE IF NOT EXISTS athena_x_t (subject_handle VARCHAR(16));\n")
+    assert checks.check_athena_no_person(tmp_path)[0].level == "FAIL", "must FAIL on a subject handle"
+    # the person-aggregating ontology view is back
+    _athena_write(tmp_path, "polaris_sql/16_athena.sql", GOOD)
+    _athena_write(tmp_path, "polaris_sql/15_ontology.sql",
+                  "CREATE OR REPLACE VIEW v_ontology_individual AS SELECT 1;\n")
+    assert checks.check_athena_no_person(tmp_path)[0].level == "FAIL", "must FAIL if the person view returns"
+
+
+def test_athena_read_only_check_discriminates(tmp_path):
+    # Athena cannot act: STABLE, non-mutating, never SECURITY DEFINER.
+    GOOD = ("CREATE OR REPLACE FUNCTION athena_x(p INT) RETURNS TABLE(n INT)\n"
+            "  LANGUAGE sql STABLE AS $b$ SELECT 1 LIMIT 1; $b$;\n")
+    _athena_write(tmp_path, "polaris_sql/16_athena.sql", GOOD)
+    assert checks.check_athena_read_only(tmp_path)[0].level == "OK", "must PASS read-only"
+    _athena_write(tmp_path, "polaris_sql/16_athena.sql",
+                  GOOD.replace("LANGUAGE sql STABLE AS", "LANGUAGE sql STABLE SECURITY DEFINER AS"))
+    assert checks.check_athena_read_only(tmp_path)[0].level == "FAIL", "must FAIL on SECURITY DEFINER"
+    _athena_write(tmp_path, "polaris_sql/16_athena.sql",
+                  GOOD.replace("$b$ SELECT 1 LIMIT 1; $b$",
+                               "$b$ INSERT INTO t VALUES (1); SELECT 1 LIMIT 1; $b$"))
+    assert checks.check_athena_read_only(tmp_path)[0].level == "FAIL", "must FAIL on a write in a function body"
+    _athena_write(tmp_path, "polaris_sql/16_athena.sql",
+                  GOOD.replace("LANGUAGE sql STABLE", "LANGUAGE sql VOLATILE"))
+    assert checks.check_athena_read_only(tmp_path)[0].level == "FAIL", "must FAIL on a VOLATILE function"
+
+
+def test_athena_functions_bounded_check_discriminates(tmp_path):
+    # Every Athena function bounds its output; an event-touching one needs a window.
+    GOOD = ("CREATE OR REPLACE FUNCTION athena_x() RETURNS TABLE(n INT)\n"
+            "  LANGUAGE sql STABLE AS $b$ SELECT 1 LIMIT 1; $b$;\n")
+    _athena_write(tmp_path, "polaris_sql/16_athena.sql", GOOD)
+    assert checks.check_athena_functions_bounded(tmp_path)[0].level == "OK", "must PASS bounded"
+    _athena_write(tmp_path, "polaris_sql/16_athena.sql",
+                  GOOD.replace("SELECT 1 LIMIT 1;", "SELECT 1;"))
+    assert checks.check_athena_functions_bounded(tmp_path)[0].level == "FAIL", "must FAIL with no LIMIT"
+    _athena_write(tmp_path, "polaris_sql/16_athena.sql",
+                  GOOD.replace("$b$ SELECT 1 LIMIT 1; $b$",
+                               "$b$ SELECT count(*) FROM VerificationEvent LIMIT 5; $b$"))
+    assert checks.check_athena_functions_bounded(tmp_path)[0].level == "FAIL", "must FAIL on an unwindowed event read"
+
+
+def test_athena_non_sovereign_check_discriminates(tmp_path):
+    # Authority edges resolve to real tables; current views filter revoked
+    # authority; Athena owns only allow-listed descriptive tables.
+    GOOD = ("CREATE OR REPLACE VIEW v_athena_may_issue AS SELECT x FROM AgencyAlgorithmAuth;\n"
+            "CREATE OR REPLACE VIEW v_athena_authorizes AS SELECT x FROM AgencyAlgorithmAuth;\n"
+            "CREATE OR REPLACE VIEW v_athena_relies_on AS\n"
+            "  SELECT x FROM AgencyTrustAttestation ata WHERE ata.revocation_date IS NULL;\n"
+            "CREATE OR REPLACE VIEW v_athena_trust_agreement AS\n"
+            "  SELECT x FROM AgencyTrustAttestation ata WHERE ata.revocation_date IS NULL;\n"
+            "CREATE TABLE IF NOT EXISTS athena_constitutional_rule (rule_code VARCHAR(16));\n")
+    _athena_write(tmp_path, "polaris_sql/16_athena.sql", GOOD)
+    assert checks.check_athena_non_sovereign(tmp_path)[0].level == "OK", "must PASS non-sovereign"
+    # relies_on stops filtering revoked authority
+    _athena_write(tmp_path, "polaris_sql/16_athena.sql",
+                  GOOD.replace("CREATE OR REPLACE VIEW v_athena_relies_on AS\n"
+                               "  SELECT x FROM AgencyTrustAttestation ata WHERE ata.revocation_date IS NULL;",
+                               "CREATE OR REPLACE VIEW v_athena_relies_on AS\n"
+                               "  SELECT x FROM AgencyTrustAttestation ata;"))
+    assert checks.check_athena_non_sovereign(tmp_path)[0].level == "FAIL", "must FAIL when revoked authority surfaces"
+    # an independent authority store appears
+    _athena_write(tmp_path, "polaris_sql/16_athena.sql",
+                  GOOD + "CREATE TABLE athena_agency_grant (agency_id INT, algorithm_id INT);\n")
+    assert checks.check_athena_non_sovereign(tmp_path)[0].level == "FAIL", "must FAIL on a rogue authority table"
+    # an authority edge is repointed at a curated table (manufactures authority)
+    _athena_write(tmp_path, "polaris_sql/16_athena.sql",
+                  GOOD.replace("CREATE OR REPLACE VIEW v_athena_may_issue AS SELECT x FROM AgencyAlgorithmAuth;",
+                               "CREATE OR REPLACE VIEW v_athena_may_issue AS SELECT x FROM athena_constitutional_rule;"))
+    assert checks.check_athena_non_sovereign(tmp_path)[0].level == "FAIL", "must FAIL when an edge leaves its source table"
+
+
+def test_athena_rule_enforcement_resolves_check_discriminates(tmp_path):
+    # Every rule maps to a mechanism that exists; every rule is enforced.
+    _athena_write(tmp_path, "polaris_checks/checks.py",
+                  "def check_demo_mechanism(root):\n    return []\n")
+    _athena_write(tmp_path, "polaris_sql/06_triggers.sql",
+                  "CREATE TRIGGER trg_demo_append_only BEFORE UPDATE ON X\n"
+                  "  FOR EACH ROW EXECUTE FUNCTION reject_audit_modification();\n")
+    GOOD = ("INSERT INTO athena_constitutional_rule (rule_code, title, statement, kind, source_ref) VALUES\n"
+            "  ('C1','Audit','append only','CONSTRAINT','MISSION.md C1')\n"
+            "ON CONFLICT (rule_code) DO UPDATE SET title = EXCLUDED.title;\n"
+            "INSERT INTO athena_rule_enforcement (rule_code, mechanism_kind, mechanism_name, note) VALUES\n"
+            "  ('C1','CHECK_FUNCTION','check_demo_mechanism','note'),\n"
+            "  ('C1','TRIGGER','trg_demo_append_only','note')\n"
+            "ON CONFLICT (rule_code, mechanism_kind, mechanism_name) DO UPDATE SET note = EXCLUDED.note;\n")
+    _athena_write(tmp_path, "polaris_sql/16_athena.sql", GOOD)
+    assert checks.check_athena_rule_enforcement_resolves(tmp_path)[0].level == "OK", "must PASS when mechanisms resolve"
+    # a rule points at a mechanism that does not exist
+    _athena_write(tmp_path, "polaris_sql/16_athena.sql",
+                  GOOD.replace("trg_demo_append_only','note')", "trg_nonexistent','note')"))
+    assert checks.check_athena_rule_enforcement_resolves(tmp_path)[0].level == "FAIL", "must FAIL on a dangling mechanism"
+    # a declared rule has no enforcement row
+    _athena_write(tmp_path, "polaris_sql/16_athena.sql",
+                  GOOD.replace("  ('C1','Audit','append only','CONSTRAINT','MISSION.md C1')\n",
+                               "  ('C1','Audit','append only','CONSTRAINT','MISSION.md C1'),\n"
+                               "  ('C2','ZK','zero knowledge','CONSTRAINT','MISSION.md C2')\n"))
+    assert checks.check_athena_rule_enforcement_resolves(tmp_path)[0].level == "FAIL", "must FAIL on an unenforced rule"

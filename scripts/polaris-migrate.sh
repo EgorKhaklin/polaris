@@ -485,6 +485,7 @@ OBJECT_FILES=(
     11_atlas.sql
     14_foresight_helpers.sql
     15_ontology.sql
+    16_athena.sql
     09_grants.sql
 )
 

@@ -8,11 +8,13 @@ and its migrations, grouped, with the constraint that makes each
 guarantee true.
 
 The Polaris schema is **32 tables** in `01_schema.sql` (v9.247), organized
-into six functional groups. A migrated deployment holds **36 tables**: those,
+into six functional groups. A migrated deployment holds **39 tables**: those,
 the `schema_version` migration registry that `00_migrations_table.sql`
-creates, and the three tables the migrations under `polaris_sql/migrations/`
+creates, the three tables the migrations under `polaris_sql/migrations/`
 add to a running database (`OperatorWebauthnCredential`, `OperatorSession`,
-`AuditAccessLog`).
+`AuditAccessLog`), and the three Athena curated tables that
+`16_athena.sql` object-syncs (`athena_constitutional_rule`,
+`athena_rule_enforcement`, `athena_key_custody`).
 
 - **Entities** (Individual, Agency, CryptographicAlgorithm,
   VerificationContext, AppUser): the things that exist in the world,

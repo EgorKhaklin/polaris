@@ -29,7 +29,7 @@ XL (multi-arc). Risk is delivery risk, not security risk.
 
 ## Where we are (inventory at v9.236)
 
-**Have, working, CI-proven:** a 32-table constraint-enforced schema (36 tables
+**Have, working, CI-proven:** a 32-table constraint-enforced schema (39 tables
 in a migrated deployment) with append-only audit; an 83-route application with
 WebAuthn operator MFA, a server-side session registry, per-role network policy,
 per-agency quotas and the Atlas; an operator CLI; Plonky2 ZK Merkle inclusion
@@ -44,7 +44,7 @@ RPO and RTO; a retention engine that holds the retention decision as data with
 a floor no configuration reaches, per class and per jurisdiction, enforced by
 the purge and drilled end to end in CI; a sealed secrets store; opt-in
 distributed tracing with dashboards as code; SBOMs and SLSA provenance on every
-release; CVE gates on dependencies and images; a coverage floor; 130 invariant
+release; CVE gates on dependencies and images; a coverage floor; 135 invariant
 checks (v9.262) each with a detection test; eighteen operator runbooks and ledgers; and the bound on
 every claim in [docs/PRODUCTION-READINESS.md](docs/PRODUCTION-READINESS.md).
 
@@ -260,7 +260,8 @@ certifications are theirs to grant; readiness is ours to build.
 | [ ] P6.5 | Accessibility to WCAG 2.2 AA / Section 508 | L | med | - | Every surface audited and conformant; automated accessibility checks added to CI |
 | [ ] P6.6 | Independent audit, public red team, bug bounty | M | ext | P1.12 | [EXT: funding] Scoped from [RED-TEAM-SCOPE](docs/RED-TEAM-SCOPE.md); results published unredacted where safe |
 | [ ] P6.7 | Formal-methods expansion | L | med | P0.7 | Specs for C1, C2, and the epoch/status protocol; the purge coverage property proven; [meta/tla](meta/tla/README.md) graduates from demonstrator to maintained |
-| [>] P6.8 | Athena: the authority-and-constitution ontology | M | med | - | A read-only semantic + provenance layer over the EXISTING authority tables (agency/algorithm/context/trust/retention/discretion) plus C1-C10 modelled as first-class queryable rows linked to the mechanism that enforces each — so "why is this authorized / what enforces it / what breaks if this key or algorithm is retired" is mechanical, with provenance. Assessed and endorsed (constrained version): [DEVNOTES/athena-ontology-assessment.md](DEVNOTES/athena-ontology-assessment.md). Hard prohibition, machine-checked with detection tests: NO natural-person node, NO globally-linkable subject surrogate, NO cross-context person edge, NO ZK-subject traversal, bounded event access under the Atlas C8 ceilings, and NON-SOVEREIGN (describes/orchestrates authority; the DB constitution stays the source). The same ship removes the existing `v_ontology_individual`/`_tokens` person views. Plain PostgreSQL (no graph DB/RDF); read-only MVP first |
+| [x] P6.8 | Athena: the authority-and-constitution ontology (v9.266) | M | med | - | A read-only semantic + provenance layer ([`polaris_sql/16_athena.sql`](polaris_sql/16_athena.sql), [athena.md](docs/design/athena.md)) over the EXISTING authority tables (agency/algorithm/context/trust/retention) plus C1-C10 + the Vocation modelled as first-class queryable rows linked to the exact live mechanism that enforces each — so "why is this authorized / what enforces it / what breaks if this key or algorithm is retired" is mechanical, with provenance. 10 object + 8 edge views and four functions (`athena_authority_chain`, `athena_explain_proof`, `athena_affected_by_algorithm`, `athena_rule_enforcement`); `athena_rule_enforcement` maps every rule to a trigger/index/CHECK/`check_*`/procedure and `check_athena_rule_enforcement_resolves` fails the build if one drifts (closing the prose-drift gap in [constraint-lattice.md](meta/constraint-lattice.md)). Assessed and endorsed (constrained version): [DEVNOTES/athena-ontology-assessment.md](DEVNOTES/athena-ontology-assessment.md). Person-legibility is structurally impossible, five checks each with a detection test: NO natural-person node/column, NO globally-linkable subject surrogate, NO ZK-subject traversal, bounded event access under the Atlas C8 ceilings, and NON-SOVEREIGN (describes/orchestrates authority; the DB constitution stays the source). The same ship removed the existing `v_ontology_individual`/`_tokens` person views (their single-entity data now lives only on the audited Investigate route). Plain PostgreSQL (no graph DB/RDF); read-only. Next: an operator-facing Athena console |
+| [ ] P6.9 | Operational-learning subsystem (assessment first) | L | high | P6.8, P2.14 | A future, advisory-only ML subsystem that learns **Polaris itself** (infrastructure, authorities, system behaviour) for anomaly detection, capacity forecasting, regression and root-cause help, and AGGREGATE institutional-abuse patterns — never natural persons. Central hypothesis to be falsified: ML may infer properties of the system, never rank/score/predict the rights of people. Captured brief (NOT started, needs assessment on the Athena model): [DEVNOTES/operational-learning-assessment-brief.md](DEVNOTES/operational-learning-assessment-brief.md). Advisory only (OBSERVE->…->RECOMMEND, never PREDICT->REVOKE); pairs with Athena for root-cause explainability; a candidate new constitutional rule; synthetic-nation ground truth for evaluation. Naming open (proposed "Metis", not "Prometheus" — that name already belongs to the metrics stack). Do the 23-section assessment before any code |
 
 Exit gate: a sponsoring authority accepts the authorization package [EXT].
 

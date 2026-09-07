@@ -5635,7 +5635,264 @@ def check_national_simulation(root: pathlib.Path) -> list[Finding]:
                "load with a committed report; its tests run in the coverage suite (roadmap P2.14/P2.9)")
 
 
+# ===========================================================================
+# Athena (v9.266) — the authority-and-constitution layer. Five invariants make
+# person-legibility structurally impossible and keep Athena non-sovereign.
+# Spec: DEVNOTES/athena-ontology-assessment.md sections 5, 6, 8, 10, 11.
+# ===========================================================================
+
+_ATHENA_SQL_REL = "polaris_sql/16_athena.sql"
+
+# The ONLY tables Athena may own — each descriptive (rules, the enforcement map,
+# a custody reference), never an authority grant. A new athena_* table is a
+# governance event (assessment section 10) and must be added here deliberately.
+_ATHENA_TABLE_ALLOWLIST = {
+    "athena_constitutional_rule",
+    "athena_rule_enforcement",
+    "athena_key_custody",
+}
+
+# Person surfaces Athena must never touch, as IDENTIFIERS (scanned against SQL
+# with comments and string literals stripped, so prose and rule statements that
+# mention "token" do not trip it).
+_ATHENA_FORBIDDEN_IDENTIFIERS = [
+    "Individual", "individual_id", "IdentityToken", "TokenPermission",
+    "VerificationEvent", "TokenLifecycleEvent", "DuressEvent",
+    "legal_name", "date_of_birth", "duress_code_hash",
+    "token_id", "token_value", "predecessor_token_id",
+]
+
+# Stable per-person handle shapes: a cross-context handle is a universal
+# identifier even if opaque (assessment section 5).
+_ATHENA_SUBJECT_SURROGATES = ["subject", "person", "individual", "holder", "citizen", "_handle"]
+
+
+def _athena_strip_noise(sql: str) -> str:
+    """Drop -- comments and '...' string literals so an identifier scan sees only
+    structural SQL (table/column names), never prose or seed text."""
+    sql = re.sub(r"--[^\n]*", "", sql)
+    sql = re.sub(r"'(?:[^']|'')*'", "''", sql)
+    return sql
+
+
+def _athena_function_bodies(sql: str):
+    """(name, body) for each CREATE ... FUNCTION athena_*, body = dollar-quoted block."""
+    out = []
+    for m in re.finditer(
+        r"CREATE\s+OR\s+REPLACE\s+FUNCTION\s+(athena_[a-z_]+)\s*\(.*?\$(\w+)\$(.*?)\$\2\$",
+        sql, re.S | re.I):
+        out.append((m.group(1), m.group(3)))
+    return out
+
+
+def _athena_view_body(sql: str, view: str):
+    m = re.search(r"CREATE\s+OR\s+REPLACE\s+VIEW\s+" + re.escape(view) + r"\s+AS(.*?);",
+                  sql, re.S | re.I)
+    return m.group(1) if m else None
+
+
+def _athena_insert_block(sql: str, table: str) -> str:
+    m = re.search(r"INSERT\s+INTO\s+" + re.escape(table) + r"\b(.*?)ON\s+CONFLICT", sql, re.S | re.I)
+    return m.group(1) if m else ""
+
+
+def _athena_mechanism_exists(root: pathlib.Path, kind: str, name: str) -> bool:
+    if kind == "CHECK_FUNCTION":
+        return re.search(r"\bdef\s+" + re.escape(name) + r"\s*\(",
+                         _read(root, "polaris_checks/checks.py")) is not None
+    if kind == "INDEX":
+        sql = _read(root, "polaris_sql/02_indexes.sql") + _read(root, "polaris_sql/01_schema.sql")
+        return re.search(r"\bINDEX\s+" + re.escape(name) + r"\b", sql, re.I) is not None
+    if kind == "CHECK_CONSTRAINT":
+        return re.search(r"\bCONSTRAINT\s+" + re.escape(name) + r"\b",
+                         _read(root, "polaris_sql/01_schema.sql"), re.I) is not None
+    if kind == "TRIGGER":
+        sql = _read(root, "polaris_sql/06_triggers.sql") + _read(root, "polaris_sql/01_schema.sql")
+        return (re.search(r"\bCREATE\s+TRIGGER\s+" + re.escape(name) + r"\b", sql, re.I) is not None
+                or re.search(r"\bFUNCTION\s+" + re.escape(name) + r"\b", sql, re.I) is not None)
+    if kind == "PROCEDURE":
+        return re.search(r"\b(?:FUNCTION|PROCEDURE)\s+" + re.escape(name) + r"\b",
+                         _read(root, "polaris_sql/05_procedures.sql"), re.I) is not None
+    return False
+
+
+def check_athena_no_person(root: pathlib.Path) -> list[Finding]:
+    """Athena invariant 1+2 (assessment section 11): person-legibility is
+    structurally impossible. No Athena view/function/table references a natural-
+    person table or column, and no Athena column is a stable cross-context person
+    surrogate. The v9.19 v_ontology_individual / v_ontology_individual_tokens
+    person-aggregating views are removed in the same ship, so the prohibition is
+    true from the first commit. Detection: test_checks adds an individual_id
+    reference, a subject_handle column, and re-adds the person view."""
+    athena = _read(root, _ATHENA_SQL_REL)
+    if not athena:
+        return _fail("athena_no_person", f"{_ATHENA_SQL_REL} is missing")
+    clean = _athena_strip_noise(athena)
+    for ident in _ATHENA_FORBIDDEN_IDENTIFIERS:
+        if re.search(r"\b" + re.escape(ident) + r"\b", clean, re.I):
+            return _fail("athena_no_person",
+                         f"16_athena.sql references the person surface `{ident}` in structural SQL; "
+                         "Athena must read only the authority tables (no Individual / token / event / duress)")
+    for surr in _ATHENA_SUBJECT_SURROGATES:
+        if re.search(r"\bAS\s+[a-z_]*" + re.escape(surr) + r"[a-z_]*\b", clean, re.I) or \
+           re.search(r"\b[a-z_]*" + re.escape(surr) + r"[a-z_]*\s+(?:VARCHAR|TEXT|INTEGER|BOOLEAN|SERIAL|BIGINT)\b",
+                     clean, re.I):
+            return _fail("athena_no_person",
+                         f"16_athena.sql defines a `{surr}`-shaped column/alias; a stable per-person handle "
+                         "is a universal identifier and is forbidden (assessment section 5)")
+    ont = _read(root, "polaris_sql/15_ontology.sql")
+    for gone in ("v_ontology_individual", "v_ontology_individual_tokens"):
+        if gone in ont:
+            return _fail("athena_no_person",
+                         f"the person-aggregating view {gone} must be removed from 15_ontology.sql in the "
+                         "Athena ship (its single-entity data lives on the audited Investigate path)")
+    return _ok("athena_no_person",
+               "Athena reads only the authority tables; no person table/column/surrogate in any view, "
+               "function, or curated table, and the v9.19 person-aggregating ontology views are removed")
+
+
+def check_athena_read_only(root: pathlib.Path) -> list[Finding]:
+    """Athena invariant 5+8: Athena cannot act. No Athena function writes, CALLs a
+    mutating procedure, or is SECURITY DEFINER; every one is declared STABLE (which
+    by itself forbids DML). This keeps 'graph says revoke -> revoked' impossible
+    (assessment section 6). Detection: test_checks adds SECURITY DEFINER and an
+    INSERT inside an athena function."""
+    athena = _read(root, _ATHENA_SQL_REL)
+    if not athena:
+        return _fail("athena_read_only", f"{_ATHENA_SQL_REL} is missing")
+    # Scan structural SQL only: SECURITY DEFINER named in a design-law comment
+    # (as this file does, to forbid it) must not trip the check.
+    clean = _athena_strip_noise(athena)
+    if re.search(r"SECURITY\s+DEFINER", clean, re.I):
+        return _fail("athena_read_only",
+                     "an Athena function is SECURITY DEFINER; Athena grants nothing beyond the underlying "
+                     "table grants (invariant 8)")
+    bodies = _athena_function_bodies(clean)
+    if not bodies:
+        return _fail("athena_read_only", "no athena_* functions found to verify")
+    mutations = re.compile(r"\b(INSERT|UPDATE|DELETE|CALL|TRUNCATE|MERGE|DROP|ALTER|GRANT)\b", re.I)
+    for name, body in bodies:
+        m = mutations.search(body)
+        if m:
+            return _fail("athena_read_only",
+                         f"athena function {name}() contains a `{m.group(1).upper()}`; Athena is read-only "
+                         "and contributes explanation, never permission (invariant 5)")
+    for m in re.finditer(r"CREATE\s+OR\s+REPLACE\s+FUNCTION\s+(athena_[a-z_]+)\b.*?LANGUAGE\s+sql\s+(\w+)",
+                         athena, re.S | re.I):
+        if m.group(2).upper() != "STABLE":
+            return _fail("athena_read_only",
+                         f"athena function {m.group(1)}() must be declared STABLE (read-only), not {m.group(2)}")
+    return _ok("athena_read_only",
+               f"all {len(bodies)} Athena functions are STABLE, non-mutating, and SECURITY INVOKER "
+               "(read-only; Athena explains authority, never manufactures it)")
+
+
+def check_athena_functions_bounded(root: pathlib.Path) -> list[Finding]:
+    """Athena invariant 3: bounded result sets (the Atlas C8 discipline inherited).
+    Every Athena function caps its output with LIMIT, and any function that ever
+    reads an event table must ALSO carry a since-window, so Athena can never become
+    a second unbounded aggregation surface beside the Atlas (assessment section 8).
+    Detection: test_checks strips a LIMIT and adds an uncapped event function."""
+    athena = _read(root, _ATHENA_SQL_REL)
+    if not athena:
+        return _fail("athena_bounded", f"{_ATHENA_SQL_REL} is missing")
+    bodies = _athena_function_bodies(_athena_strip_noise(athena))
+    if not bodies:
+        return _fail("athena_bounded", "no athena_* functions found to verify")
+    for name, body in bodies:
+        if not re.search(r"\bLIMIT\s+\d+", body, re.I):
+            return _fail("athena_bounded",
+                         f"athena function {name}() has no LIMIT cap; every Athena function must bound its "
+                         "result set (C8 discipline)")
+        if re.search(r"\b(?:VerificationEvent|TokenLifecycleEvent)\b", body, re.I) and \
+           not re.search(r"\bsince\b|COALESCE\(p_since|event_timestamp\s*>=", body, re.I):
+            return _fail("athena_bounded",
+                         f"athena function {name}() reads an event table without a since-window; an event-"
+                         "touching Athena function must inherit the Atlas since-window (C8)")
+    return _ok("athena_bounded",
+               f"all {len(bodies)} Athena functions bound their output with LIMIT; none reads an event "
+               "table unbounded (C8 discipline inherited from the Atlas)")
+
+
+def check_athena_non_sovereign(root: pathlib.Path) -> list[Finding]:
+    """Athena invariant 4+7: Athena describes authority, never manufactures it.
+    Every authority edge resolves to an existing authority table (no independent
+    store), 'current' views exclude superseded/revoked authority, and the only
+    tables Athena owns are the descriptive allow-listed ones (a new athena_* table
+    is a governance event, assessment section 10). Detection: test_checks drops the
+    revocation filter, adds an athena_agency_grant table, and repoints an edge."""
+    athena = _read(root, _ATHENA_SQL_REL)
+    if not athena:
+        return _fail("athena_sovereign", f"{_ATHENA_SQL_REL} is missing")
+    clean = _athena_strip_noise(athena)
+    for view, tbl in (("v_athena_may_issue", "AgencyAlgorithmAuth"),
+                      ("v_athena_authorizes", "AgencyAlgorithmAuth"),
+                      ("v_athena_relies_on", "AgencyTrustAttestation"),
+                      ("v_athena_trust_agreement", "AgencyTrustAttestation")):
+        body = _athena_view_body(clean, view)
+        if body is None:
+            return _fail("athena_sovereign", f"authority view {view} is missing")
+        if tbl not in body:
+            return _fail("athena_sovereign",
+                         f"{view} does not resolve to the authority table {tbl}; Athena has no independent "
+                         "authority store (invariant 4)")
+    for view in ("v_athena_relies_on", "v_athena_trust_agreement"):
+        body = _athena_view_body(clean, view) or ""
+        if "revocation_date IS NULL" not in body:
+            return _fail("athena_sovereign",
+                         f"{view} does not filter revoked authority (revocation_date IS NULL); a superseded "
+                         "attestation must not surface as current (invariant 7)")
+    created = set(re.findall(r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(athena_[a-z_]+)", athena, re.I))
+    rogue = created - _ATHENA_TABLE_ALLOWLIST
+    if rogue:
+        return _fail("athena_sovereign",
+                     f"Athena owns non-allow-listed table(s) {sorted(rogue)}; a new athena_* table is a "
+                     "governance event and must be a descriptive (never authority) allow-listed table")
+    return _ok("athena_sovereign",
+               "every Athena authority edge resolves to an existing authority table, 'current' views "
+               "exclude revoked authority, and Athena owns only the three descriptive curated tables")
+
+
+def check_athena_rule_enforcement_resolves(root: pathlib.Path) -> list[Finding]:
+    """Athena invariant 6: the constitution-as-data cannot drift from the code.
+    Every athena_rule_enforcement row names a mechanism (trigger / index / check
+    constraint / check_* / procedure) that actually exists in the tree, and every
+    constitutional rule has at least one enforcement. This closes the prose-drift
+    gap meta/constraint-lattice.md has today. Detection: test_checks points a row
+    at a nonexistent trigger and adds an unenforced rule."""
+    athena = _read(root, _ATHENA_SQL_REL)
+    if not athena:
+        return _fail("athena_rule_enf", f"{_ATHENA_SQL_REL} is missing")
+    enf_block = _athena_insert_block(athena, "athena_rule_enforcement")
+    rule_block = _athena_insert_block(athena, "athena_constitutional_rule")
+    if not enf_block or not rule_block:
+        return _fail("athena_rule_enf", "could not locate the Athena curated-seed INSERT blocks")
+    rows = re.findall(r"\(\s*'([^']*)'\s*,\s*'([^']*)'\s*,\s*'([^']*)'", enf_block)
+    if not rows:
+        return _fail("athena_rule_enf", "no athena_rule_enforcement rows parsed")
+    for rule_code, kind, name in rows:
+        if not _athena_mechanism_exists(root, kind, name):
+            return _fail("athena_rule_enf",
+                         f"{rule_code} claims enforcement by {kind} `{name}`, which does not exist in the "
+                         "tree; the constitution-to-mechanism map has drifted from the code")
+    enforced = {r[0] for r in rows}
+    declared = set(re.findall(r"\(\s*'([^']*)'\s*,", rule_block))
+    unenforced = declared - enforced
+    if unenforced:
+        return _fail("athena_rule_enf",
+                     f"constitutional rule(s) {sorted(unenforced)} have no enforcement mechanism; every rule "
+                     "must map to at least one live mechanism")
+    return _ok("athena_rule_enf",
+               f"all {len(rows)} rule-enforcement rows resolve to a live mechanism and every one of the "
+               f"{len(declared)} constitutional rules is enforced (constitution cannot drift from code)")
+
+
 CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
+    check_athena_no_person,
+    check_athena_read_only,
+    check_athena_functions_bounded,
+    check_athena_non_sovereign,
+    check_athena_rule_enforcement_resolves,
     check_csp_forbids_unsafe_inline,
     check_one_active_token_index,
     check_aor_append_only_triggers,

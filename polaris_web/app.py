@@ -4798,7 +4798,7 @@ def investigate_token(tok_id):
     events unioned via v_ontology_token_timeline) alongside the token's
     semantic record (v_ontology_token). Single-entity focused. The holder
     link renders from v_ontology_token's individual_* columns; the heavier
-    v_ontology_individual view (correlated count subqueries) belongs to
+    per-individual counts (correlated subqueries) are computed inline in
     investigate_individual only.
     """
     token = query(
@@ -4861,23 +4861,52 @@ def investigate_token(tok_id):
 def investigate_individual(ind_id):
     """Object Card for a single individual.
 
-    Renders the individual's semantic record (v_ontology_individual) +
-    every token they have held (v_ontology_individual_tokens) + a summary
+    Renders the individual's record + every token they have held + a summary
     of recent verifications across all their tokens. Single-individual
     focused; no cross-individual aggregation.
+
+    The person-shaped reads are inlined here as single-entity queries
+    (WHERE individual_id = %s), NOT served from a standing view. The v9.19
+    v_ontology_individual / v_ontology_individual_tokens views were removed
+    in v9.266 (the Athena ship): a person surface belongs only on this
+    audited, login-gated, single-entity path, never as a queryable view that
+    could be scanned across the population (Athena assessment, person-object
+    decision). The counts below are identical to what those views computed.
     """
-    individual = query(
-        "SELECT * FROM v_ontology_individual WHERE individual_id = %s",
-        (ind_id,), fetch='one',
-    )
+    individual = query("""
+        SELECT
+            i.individual_id, i.legal_name, i.date_of_birth,
+            i.jurisdiction, i.enrollment_date,
+            COALESCE((SELECT COUNT(*) FROM IdentityToken t
+                       WHERE t.individual_id = i.individual_id), 0)
+                AS lifetime_token_count,
+            COALESCE((SELECT COUNT(*) FROM IdentityToken t
+                       WHERE t.individual_id = i.individual_id
+                         AND t.status = 'ACTIVE'), 0)
+                AS active_token_count,
+            (SELECT COUNT(*) FROM VerificationEvent v
+               JOIN IdentityToken t ON v.token_id = t.token_id
+              WHERE t.individual_id = i.individual_id)
+                AS lifetime_verification_count,
+            (SELECT MAX(t.issued_date) FROM IdentityToken t
+              WHERE t.individual_id = i.individual_id)
+                AS most_recent_token_issued_at
+          FROM Individual i
+         WHERE i.individual_id = %s
+    """, (ind_id,), fetch='one')
     if not individual:
         abort(404)
 
     tokens = query("""
-        SELECT *
-          FROM v_ontology_individual_tokens
-         WHERE individual_id = %s
-      ORDER BY activation_sequence DESC, issued_date DESC
+        SELECT
+            t.token_id, t.token_value, t.status, t.issued_date,
+            t.expiration_date, t.activation_sequence, t.predecessor_token_id,
+            (t.duress_code_hash IS NOT NULL) AS has_duress_code,
+            ag.name AS issuing_agency_name
+          FROM IdentityToken t
+          JOIN Agency ag ON t.issuing_agency_id = ag.agency_id
+         WHERE t.individual_id = %s
+      ORDER BY t.activation_sequence DESC, t.issued_date DESC
     """, (ind_id,))
 
     # Recent verifications across all this individual's tokens.

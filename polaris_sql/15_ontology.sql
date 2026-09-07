@@ -1,5 +1,6 @@
 -- ============================================================================
--- 15_ontology.sql — Semantic ontology layer over the schema (v9.19)
+-- 15_ontology.sql — Single-entity semantic views over the schema (v9.19,
+--                   person-aggregating views removed v9.266 for Athena)
 --
 -- v9.19 / item 1 from the v9.x reference-architecture study. The schema is
 -- the data; the ontology is the *meaning* — typed Objects with typed
@@ -11,14 +12,12 @@
 -- table grants). No impact on audit-of-record. Pure semantic surface.
 --
 -- Canonical Objects (mirrors the table tier; one view per noun):
---   v_ontology_individual
 --   v_ontology_token
 --   v_ontology_agency
 --   v_ontology_verification
 --
 -- Canonical Link views (one per relationship class):
 --   v_ontology_token_timeline   — chronological event union per token
---   v_ontology_individual_tokens — tokens belonging to an individual
 --
 -- Vocation alignment (per v9.11 MISSION.md §Vocation): the ontology
 -- makes the system MORE legible to auditors, which is anti-coercion-
@@ -33,39 +32,6 @@
 --   - Audit-of-record: queries are observational only
 --   - No cross-entity link analysis (off-vocation per v9.18 study)
 -- ============================================================================
-
--- ----------------------------------------------------------------------------
--- v_ontology_individual
--- ----------------------------------------------------------------------------
-CREATE OR REPLACE VIEW v_ontology_individual AS
-SELECT
-    i.individual_id,
-    i.legal_name,
-    i.date_of_birth,
-    i.jurisdiction,
-    i.enrollment_date,
-    -- Computed properties (denormalized for ontology consumers)
-    COALESCE((SELECT COUNT(*) FROM IdentityToken t
-              WHERE t.individual_id = i.individual_id), 0)
-        AS lifetime_token_count,
-    COALESCE((SELECT COUNT(*) FROM IdentityToken t
-              WHERE t.individual_id = i.individual_id
-                AND t.status = 'ACTIVE'), 0)
-        AS active_token_count,
-    (SELECT COUNT(*)
-       FROM VerificationEvent v
-       JOIN IdentityToken t ON v.token_id = t.token_id
-      WHERE t.individual_id = i.individual_id)
-        AS lifetime_verification_count,
-    (SELECT MAX(t.issued_date)
-       FROM IdentityToken t
-      WHERE t.individual_id = i.individual_id)
-        AS most_recent_token_issued_at
-FROM Individual i;
-
-COMMENT ON VIEW v_ontology_individual IS
-    'v9.19 ontology object: Individual + computed token + verification counts. '
-    'Read-only single-entity view. No cross-individual aggregation.';
 
 -- ----------------------------------------------------------------------------
 -- v_ontology_token
@@ -224,41 +190,15 @@ COMMENT ON VIEW v_ontology_token_timeline IS
     'Foundation for the Object Card investigation page.';
 
 -- ----------------------------------------------------------------------------
--- v_ontology_individual_tokens — every token an individual has held
--- ----------------------------------------------------------------------------
-CREATE OR REPLACE VIEW v_ontology_individual_tokens AS
-SELECT
-    i.individual_id,
-    i.legal_name,
-    t.token_id,
-    t.token_value,
-    t.status,
-    t.issued_date,
-    t.expiration_date,
-    t.activation_sequence,
-    t.predecessor_token_id,
-    (t.duress_code_hash IS NOT NULL) AS has_duress_code,
-    ag.name                          AS issuing_agency_name
-FROM Individual    i
-JOIN IdentityToken t  ON i.individual_id = t.individual_id
-JOIN Agency        ag ON t.issuing_agency_id = ag.agency_id;
-
-COMMENT ON VIEW v_ontology_individual_tokens IS
-    'v9.19 ontology link: every token held by an individual (chronological '
-    'via activation_sequence + predecessor chain). Single-individual focused.';
-
--- ----------------------------------------------------------------------------
 -- Smoke test (runs at file load)
 -- ----------------------------------------------------------------------------
 DO $ontology_smoke$
 DECLARE
-    v_ind_count    INTEGER;
     v_tok_count    INTEGER;
     v_ag_count     INTEGER;
     v_ver_count    INTEGER;
     v_timeline_cnt INTEGER;
 BEGIN
-    SELECT COUNT(*) INTO v_ind_count    FROM v_ontology_individual;
     SELECT COUNT(*) INTO v_tok_count    FROM v_ontology_token;
     SELECT COUNT(*) INTO v_ag_count     FROM v_ontology_agency;
     SELECT COUNT(*) INTO v_ver_count    FROM v_ontology_verification;
@@ -267,14 +207,14 @@ BEGIN
     -- The views must be queryable; counts >= 0 by definition (we just
     -- assert no exception was raised). The seed data should produce
     -- positive counts; empty DB is also valid (no assertion failure).
-    IF v_ind_count < 0 OR v_tok_count < 0 OR v_ag_count < 0
+    IF v_tok_count < 0 OR v_ag_count < 0
        OR v_ver_count < 0 OR v_timeline_cnt < 0 THEN
         RAISE EXCEPTION '15_ontology.sql smoke: negative count returned (impossible)';
     END IF;
 
-    RAISE NOTICE '15_ontology.sql: 6 views loaded + smoke-tested. '
-                 'Counts: individuals=%, tokens=%, agencies=%, verifications=%, timeline=%.',
-                 v_ind_count, v_tok_count, v_ag_count, v_ver_count, v_timeline_cnt;
+    RAISE NOTICE '15_ontology.sql: 4 single-entity views loaded + smoke-tested. '
+                 'Counts: tokens=%, agencies=%, verifications=%, timeline=%.',
+                 v_tok_count, v_ag_count, v_ver_count, v_timeline_cnt;
 END;
 $ontology_smoke$;
 

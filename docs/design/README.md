@@ -24,6 +24,7 @@ and the posture documents see [reference/](../reference/README.md).
 | [rasp-rules.md](rasp-rules.md) | The runtime self-protection rules, implemented and gaps alike |
 | [rate-limiter.md](rate-limiter.md) | The per-IP defence, its backend, and its failure mode |
 | [atlas-scaling.md](atlas-scaling.md) | How the map stays bounded as the event log grows |
+| [athena.md](athena.md) | The read-only authority-and-constitution layer: why an agency may issue, what enforces each rule, what breaks if a key is retired, and why person-legibility is structurally impossible |
 | [retention.md](retention.md) | How long the record is kept, who decided that, and why the purge obeys it |
 | [partitioning.md](partitioning.md) | Why the event tables are monthly-partitioned, how C1 holds across attach and detach, and the online conversion |
 | [bulk-enrollment.md](bulk-enrollment.md) | How a whole population is issued set-based in one atomic transaction, every row still through the full constraint set |

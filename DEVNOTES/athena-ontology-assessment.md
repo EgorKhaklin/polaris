@@ -6,6 +6,9 @@ from the repository as it stands (schema, invariants, Atlas, federation,
 retention, verification, the vocation), adversarially, trying to falsify the
 idea. Facts drawn from the tree are marked as such; everything else is proposal.
 
+**Built:** shipped v9.266 (2026-09-07); see [docs/design/athena.md](../docs/design/athena.md) and [`polaris_sql/16_athena.sql`](../polaris_sql/16_athena.sql). This assessment is the design of record.
+
+
 Naming: this document calls the proposed layer **Athena** (institutional wisdom
 and law) to distinguish it from **Atlas** (the bounded event map) and from the
 existing `15_ontology.sql` view layer, which it partly supersedes.
