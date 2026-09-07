@@ -294,8 +294,9 @@ def test_ui_drill_check_discriminates(tmp_path):
            "    if SIM_MODE:\n"
            "        return None\n"
            "    return _atlas_cache.get(key)\n")
+    CI = "jobs:\n  ui-drill:\n    steps:\n      - run: bash scripts/polaris-ui-drill.sh\n"
     good = {"scripts/polaris-ui-drill.py": PY, "scripts/polaris-ui-drill.sh": SH,
-            "polaris_web/app.py": APP}
+            "polaris_web/app.py": APP, ".github/workflows/ci.yml": CI}
 
     def write(overrides=None):
         files = dict(good); files.update(overrides or {})
@@ -304,6 +305,9 @@ def test_ui_drill_check_discriminates(tmp_path):
 
     write()
     assert checks.check_ui_drill(tmp_path)[0].level == "OK", "must PASS on the full harness fixture"
+    # CI does not run the drill
+    write({".github/workflows/ci.yml": "jobs:\n  test:\n    steps: []\n"})
+    assert checks.check_ui_drill(tmp_path)[0].level == "FAIL", "must FAIL when ci.yml does not run the UI drill"
     # the harness no longer uses a real browser
     write({"scripts/polaris-ui-drill.py": PY.replace("playwright", "requests")})
     assert checks.check_ui_drill(tmp_path)[0].level == "FAIL", "must FAIL without a real browser (playwright)"

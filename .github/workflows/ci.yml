@@ -347,6 +347,97 @@ jobs:
           echo "Encrypted DR round-trip OK"
 
   # --------------------------------------------------------------------------
+  # UI drill (roadmap P2.14 S4, v9.263): the app suites test the Atlas endpoints
+  # but never the Atlas UI. This job drives the REAL Atlas in a headless Chromium
+  # (Playwright) and asserts the live simulation actually streams — the JS, the
+  # fetches, the live DOM. scripts/polaris-ui-drill.sh boots its OWN app with
+  # SIM_MODE on and runs the browser drill; it lives in its own job with its own
+  # database because the simulation streams events into it. The screenshots are
+  # uploaded as an artifact either way, so a run can be looked at.
+  # --------------------------------------------------------------------------
+  ui-drill:
+    name: Atlas live-simulation UI drill (Playwright, headless chromium)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: ci_password
+          POSTGRES_DB: polaris_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -h 127.0.0.1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      POLARIS_DB_HOST: localhost
+      POLARIS_DB_PORT: '5432'
+      POLARIS_DB_NAME: polaris_test
+      POLARIS_DB_USER: postgres
+      POLARIS_DB_PASSWORD: ci_password
+      POLARIS_STATE_DIR: /tmp/polaris-state
+      PGPASSWORD: ci_password
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Install Python deps (app stack + Playwright)
+        # requirements-dev.txt pulls in the full runtime surface (-r requirements.txt)
+        # plus the dev tooling, which already includes playwright.
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r polaris_web/requirements-dev.txt
+
+      - name: Wait for Postgres
+        run: |
+          for i in $(seq 1 30); do
+            if pg_isready -h localhost -p 5432 -U postgres; then break; fi
+            sleep 1
+          done
+
+      - name: Load Polaris schema + migrations
+        run: |
+          mkdir -p "$POLARIS_STATE_DIR"
+          cd polaris_sql
+          psql -h localhost -U postgres -d polaris_test -v ON_ERROR_STOP=1 -f 00_load_all.sql
+          for f in $(ls migrations/*.up.sql | sort); do
+            psql -h localhost -U postgres -d polaris_test -v ON_ERROR_STOP=1 -f "$f"
+          done
+
+      - name: Install headless Chromium
+        run: python -m playwright install --with-deps chromium
+
+      - name: Drive the Atlas live simulation in a real browser
+        # The wrapper boots the app (SIM_MODE on) on its own port and runs the
+        # Playwright drill; POLARIS_UI_PYTHON/POLARIS_TEST_PYTHON reuse this job's
+        # interpreter (it has both the app stack and Playwright), so no on-demand
+        # install is needed.
+        run: POLARIS_UI_PYTHON=python POLARIS_TEST_PYTHON=python bash scripts/polaris-ui-drill.sh
+
+      - name: Upload UI drill screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-drill-screenshots
+          path: ui-drill-out/
+          if-no-files-found: warn
+
+  # --------------------------------------------------------------------------
   # The `test` job above exercises the app CODE against a native Postgres; it
   # never builds or runs the Docker image. That blind spot let a broken image
   # ship green for ~36 versions (observability.py v9.40, pqc_signing.py v9.58 —

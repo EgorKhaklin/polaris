@@ -5073,11 +5073,15 @@ def check_ui_drill(root: pathlib.Path) -> list[Finding]:
     if len(cache_fn) != 2 or not re.search(r"if\s+SIM_MODE\s*:\s*\n\s*return None", cache_fn[1][:800]):
         return _fail("ui_drill", "_atlas_cache_get must `return None` (bypass the aggregate cache) under "
                      "SIM_MODE, so the live simulation's charts refresh with the stream")
+    ci = _read(root, ".github/workflows/ci.yml")
+    if "polaris-ui-drill.sh" not in ci or "ui-drill:" not in ci:
+        return _fail("ui_drill", "ci.yml must run scripts/polaris-ui-drill.sh in a ui-drill job, so the "
+                     "Atlas UI is verified in a real browser on every push (not just on demand)")
     return _ok("ui_drill",
-               "a headless-browser harness (polaris-ui-drill.py/.sh, Playwright + Chromium installed on "
-               "demand) drives the Atlas live simulation in a real browser and asserts the counter climbs "
-               "and the Overview aggregate grows; SIM_MODE bypasses the aggregate cache so the charts "
-               "refresh live")
+               "a headless-browser harness (polaris-ui-drill.py/.sh, Playwright + Chromium) drives the "
+               "Atlas live simulation in a real browser and asserts the counter climbs and the Overview "
+               "aggregate grows; the ui-drill CI job runs it on every push; SIM_MODE bypasses the "
+               "aggregate cache so the charts refresh live")
 
 
 # ---------------------------------------------------------------------------

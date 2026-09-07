@@ -62,7 +62,7 @@ polaris/
 ├── scripts/            ← every shell tool (polaris-*): deploys, drills, gates, checks
 ├── site/               ← the published project page (GitHub Pages), its logo and the Atlas captures
 │
-├── .github/workflows/  ← ci.yml (15 jobs), dr-drill.yml (monthly), chaos.yml (weekly), sbom.yml (per release), pages.yml (the site)
+├── .github/workflows/  ← ci.yml (16 jobs), dr-drill.yml (monthly), chaos.yml (weekly), sbom.yml (per release), pages.yml (the site)
 ├── .github/dependabot.yml, .pre-commit-config.yaml, .gitignore, .coveragerc, .trivyignore
 ```
 
@@ -83,6 +83,7 @@ polaris/
 - `cve-scan`: dependency CVE audit (pip-audit) plus SAST (bandit).
 - `image-cve-scan`: Trivy scan of the self-built prod images; gates on fixable CRITICALs.
 - `prod-stack-boot`: boots the full prod compose end to end and asserts `/api/health` serves through the TLS edge.
+- `ui-drill`: drives the Atlas live-simulation mode in a headless Chromium (Playwright) and asserts the console actually streams — the sim counter climbs and the Overview aggregate grows — uploading the screenshots.
 
 `dr-drill.yml` runs the same drill monthly and commits the measured row to
 [`docs/operator/DR-DRILLS.md`](../operator/DR-DRILLS.md). `chaos.yml` boots the

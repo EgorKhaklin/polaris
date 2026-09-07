@@ -5,6 +5,29 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.263 — 2026-09-07 (The UI harness runs on every push)
+
+v9.262 built the headless-browser UI harness but left it on demand. This wires it
+into CI as its own job, so the Atlas UI is verified in a real browser on every
+push — not just when someone remembers to run it.
+
+A new `ui-drill` job (Playwright, headless Chromium) mirrors the product suite's
+setup — Postgres 16, the app stack, the schema and migrations loaded — then runs
+`scripts/polaris-ui-drill.sh`, which boots the app with SIM_MODE on and drives
+the Atlas: log in, click Simulate, and assert the console actually streams (the
+sim counter climbs AND the Overview aggregate grows). It runs in its own job with
+its own database because the simulation streams events into it, and the
+screenshots upload as an artifact either way, so a run can be looked at. Chromium
+is installed with `playwright install --with-deps chromium`, the same as the
+existing Atlas e2e step; the Playwright package already ships in
+`requirements-dev.txt`.
+
+`check_ui_drill` now also pins that `ci.yml` runs the drill in a `ui-drill` job
+(not just that the script exists), and the detection test confirms it fails when
+the CI wiring is removed. 16 CI jobs (was 15). Full suite green.
+
+---
+
 ## v9.262 — 2026-09-07 (A headless-browser harness to watch the UI, and the live-sim cache fix it drove)
 
 v9.261 shipped the Atlas live simulation mode but with a gap: its endpoint was
