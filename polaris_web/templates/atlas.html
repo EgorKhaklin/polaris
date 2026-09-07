@@ -31,6 +31,18 @@
         </div>
         <span class="atlas-tabbar-spacer"></span>
         {% if atlas_provenance %}<span class="atlas-tabbar-prov">{{ atlas_provenance }}</span>{% endif %}
+        {% if sim_mode %}
+        {# Live simulation control (P2.14 S4): streams notional national activity
+           through the real write path so the console lights up. Dev/demo only
+           (SIM_MODE is force-off in production); rendered only when it is on. #}
+        <div class="atlas-sim" data-atlas-sim data-sim-csrf="{{ csrf_token() }}">
+            <button class="atlas-sim-btn" type="button" data-atlas-sim-toggle aria-pressed="false"
+                    title="Stream notional national activity through the real verification path and watch the Atlas update live">
+                <span class="atlas-sim-dot"></span><span data-atlas-sim-label>Simulate</span>
+            </button>
+            <span class="atlas-sim-count" data-atlas-sim-count hidden></span>
+        </div>
+        {% endif %}
         <span class="toolbar-live"><span class="live-dot"></span>LIVE</span>
     </div>
 

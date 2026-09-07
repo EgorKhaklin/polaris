@@ -2284,6 +2284,32 @@ textarea.sql {
     .toolbar-live .live-dot { animation: none; }
 }
 
+/* Live simulation control (P2.14 S4): dev/demo only, streams notional national
+   activity through the real write path so the console lights up live. */
+.atlas-sim { display: inline-flex; align-items: center; gap: 8px; padding: 0 4px 0 8px; }
+.atlas-sim-btn {
+    display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+    background: rgba(126, 232, 167, 0.08);
+    border: 1px solid rgba(126, 232, 167, 0.28);
+    color: rgba(126, 232, 167, 0.92);
+    font-family: 'SF Mono', 'Berkeley Mono', Monaco, Consolas, monospace;
+    font-size: 10px; letter-spacing: 1.2px; text-transform: uppercase;
+    padding: 4px 10px; border-radius: 4px;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+.atlas-sim-btn:hover { background: rgba(126, 232, 167, 0.16); border-color: rgba(126, 232, 167, 0.5); }
+.atlas-sim-dot { width: 7px; height: 7px; border-radius: 50%; background: rgba(126, 232, 167, 0.4); }
+.atlas-sim-on .atlas-sim-btn { background: rgba(126, 232, 167, 0.2); border-color: rgba(126, 232, 167, 0.6); }
+.atlas-sim-on .atlas-sim-dot {
+    background: #79e6b3; box-shadow: 0 0 8px rgba(121, 230, 179, 0.7);
+    animation: live-pulse 1.2s ease-in-out infinite;
+}
+.atlas-sim-count {
+    font-family: 'SF Mono', 'Berkeley Mono', Monaco, Consolas, monospace;
+    font-size: 10px; letter-spacing: 0.8px; color: rgba(180, 190, 205, 0.75); white-space: nowrap;
+}
+@media (prefers-reduced-motion: reduce) { .atlas-sim-on .atlas-sim-dot { animation: none; } }
+
 /* Anomaly counts in HUD: failed verifs (red) · full-disclosure (gold).
    Sized to match .hud-value-small so the anomaly pair carries weight
    alongside the active-token number to its left. */

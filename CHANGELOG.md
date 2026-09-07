@@ -5,6 +5,46 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.261 — 2026-09-07 (Atlas live simulation mode)
+
+The national simulation could already load a synthetic nation and stream its
+life through the real system (S1-S3), and the benchmark drove the first hardening
+ship (v9.260). This closes the other half of what was asked for — "a test
+simulation mode for atlas ... things happening ... in real time": a live control
+in the Atlas that streams notional national activity and lets an operator watch
+the console light up (roadmap P2.14 S4).
+
+**Client-driven, by design.** An operator clicks *Simulate* and the browser
+drives the stream: each tick POSTs a bounded batch to `/api/sim/tick`, which
+writes through the SAME `polaris_sim` path the benchmark uses (the real
+`INSERT INTO VerificationEvent` and `uc8_revoke_token` procedures, ZK rows
+carrying no location, C6), and then the console refreshes — the volume series
+climbs, the breakdown shifts, the map lights up. Because the loop lives in the
+browser, there is no server-side background thread: correct for the multi-worker
+gunicorn model, where an in-process streamer would fork into every worker and its
+start/stop state would not be shared. The map refreshes live too, off a new
+`polaris:atlas-refresh` event.
+
+**Triple-gated out of production.** `SIM_MODE` is `_env_flag('POLARIS_SIM_MODE',
+False) and not _PRODUCTION` — explicit opt-in, and force-off under
+`POLARIS_ENV=production` like `DEMO_MODE`. The `/api/sim/tick` route `abort(404)`s
+when `SIM_MODE` is off, so the control is never rendered and the route is
+effectively absent. And the writer itself gained the hard isolation gate the
+harness was missing: `polaris_sim.assert_expendable()` refuses
+`POLARIS_ENV=production`, and `run_stream` / `build_nation` call it before any
+write, so even a direct CLI invocation cannot touch a production database. Sim
+events, like all events, are append-only (C1) — there is no delete — so this runs
+on an expendable database.
+
+`check_sim_mode_gated` (invariant #129, was 128) pins all three gates; the
+detection test removes each and confirms the check turns red.
+`AtlasSimulationModeTests` proves the tick streams events through the real path,
+is bounded, requires login, and 404s when the gate is off; `IsolationGateTests`
+proves the writer refuses production. 81-route application (was 80). Full suite
+green. See [DEVNOTES/national-simulation.md](DEVNOTES/national-simulation.md).
+
+---
+
 ## v9.260 — 2026-09-07 (Atlas roll-ups prune the partitioned event table)
 
 The national benchmark's first hardening lead was the scan-based Atlas roll-ups.

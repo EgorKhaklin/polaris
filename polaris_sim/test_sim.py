@@ -375,5 +375,51 @@ class CliTests(unittest.TestCase):
         self.assertEqual(rc, 1)
 
 
+class IsolationGateTests(unittest.TestCase):
+    """v9.261: the simulation writes NOTIONAL events through the REAL procedures,
+    so it must never touch a production deployment. assert_expendable() honours
+    POLARIS_ENV=production (the app's own production signal) and refuses; it is
+    the hard gate the harness was missing (a default test DB name was its only
+    prior safeguard). run_stream / build_nation call it before any write."""
+
+    def setUp(self):
+        self._saved = os.environ.get("POLARIS_ENV")
+
+    def tearDown(self):
+        if self._saved is None:
+            os.environ.pop("POLARIS_ENV", None)
+        else:
+            os.environ["POLARIS_ENV"] = self._saved
+
+    def test_refuses_production(self):
+        import polaris_sim
+        os.environ["POLARIS_ENV"] = "production"
+        with self.assertRaises(polaris_sim.SimulationRefused):
+            polaris_sim.assert_expendable()
+        # Casing does not matter.
+        os.environ["POLARIS_ENV"] = "PRODUCTION"
+        with self.assertRaises(polaris_sim.SimulationRefused):
+            polaris_sim.assert_expendable()
+
+    def test_allows_non_production(self):
+        import polaris_sim
+        for value in ("", "test", "development", "staging"):
+            os.environ["POLARIS_ENV"] = value
+            polaris_sim.assert_expendable()   # must not raise
+        os.environ.pop("POLARIS_ENV", None)
+        polaris_sim.assert_expendable()
+
+    def test_run_stream_and_build_nation_are_gated(self):
+        # The gate fires before any DB work, so a None connection is fine: it must
+        # raise SimulationRefused (the gate), not a connection error.
+        import polaris_sim
+        os.environ["POLARIS_ENV"] = "production"
+        with self.assertRaises(polaris_sim.SimulationRefused):
+            events.run_stream(None, verifications=1)
+        plan = nation.plan_nation(scale_divisor=50_000_000, seed=1)
+        with self.assertRaises(polaris_sim.SimulationRefused):
+            load.build_nation(None, plan)
+
+
 if __name__ == "__main__":
     unittest.main()

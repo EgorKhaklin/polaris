@@ -125,6 +125,8 @@ def build_nation(conn, plan: _nation.NationPlan, *,
     isolation). `progress(jurisdiction, done_people, total_people)` fires after
     each bureau if supplied.
     """
+    from . import assert_expendable
+    assert_expendable()
     total_people = plan.total_people
     t0 = time.perf_counter()
     with conn.cursor() as cur:

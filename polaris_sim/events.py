@@ -249,6 +249,8 @@ def run_stream(conn, *, verifications: int, lifecycle: int = 0, window_hours: fl
                seed: int = 42, sample: int = 5000, batch_size: int = 10000,
                commit: bool = True, now: datetime.datetime | None = None) -> StreamStats:
     """Generate and write a life-event stream against the enrolled nation."""
+    from . import assert_expendable
+    assert_expendable()
     if now is None:
         now = datetime.datetime.now()
     pool, agencies, _contexts = load_pools(conn, sample)

@@ -866,4 +866,80 @@
     if (!overview.hidden) loadOverview();
     else if (bd && !bd.hidden) loadBreakdown();
   }, 60000);
+
+  // =========================================================================
+  // Live simulation mode (P2.14 S4). Present only when the server rendered the
+  // control (SIM_MODE, dev/demo only). The browser drives the stream: each tick
+  // POSTs a bounded batch of notional activity to /api/sim/tick (which writes
+  // through the real verification path) and then refreshes the active view, so
+  // the operator watches the nation's activity accumulate. Client-driven by
+  // design — no server-side background thread, which is what the multi-worker
+  // gunicorn model needs.
+  // =========================================================================
+  (function initSim() {
+    var host = $('[data-atlas-sim]');
+    if (!host) return;                       // SIM_MODE off: no control rendered
+    var btn = $('[data-atlas-sim-toggle]', host);
+    var label = $('[data-atlas-sim-label]', host);
+    var countEl = $('[data-atlas-sim-count]', host);
+    var csrf = host.getAttribute('data-sim-csrf') || '';
+    var timer = null, streamed = 0, inflight = false;
+
+    function refreshActive() {
+      if (!overview.hidden) loadOverview();
+      else if (bd && !bd.hidden) loadBreakdown();
+      else if (rec && !rec.hidden) loadRecords(true);
+      // Nudge the map to repaint if it is the active view and booted.
+      window.dispatchEvent(new CustomEvent('polaris:atlas-refresh'));
+    }
+
+    function setRunning(on) {
+      host.classList.toggle('atlas-sim-on', on);
+      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+      if (label) label.textContent = on ? 'Simulating' : 'Simulate';
+    }
+
+    function tick() {
+      if (inflight || document.hidden) return;   // pause when backgrounded
+      inflight = true;
+      var body = 'count=40&lifecycle=1&csrf_token=' + encodeURIComponent(csrf);
+      fetch('/api/sim/tick', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
+        body: body
+      }).then(function (r) {
+        return r.json().then(function (j) { return { ok: r.ok, status: r.status, body: j }; });
+      }).then(function (res) {
+        inflight = false;
+        if (!res.ok) {
+          // 409 = no substrate yet; stop and tell the operator what to run.
+          stop();
+          if (countEl) {
+            countEl.hidden = false;
+            countEl.textContent = res.body && res.body.hint ? res.body.hint : ('sim error ' + res.status);
+          }
+          return;
+        }
+        streamed += (res.body.streamed || 0);
+        if (countEl) {
+          countEl.hidden = false;
+          countEl.textContent = fmtInt(streamed) + ' streamed · ' + fmtInt(res.body.total_events || 0) + ' total';
+        }
+        refreshActive();
+      }).catch(function () { inflight = false; });
+    }
+
+    function start() {
+      if (timer) return;
+      setRunning(true);
+      tick();                                 // immediate first batch
+      timer = setInterval(tick, 2500);
+    }
+    function stop() {
+      if (timer) { clearInterval(timer); timer = null; }
+      setRunning(false);
+    }
+
+    btn.addEventListener('click', function () { timer ? stop() : start(); });
+  })();
 })();

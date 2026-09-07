@@ -5001,6 +5001,48 @@ def check_atlas_rollups_prune(root: pathlib.Path) -> list[Finding]:
                "generic plan in test_app.AtlasPartitionPruningTests)")
 
 
+def check_sim_mode_gated(root: pathlib.Path) -> list[Finding]:
+    """Roadmap P2.14 S4 (v9.261): the Atlas live-simulation mode streams NOTIONAL
+    events through the real write path, so it must be impossible on a production
+    deployment. THREE independent gates enforce that, and this pins all three so
+    none can silently erode:
+
+      1. The app's SIM_MODE flag is force-off under POLARIS_ENV=production (the
+         same idiom as DEMO_MODE), and the /api/sim/tick route `abort(404)`s when
+         SIM_MODE is off — so a production process renders no control and the
+         route is effectively absent.
+      2. The writer itself, polaris_sim.assert_expendable(), refuses
+         POLARIS_ENV=production, and run_stream / build_nation call it before any
+         write — so even a direct invocation cannot touch production.
+    """
+    app = _read(root, "polaris_web/app.py")
+    if not app:
+        return _fail("sim_gate", "polaris_web/app.py is missing")
+    if not re.search(r"SIM_MODE\s*=\s*_env_flag\(\s*['\"]POLARIS_SIM_MODE['\"].*\)\s*and\s*not\s*_PRODUCTION", app):
+        return _fail("sim_gate", "SIM_MODE must be `_env_flag('POLARIS_SIM_MODE', ...) and not _PRODUCTION` "
+                     "so the live-simulation control can never be on under POLARIS_ENV=production")
+    tick = app.split("def api_sim_tick", 1)
+    if len(tick) != 2:
+        return _fail("sim_gate", "app.py must define the api_sim_tick route (the live-simulation writer)")
+    head = tick[1][:600]
+    if "if not SIM_MODE" not in head or "abort(404)" not in head:
+        return _fail("sim_gate", "api_sim_tick must `abort(404)` when SIM_MODE is off (the route is absent "
+                     "off the gate)")
+
+    init = _read(root, "polaris_sim/__init__.py")
+    if "def assert_expendable" not in init or "production" not in init:
+        return _fail("sim_gate", "polaris_sim.assert_expendable() must exist and refuse POLARIS_ENV=production")
+    for rel, fn in (("polaris_sim/events.py", "run_stream"), ("polaris_sim/load.py", "build_nation")):
+        body = _read(root, rel)
+        if "assert_expendable()" not in body:
+            return _fail("sim_gate", f"{rel} ({fn}) must call assert_expendable() before it writes, so a direct "
+                         "invocation cannot touch a production database")
+    return _ok("sim_gate",
+               "the Atlas live-simulation mode is triple-gated: SIM_MODE is force-off under "
+               "POLARIS_ENV=production and /api/sim/tick 404s when it is off, and the writer "
+               "(polaris_sim.assert_expendable, called by run_stream and build_nation) refuses production")
+
+
 # ---------------------------------------------------------------------------
 # Image builds — every container image CI builds goes through
 # scripts/polaris-image-build.sh, which retries a build that failed on someone
@@ -5602,6 +5644,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_zero_downtime_deploy,
     check_verification_load_certified,
     check_atlas_rollups_prune,
+    check_sim_mode_gated,
     check_helm_reference_profile,
     check_local_clock_convention,
     check_c6_atlas_redacts_zk_location,

@@ -271,6 +271,29 @@ if _PRODUCTION and _env_flag('POLARIS_DEMO_MODE', False):
 # launcher routes.
 LAUNCHER_WATCH = _env_flag('POLARIS_LAUNCHER_WATCH', False)
 
+# SIM_MODE: the Atlas live-simulation control (v9.261, roadmap P2.14 S4). A
+# dev/demo instrument that streams NOTIONAL national activity through the real
+# verification write path so an operator can watch the Atlas light up. Explicit
+# opt-in (default OFF even in dev, because it writes a continuous event stream),
+# and — like DEMO_MODE — can NEVER be on under POLARIS_ENV=production, so a real
+# deployment renders no sim control and answers 404 on the sim route.
+# polaris_sim.assert_expendable() is the matching hard gate on the writer itself.
+SIM_MODE = _env_flag('POLARIS_SIM_MODE', False) and not _PRODUCTION
+if _PRODUCTION and _env_flag('POLARIS_SIM_MODE', False):
+    print("[boot] POLARIS_SIM_MODE is ignored under POLARIS_ENV=production", file=sys.stderr)
+
+
+def _import_polaris_sim_events():
+    """Import polaris_sim.events for the live-simulation writer. polaris_sim lives
+    at the repo root; the app runs from polaris_web/, so add the repo root to the
+    path first. Lazy (called only from the SIM_MODE-gated tick route), so a
+    production process never imports the sim harness."""
+    _repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if _repo_root not in sys.path:
+        sys.path.insert(0, _repo_root)
+    from polaris_sim import events as _sim_events
+    return _sim_events
+
 # v9.237: where the Atlas basemap comes from. The default is CARTO's free
 # dark-matter style, which means the operator's browser fetches tiles from a
 # third party on that one page. A deployment that cannot allow that (an
@@ -927,6 +950,7 @@ def _inject_security_context():
         'polaris_version': POLARIS_VERSION,
         'demo_mode': DEMO_MODE,
         'launcher_watch': LAUNCHER_WATCH,
+        'sim_mode': SIM_MODE,
         'atlas_provenance': atlas_provenance(),
         # The error page shows this so an operator can quote one string that
         # matches the log line and the X-Request-ID response header.
@@ -998,6 +1022,68 @@ def api_quit():
     except (OSError, PermissionError):
         pass
     return ('', 204)
+
+
+# ----------------------------------------------------------------------------
+# Atlas live simulation (roadmap P2.14 S4, v9.261)
+#
+# A dev/demo instrument: the browser calls this on a cadence and refreshes the
+# Atlas, so an operator watches a synthetic nation's activity stream in and the
+# map light up. Each call streams ONE bounded batch of NOTIONAL verification
+# events (and optionally a revocation) through the SAME polaris_sim path the
+# benchmark uses, which writes through the real INSERT/uc8 paths — so the events
+# are counted by the Atlas exactly like real ones, ZK rows carry no location
+# (C6), and nothing is written behind the procedures' backs.
+#
+# Three gates keep it out of a real deployment: SIM_MODE is force-off under
+# POLARIS_ENV=production; the route 404s when SIM_MODE is off; and the writer
+# itself calls polaris_sim.assert_expendable(), which refuses production. The
+# stream is client-driven (a stateless batch per request), so it needs no
+# server-side background thread — correct for the multi-worker gunicorn model,
+# where an in-process streamer would fork into every worker. Append-only: sim
+# events, like all events, cannot be deleted (C1), so this runs on an expendable
+# database and there is no "reset".
+# ----------------------------------------------------------------------------
+_SIM_TICK_MAX = 200        # bounded batch per tick, server-enforced
+
+
+@app.route('/api/sim/tick', methods=['POST'])
+@security.login_required
+@security.csrf_protect
+def api_sim_tick():
+    """Stream one bounded batch of notional national activity. 404 unless
+    POLARIS_SIM_MODE is on (never in production). Returns what it streamed and
+    the running event total so the UI shows progress without waiting on the
+    cached Atlas aggregates."""
+    if not SIM_MODE:
+        abort(404)
+    try:
+        count = int(request.form.get('count', 40))
+    except (TypeError, ValueError):
+        count = 40
+    count = max(1, min(count, _SIM_TICK_MAX))
+    lifecycle = 1 if request.form.get('lifecycle') == '1' else 0
+    # A fresh seed per tick makes each batch a new slice of activity (a live
+    # stream, not a replay); a dedicated connection keeps polaris_sim's own
+    # per-batch commits off the request connection.
+    seed = int.from_bytes(os.urandom(4), 'big')
+    _sim_events = _import_polaris_sim_events()
+    conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+    try:
+        stats = _sim_events.run_stream(
+            conn, verifications=count, lifecycle=lifecycle,
+            window_hours=0.05, seed=seed, commit=True)
+    except RuntimeError as exc:
+        # No active tokens (empty substrate) or the sim's own production refusal.
+        return jsonify(error=str(exc),
+                       hint="build a substrate first: python3 -m polaris_sim build"), 409
+    finally:
+        conn.close()
+    with get_db().cursor() as cur:
+        cur.execute("SELECT count(*) AS n FROM VerificationEvent")
+        total = cur.fetchone()['n']
+    return jsonify(streamed=stats.verifications, revocations=stats.revocations,
+                   total_events=total, by_disclosure=stats.by_disclosure)
 
 
 # ----------------------------------------------------------------------------

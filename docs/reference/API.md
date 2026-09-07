@@ -425,6 +425,37 @@ investigator cannot place them (constraint C6).
 
 ---
 
+## Live simulation (dev/demo only)
+
+### `POST /api/sim/tick`
+
+**Login required; CSRF-protected. Present only when `POLARIS_SIM_MODE` is on;
+`404` otherwise, and NEVER available under `POLARIS_ENV=production`.** The Atlas
+live-simulation control (roadmap P2.14 S4) calls this on a cadence and refreshes
+the console, so an operator watches a synthetic nation's activity stream in and
+the map light up. Each call streams ONE bounded batch of NOTIONAL verification
+events (and optionally a revocation) through the SAME `polaris_sim` path the
+benchmark uses, which writes through the real INSERT / `uc8_revoke_token`
+procedures — so the events are counted by the Atlas exactly like real ones, a
+zero-knowledge row carries no location (C6), and nothing is written behind the
+procedures' backs.
+
+| field | type | notes |
+|---|---|---|
+| `count` | int | events this batch; clamped to `1..200` |
+| `lifecycle` | `'1'` | if set, also revoke one token via `uc8_revoke_token` |
+| `csrf_token` | string | required |
+
+Returns `{streamed, revocations, total_events, by_disclosure}`. `409` with a
+`hint` if there is no substrate yet (run `python3 -m polaris_sim build` first).
+Three gates keep it out of production: `SIM_MODE` is force-off under
+`POLARIS_ENV=production`, the route `404`s when `SIM_MODE` is off, and
+`polaris_sim.assert_expendable()` refuses production on the writer itself. Sim
+events, like all events, are append-only (C1): there is no delete, so this runs
+against an expendable database.
+
+---
+
 ## Token export
 
 ### `GET /api/tokens/<id>/export`

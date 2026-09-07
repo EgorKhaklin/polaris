@@ -30,7 +30,7 @@ XL (multi-arc). Risk is delivery risk, not security risk.
 ## Where we are (inventory at v9.236)
 
 **Have, working, CI-proven:** a 32-table constraint-enforced schema (36 tables
-in a migrated deployment) with append-only audit; an 80-route application with
+in a migrated deployment) with append-only audit; an 81-route application with
 WebAuthn operator MFA, a server-side session registry, per-role network policy,
 per-agency quotas and the Atlas; an operator CLI; Plonky2 ZK Merkle inclusion
 with an independent Python second witness and a parameterized tree depth; real
@@ -44,8 +44,8 @@ RPO and RTO; a retention engine that holds the retention decision as data with
 a floor no configuration reaches, per class and per jurisdiction, enforced by
 the purge and drilled end to end in CI; a sealed secrets store; opt-in
 distributed tracing with dashboards as code; SBOMs and SLSA provenance on every
-release; CVE gates on dependencies and images; a coverage floor; 128 invariant
-checks (v9.260) each with a detection test; eighteen operator runbooks and ledgers; and the bound on
+release; CVE gates on dependencies and images; a coverage floor; 129 invariant
+checks (v9.261) each with a detection test; eighteen operator runbooks and ledgers; and the bound on
 every claim in [docs/PRODUCTION-READINESS.md](docs/PRODUCTION-READINESS.md).
 
 **Do not have:** hardware tokens (the physical artifact is modeled, not built);

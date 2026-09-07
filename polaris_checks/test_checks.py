@@ -237,6 +237,44 @@ def test_atlas_rollups_prune_check_discriminates(tmp_path):
     assert checks.check_atlas_rollups_prune(tmp_path)[0].level == "FAIL", "must FAIL when the pruning-friendly predicate is absent"
 
 
+def test_sim_mode_gated_check_discriminates(tmp_path):
+    # P2.14 S4 (v9.261): the live-simulation mode must be triple-gated. The good
+    # fixture has all three gates; each perturbation removes one.
+    APP = ("SIM_MODE = _env_flag('POLARIS_SIM_MODE', False) and not _PRODUCTION\n"
+           "@app.route('/api/sim/tick', methods=['POST'])\n"
+           "def api_sim_tick():\n"
+           "    if not SIM_MODE:\n"
+           "        abort(404)\n"
+           "    return jsonify(ok=True)\n")
+    INIT = ("def assert_expendable():\n"
+            "    if os.environ.get('POLARIS_ENV','').lower() == 'production':\n"
+            "        raise SimulationRefused('refuses production')\n")
+    EVENTS = "def run_stream(conn):\n    assert_expendable()\n    return 1\n"
+    LOAD = "def build_nation(conn, plan):\n    assert_expendable()\n    return 1\n"
+    good = {"polaris_web/app.py": APP, "polaris_sim/__init__.py": INIT,
+            "polaris_sim/events.py": EVENTS, "polaris_sim/load.py": LOAD}
+
+    def write(overrides=None):
+        files = dict(good); files.update(overrides or {})
+        for rel, body in files.items():
+            f = tmp_path / rel; f.parent.mkdir(parents=True, exist_ok=True); f.write_text(body)
+
+    write()
+    assert checks.check_sim_mode_gated(tmp_path)[0].level == "OK", "must PASS on the triple-gated fixture"
+    # SIM_MODE no longer force-off in production
+    write({"polaris_web/app.py": APP.replace(" and not _PRODUCTION", "")})
+    assert checks.check_sim_mode_gated(tmp_path)[0].level == "FAIL", "must FAIL when SIM_MODE is not force-off in production"
+    # the tick route no longer 404s when the gate is off
+    write({"polaris_web/app.py": APP.replace("        abort(404)\n", "        pass\n")})
+    assert checks.check_sim_mode_gated(tmp_path)[0].level == "FAIL", "must FAIL when the route does not 404 off the gate"
+    # the writer no longer refuses production
+    write({"polaris_sim/__init__.py": INIT.replace("production", "prod-typo")})
+    assert checks.check_sim_mode_gated(tmp_path)[0].level == "FAIL", "must FAIL when assert_expendable does not refuse production"
+    # run_stream stops calling the gate
+    write({"polaris_sim/events.py": "def run_stream(conn):\n    return 1\n"})
+    assert checks.check_sim_mode_gated(tmp_path)[0].level == "FAIL", "must FAIL when run_stream skips assert_expendable()"
+
+
 def test_signing_key_generation_check_discriminates(tmp_path):
     scripts = tmp_path / "scripts"
     scripts.mkdir()

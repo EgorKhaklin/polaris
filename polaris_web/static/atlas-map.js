@@ -1119,6 +1119,9 @@
     }
     setInterval(liveRefresh, 60000);
     document.addEventListener('visibilitychange', function () { if (!document.hidden) liveRefresh(); });
+    // Live simulation (P2.14 S4): the console's sim loop fires this after each
+    // batch so the map lights up immediately, not only on the 60 s cadence.
+    window.addEventListener('polaris:atlas-refresh', function () { liveRefresh(); });
 
     var timeEl = document.getElementById('atlas-hud-time');
     function tickClock() {

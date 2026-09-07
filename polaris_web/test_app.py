@@ -5942,6 +5942,72 @@ class AtlasPartitionPruningTests(PolarisTestCase):
                 f"a far-future window must PRUNE {m} from atlas_volume_series")
 
 
+class AtlasSimulationModeTests(PolarisTestCase):
+    """v9.261 (roadmap P2.14 S4): the Atlas live-simulation control streams
+    notional national activity through the real verification path so an operator
+    watches the console light up. It is dev/demo only: three gates keep it out of
+    production — SIM_MODE is force-off under POLARIS_ENV=production, the
+    /api/sim/tick route 404s when SIM_MODE is off, and polaris_sim.assert_expendable()
+    refuses production on the writer itself. SIM_MODE is read at request time, so
+    these tests flip flask_app.SIM_MODE and restore it."""
+
+    def _set_sim_mode(self, on):
+        prev = flask_app.SIM_MODE
+        flask_app.SIM_MODE = on
+        self.addCleanup(setattr, flask_app, 'SIM_MODE', prev)
+
+    def _event_count(self):
+        conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT count(*) AS n FROM VerificationEvent")
+                return cur.fetchone()['n']
+        finally:
+            conn.close()
+
+    def test_control_absent_and_route_404_when_off(self):
+        self._set_sim_mode(False)
+        self.assertNotIn('data-atlas-sim', self.client.get('/atlas').get_data(as_text=True),
+                         "the sim control must NOT render when SIM_MODE is off")
+        # A fully valid (logged-in, CSRF-carrying) request still 404s: the route
+        # is effectively absent when the gate is off.
+        r = self._post('/api/sim/tick', data={'count': '5'}, csrf_from='/uc1/issue')
+        self.assertEqual(r.status_code, 404)
+
+    def test_control_renders_when_on(self):
+        self._set_sim_mode(True)
+        body = self.client.get('/atlas').get_data(as_text=True)
+        self.assertIn('data-atlas-sim', body)
+        self.assertIn('data-atlas-sim-toggle', body)
+
+    def test_tick_streams_events_through_the_real_path(self):
+        self._set_sim_mode(True)
+        before = self._event_count()
+        r = self._post('/api/sim/tick', data={'count': '30'}, csrf_from='/uc1/issue')
+        self.assertEqual(r.status_code, 200)
+        data = r.get_json()
+        self.assertEqual(data['streamed'], 30)
+        self.assertGreaterEqual(data['total_events'], before + 30,
+                                "the streamed events must be persisted (real write path)")
+        self.assertEqual(self._event_count(), data['total_events'])
+        # C6: a zero-knowledge verification is counted but never located; the sim
+        # produces a disclosure mix, so ZK rows appear in the tally.
+        self.assertIn('by_disclosure', data)
+
+    def test_tick_batch_is_bounded(self):
+        self._set_sim_mode(True)
+        # A caller asking for far more than the cap gets the cap, not a million rows.
+        r = self._post('/api/sim/tick', data={'count': '100000'}, csrf_from='/uc1/issue')
+        self.assertEqual(r.status_code, 200)
+        self.assertLessEqual(r.get_json()['streamed'], flask_app._SIM_TICK_MAX)
+
+    def test_tick_requires_login(self):
+        self._set_sim_mode(True)
+        self._logout()
+        r = self.client.post('/api/sim/tick', data={'count': '5'})
+        self.assertIn(r.status_code, (302, 401))
+
+
 class AtlasFilterAPITests(PolarisTestCase):
     """v8.3 (A+C): the temporal-lens + operational-filter primitives must
     survive the lifetime of the schema. These tests lock in:
