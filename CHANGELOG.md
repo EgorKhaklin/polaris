@@ -5,6 +5,49 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.254 — 2026-09-06 (National simulation, ship 1: the synthetic nation)
+
+Roadmap P2.14, ship 1 of a new arc: a national-scale simulation of Polaris. The
+goal is to exercise the real system at a scale no unit test reaches, benchmark
+it, and turn the findings into hardening. This first ship builds the substrate,
+the synthetic United States, and loads it through the real enrollment path.
+
+**A synthetic nation, seeded and deterministic.** The new `polaris_sim` package
+carries the real United States as data (all 50 states + DC with Census
+populations) and a pure generator: `plan_nation(scale, seed)` builds every ID
+bureau in the country, one state office per state plus county and municipal
+bureaus scaled by population, and streams the people each enrolls. Same inputs,
+identical plan, which is what makes a benchmark comparable. Every state keeps a
+bureau footprint at any scale, so the whole country is represented even in a
+small run.
+
+**Loaded through the real pipeline, not around it.** The loader inserts each
+bureau as an agency, grants it the algorithm authorization the pipeline
+requires, then issues every person a token set-based through `uc_bulk_issue`, so
+each synthetic enrollee passes exactly the constraint set a real one does. It
+never writes a token or a lifecycle row directly. `check_national_simulation`
+enforces that: cover all 51 jurisdictions, be deterministic, and go through
+`uc_bulk_issue` with no direct token writes.
+
+**A first benchmark point.** A 1:1000 run, 331,423 enrollments across all 51
+jurisdictions through the real pipeline, held C3 (one active token per person)
+across the whole load and sustained roughly 3,200 enrollments/s on the
+development host. That number, and where the per-bureau batching costs
+throughput against one large batch, is the first thing a later hardening ship
+can act on.
+
+**Use.** `python3 -m polaris_sim build --scale 1000 --seed 42` builds and
+enrolls a downscaled nation; `--plan-only` prints the plan without a database.
+
+**Proven.** Eight harness tests: the generator is deterministic, covers every
+state, and its people streams match the plan; a database-backed test loads a
+small nation through the real pipeline in a rolled-back transaction and asserts
+the tokens are issued, activated, C3-consistent, and carry real lifecycle
+events. The suite runs in the coverage job, so CI exercises it. The check layer
+is 126; the app is 79 routes; schema unchanged.
+
+---
+
 ## v9.253 — 2026-09-06 (Atlas Map v2: aggregation first, globe optional)
 
 Roadmap P2.3, ship 6: the map stops being an always-on globe strewn with raw

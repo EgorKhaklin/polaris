@@ -45,6 +45,7 @@ polaris/
 ├── polaris_zk/         ← Plonky2 ZK-SNARK Rust crate; witness2/ is the independent second witness
 ├── polaris_cli/        ← the operator CLI
 ├── polaris_checks/     ← the flat invariant layer that gates CI (README.md indexes it)
+├── polaris_sim/        ← the national simulation and benchmark harness (a synthetic USA through the real pipeline)
 │
 ├── deploy/             ← the three substrates, with README.md naming each one's limit
 │   ├── helm/polaris/   ← the Kubernetes reference profile (plus kind-config.yaml for CI)

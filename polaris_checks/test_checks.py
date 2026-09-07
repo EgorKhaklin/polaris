@@ -3518,6 +3518,54 @@ def test_read_replica_routing_check_discriminates(tmp_path):
     assert checks.check_read_replica_routing(tmp_path)[0].level == "FAIL", "must FAIL when the staleness contract is undocumented"
 
 
+def test_national_simulation_check_discriminates(tmp_path):
+    # A reference module covering all 50 states + DC.
+    _CODES = ("CA TX FL NY PA IL OH GA NC MI NJ VA WA AZ MA TN IN MD MO WI CO MN "
+              "SC AL LA KY OR OK CT UT IA NV AR MS KS NM NE ID WV HI NH ME RI MT DE "
+              "SD ND AK DC VT WY").split()
+    REF = "US_STATES = [\n" + "".join(f'    ("US-{c}", "S", 1),\n' for c in _CODES) + "]\n"
+    NAT = ("import random\n"
+           "def plan_nation(scale_divisor, seed):\n"
+           "    rng = random.Random(seed)\n    return rng\n")
+    LOAD = ("def build_nation(conn, plan):\n"
+            "    cur.execute('CALL uc_bulk_issue(%s)', (b,))\n")
+    COV = "run polaris_cli unittest test_cli\nrun polaris_sim unittest test_sim\n"
+    good = {
+        "polaris_sim/reference.py": REF,
+        "polaris_sim/nation.py": NAT,
+        "polaris_sim/load.py": LOAD,
+        "polaris_sim/test_sim.py": "import unittest\n",
+        "scripts/polaris-coverage.sh": COV,
+    }
+
+    def write(overrides=None):
+        files = dict(good); files.update(overrides or {})
+        for rel, body in files.items():
+            f = tmp_path / rel; f.parent.mkdir(parents=True, exist_ok=True); f.write_text(body)
+
+    write()
+    assert checks.check_national_simulation(tmp_path)[0].level == "OK", "must PASS on the good fixture"
+    # a harness file is missing (an empty/absent file is falsy to the check)
+    write({"polaris_sim/load.py": ""})
+    assert checks.check_national_simulation(tmp_path)[0].level == "FAIL", "must FAIL when a harness file is missing"
+    write()
+    # fewer than 51 jurisdictions (not the whole country)
+    write({"polaris_sim/reference.py": 'US_STATES = [("US-CA", "S", 1), ("US-TX", "S", 1)]\n'})
+    assert checks.check_national_simulation(tmp_path)[0].level == "FAIL", "must FAIL without all 50 states + DC"
+    # not deterministic (no seeded PRNG)
+    write({"polaris_sim/nation.py": "def plan_nation(scale_divisor, seed):\n    return 1\n"})
+    assert checks.check_national_simulation(tmp_path)[0].level == "FAIL", "must FAIL when the plan is not seeded"
+    # does not go through the real pipeline
+    write({"polaris_sim/load.py": "def build_nation(conn, plan):\n    pass\n"})
+    assert checks.check_national_simulation(tmp_path)[0].level == "FAIL", "must FAIL when the loader skips uc_bulk_issue"
+    # bypasses the pipeline with a direct token insert
+    write({"polaris_sim/load.py": LOAD + "    cur.execute('INSERT INTO IdentityToken (status) VALUES (%s)', ('ACTIVE',))\n"})
+    assert checks.check_national_simulation(tmp_path)[0].level == "FAIL", "must FAIL when the loader writes tokens directly"
+    # the suite is not wired into the coverage run
+    write({"scripts/polaris-coverage.sh": "run polaris_cli unittest test_cli\n"})
+    assert checks.check_national_simulation(tmp_path)[0].level == "FAIL", "must FAIL when the sim suite is not in coverage"
+
+
 def test_bulk_enrollment_check_discriminates(tmp_path):
     SCHEMA = (
         "CREATE TABLE IF NOT EXISTS BulkEnrollmentBatch (\n"

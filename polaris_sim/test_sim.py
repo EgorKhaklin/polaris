@@ -1,0 +1,223 @@
+"""Tests for the national simulation harness.
+
+Two layers:
+  - Pure generator tests (no database): determinism, scaling, national
+    coverage, name uniqueness. These are the reproducibility guarantees a
+    benchmark depends on.
+  - A database-backed load test that drives a small synthetic nation through
+    the REAL bulk-enrollment pipeline and asserts the enrollment is valid and
+    C3 (one active token per person) holds across the batch. It runs inside a
+    single transaction and rolls back, so it is isolated and rerunnable.
+"""
+
+from __future__ import annotations
+
+import datetime
+import os
+import re
+import unittest
+
+from polaris_sim import load, nation, reference
+
+# ---------------------------------------------------------------------------
+# Pure generator tests (no database).
+# ---------------------------------------------------------------------------
+
+
+class NationPlanTests(unittest.TestCase):
+    def test_reference_covers_the_whole_country(self):
+        self.assertEqual(len(reference.US_STATES), 51, "50 states + DC")
+        codes = [c for c, _, _ in reference.US_STATES]
+        self.assertEqual(len(set(codes)), 51, "no duplicate jurisdictions")
+        pat = re.compile(r"^[A-Z]{2}(-[A-Z0-9]{1,3})?$")
+        for c in codes:
+            self.assertRegex(c, pat, f"{c} must be a valid ISO 3166-2 jurisdiction")
+        self.assertGreater(reference.US_TOTAL_POPULATION, 300_000_000)
+
+    def test_plan_is_deterministic_and_seed_sensitive(self):
+        a = nation.plan_nation(scale_divisor=1000, seed=7)
+        b = nation.plan_nation(scale_divisor=1000, seed=7)
+        self.assertEqual(a, b, "same (scale, seed) must give an identical plan")
+        c = nation.plan_nation(scale_divisor=1000, seed=8)
+        self.assertNotEqual(a, c, "a different seed must change the plan")
+
+    def test_every_state_has_a_bureau_at_any_scale(self):
+        for div in (1, 1000, 100_000, 50_000_000):
+            plan = nation.plan_nation(scale_divisor=div, seed=1)
+            self.assertEqual(plan.jurisdictions, 51,
+                             f"every state must keep a bureau at scale 1:{div}")
+            names = [b.name for b in plan.bureaus]
+            self.assertEqual(len(set(names)), len(names), "bureau names must be unique")
+
+    def test_people_scale_and_streams_match_enroll_counts(self):
+        plan = nation.plan_nation(scale_divisor=100_000, seed=3)
+        # The plan's people total is the sum of the bureau enroll counts.
+        self.assertEqual(plan.total_people, sum(b.enroll_count for b in plan.bureaus))
+        # A bureau's people stream yields exactly enroll_count people, all in its
+        # jurisdiction, with valid adult DOBs.
+        bureau = next(b for b in plan.bureaus if b.enroll_count > 0)
+        people = list(nation.generate_people(bureau, plan.seed))
+        self.assertEqual(len(people), bureau.enroll_count)
+        for p in people:
+            self.assertEqual(p.jurisdiction, bureau.jurisdiction)
+            self.assertIsInstance(p.date_of_birth, datetime.date)
+            age = (nation._TODAY - p.date_of_birth).days // 365
+            self.assertGreaterEqual(age, nation._MIN_AGE - 1)
+            self.assertLessEqual(age, nation._MAX_AGE + 1)
+
+    def test_population_is_proportional(self):
+        # California must carry far more synthetic people than Wyoming.
+        sp = dict((c, n) for c, _, n in reference.scaled_population(1000))
+        self.assertGreater(sp["US-CA"], sp["US-WY"] * 20)
+
+    def test_scale_divisor_validation(self):
+        with self.assertRaises(ValueError):
+            nation.plan_nation(scale_divisor=0, seed=1)
+
+
+# ---------------------------------------------------------------------------
+# Database-backed load test (through the real pipeline).
+# ---------------------------------------------------------------------------
+
+_DB_CONFIG = {
+    "host": os.environ.get("POLARIS_DB_HOST", "localhost"),
+    "dbname": os.environ.get("POLARIS_DB_NAME", "polaris_test"),
+    "user": os.environ.get("POLARIS_DB_USER", "vanta"),
+    "password": os.environ.get("POLARIS_DB_PASSWORD", ""),
+}
+
+
+def _db_available() -> bool:
+    try:
+        import psycopg2
+        from psycopg2.extras import RealDictCursor
+        conn = psycopg2.connect(cursor_factory=RealDictCursor, connect_timeout=2, **_DB_CONFIG)
+        conn.close()
+        return True
+    except Exception:
+        return False
+
+
+@unittest.skipUnless(_db_available(), "no Polaris database reachable (POLARIS_DB_*)")
+class SubstrateLoadTests(unittest.TestCase):
+    """Load a small synthetic nation through uc_bulk_issue and assert it is a
+    valid enrollment. Everything runs in one transaction and rolls back."""
+
+    def setUp(self):
+        import psycopg2
+        from psycopg2.extras import RealDictCursor
+        self.conn = psycopg2.connect(cursor_factory=RealDictCursor, **_DB_CONFIG)
+
+    def tearDown(self):
+        self.conn.rollback()   # isolation: undo the whole load
+        self.conn.close()
+
+    def _count(self, sql, args=None):
+        with self.conn.cursor() as cur:
+            cur.execute(sql, args or ())
+            return cur.fetchone()["n"]
+
+    def test_small_nation_loads_through_the_real_pipeline(self):
+        # ~ a few hundred people: small enough to be fast, large enough to span
+        # many states and exercise many bureaus.
+        plan = nation.plan_nation(scale_divisor=1_000_000, seed=99)
+        self.assertGreater(plan.total_people, 50)
+
+        tokens_before = self._count("SELECT count(*) n FROM IdentityToken WHERE token_value LIKE 'SIMTOK-%%'")
+        stats = load.build_nation(self.conn, plan, batch_size=500, commit=False)
+
+        # Every planned person became a simulated token.
+        sim_tokens = self._count("SELECT count(*) n FROM IdentityToken WHERE token_value LIKE 'SIMTOK-%%'")
+        self.assertEqual(sim_tokens - tokens_before, plan.total_people)
+        self.assertEqual(stats.tokens_issued, plan.total_people)
+        self.assertEqual(stats.agencies, plan.total_bureaus)
+
+        # Those tokens are ACTIVE (issued AND activated by the pipeline).
+        active = self._count(
+            "SELECT count(*) n FROM IdentityToken WHERE token_value LIKE 'SIMTOK-%%' AND status='ACTIVE'")
+        self.assertEqual(active, plan.total_people, "the pipeline must activate every issued token")
+
+        # C3: no individual enrolled by the simulation holds two active tokens.
+        max_active = self._count("""
+            SELECT COALESCE(max(c), 0) n FROM (
+                SELECT it.individual_id, count(*) c
+                FROM IdentityToken it
+                WHERE it.token_value LIKE 'SIMTOK-%%' AND it.status='ACTIVE'
+                GROUP BY it.individual_id
+            ) t""")
+        self.assertEqual(max_active, 1, "C3 must hold across the simulated batch")
+
+        # The nation spans many jurisdictions (not a single-state artifact).
+        jurisdictions = self._count("""
+            SELECT count(DISTINCT ind.jurisdiction) n
+            FROM IdentityToken it JOIN Individual ind ON it.individual_id = ind.individual_id
+            WHERE it.token_value LIKE 'SIMTOK-%%'""")
+        self.assertGreaterEqual(jurisdictions, 20, "a national load must span many states")
+
+        # Each simulated token has an ISSUED and an ACTIVATED lifecycle event
+        # (proof it went through the real state machine, not a raw insert).
+        lifecycle_ok = self._count("""
+            SELECT count(*) n FROM IdentityToken it
+            WHERE it.token_value LIKE 'SIMTOK-%%'
+              AND EXISTS (SELECT 1 FROM TokenLifecycleEvent e WHERE e.token_id=it.token_id AND e.event_type='ISSUED')
+              AND EXISTS (SELECT 1 FROM TokenLifecycleEvent e WHERE e.token_id=it.token_id AND e.event_type='ACTIVATED')""")
+        self.assertEqual(lifecycle_ok, plan.total_people)
+
+    def test_every_bureau_is_created_and_authorized(self):
+        # The loader must insert each bureau as an Agency AND grant it
+        # AgencyAlgorithmAuth, else uc_bulk_issue would reject the batch.
+        plan = nation.plan_nation(scale_divisor=20_000_000, seed=5)
+        agencies_before = self._count("SELECT count(*) n FROM Agency")
+        auth_before = self._count("SELECT count(*) n FROM AgencyAlgorithmAuth")
+        load.build_nation(self.conn, plan, batch_size=500, commit=False)
+        self.assertEqual(self._count("SELECT count(*) n FROM Agency") - agencies_before,
+                         plan.total_bureaus, "every bureau must be inserted as an agency")
+        self.assertEqual(self._count("SELECT count(*) n FROM AgencyAlgorithmAuth") - auth_before,
+                         plan.total_bureaus, "every bureau must get an issue grant")
+
+
+class CliTests(unittest.TestCase):
+    """The `python3 -m polaris_sim build` entry point, exercised without a
+    database via --plan-only."""
+
+    def test_build_plan_only_json(self):
+        import contextlib
+        import io as _io
+        import json as _json
+
+        from polaris_sim import __main__ as cli
+        buf = _io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = cli.main(["build", "--scale", "1000000", "--seed", "1",
+                           "--plan-only", "--json"])
+        self.assertEqual(rc, 0)
+        payload = _json.loads(buf.getvalue())
+        self.assertEqual(payload["jurisdictions"], 51)
+        self.assertGreater(payload["people"], 0)
+        self.assertEqual(payload["bureaus"], payload["bureaus"])
+
+    def test_build_plan_only_human(self):
+        import contextlib
+        import io as _io
+
+        from polaris_sim import __main__ as cli
+        buf = _io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = cli.main(["build", "--scale", "500000", "--plan-only"])
+        self.assertEqual(rc, 0)
+        self.assertIn("Synthetic United States", buf.getvalue())
+        self.assertIn("ID bureaus", buf.getvalue())
+
+    def test_no_command_prints_help(self):
+        import contextlib
+        import io as _io
+
+        from polaris_sim import __main__ as cli
+        buf = _io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = cli.main([])
+        self.assertEqual(rc, 1)
+
+
+if __name__ == "__main__":
+    unittest.main()

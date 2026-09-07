@@ -5264,6 +5264,62 @@ def check_retention_engine(root: pathlib.Path) -> list[Finding]:
                "whole chain is drilled in CI")
 
 
+# ---------------------------------------------------------------------------
+# National simulation (roadmap P2.14, v9.254) - the benchmark/hardening harness
+# must (a) cover the whole country, (b) be deterministic so runs compare, and
+# (c) drive enrollment through the REAL bulk pipeline (uc_bulk_issue), never a
+# raw INSERT that would bypass the constraint set it exists to exercise. If the
+# loader ever wrote tokens directly, the "benchmark" would prove nothing about
+# the real system.
+# ---------------------------------------------------------------------------
+def check_national_simulation(root: pathlib.Path) -> list[Finding]:
+    ref = _read(root, "polaris_sim/reference.py")
+    nat = _read(root, "polaris_sim/nation.py")
+    ld = _read(root, "polaris_sim/load.py")
+    if not ref or not nat or not ld:
+        return _fail("national_simulation",
+                     "polaris_sim/{reference,nation,load}.py must exist (the simulation harness)")
+
+    # (a) the whole country: at least the 50 states + DC as ISO 3166-2 codes.
+    codes = set(re.findall(r'"(US-[A-Z0-9]{1,3})"', ref))
+    if len(codes) < 51:
+        return _fail("national_simulation",
+                     f"polaris_sim/reference.py must cover all 50 states + DC "
+                     f"(found {len(codes)} US- jurisdictions, need >=51)")
+
+    # (b) deterministic: the plan is a function of (scale, seed), seeded from a
+    # local PRNG, never the global one or the wall clock.
+    if "def plan_nation" not in nat or "seed" not in nat or "random.Random" not in nat:
+        return _fail("national_simulation",
+                     "polaris_sim/nation.py must build a deterministic, seeded plan "
+                     "(plan_nation(scale, seed) using random.Random)")
+
+    # (c) through the real pipeline: the loader issues via uc_bulk_issue and must
+    # NOT write IdentityToken / TokenLifecycleEvent rows directly (that would
+    # bypass the very constraints the benchmark is meant to exercise).
+    if "uc_bulk_issue" not in ld:
+        return _fail("national_simulation",
+                     "polaris_sim/load.py must enroll through uc_bulk_issue (the real "
+                     "pipeline), so every synthetic person passes the full constraint set")
+    for bypass in ("INSERT INTO IdentityToken", "INSERT INTO TokenLifecycleEvent"):
+        if re.search(bypass, ld, re.I):
+            return _fail("national_simulation",
+                         f"polaris_sim/load.py must not {bypass.lower()} directly; issuance goes "
+                         "through uc_bulk_issue so the simulation exercises the real system (not a mock)")
+
+    # The harness is tested, and the test rides in the coverage suite so CI runs it.
+    if not _read(root, "polaris_sim/test_sim.py"):
+        return _fail("national_simulation", "polaris_sim/test_sim.py (the harness tests) must exist")
+    cov = _read(root, "scripts/polaris-coverage.sh")
+    if "polaris_sim" not in cov:
+        return _fail("national_simulation",
+                     "scripts/polaris-coverage.sh must run the polaris_sim suite so CI exercises it")
+    return _ok("national_simulation",
+               "the national simulation covers all 51 jurisdictions, is deterministic (seeded), and "
+               "enrolls through the real bulk pipeline (uc_bulk_issue, no direct token writes); its "
+               "tests run in the coverage suite (roadmap P2.14)")
+
+
 CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_csp_forbids_unsafe_inline,
     check_one_active_token_index,
@@ -5374,6 +5430,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_event_table_partitioning,
     check_read_replica_routing,
     check_bulk_enrollment,
+    check_national_simulation,
     check_atlas_console,
     check_stated_counts,
     check_c1c10_objects_resolve,
