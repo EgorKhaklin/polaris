@@ -19,6 +19,7 @@ from __future__ import annotations
 import datetime
 import os
 import platform
+import re
 import socket
 import time
 from dataclasses import dataclass, field
@@ -60,6 +61,7 @@ class BenchmarkReport:
     crypto_verification: dict = field(default_factory=dict)
     write_latency_ms: Percentiles = field(default_factory=lambda: Percentiles(0, 0, 0, 0))
     atlas_query_ms: dict = field(default_factory=dict)
+    partition_pruning: dict = field(default_factory=dict)
     invariants: dict = field(default_factory=dict)
     scale_counts: dict = field(default_factory=dict)
 
@@ -74,7 +76,8 @@ class BenchmarkReport:
             "enrollment": self.enrollment, "verification": self.verification,
             "crypto_verification": self.crypto_verification,
             "write_latency_ms": vars(self.write_latency_ms),
-            "atlas_query_ms": self.atlas_query_ms, "invariants": self.invariants,
+            "atlas_query_ms": self.atlas_query_ms,
+            "partition_pruning": self.partition_pruning, "invariants": self.invariants,
             "scale_counts": self.scale_counts, "all_invariants_hold": self.all_invariants_hold,
         }
 
@@ -104,6 +107,45 @@ def time_atlas_queries(conn, since) -> dict:
         for name, sql, params in _atlas_probes(since):
             out[name] = round(_time_ms(lambda: cur.execute(sql, params)), 2)
     return out
+
+
+def measure_partition_pruning(conn) -> dict:
+    """P2.14 S5 (v9.260): prove the Atlas roll-ups PRUNE the monthly-partitioned
+    event table under the GENERIC plan a parameterized call actually gets (the
+    app's path). A far-future window matches no month partition, so a pruning
+    query drops every one of them; an all-time (NULL) query must keep them all.
+    The difference is the whole fix (event_timestamp >= COALESCE(p_since,
+    '-infinity')): before it, both scanned every partition."""
+    def _month_parts_in(plan: str) -> int:
+        return len(set(re.findall(r"verificationevent_\d{4}_\d{2}", plan)))
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT count(*) AS n FROM pg_inherits "
+            " WHERE inhparent='verificationevent'::regclass "
+            "   AND inhrelid::regclass::text ~ 'verificationevent_[0-9]'")
+        month_partitions = cur.fetchone()["n"]
+        cur.execute("SET plan_cache_mode = force_generic_plan")
+        cur.execute("DEALLOCATE ALL")
+        cur.execute("PREPARE _pp(timestamp) AS "
+                    "SELECT * FROM atlas_breakdown('agency', $1, 50)")
+
+        def scanned(arg_sql: str) -> int:
+            cur.execute("EXPLAIN (COSTS OFF) EXECUTE _pp(" + arg_sql + ")")
+            plan = "\n".join(next(iter(r.values())) for r in cur.fetchall())
+            return _month_parts_in(plan)
+
+        recent = scanned("(CURRENT_TIMESTAMP + INTERVAL '100 years')::timestamp")
+        alltime = scanned("NULL")
+        cur.execute("DEALLOCATE _pp")
+        cur.execute("SET plan_cache_mode = auto")
+    return {
+        "month_partitions": month_partitions,
+        "recent_window_scanned": recent,
+        "all_time_scanned": alltime,
+        # With ≥1 month partition, a recent window must scan strictly fewer than
+        # all-time (it prunes them); with none, pruning is trivially satisfied.
+        "prunes": bool(month_partitions == 0 or recent < alltime),
+    }
 
 
 _LAT_SQL = ("INSERT INTO VerificationEvent "
@@ -287,10 +329,15 @@ def run_benchmark(conn, *, scale_divisor: int, verifications: int, lifecycle: in
     since = now - datetime.timedelta(hours=window_hours * 2)
     report.atlas_query_ms = time_atlas_queries(conn, since)
 
+    # Phase 5b: the Atlas roll-ups prune the partitioned event table (P2.14 S5).
+    report.partition_pruning = measure_partition_pruning(conn)
+
     # Phase 6: invariants under load, including that mass-issued signatures
     # actually verify (not placeholders the schema merely accepts).
     report.invariants = check_invariants(conn, list(_events._PURPOSES))
     report.invariants["signatures_cryptographically_verify"] = \
         report.crypto_verification.get("all_verified", False)
+    report.invariants["atlas_windowed_query_prunes"] = \
+        report.partition_pruning.get("prunes", False)
     report.scale_counts = _scale_counts(conn)
     return report

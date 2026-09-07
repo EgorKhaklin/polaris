@@ -113,14 +113,24 @@ labeled as such.
 3. **Real signing dominates enrollment.** At ~0.4 ms per ML-DSA-65 signature
    plus a two-witness self-check, mass enrollment is signing-bound (~372/s
    single-threaded here). Parallel signing across custody workers is the lever.
-4. **The scan-based Atlas roll-ups remain the read-side scaling front** (they
-   grow with the event count while the keyset `atlas_records` stays flat), the
-   first candidate for a materialized rollup or covering index.
+4. **The Atlas roll-ups did not prune the partitioned event table — fixed
+   (v9.260).** The roll-ups filter monthly partitions by `event_timestamp`, but
+   the `p_since IS NULL OR event_timestamp >= p_since` predicate (and a `params`
+   CTE indirection in the time-series functions) defeated partition pruning under
+   the generic plan a parameterized statement gets, so a recent-window query
+   scanned every month of history. The benchmark now measures this directly (the
+   partitions a recent window scans versus an all-time query); the fix,
+   `event_timestamp >= COALESCE(p_since, '-infinity')`, prunes a concrete window
+   to its partitions while an all-time query still scans all, identical results.
+   See [../design/atlas-scaling.md](../design/atlas-scaling.md). An all-time
+   aggregate is still O(events) — a materialized roll-up is the next lever if
+   all-time reports become hot — but the operational windowed queries now stay
+   flat as history grows.
 
 ## Relation to P2.9
 
 This is the single-node load certification the roadmap's P2.9 calls for: the
 published harness drives the planning targets and commits the numbers, including
-that mass-issued identities are cryptographically valid. The remaining P2.9
-integration is to run the same harness against the HA topology during a rolling
-deploy and one induced failover.
+that mass-issued identities are cryptographically valid. The HA integration —
+the same harness against the HA topology through a rolling deploy and an induced
+failover, holding a verification load — shipped in v9.259 and closed P2.9.

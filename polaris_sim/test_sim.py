@@ -308,6 +308,14 @@ class SubstrateLoadTests(unittest.TestCase):
         self.assertTrue(rep.invariants["C6_zero_knowledge_never_located"])
         self.assertTrue(rep.invariants["C1_verification_events_append_only"])
         self.assertTrue(rep.invariants["signatures_cryptographically_verify"])
+        # v9.260 (S5): the Atlas roll-ups prune the partitioned event table under
+        # the generic plan; the benchmark measures it and fails if it regresses.
+        pp = rep.partition_pruning
+        self.assertGreaterEqual(pp["month_partitions"], 1, "the benchmark needs a monthly partition to test pruning")
+        self.assertLess(pp["recent_window_scanned"], pp["all_time_scanned"],
+                        "a recent window must scan fewer partitions than an all-time query")
+        self.assertTrue(pp["prunes"])
+        self.assertTrue(rep.invariants["atlas_windowed_query_prunes"])
         self.assertTrue(rep.all_invariants_hold)
         self.assertGreaterEqual(rep.scale_counts["jurisdictions"], 20)
 

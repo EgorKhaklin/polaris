@@ -110,7 +110,7 @@ AS $$
             (p_min_lon <= p_max_lon AND ve.longitude BETWEEN p_min_lon AND p_max_lon)
          OR (p_min_lon  > p_max_lon AND (ve.longitude >= p_min_lon OR ve.longitude <= p_max_lon))
       )
-      AND (p_since      IS NULL OR ve.event_timestamp >= p_since)
+      AND (ve.event_timestamp >= COALESCE(p_since, '-infinity'::timestamp))
       AND (p_outcomes   IS NULL OR ve.outcome         = ANY(string_to_array(p_outcomes, ',')))
       AND (p_disclosure IS NULL OR ve.disclosure_level = ANY(string_to_array(p_disclosure, ',')))
       AND (p_contexts   IS NULL OR vc.context_type     = ANY(string_to_array(p_contexts, ',')))
@@ -175,7 +175,7 @@ AS $$
             (p_min_lon <= p_max_lon AND longitude BETWEEN p_min_lon AND p_max_lon)
          OR (p_min_lon  > p_max_lon AND (longitude >= p_min_lon OR longitude <= p_max_lon))
       )
-      AND (p_since       IS NULL OR event_timestamp >= p_since)
+      AND (event_timestamp >= COALESCE(p_since, '-infinity'::timestamp))
       AND (p_event_types IS NULL OR event_type      = ANY(string_to_array(p_event_types, ',')))
       AND (p_agencies    IS NULL OR actor_agency_id::text = ANY(string_to_array(p_agencies, ',')))
     GROUP BY floor(latitude  / p_grid),
@@ -262,7 +262,7 @@ AS $$
             (p_min_lon <= p_max_lon AND ve.longitude BETWEEN p_min_lon AND p_max_lon)
          OR (p_min_lon  > p_max_lon AND (ve.longitude >= p_min_lon OR ve.longitude <= p_max_lon))
       )
-      AND (p_since      IS NULL OR ve.event_timestamp >= p_since)
+      AND (ve.event_timestamp >= COALESCE(p_since, '-infinity'::timestamp))
       AND (p_outcomes   IS NULL OR ve.outcome         = ANY(string_to_array(p_outcomes, ',')))
       AND (p_disclosure IS NULL OR ve.disclosure_level = ANY(string_to_array(p_disclosure, ',')))
       AND (p_contexts   IS NULL OR vc.context_type     = ANY(string_to_array(p_contexts, ',')))
@@ -329,7 +329,7 @@ AS $$
             (p_min_lon <= p_max_lon AND le.longitude BETWEEN p_min_lon AND p_max_lon)
          OR (p_min_lon  > p_max_lon AND (le.longitude >= p_min_lon OR le.longitude <= p_max_lon))
       )
-      AND (p_since       IS NULL OR le.event_timestamp >= p_since)
+      AND (le.event_timestamp >= COALESCE(p_since, '-infinity'::timestamp))
       AND (p_event_types IS NULL OR le.event_type      = ANY(string_to_array(p_event_types, ',')))
       AND (p_agencies    IS NULL OR le.actor_agency_id::text = ANY(string_to_array(p_agencies, ',')))
     ORDER BY le.event_timestamp DESC
@@ -393,7 +393,7 @@ AS $$
             (p_min_lon <= p_max_lon AND ve.longitude BETWEEN p_min_lon AND p_max_lon)
          OR (p_min_lon  > p_max_lon AND (ve.longitude >= p_min_lon OR ve.longitude <= p_max_lon))
       )
-          AND (p_since IS NULL OR ve.event_timestamp >= p_since)
+          AND (ve.event_timestamp >= COALESCE(p_since, '-infinity'::timestamp))
           AND (p_agencies IS NULL OR ve.requesting_agency_id::text = ANY(string_to_array(p_agencies, ',')))
     ),
     l_agg AS (
@@ -406,7 +406,7 @@ AS $$
             (p_min_lon <= p_max_lon AND longitude BETWEEN p_min_lon AND p_max_lon)
          OR (p_min_lon  > p_max_lon AND (longitude >= p_min_lon OR longitude <= p_max_lon))
       )
-          AND (p_since IS NULL OR event_timestamp >= p_since)
+          AND (event_timestamp >= COALESCE(p_since, '-infinity'::timestamp))
           AND (p_agencies IS NULL OR actor_agency_id::text = ANY(string_to_array(p_agencies, ',')))
     )
     SELECT
@@ -632,8 +632,8 @@ AS $$
             (p_min_lon <= p_max_lon AND ve.longitude BETWEEN p_min_lon AND p_max_lon)
          OR (p_min_lon  > p_max_lon AND (ve.longitude >= p_min_lon OR ve.longitude <= p_max_lon))
           )
-          AND ve.event_timestamp >= params.t_start
-          AND ve.event_timestamp <  params.t_end
+          AND ve.event_timestamp >= COALESCE(p_since, '-infinity'::timestamp)
+          AND ve.event_timestamp < CURRENT_TIMESTAMP
           AND (p_outcomes   IS NULL OR ve.outcome         = ANY(string_to_array(p_outcomes, ',')))
           AND (p_disclosure IS NULL OR ve.disclosure_level = ANY(string_to_array(p_disclosure, ',')))
           AND (p_contexts   IS NULL OR vc.context_type     = ANY(string_to_array(p_contexts, ',')))
@@ -659,8 +659,8 @@ AS $$
             (p_min_lon <= p_max_lon AND le.longitude BETWEEN p_min_lon AND p_max_lon)
          OR (p_min_lon  > p_max_lon AND (le.longitude >= p_min_lon OR le.longitude <= p_max_lon))
           )
-          AND le.event_timestamp >= params.t_start
-          AND le.event_timestamp <  params.t_end
+          AND le.event_timestamp >= COALESCE(p_since, '-infinity'::timestamp)
+          AND le.event_timestamp < CURRENT_TIMESTAMP
           AND (p_agencies IS NULL OR le.actor_agency_id::text = ANY(string_to_array(p_agencies, ',')))
         GROUP BY 1
     )
@@ -729,8 +729,8 @@ AS $$
         LEFT JOIN VerificationContext vc ON ve.context_id = vc.context_id,
              params
         WHERE p_kind = 'verification'
-          AND ve.event_timestamp >= params.t_start
-          AND ve.event_timestamp <  params.t_end
+          AND ve.event_timestamp >= COALESCE(p_since, '-infinity'::timestamp)
+          AND ve.event_timestamp < CURRENT_TIMESTAMP
           AND (p_outcomes   IS NULL OR ve.outcome         = ANY(string_to_array(p_outcomes, ',')))
           AND (p_disclosure IS NULL OR ve.disclosure_level = ANY(string_to_array(p_disclosure, ',')))
           AND (p_contexts   IS NULL OR vc.context_type     = ANY(string_to_array(p_contexts, ',')))
@@ -749,8 +749,8 @@ AS $$
             0::BIGINT                                               AS n_zk
         FROM TokenLifecycleEvent le, params
         WHERE p_kind = 'lifecycle'
-          AND le.event_timestamp >= params.t_start
-          AND le.event_timestamp <  params.t_end
+          AND le.event_timestamp >= COALESCE(p_since, '-infinity'::timestamp)
+          AND le.event_timestamp < CURRENT_TIMESTAMP
           AND (p_agencies IS NULL OR le.actor_agency_id::text = ANY(string_to_array(p_agencies, ',')))
         GROUP BY 1
     )
@@ -824,7 +824,7 @@ AS $$
         LEFT JOIN IdentityToken         t ON ve.token_id             = t.token_id
         LEFT JOIN CryptographicAlgorithm ca ON t.algorithm_id        = ca.algorithm_id
         WHERE p_kind = 'verification'
-          AND (p_since      IS NULL OR ve.event_timestamp >= p_since)
+          AND (ve.event_timestamp >= COALESCE(p_since, '-infinity'::timestamp))
           AND (p_outcomes   IS NULL OR ve.outcome         = ANY(string_to_array(p_outcomes, ',')))
           AND (p_disclosure IS NULL OR ve.disclosure_level = ANY(string_to_array(p_disclosure, ',')))
           AND (p_contexts   IS NULL OR vc.context_type     = ANY(string_to_array(p_contexts, ',')))
@@ -843,7 +843,7 @@ AS $$
         FROM TokenLifecycleEvent le
         LEFT JOIN Agency ag ON le.actor_agency_id = ag.agency_id
         WHERE p_kind = 'lifecycle'
-          AND (p_since    IS NULL OR le.event_timestamp >= p_since)
+          AND (le.event_timestamp >= COALESCE(p_since, '-infinity'::timestamp))
           AND (p_agencies IS NULL OR le.actor_agency_id::text = ANY(string_to_array(p_agencies, ',')))
         GROUP BY 1
     )
@@ -919,7 +919,7 @@ AS $$
         LEFT JOIN IdentityToken         t ON ve.token_id             = t.token_id
         LEFT JOIN CryptographicAlgorithm ca ON t.algorithm_id        = ca.algorithm_id
         WHERE p_kind = 'verification'
-          AND (p_since      IS NULL OR ve.event_timestamp >= p_since)
+          AND (ve.event_timestamp >= COALESCE(p_since, '-infinity'::timestamp))
           AND (p_outcomes   IS NULL OR ve.outcome         = ANY(string_to_array(p_outcomes, ',')))
           AND (p_disclosure IS NULL OR ve.disclosure_level = ANY(string_to_array(p_disclosure, ',')))
           AND (p_contexts   IS NULL OR vc.context_type     = ANY(string_to_array(p_contexts, ',')))
@@ -935,7 +935,7 @@ AS $$
         FROM TokenLifecycleEvent le
         LEFT JOIN Agency ag ON le.actor_agency_id = ag.agency_id
         WHERE p_kind = 'lifecycle'
-          AND (p_since    IS NULL OR le.event_timestamp >= p_since)
+          AND (le.event_timestamp >= COALESCE(p_since, '-infinity'::timestamp))
           AND (p_agencies IS NULL OR le.actor_agency_id::text = ANY(string_to_array(p_agencies, ',')))
     ),
     top_rows AS (
@@ -993,7 +993,7 @@ AS $$
         JOIN Agency ag ON ve.requesting_agency_id = ag.agency_id
         LEFT JOIN VerificationContext vc ON ve.context_id = vc.context_id
         WHERE p_kind = 'verification'
-          AND (p_since      IS NULL OR ve.event_timestamp >= p_since)
+          AND (ve.event_timestamp >= COALESCE(p_since, '-infinity'::timestamp))
           AND (p_outcomes   IS NULL OR ve.outcome         = ANY(string_to_array(p_outcomes, ',')))
           AND (p_disclosure IS NULL OR ve.disclosure_level = ANY(string_to_array(p_disclosure, ',')))
           AND (p_contexts   IS NULL OR vc.context_type     = ANY(string_to_array(p_contexts, ',')))
@@ -1005,7 +1005,7 @@ AS $$
         FROM TokenLifecycleEvent le
         JOIN Agency ag ON le.actor_agency_id = ag.agency_id
         WHERE p_kind = 'lifecycle'
-          AND (p_since  IS NULL OR le.event_timestamp >= p_since)
+          AND (le.event_timestamp >= COALESCE(p_since, '-infinity'::timestamp))
           AND (p_search IS NULL OR ag.name ILIKE '%' || p_search || '%'
                                 OR ag.jurisdiction ILIKE '%' || p_search || '%')
         GROUP BY ag.agency_id, ag.name
@@ -1065,7 +1065,7 @@ AS $$
                ve.context_id, ve.outcome, ve.disclosure_level, ve.requestor_location
         FROM VerificationEvent ve
         WHERE p_kind = 'verification'
-          AND (p_since IS NULL OR ve.event_timestamp >= p_since)
+          AND (ve.event_timestamp >= COALESCE(p_since, '-infinity'::timestamp))
           AND (p_cursor_ts IS NULL OR (ve.event_timestamp, ve.event_id) < (p_cursor_ts, COALESCE(p_cursor_id, 2147483647)))
           AND (p_outcomes   IS NULL OR ve.outcome          = ANY(string_to_array(p_outcomes, ',')))
           AND (p_disclosure IS NULL OR ve.disclosure_level  = ANY(string_to_array(p_disclosure, ',')))
@@ -1080,7 +1080,7 @@ AS $$
                le.event_type, le.reason_code
         FROM TokenLifecycleEvent le
         WHERE p_kind = 'lifecycle'
-          AND (p_since IS NULL OR le.event_timestamp >= p_since)
+          AND (le.event_timestamp >= COALESCE(p_since, '-infinity'::timestamp))
           AND (p_cursor_ts IS NULL OR (le.event_timestamp, le.event_id) < (p_cursor_ts, COALESCE(p_cursor_id, 2147483647)))
           AND (p_agencies IS NULL OR le.actor_agency_id::text = ANY(string_to_array(p_agencies, ',')))
         ORDER BY le.event_timestamp DESC, le.event_id DESC
@@ -1182,7 +1182,7 @@ AS $$
         JOIN      Agency              ag ON ve.requesting_agency_id = ag.agency_id
         JOIN      VerificationContext vc ON ve.context_id           = vc.context_id
         WHERE p_kind = 'verification'
-          AND (p_since      IS NULL OR ve.event_timestamp   >= p_since)
+          AND (ve.event_timestamp >= COALESCE(p_since, '-infinity'::timestamp))
           AND (p_outcomes   IS NULL OR ve.outcome            = ANY(string_to_array(p_outcomes, ',')))
           AND (p_disclosure IS NULL OR ve.disclosure_level   = ANY(string_to_array(p_disclosure, ',')))
           AND (p_contexts   IS NULL OR vc.context_type        = ANY(string_to_array(p_contexts, ',')))
@@ -1201,7 +1201,7 @@ AS $$
         FROM TokenLifecycleEvent le
         LEFT JOIN Agency ag ON le.actor_agency_id = ag.agency_id
         WHERE p_kind = 'lifecycle'
-          AND (p_since    IS NULL OR le.event_timestamp >= p_since)
+          AND (le.event_timestamp >= COALESCE(p_since, '-infinity'::timestamp))
           AND (p_agencies IS NULL OR le.actor_agency_id::text = ANY(string_to_array(p_agencies, ',')))
         GROUP BY COALESCE(ag.jurisdiction::TEXT, '(system)')
     )
@@ -1269,7 +1269,7 @@ AS $$
                 (p_min_lon <= p_max_lon AND ve.longitude BETWEEN p_min_lon AND p_max_lon)
              OR (p_min_lon  > p_max_lon AND (ve.longitude >= p_min_lon OR ve.longitude <= p_max_lon))
           )
-          AND (p_since      IS NULL OR ve.event_timestamp   >= p_since)
+          AND (ve.event_timestamp >= COALESCE(p_since, '-infinity'::timestamp))
           AND (p_outcomes   IS NULL OR ve.outcome            = ANY(string_to_array(p_outcomes, ',')))
           AND (p_disclosure IS NULL OR ve.disclosure_level   = ANY(string_to_array(p_disclosure, ',')))
           AND (p_contexts   IS NULL OR vc.context_type        = ANY(string_to_array(p_contexts, ',')))

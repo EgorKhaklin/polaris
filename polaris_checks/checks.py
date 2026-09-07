@@ -4959,6 +4959,48 @@ def check_atlas_console(root: pathlib.Path) -> list[Finding]:
                "zero-knowledge events are counted but never located (C6)")
 
 
+def check_atlas_rollups_prune(root: pathlib.Path) -> list[Finding]:
+    """Roadmap P2.14 S5 (v9.260, benchmark-driven): the Atlas roll-ups filter the
+    monthly-partitioned event tables by event_timestamp, so a windowed query must
+    PRUNE to the relevant partitions. Two SQL shapes silently defeat partition
+    pruning under the GENERIC plan a parameterized statement gets (the app's real
+    path), turning a 'last 24h' query into a scan of every month of history:
+
+      1. `p_since IS NULL OR event_timestamp >= p_since` — the OR-NULL guard.
+      2. `event_timestamp >= params.t_start` — the window reached through a CTE
+         column instead of the parameter, so the planner can't prune on it.
+
+    The fix is `event_timestamp >= COALESCE(p_since, '-infinity'::timestamp)`,
+    which prunes on a concrete since and still scans everything for an all-time
+    (NULL) query. Pin that neither pruning-defeat can return, and that the fix is
+    present. The behaviour itself is proved under a forced generic plan by
+    test_app.AtlasPartitionPruningTests."""
+    atlas = _read(root, "polaris_sql/11_atlas.sql")
+    if not atlas:
+        return _fail("atlas_prune", "polaris_sql/11_atlas.sql is missing")
+    bad_ornull = re.findall(r"p_since\s+IS NULL OR[^)\n]*event_timestamp", atlas)
+    if bad_ornull:
+        return _fail("atlas_prune",
+                     f"{len(bad_ornull)} Atlas roll-up predicate(s) still gate the event_timestamp window "
+                     "with `p_since IS NULL OR ...`, which defeats partition pruning under the generic "
+                     "plan; use `event_timestamp >= COALESCE(p_since, '-infinity'::timestamp)`")
+    if re.search(r"event_timestamp\s*>=\s*params\.t_start", atlas):
+        return _fail("atlas_prune",
+                     "an Atlas time-series roll-up reaches the window through `params.t_start` (a CTE "
+                     "column), which the planner cannot prune on; reference COALESCE(p_since, "
+                     "'-infinity'::timestamp) directly in the WHERE")
+    if "event_timestamp >= COALESCE(p_since" not in atlas:
+        return _fail("atlas_prune",
+                     "the Atlas roll-ups must window on `event_timestamp >= COALESCE(p_since, "
+                     "'-infinity'::timestamp)` so a concrete since prunes partitions and a NULL since "
+                     "still scans all of history")
+    return _ok("atlas_prune",
+               "the Atlas roll-ups window on event_timestamp >= COALESCE(p_since, '-infinity') so a "
+               "concrete window prunes to the relevant monthly partitions under the generic plan the app "
+               "runs, while an all-time (NULL) query still scans every partition (proved under a forced "
+               "generic plan in test_app.AtlasPartitionPruningTests)")
+
+
 # ---------------------------------------------------------------------------
 # Image builds — every container image CI builds goes through
 # scripts/polaris-image-build.sh, which retries a build that failed on someone
@@ -5559,6 +5601,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_migrations_expand_contract,
     check_zero_downtime_deploy,
     check_verification_load_certified,
+    check_atlas_rollups_prune,
     check_helm_reference_profile,
     check_local_clock_convention,
     check_c6_atlas_redacts_zk_location,

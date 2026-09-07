@@ -43,6 +43,35 @@ Their endpoints (`/api/atlas/series`, `/api/atlas/breakdown`) are
 bars in `atlas-console.js` (no charting library, so `script-src 'self'` stays
 strict). The full rebuild plan is [DEVNOTES/atlas-redesign.md](../../DEVNOTES/atlas-redesign.md).
 
+### Partition pruning under the generic plan (v9.260, benchmark-driven)
+
+The event tables are monthly-partitioned by `event_timestamp` (P2.1), so a
+windowed roll-up ("last 24h", "last 7d") should read only the relevant
+partitions, not every month of history. The national benchmark (P2.14) found
+that it didn't: the roll-ups reached the window through
+`p_since IS NULL OR event_timestamp >= p_since` (or, in the time-series
+functions, through a `params` CTE column). Both shapes read fine as SQL, but
+they **defeat partition pruning under the generic plan** a parameterized
+statement gets after a few executions — the path the app actually runs — so a
+recent-window query scanned all N monthly partitions instead of one or two. At a
+year of history that is a 12× read amplification; at the national retention
+horizon, far more.
+
+The fix is one predicate shape, applied across every windowed roll-up:
+
+```sql
+event_timestamp >= COALESCE(p_since, '-infinity'::timestamp)
+```
+
+A concrete `p_since` now prunes to the window's partitions under the generic
+plan; a `NULL` (all-time) query still resolves to `>= -infinity`, which
+correctly matches every partition. The results are identical to before — only
+the plan changed. `check_atlas_rollups_prune` forbids either pruning-defeating
+shape from returning, `test_app.AtlasPartitionPruningTests` proves the pruning
+under a *forced* generic plan, and the benchmark reports the partitions a recent
+window scans versus an all-time query (see
+[../reference/BENCHMARK.md](../reference/BENCHMARK.md)).
+
 ## Data path (the Map view)
 
 ```

@@ -208,6 +208,35 @@ def test_verification_load_certified_check_discriminates(tmp_path):
     assert checks.check_verification_load_certified(tmp_path)[0].level == "FAIL", "must FAIL when the served floor is gone"
 
 
+def test_atlas_rollups_prune_check_discriminates(tmp_path):
+    # P2.14 S5 (v9.260): the roll-ups must window on COALESCE(p_since,'-infinity')
+    # so a concrete since prunes partitions under the generic plan. The good
+    # fixture uses the pruning-friendly predicate; each perturbation reintroduces
+    # a shape that silently defeats pruning.
+    GOOD = ("CREATE FUNCTION atlas_breakdown(p_since TIMESTAMP) RETURNS TABLE(n BIGINT) AS $$\n"
+            "  SELECT count(*) FROM VerificationEvent ve\n"
+            "  WHERE (ve.event_timestamp >= COALESCE(p_since, '-infinity'::timestamp))\n"
+            "  GROUP BY 1;\n$$ LANGUAGE sql STABLE;\n")
+
+    def write(body):
+        f = tmp_path / "polaris_sql" / "11_atlas.sql"
+        f.parent.mkdir(parents=True, exist_ok=True); f.write_text(body)
+
+    write(GOOD)
+    assert checks.check_atlas_rollups_prune(tmp_path)[0].level == "OK", "must PASS on the pruning-friendly fixture"
+    # the OR-NULL guard is back (defeats generic-plan pruning)
+    write(GOOD.replace("(ve.event_timestamp >= COALESCE(p_since, '-infinity'::timestamp))",
+                       "(p_since IS NULL OR ve.event_timestamp >= p_since)"))
+    assert checks.check_atlas_rollups_prune(tmp_path)[0].level == "FAIL", "must FAIL on the p_since IS NULL OR guard"
+    # the window is reached through a CTE column, not the parameter
+    write(GOOD.replace("(ve.event_timestamp >= COALESCE(p_since, '-infinity'::timestamp))",
+                       "(ve.event_timestamp >= params.t_start)"))
+    assert checks.check_atlas_rollups_prune(tmp_path)[0].level == "FAIL", "must FAIL on the params.t_start indirection"
+    # no COALESCE window predicate present at all
+    write("CREATE FUNCTION atlas_breakdown() RETURNS INTEGER AS $$ SELECT 1 $$ LANGUAGE sql;\n")
+    assert checks.check_atlas_rollups_prune(tmp_path)[0].level == "FAIL", "must FAIL when the pruning-friendly predicate is absent"
+
+
 def test_signing_key_generation_check_discriminates(tmp_path):
     scripts = tmp_path / "scripts"
     scripts.mkdir()

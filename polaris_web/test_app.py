@@ -5863,6 +5863,85 @@ class AtlasConsoleAPITests(PolarisTestCase):
         self.assertLess(failtot, alltot, "an outcome filter must narrow the Regions layer")
 
 
+class AtlasPartitionPruningTests(PolarisTestCase):
+    """v9.260 (roadmap P2.14 S5, benchmark-driven): the Atlas roll-ups filter the
+    monthly-partitioned event table by event_timestamp, so a windowed query must
+    PRUNE to the relevant partitions instead of scanning every month of history.
+
+    The pre-v9.260 predicate `p_since IS NULL OR event_timestamp >= p_since` (and
+    the params-CTE indirection in the time-series functions) defeated pruning
+    under the GENERIC plan a prepared/parameterized statement gets after a few
+    executions — the app's real execution path — so a 'last 24h' query scanned
+    all N monthly partitions. The fix is `event_timestamp >= COALESCE(p_since,
+    '-infinity')`, which prunes on a concrete since and still scans everything for
+    an all-time (NULL) query. This test pins that under a forced generic plan."""
+
+    def _generic_plan(self, prepare_sql, execute_sql):
+        """Return the EXPLAIN text of `execute_sql` under a FORCED generic plan
+        (the worst case the app hits), so the assertion is about the plan a
+        parameterized call actually gets, not a one-off custom plan."""
+        conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SET plan_cache_mode = force_generic_plan")
+                cur.execute(prepare_sql)
+                cur.execute("EXPLAIN (COSTS OFF) " + execute_sql)
+                return "\n".join(r['QUERY PLAN'] for r in cur.fetchall())
+        finally:
+            conn.close()
+
+    def _month_partitions(self):
+        conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT inhrelid::regclass::text AS name FROM pg_inherits "
+                    " WHERE inhparent='verificationevent'::regclass "
+                    "   AND inhrelid::regclass::text ~ 'verificationevent_[0-9]'")
+                return [r['name'] for r in cur.fetchall()]
+        finally:
+            conn.close()
+
+    def test_breakdown_prunes_partitions_under_generic_plan(self):
+        months = self._month_partitions()
+        self.assertTrue(months, "the test needs at least one monthly partition to prove pruning")
+        # A far-future window cannot match any month partition (only the DEFAULT,
+        # which is unprunable). Under the generic plan the fixed predicate must
+        # therefore drop every month partition from the plan.
+        future = self._generic_plan(
+            "PREPARE bd_future(timestamp) AS SELECT * FROM atlas_breakdown('agency', $1, 50)",
+            "EXECUTE bd_future((CURRENT_TIMESTAMP + INTERVAL '100 years')::timestamp)")
+        for m in months:
+            self.assertNotIn(m, future,
+                f"a far-future window must PRUNE {m}; the generic plan still scans it "
+                "(the p_since IS NULL OR ... pruning-defeat has regressed)")
+
+    def test_all_time_query_still_scans_every_partition(self):
+        # The other half of correctness: a NULL (all-time) window must NOT prune —
+        # it has to count every event, so every month partition stays in the plan.
+        months = self._month_partitions()
+        self.assertTrue(months)
+        alltime = self._generic_plan(
+            "PREPARE bd_all(timestamp) AS SELECT * FROM atlas_breakdown('agency', $1, 50)",
+            "EXECUTE bd_all(NULL)")
+        for m in months:
+            self.assertIn(m, alltime,
+                f"an all-time query must still scan {m}; COALESCE(NULL,'-infinity') "
+                "must match every partition")
+
+    def test_volume_series_prunes_under_generic_plan(self):
+        # The time-series function reached the window through a params CTE, which
+        # also blocked pruning; the fix references the parameter directly.
+        months = self._month_partitions()
+        self.assertTrue(months)
+        future = self._generic_plan(
+            "PREPARE vs_future(timestamp) AS SELECT * FROM atlas_volume_series($1, 60)",
+            "EXECUTE vs_future((CURRENT_TIMESTAMP + INTERVAL '100 years')::timestamp)")
+        for m in months:
+            self.assertNotIn(m, future,
+                f"a far-future window must PRUNE {m} from atlas_volume_series")
+
+
 class AtlasFilterAPITests(PolarisTestCase):
     """v8.3 (A+C): the temporal-lens + operational-filter primitives must
     survive the lifetime of the schema. These tests lock in:

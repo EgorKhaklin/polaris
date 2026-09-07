@@ -5,6 +5,44 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.260 — 2026-09-07 (Atlas roll-ups prune the partitioned event table)
+
+The national benchmark's first hardening lead was the scan-based Atlas roll-ups.
+Chasing it found the real cause: the roll-ups did not PRUNE the monthly-partitioned
+event table, so a windowed query ("last 24h") scanned every month of history
+instead of one partition. This ship closes that, benchmark-driven — the first
+ship of the P2.14 hardening loop.
+
+**The bug was invisible in a custom plan and real in the generic one.** The
+roll-ups reached the window through `p_since IS NULL OR event_timestamp >= p_since`
+(and, in the time-series functions, through a `params` CTE column). With a
+literal `since`, PostgreSQL prunes; but a parameterized statement gets a GENERIC
+plan after a few executions — the path the app actually runs — and under it both
+shapes defeat pruning entirely. A forced-generic EXPLAIN showed a recent-window
+`atlas_breakdown` scanning all N monthly partitions. At a year of history that is
+a 12x read amplification; at the national retention horizon, far more.
+
+**One predicate shape fixes every roll-up.** `event_timestamp >= COALESCE(p_since,
+'-infinity'::timestamp)` prunes a concrete window to its partitions under the
+generic plan, while a NULL (all-time) query resolves to `>= -infinity` and
+correctly scans them all. The results are identical to before — only the plan
+changed — so every existing Atlas test passes unchanged. Applied across
+`atlas_timeline`, `atlas_volume_series`, `atlas_breakdown`, `atlas_crosstab`,
+`atlas_geo_jurisdictions`, `atlas_hexbin`, `atlas_records` and `atlas_agency_facet`;
+it deploys through `polaris-migrate.sh --sync-objects` like any object change.
+
+**Proven, and re-benchmarked.** `check_atlas_rollups_prune` (invariant #128)
+forbids either pruning-defeating shape from returning; `AtlasPartitionPruningTests`
+proves the pruning under a *forced generic plan* (a far-future window drops every
+month partition; an all-time query keeps them all); and the national benchmark
+now measures the partitions a recent window scans versus an all-time query and
+fails the run if pruning regresses (`atlas_windowed_query_prunes`). An all-time
+aggregate is still O(events) — a materialized roll-up remains the next lever if
+all-time reports become hot — but the operational windowed queries now stay flat
+as history grows. See [docs/design/atlas-scaling.md](docs/design/atlas-scaling.md).
+
+---
+
 ## v9.259 — 2026-09-07 (Verification holds through HA: rolling deploy drops zero, failover recovers)
 
 v9.258 made real ML-DSA-65 verification fast (single-witness verify-at-use) and
