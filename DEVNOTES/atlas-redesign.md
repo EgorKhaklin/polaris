@@ -2,7 +2,7 @@
 
 The sub-roadmap for rebuilding the Atlas into a professional, scale-ready
 analytical console. Rewritten 2026-09-06 (at v9.249) after direction to raise
-the bar to Palantir / TradingView grade. One ship per version, tracked here.
+the bar to professional operational-intelligence grade. One ship per version, tracked here.
 
 ## The bar (VANTA's standing directive, 2026-09-06)
 
@@ -10,7 +10,7 @@ The whole thing must feel **professional, real, and production-ready**: software
 a national authority actually operates, not a demo or a game HUD. See the
 `ui-quality-bar` memory. Concretely:
 
-- **Palantir-grade investigation, TradingView-grade analytics.** Real tools,
+- **Investigation-grade tooling, analytics-terminal depth.** Real tools,
   options, configurability; coordinated, cross-filtered panels; saved state;
   entity-centric drill-down.
 - **Scale-first.** Designed for millions of tokens and thousands-plus of

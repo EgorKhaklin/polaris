@@ -127,7 +127,7 @@ the check layer is 125; the app is 76 routes.
 ## v9.250 — 2026-09-06 (Atlas Breakdown, scale-hardened)
 
 Roadmap P2.3, ship 3. Direction came in to raise the whole Atlas to
-Palantir / TradingView grade, professional and built for millions of tokens and
+professional, production grade, built for millions of tokens and
 thousands-plus of agencies (see the rewritten arc in
 [DEVNOTES/atlas-redesign.md](DEVNOTES/atlas-redesign.md) and the `ui-quality-bar`
 standard). Testing the Breakdown at 54 agencies proved the point: it became a
