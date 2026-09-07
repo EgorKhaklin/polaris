@@ -5,6 +5,45 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.264 — 2026-09-07 (Two integrity fixes: issuance can't degrade to one witness; usable is decided on fresh state)
+
+Two soundness gaps in the verification claims, found in review, are closed here.
+
+**Issuance may not silently degrade to one witness.** The claim is that every
+stored production signature was independently verified by two implementations
+(liboqs AND OpenSSL/cryptography). But `verify_both` falls back to the lone
+primary when the second witness library is unavailable — fine for the
+re-verification and display paths, where the signature was already two-witnessed
+at issuance, but NOT for issuance itself, where the claim is made. If the witness
+were missing at issuance time, a signature could be stored as "two-witnessed"
+having been checked by only one implementation. Fixed: issuance passes
+`verify_both(..., require_witness=True)` (a missing witness is a refusal, not a
+downgrade) and `signature_with_key_for_token` refuses up front when
+`second_witness_available()` is false. Real ML-DSA-65 is only persisted when the
+second witness genuinely ran. The verify-at-use and display paths still tolerate
+a missing witness, since they only re-confirm an already-two-witnessed signature.
+
+**`usable` is decided on fresh state, not a stale replica.** `GET
+/api/tokens/<id>/verify` is replica-routed for throughput. Signature authenticity
+is a property of IMMUTABLE material (the signed value, the signature bytes, the
+stored key), so reading it from a replica is safe. But `usable` also asks "is
+this token authorized NOW?", and a revocation flips `status` to REVOKED on the
+primary; a replica inside its staleness window could still show ACTIVE for a
+just-revoked token. Fixed by separating the two: the signature material stays
+replica-eligible, but the `status` that decides `usable` is pinned to the PRIMARY
+(`query(..., primary=True)`, a new option), and the response carries
+`status_source: primary`. The primary read is a tiny indexed point-lookup and the
+ML-DSA verify touches no database, so throughput is preserved.
+
+`check_pqc_signing_wired` now pins both: issuance requires the witness
+(`require_witness=True` + the up-front refusal), and the verify endpoint decides
+`usable` on a primary-read status. The detection test perturbs each. New tests
+prove issuance refuses without the witness, that `require_witness=True` refuses a
+missing witness while the default path still tolerates it, and that the verify
+response is `status_source: primary`. Full suite green.
+
+---
+
 ## v9.263 — 2026-09-07 (The UI harness runs on every push)
 
 v9.262 built the headless-browser UI harness but left it on demand. This wires it

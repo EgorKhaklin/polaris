@@ -491,9 +491,10 @@ Returns JSON:
 | field | type | notes |
 |---|---|---|
 | `token_id` | int | echoes the path |
-| `signature_valid` | bool | the active signature verifies |
-| `status` | string | the token's lifecycle status |
-| `usable` | bool | `signature_valid` AND `status` is `ACTIVE` |
+| `signature_valid` | bool | the active signature verifies (authenticity; read from a replica is safe, the material is immutable) |
+| `status` | string | the token's current lifecycle status, read from the PRIMARY |
+| `status_source` | string | always `primary` — the `usable` decision is made on fresh state, never a stale replica |
+| `usable` | bool | `signature_valid` AND `status` is `ACTIVE`, decided on the primary-fresh status |
 | `witnesses` | string | always `single` for this endpoint |
 | `signatures` | array | per-signature `{algorithm, valid, real_signature}` |
 

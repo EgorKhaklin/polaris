@@ -339,6 +339,39 @@ class SecondWitnessTests(unittest.TestCase):
         finally:
             pqc_signing._verify_second_witness = orig
 
+    # v9.264 — issuance may not silently degrade to one witness.
+    def test_verify_both_require_witness_refuses_a_missing_witness(self):
+        # With require_witness=True (the issuance self-check), a witness that
+        # cannot run is a REFUSAL, not a downgrade to the lone primary...
+        orig = pqc_signing._verify_second_witness
+        pqc_signing._verify_second_witness = lambda *a, **k: None
+        try:
+            self.assertFalse(pqc_signing.verify_both(
+                self._msg, self._sig_hex, self._pk_hex, require_witness=True))
+            # ...while the default (re-verification / display) path still tolerates
+            # it, since the signature was already two-witnessed at issuance.
+            self.assertTrue(pqc_signing.verify_both(self._msg, self._sig_hex, self._pk_hex))
+        finally:
+            pqc_signing._verify_second_witness = orig
+
+    def test_issuance_refuses_when_the_second_witness_is_unavailable(self):
+        # Real issuance is where the two-witness claim is MADE; it may only be made
+        # if the witness is actually present. Simulate it missing and confirm
+        # signature_with_key_for_token REFUSES rather than issuing on one witness.
+        saved_env = os.environ.get("POLARIS_USE_REAL_PQC")
+        saved_avail = pqc_signing._WITNESS_AVAILABLE
+        os.environ["POLARIS_USE_REAL_PQC"] = "1"
+        pqc_signing._WITNESS_AVAILABLE = False
+        try:
+            with self.assertRaises(pqc_signing.SigningError):
+                pqc_signing.signature_with_key_for_token("TKN-NO-WITNESS")
+        finally:
+            pqc_signing._WITNESS_AVAILABLE = saved_avail
+            if saved_env is None:
+                os.environ.pop("POLARIS_USE_REAL_PQC", None)
+            else:
+                os.environ["POLARIS_USE_REAL_PQC"] = saved_env
+
 
 class SecondWitnessDegradationTests(unittest.TestCase):
     """The graceful-degradation contract is testable even without the witness

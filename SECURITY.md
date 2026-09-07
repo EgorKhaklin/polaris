@@ -151,5 +151,5 @@ policy.
 ---
 
 *Maintainer: Egor Khaklin (VANTA)*
-*Last updated: 2026-09-05 (v9.243)*
+*Last updated: 2026-09-07 (v9.264)*
 *Machine-readable: the live `/.well-known/security.txt` route (RFC 9116)*

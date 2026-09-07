@@ -358,15 +358,33 @@ def check_pqc_signing_wired(root: pathlib.Path) -> list[Finding]:
         return _fail("pqc_wired",
                      "issuance (signature_with_key_for_token) must TWO-witness its signature before "
                      "persisting it (verify_both); single-witness is the verify-at-use path only")
+    # v9.264: issuance must not silently degrade to one witness. Its verify_both
+    # self-check requires the witness (a missing witness is a refusal, not a
+    # downgrade), and it refuses up front when the witness is unavailable.
+    if issue_fn and ("require_witness=True" not in issue_fn.group(0)
+                     or "second_witness_available()" not in issue_fn.group(0)):
+        return _fail("pqc_wired",
+                     "issuance must REQUIRE the second witness (verify_both(..., require_witness=True) and "
+                     "an up-front second_witness_available() refusal), so a stored signature is never "
+                     "certified two-witnessed when only one implementation ran")
     if "/api/tokens/<int:tok_id>/verify" not in app:
         return _fail("pqc_wired",
                      "app.py must expose the verify-at-use endpoint /api/tokens/<id>/verify (the "
                      "throughput verification path)")
     verify_ep = app.split("def api_token_verify", 1)
-    if len(verify_ep) == 2 and not re.search(r"witnesses\s*=\s*['\"]single['\"]", verify_ep[1][:1800]):
+    ep_body = verify_ep[1][:3600] if len(verify_ep) == 2 else ""
+    if len(verify_ep) == 2 and not re.search(r"witnesses\s*=\s*['\"]single['\"]", ep_body):
         return _fail("pqc_wired",
                      "the verify-at-use endpoint must use single-witness verification "
                      "(witnesses='single'), the ~10x throughput path")
+    # v9.264: authenticity is replica-safe (immutable material), but the `usable`
+    # AUTHORIZATION decision must be made on FRESH status from the primary, or a
+    # replica's lag window could report a just-revoked token as usable.
+    if len(verify_ep) == 2 and ("primary=True" not in ep_body or "status" not in ep_body):
+        return _fail("pqc_wired",
+                     "the verify-at-use endpoint must read the token's current status from the PRIMARY "
+                     "(query(..., primary=True)) for its `usable` decision; a stale replica status could "
+                     "report a revoked token as usable")
     return _ok("pqc_wired",
                "single, bulk, and uc6-migration signatures all route through the pqc_signing module; "
                "bulk stores a staged real signature and refuses an unsigned row (no placeholder literal); "

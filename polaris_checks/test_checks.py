@@ -107,14 +107,16 @@ def test_pqc_wired_check_fails_when_issuance_bypasses_signing_module(tmp_path):
            "@app.route('/api/tokens/<int:tok_id>/verify')\n"
            "def api_token_verify(tok_id):\n"
            "    ok = pqc_signing.verify_stored_signature(tv, sig, pk, witnesses='single')\n"
-           "    return jsonify(signature_valid=ok)\n")
+           "    status = query('SELECT status ...', (tok_id,), fetch='one', primary=True)\n"
+           "    return jsonify(signature_valid=ok, status=status, usable=(ok and status=='ACTIVE'))\n")
     SCHEMA = ("CREATE TABLE IF NOT EXISTS BulkEnrollmentStaging (\n"
               "  staging_id BIGSERIAL PRIMARY KEY, batch_id INTEGER, token_value VARCHAR(128) NOT NULL,\n"
               "  signature_bytes BYTEA, signing_public_key_hex TEXT\n);\n")
-    # issuance two-witnesses before persisting; verify-at-use is single-witness.
+    # issuance two-witnesses before persisting, REQUIRING the witness; verify-at-use is single-witness.
     PQC = ("def signature_with_key_for_token(tv):\n"
+           "    if not second_witness_available(): raise SigningError('need the second witness')\n"
            "    r = sign(tv)\n"
-           "    if not verify_both(tv, r.sig, r.pk): raise SigningError('two-witness self-verify failed')\n"
+           "    if not verify_both(tv, r.sig, r.pk, require_witness=True): raise SigningError('two-witness self-verify failed')\n"
            "    return r.sig, r.label, r.pk\n")
     good = {"polaris_sql/05_procedures.sql": PROC, "polaris_web/app.py": APP,
             "polaris_sql/01_schema.sql": SCHEMA, "polaris_web/pqc_signing.py": PQC}
@@ -152,6 +154,15 @@ def test_pqc_wired_check_fails_when_issuance_bypasses_signing_module(tmp_path):
     # the verify endpoint uses the slow two-witness path (not the throughput single-witness)
     write({"polaris_web/app.py": APP.replace("witnesses='single'", "witnesses='both'")})
     assert checks.check_pqc_signing_wired(tmp_path)[0].level == "FAIL", "must FAIL when verify-at-use is not single-witness"
+    # v9.264: issuance stops REQUIRING the second witness (silently degrades to one)
+    write({"polaris_web/pqc_signing.py": PQC.replace(", require_witness=True", "")})
+    assert checks.check_pqc_signing_wired(tmp_path)[0].level == "FAIL", "must FAIL when issuance does not require the witness"
+    write({"polaris_web/pqc_signing.py": PQC.replace(
+        "    if not second_witness_available(): raise SigningError('need the second witness')\n", "")})
+    assert checks.check_pqc_signing_wired(tmp_path)[0].level == "FAIL", "must FAIL without the up-front witness-availability refusal"
+    # v9.264: the verify endpoint decides `usable` on a possibly-stale replica status
+    write({"polaris_web/app.py": APP.replace(", fetch='one', primary=True", ", fetch='one'")})
+    assert checks.check_pqc_signing_wired(tmp_path)[0].level == "FAIL", "must FAIL when usable is not decided on primary-fresh status"
 
 
 def test_verification_load_certified_check_discriminates(tmp_path):

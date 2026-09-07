@@ -543,7 +543,7 @@ def _run_query(conn, sql, params, fetch):
             return cur.fetchone()
 
 
-def query(sql, params=None, fetch='all', readonly=False):
+def query(sql, params=None, fetch='all', readonly=False, primary=False):
     """
     Run a parameterized query and return results.
     fetch: 'all' returns list of dicts; 'one' returns single dict or None;
@@ -553,10 +553,16 @@ def query(sql, params=None, fetch='all', readonly=False):
               fall back to the primary (fresh). Only for reads with no
               read-your-writes requirement (the atlas, lists, exports). A route
               decorated @replica_reads sets this for its reads implicitly.
+    primary: force the PRIMARY even inside a @replica_reads route (v9.264). For a
+             read whose freshness is load-bearing NOW — a current-authorization
+             check like "is this token still ACTIVE?" — where a replica's
+             staleness window could return a stale ACTIVE for a just-revoked
+             token. Authenticity reads (immutable signature bytes) stay replica-
+             eligible; only the authorization read is pinned to the primary.
     """
     # a @replica_reads route marks all its reads eligible; a write (fetch that
     # commits) is never routed to the read-only replica even so.
-    prefer = readonly or (DB_CONFIG_REPLICA is not None and _replica_reads_requested())
+    prefer = (not primary) and (readonly or (DB_CONFIG_REPLICA is not None and _replica_reads_requested()))
     if prefer and fetch in ('all', 'one') and DB_CONFIG_REPLICA is not None:
         conn = None
         try:
@@ -4590,14 +4596,26 @@ def api_token_verify(tok_id):
     two-witnessed the signature before persisting it, so one witness at use
     re-confirms authenticity; see docs/design/verification-scaling.md.
 
-    Verification uses only the PUBLIC key stored with the signature — no custody,
-    no HSM, no private key — so this route parallelizes across gunicorn workers
-    and HA replicas with no shared state. Replica-routed (a read).
+    AUTHENTICITY vs AUTHORIZATION (v9.264). Two different questions with two
+    different freshness needs. Signature authenticity is a property of IMMUTABLE
+    material — the signed token_value, the signature bytes, the stored public key
+    never change once issued — so it is safe to read from a replica; a lagging
+    replica cannot make an authentic signature look forged or vice versa. But
+    "is this token usable NOW?" is a CURRENT-AUTHORIZATION question, and status
+    changes (a revocation flips it to REVOKED on the primary). A replica within
+    its staleness window could still show ACTIVE for a token revoked seconds ago.
+    So the authenticity read stays replica-eligible while the authorization read
+    (status) is pinned to the PRIMARY, and `usable` is decided on that fresh
+    state. The primary read is a tiny indexed point-lookup; the expensive part
+    (the ML-DSA verify) touches no database at all, so throughput is preserved.
 
-    Returns whether the signature is authentic, whether the token is currently
-    usable (signature valid AND status ACTIVE), and the per-signature results."""
+    Single-witness verification (~10x the two-witness issuance check); sound
+    because issuance already two-witnessed the signature before persisting it.
+    See docs/design/verification-scaling.md."""
+    # Authenticity material — immutable, so replica-eligible (this route is
+    # @replica_reads). It deliberately does NOT read status here.
     rows = query("""
-        SELECT it.token_value, it.status,
+        SELECT it.token_value,
                ts.signature_bytes, ts.signing_public_key_hex, alg.name AS algorithm
         FROM   IdentityToken it
         JOIN   TokenSignature ts  ON ts.token_id = it.token_id AND ts.deprecation_date IS NULL
@@ -4607,8 +4625,14 @@ def api_token_verify(tok_id):
     if not rows:
         return jsonify(error='no such token, or it has no active signature'), 404
 
+    # Current authorization — freshness is load-bearing, so read the PRIMARY even
+    # though the route is replica-routed: a just-revoked token must not read as
+    # usable within the replica's lag window.
+    status_row = query("SELECT status FROM IdentityToken WHERE token_id = %s",
+                       (tok_id,), fetch='one', primary=True)
+    status = status_row['status'] if status_row else None
+
     token_value = rows[0]['token_value']
-    status = rows[0]['status']
     signatures = []
     all_valid = True
     for r in rows:
@@ -4625,8 +4649,9 @@ def api_token_verify(tok_id):
 
     return jsonify(
         token_id=tok_id,
-        signature_valid=all_valid,
-        status=status,
+        signature_valid=all_valid,          # authenticity (replica-safe)
+        status=status,                      # current authorization (primary-fresh)
+        status_source='primary',
         usable=(all_valid and status == 'ACTIVE'),
         witnesses='single',
         signatures=signatures,

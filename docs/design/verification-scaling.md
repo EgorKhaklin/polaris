@@ -19,6 +19,16 @@ two-witnesses the signature it just produced and **refuses to persist it** unles
 both implementations accept it. So a stored real signature is, by construction,
 known to verify under both liboqs and OpenSSL.
 
+That guarantee only holds if the second witness actually ran, so issuance must
+not silently degrade to one (v9.264). By default `verify_both` falls back to the
+lone primary when the witness library is unavailable — fine for the
+re-verification and display paths, where the signature was already two-witnessed
+at issuance. But issuance passes `require_witness=True`: a missing witness there
+is a **refusal**, and `signature_with_key_for_token` additionally refuses up front
+when `second_witness_available()` is false. A real ML-DSA-65 signature is only
+persisted when the second witness genuinely participated — never certified
+two-witnessed on the strength of one implementation.
+
 ## Single-witness verify-at-use
 
 Because issuance already established two-witness validity, **verification at use**
@@ -63,6 +73,21 @@ valid AND status ACTIVE), and the per-signature result. This is the
 throughput-oriented verification capability (a seed of the roadmap's P3.4
 relying-party verification API); the login-gated `/tokens/<id>` display page
 keeps the strict two-witness check since it verifies one signature per view.
+
+**Authenticity is replica-safe; authorization is not (v9.264).** The endpoint
+answers two different questions with two different freshness needs.
+*Authenticity* — does this signature verify against its stored public key — is a
+property of IMMUTABLE material: the signed `token_value`, the signature bytes and
+the stored key never change once issued, so a lagging replica can neither forge
+authenticity nor deny it. That read stays replica-eligible. But *is this token
+usable NOW* is a CURRENT-AUTHORIZATION question, and a revocation flips `status`
+to REVOKED on the primary; a replica inside its staleness window could still show
+ACTIVE for a token revoked seconds ago. So the endpoint splits the reads: the
+signature material comes from the replica, but the `status` that decides `usable`
+is pinned to the PRIMARY (`query(..., primary=True)`) and the response carries
+`status_source: primary`. The primary read is a tiny indexed point-lookup, and
+the expensive ML-DSA verify touches no database, so throughput is preserved while
+`usable` is never decided on stale state.
 
 ## Under HA, failover, and rolling deploys
 

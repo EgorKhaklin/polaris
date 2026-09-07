@@ -8163,6 +8163,9 @@ class TokenVerifyTests(PolarisTestCase):
         self.assertTrue(data['signature_valid'], "issued token's signature must verify")
         self.assertEqual(data['status'], 'ACTIVE')
         self.assertTrue(data['usable'])
+        # v9.264: the authorization (status) that decides `usable` is read from
+        # the PRIMARY, not a possibly-stale replica.
+        self.assertEqual(data['status_source'], 'primary')
         # The load-bearing distinction of this endpoint: it is the single-witness
         # verify-AT-USE path, not the two-witness issuance check.
         self.assertEqual(data['witnesses'], 'single')
@@ -8194,6 +8197,9 @@ class TokenVerifyTests(PolarisTestCase):
             conn.commit()
         after = self.client.get(f'/api/tokens/{tok_id}/verify').get_json()
         self.assertEqual(after['status'], 'REVOKED')
+        self.assertEqual(after['status_source'], 'primary',
+                         "the usable decision must be made on fresh PRIMARY status, "
+                         "not a possibly-stale replica")
         self.assertTrue(after['signature_valid'],
                         "the signature itself is unchanged by revocation")
         self.assertFalse(after['usable'],

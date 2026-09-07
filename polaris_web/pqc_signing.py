@@ -334,15 +334,30 @@ def signature_with_key_for_token(token_value: str) -> tuple:
         )
     if flag_set:
         # flag_set AND _OQS_AVAILABLE (otherwise we raised above)
+        # v9.264: real issuance is where the two-witness claim is MADE ("every
+        # stored production signature was independently verified by two
+        # implementations"). It may only be made if the second witness is
+        # actually present, so refuse up front when it is not — rather than let
+        # verify_both silently fall back to the lone primary. (The verify-at-use
+        # and display paths still tolerate a missing witness; issuance does not.)
+        if not second_witness_available():
+            raise SigningError(
+                "real ML-DSA-65 issuance requires the independent second witness "
+                "(cryptography/OpenSSL MLDSA65) so every stored signature is genuinely "
+                "two-witnessed; it is unavailable "
+                f"({_WITNESS_IMPORT_ERROR or 'no ML-DSA support'}). Install cryptography>=48 on "
+                "OpenSSL 3.5+, or use the placeholder path (unset POLARIS_USE_REAL_PQC).")
         result = sign(token_value.encode("utf-8"))
         # Enforce verification on the issuance path: the signature we just
         # produced MUST verify against its own public key before it is handed to
         # the DB. v9.133 — verify with BOTH witnesses (liboqs + the independent
-        # cryptography/OpenSSL impl); they must AGREE. A real signature that fails
-        # to self-verify means broken key material or liboqs, and a two-witness
-        # DISAGREEMENT means one implementation is wrong — either way, refuse to
-        # persist a signature the two independent verifiers do not both accept.
-        if not verify_both(token_value.encode("utf-8"), result.signature_hex, result.public_key_hex):
+        # cryptography/OpenSSL impl); they must AGREE. require_witness=True (v9.264)
+        # makes a missing witness a REFUSAL, not a downgrade to one implementation:
+        # a real signature that fails to self-verify means broken key material or
+        # liboqs, and a two-witness DISAGREEMENT means one implementation is wrong —
+        # either way, refuse to persist a signature the two verifiers do not both accept.
+        if not verify_both(token_value.encode("utf-8"), result.signature_hex,
+                           result.public_key_hex, require_witness=True):
             raise SigningError(
                 "produced ML-DSA-65 signature failed two-witness self-verification; refusing to issue")
         return bytes.fromhex(result.signature_hex), result.algorithm_name, result.public_key_hex
@@ -459,18 +474,31 @@ def _verify_second_witness(message: bytes, signature_hex: str, public_key_hex: s
         return False
 
 
-def verify_both(message: bytes, signature_hex: str, public_key_hex: str) -> bool:
+def verify_both(message: bytes, signature_hex: str, public_key_hex: str,
+                *, require_witness: bool = False) -> bool:
     """Two-witness ML-DSA-65 verify (v9.133): the primary (liboqs) AND an
     independent second witness (cryptography/OpenSSL) must AGREE the signature is
     valid. A DISAGREEMENT (one accepts, one rejects) is a cryptographic red flag —
     a bug or compromise in one implementation, or tampering a lone verifier would
-    miss — so the verdict is False and the disagreement is logged loudly. When the
-    witness library is unavailable, the lone primary verdict stands (no worse than
-    before v9.133). Raises PQCUnavailableError if the PRIMARY (oqs) is unavailable.
+    miss — so the verdict is False and the disagreement is logged loudly.
+
+    When the witness library is unavailable it returns None; by default the lone
+    primary verdict then stands (no worse than before v9.133), which is fine for
+    the re-verification (display) path. But issuance passes ``require_witness=True``
+    (v9.264): a stored signature may only claim to be two-witnessed if the second
+    witness actually ran, so a missing witness is a REFUSAL, not a silent
+    downgrade to one implementation. Raises PQCUnavailableError if the PRIMARY
+    (oqs) is unavailable.
     """
     primary = verify(message, signature_hex, public_key_hex)
     witness = _verify_second_witness(message, signature_hex, public_key_hex)
     if witness is None:
+        if require_witness:
+            sys.stderr.write(
+                "PQC SECOND WITNESS UNAVAILABLE on a required two-witness check "
+                "(issuance): refusing to certify a signature as two-witnessed when "
+                "only one implementation verified it.\n")
+            return False
         return primary
     if primary != witness:
         sys.stderr.write(
