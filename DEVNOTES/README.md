@@ -15,6 +15,7 @@ are assessor-facing material and were filed where an assessor would not look.
 | [known-gotchas.md](known-gotchas.md) | Things that have already cost an hour: environment quirks, tool behaviour, and the traps in this codebase |
 | [record.md](record.md) | The project record: the completed arcs and the deployment phase log, moved out of MISSION.md at v9.195 |
 | [presentation-plan.md](presentation-plan.md) | The sub-roadmap for the presentation pass: every ship, its status, and the ordered changes it carries |
+| [athena-ontology-assessment.md](athena-ontology-assessment.md) | The adversarial assessment of an operational ontology (Athena): model power and rules, never a graph of people; verdict, constraints, MVP, and kill criteria (roadmap P6.8) |
 
 ## Where does something new go
 
