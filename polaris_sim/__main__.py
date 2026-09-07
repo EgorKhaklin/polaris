@@ -118,6 +118,40 @@ def cmd_run(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_benchmark(args: argparse.Namespace) -> int:
+    from . import benchmark
+    conn = _connect()
+    try:
+        rep = benchmark.run_benchmark(
+            conn, scale_divisor=args.scale, verifications=args.events,
+            lifecycle=args.lifecycle, seed=args.seed, latency_samples=args.latency_samples)
+    finally:
+        conn.close()
+
+    if args.json:
+        print(json.dumps(rep.to_dict()))
+    else:
+        e, v, lat = rep.enrollment, rep.verification, rep.write_latency_ms
+        print(f"Polaris benchmark  scale 1:{rep.scale_divisor}  seed {rep.seed}  {rep.host}  {rep.timestamp}")
+        print(f"  enrollment    : {e['people']:,} people @ {e['per_sec']:,.0f}/s")
+        print(f"  verifications : {v['events']:,} @ {v['per_sec']:,.0f}/s "
+              f"(+{v['revocations']} revocations)")
+        print(f"  write latency : p50 {lat.p50} ms  p95 {lat.p95} ms  p99 {lat.p99} ms  (n={lat.n})")
+        print(f"  Atlas at scale ({rep.scale_counts.get('verification_events', 0):,} events):")
+        for name, ms in rep.atlas_query_ms.items():
+            print(f"      {name:<26}: {ms:>8.1f} ms")
+        print(f"  invariants under load:")
+        for name, ok in rep.invariants.items():
+            print(f"      {name:<40}: {'HOLD' if ok else 'VIOLATED'}")
+    if args.report:
+        with open(args.report, "w", encoding="utf-8") as fh:
+            json.dump(rep.to_dict(), fh, indent=2)
+        if not args.json:
+            print(f"  report written: {args.report}")
+    # A benchmark that broke an invariant under load is a failure.
+    return 0 if rep.all_invariants_hold else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="polaris_sim",
                                 description="Polaris national simulation and benchmark harness.")
@@ -143,6 +177,19 @@ def build_parser() -> argparse.ArgumentParser:
     r.add_argument("--batch-size", type=int, default=10000,
                    help="rows per COPY batch (default 10000)")
     r.add_argument("--json", action="store_true", help="emit a JSON summary")
+
+    m = sub.add_parser("benchmark", help="build + stream + measure, and certify invariants under load")
+    m.add_argument("--scale", type=int, default=1000,
+                   help="downscale divisor for the substrate (default 1000)")
+    m.add_argument("--events", type=int, default=500000,
+                   help="verifications to stream (default 500000)")
+    m.add_argument("--lifecycle", type=int, default=100,
+                   help="token revocations through uc8_revoke_token (default 100)")
+    m.add_argument("--seed", type=int, default=42, help="deterministic seed (default 42)")
+    m.add_argument("--latency-samples", type=int, default=500,
+                   help="single-write latency samples (default 500)")
+    m.add_argument("--report", metavar="PATH", help="write the JSON report to PATH")
+    m.add_argument("--json", action="store_true", help="emit the JSON report to stdout")
     return p
 
 
@@ -152,6 +199,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_build(args)
     if args.command == "run":
         return cmd_run(args)
+    if args.command == "benchmark":
+        return cmd_benchmark(args)
     build_parser().print_help()
     return 1
 

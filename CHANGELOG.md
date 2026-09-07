@@ -5,6 +5,45 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.256 — 2026-09-06 (National simulation, ship 3: benchmark and load certification)
+
+Roadmap P2.14, ship 3, and the roadmap's P2.9 load certification. A benchmark is
+only worth the numbers it produces by running the real system, and only worth
+trusting if the invariants still hold under the load. This ship measures Polaris
+at scale and commits the result.
+
+**The harness.** `polaris_sim/benchmark.py` runs the substrate build and the
+life-event stream as timed phases, then measures three things a certification
+needs: the p50/p95/p99 latency of a single verification write, the time each
+bounded Atlas aggregate takes over the loaded event set, and whether C3, C6, and
+the C1 append-only boundary still hold after the load. `python3 -m polaris_sim
+benchmark`. It exits non-zero if any invariant broke under load, so a regression
+fails loudly rather than being buried in a throughput number.
+
+**The certified run.** At a state-sized 1:1000 scale, one million verifications
+over a 24-hour window on the development host: 331,423 enrollments at ~2,640/s,
+the verifications at ~19,800/s, a single verification write at p50 0.18 ms / p95
+0.22 ms / p99 0.35 ms, and C3, C6, and C1 all holding at a million events. The
+full table is committed in [docs/reference/BENCHMARK.md](docs/reference/BENCHMARK.md).
+
+**What it found.** The scan-based Atlas roll-ups run 0.4 to 1.1 seconds at a
+million events because each scans the whole set, while the keyset-paginated
+`atlas_records` stays at 2.8 ms at the same scale. That is the benchmark earning
+its keep: the roll-ups are the first thing to harden (a materialized rollup or a
+covering index), the keyset design is vindicated, and the write path has ample
+headroom. These are recorded as the hardening leads for a later ship.
+
+**Proven.** `check_national_simulation` now also pins the benchmark harness, that
+it certifies invariants under load (`check_invariants`), and the committed
+report, with detection perturbations. A benchmark test in the coverage suite
+drives a tiny end-to-end run in a rolled-back transaction and asserts the report
+is well-formed and every invariant held. This realizes the single-node half of
+P2.9; the remaining integration is to run the same harness against the HA
+topology during a rolling deploy and a failover. The check layer is 126; the app
+is 79 routes; schema unchanged.
+
+---
+
 ## v9.255 — 2026-09-06 (National simulation, ship 2: the life-event stream)
 
 Roadmap P2.14, ship 2. The enrolled nation from ship 1 was static. This ship

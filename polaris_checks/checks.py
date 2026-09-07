@@ -5328,6 +5328,21 @@ def check_national_simulation(root: pathlib.Path) -> list[Finding]:
                          f"polaris_sim/events.py must not {bypass.lower()} directly; token state and "
                          "lifecycle events come from the procedures the simulation is exercising")
 
+    # S3 (v9.256): the benchmark harness drives the nation at scale and certifies
+    # that the invariants still hold under load; its report is committed so the
+    # numbers are a record, not a claim (roadmap P2.9, realized here).
+    bench = _read(root, "polaris_sim/benchmark.py")
+    if not bench:
+        return _fail("national_simulation", "polaris_sim/benchmark.py (the benchmark harness) must exist")
+    if "check_invariants" not in bench:
+        return _fail("national_simulation",
+                     "benchmark.py must certify the invariants under load (check_invariants): a "
+                     "benchmark that does not prove C1-C10 still hold is a throughput number, not a "
+                     "load certification")
+    if not _read(root, "docs/reference/BENCHMARK.md"):
+        return _fail("national_simulation",
+                     "docs/reference/BENCHMARK.md (the committed load certification) must exist")
+
     # The harness is tested, and the test rides in the coverage suite so CI runs it.
     if not _read(root, "polaris_sim/test_sim.py"):
         return _fail("national_simulation", "polaris_sim/test_sim.py (the harness tests) must exist")
@@ -5337,9 +5352,10 @@ def check_national_simulation(root: pathlib.Path) -> list[Finding]:
                      "scripts/polaris-coverage.sh must run the polaris_sim suite so CI exercises it")
     return _ok("national_simulation",
                "the national simulation covers all 51 jurisdictions, is deterministic (seeded), enrolls "
-               "through the real bulk pipeline (uc_bulk_issue) and drives a life-event stream through the "
+               "through the real bulk pipeline (uc_bulk_issue), drives a life-event stream through the "
                "real paths (VerificationEvent inserts + uc8_revoke_token, no direct token/lifecycle "
-               "writes); its tests run in the coverage suite (roadmap P2.14)")
+               "writes), and a benchmark harness measures it at scale and certifies the invariants under "
+               "load with a committed report; its tests run in the coverage suite (roadmap P2.14/P2.9)")
 
 
 CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [

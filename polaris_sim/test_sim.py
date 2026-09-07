@@ -17,7 +17,7 @@ import os
 import re
 import unittest
 
-from polaris_sim import events, load, nation, reference
+from polaris_sim import benchmark, events, load, nation, reference
 
 # ---------------------------------------------------------------------------
 # Pure generator tests (no database).
@@ -236,6 +236,30 @@ class SubstrateLoadTests(unittest.TestCase):
         self.assertEqual(
             self._count("SELECT count(*) n FROM TokenLifecycleEvent WHERE event_type='REVOKED'") - rev_before,
             5, "each revocation must write a REVOKED lifecycle row via uc8_revoke_token")
+
+    def test_benchmark_measures_and_certifies_invariants_under_load(self):
+        # A tiny end-to-end benchmark, rolled back: it must produce a well-formed
+        # report and, crucially, certify that the invariants still hold.
+        rep = benchmark.run_benchmark(
+            self.conn, scale_divisor=2_000_000, verifications=2000, lifecycle=3,
+            seed=4, latency_samples=50, commit=False)
+
+        self.assertEqual(rep.verification["events"], 2000)
+        self.assertGreater(rep.enrollment["people"], 0)
+        self.assertGreater(rep.verification["per_sec"], 0)
+        # single-write latency was sampled
+        self.assertEqual(rep.write_latency_ms.n, 50)
+        self.assertGreater(rep.write_latency_ms.p95, 0)
+        # every bounded Atlas aggregate was timed over the loaded data
+        for fn in ("atlas_volume_series", "atlas_breakdown", "atlas_crosstab",
+                   "atlas_geo_jurisdictions", "atlas_hexbin", "atlas_records"):
+            self.assertIn(fn, rep.atlas_query_ms)
+        # the invariants held under load (this is what makes it a certification)
+        self.assertTrue(rep.invariants["C3_one_active_token_per_person"])
+        self.assertTrue(rep.invariants["C6_zero_knowledge_never_located"])
+        self.assertTrue(rep.invariants["C1_verification_events_append_only"])
+        self.assertTrue(rep.all_invariants_hold)
+        self.assertGreaterEqual(rep.scale_counts["jurisdictions"], 20)
 
     def test_every_bureau_is_created_and_authorized(self):
         # The loader must insert each bureau as an Agency AND grant it

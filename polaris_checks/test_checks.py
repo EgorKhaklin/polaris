@@ -3533,13 +3533,17 @@ def test_national_simulation_check_discriminates(tmp_path):
               "    cur.copy_expert('COPY VerificationEvent (...) FROM STDIN', buf)\n"
               "def revoke_tokens(conn, count, seed):\n"
               "    cur.execute('CALL uc8_revoke_token(%s,%s,%s,%s,%s)', a)\n")
+    BENCH = ("def check_invariants(conn, purposes):\n    return {'C3': True}\n"
+             "def run_benchmark(conn, **kw):\n    return None\n")
     COV = "run polaris_cli unittest test_cli\nrun polaris_sim unittest test_sim\n"
     good = {
         "polaris_sim/reference.py": REF,
         "polaris_sim/nation.py": NAT,
         "polaris_sim/load.py": LOAD,
         "polaris_sim/events.py": EVENTS,
+        "polaris_sim/benchmark.py": BENCH,
         "polaris_sim/test_sim.py": "import unittest\n",
+        "docs/reference/BENCHMARK.md": "# Benchmark\n",
         "scripts/polaris-coverage.sh": COV,
     }
 
@@ -3578,6 +3582,15 @@ def test_national_simulation_check_discriminates(tmp_path):
     # the event stream fabricates lifecycle rows directly (bypass)
     write({"polaris_sim/events.py": EVENTS + "    cur.execute('INSERT INTO TokenLifecycleEvent (event_type) VALUES (%s)', ('REVOKED',))\n"})
     assert checks.check_national_simulation(tmp_path)[0].level == "FAIL", "must FAIL when the stream writes lifecycle rows directly"
+    # S3: the benchmark harness is missing
+    write({"polaris_sim/benchmark.py": ""})
+    assert checks.check_national_simulation(tmp_path)[0].level == "FAIL", "must FAIL when the benchmark harness is missing"
+    # the benchmark does not certify invariants under load
+    write({"polaris_sim/benchmark.py": "def run_benchmark(conn, **kw):\n    return None\n"})
+    assert checks.check_national_simulation(tmp_path)[0].level == "FAIL", "must FAIL when the benchmark does not check invariants"
+    # the committed load-certification report is missing
+    write({"docs/reference/BENCHMARK.md": ""})
+    assert checks.check_national_simulation(tmp_path)[0].level == "FAIL", "must FAIL when the committed report is missing"
 
 
 def test_bulk_enrollment_check_discriminates(tmp_path):

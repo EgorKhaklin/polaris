@@ -15,6 +15,7 @@ the system without reading its source. For runbooks see
 | [`PQC-POSTURE.md`](PQC-POSTURE.md) | Which primitives are post-quantum and which are still classical, against the NIST 2030/2035 timeline |
 | [`PERFORMANCE-BASELINE.md`](PERFORMANCE-BASELINE.md) | Issuance and verification throughput and Atlas latency, measured end to end on stated hardware and re-run by CI |
 | [`SCALING.md`](SCALING.md) | The Atlas and the verification log at 10 million events: indexes, caps, rollups |
+| [`BENCHMARK.md`](BENCHMARK.md) | The committed load certification: the national simulation driven at scale, with throughput, latency, Atlas query times, and invariants under load |
 | [`GLOSSARY.md`](GLOSSARY.md) | Defined terms |
 
 **Reading order.** [SYSTEM-MAP.md](SYSTEM-MAP.md) first. Building against

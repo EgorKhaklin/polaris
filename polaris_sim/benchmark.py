@@ -1,0 +1,216 @@
+"""The benchmark harness: drive a synthetic nation at a chosen scale through the
+real system and measure it, so the numbers that certify Polaris at scale are
+produced by running it, not asserted.
+
+It runs the S1 substrate build and the S2 event stream as timed phases, then
+measures three things a load certification needs:
+  - latency: the p50/p95/p99 of a single verification write,
+  - the Atlas at scale: how long each bounded aggregate takes over the loaded
+    data (it must stay fast, since every view is one of these),
+  - the invariants under load: C3, C6, and the C1 append-only boundary must
+    still hold after the load.
+
+Everything is a report object; the CLI and the committed report render it. Point
+it at an expendable database.
+"""
+
+from __future__ import annotations
+
+import datetime
+import platform
+import socket
+import time
+from dataclasses import dataclass, field
+
+from . import events as _events
+from . import load as _load
+from . import nation as _nation
+
+
+@dataclass
+class Percentiles:
+    p50: float
+    p95: float
+    p99: float
+    n: int
+
+    @staticmethod
+    def of(samples_ms: list[float]) -> "Percentiles":
+        if not samples_ms:
+            return Percentiles(0.0, 0.0, 0.0, 0)
+        s = sorted(samples_ms)
+
+        def pct(p: float) -> float:
+            i = min(len(s) - 1, int(round(p * (len(s) - 1))))
+            return round(s[i], 3)
+        return Percentiles(pct(0.50), pct(0.95), pct(0.99), len(s))
+
+
+@dataclass
+class BenchmarkReport:
+    scale_divisor: int
+    seed: int
+    host: str
+    python: str
+    timestamp: str
+    enrollment: dict = field(default_factory=dict)
+    verification: dict = field(default_factory=dict)
+    write_latency_ms: Percentiles = field(default_factory=lambda: Percentiles(0, 0, 0, 0))
+    atlas_query_ms: dict = field(default_factory=dict)
+    invariants: dict = field(default_factory=dict)
+    scale_counts: dict = field(default_factory=dict)
+
+    @property
+    def all_invariants_hold(self) -> bool:
+        return all(self.invariants.values()) if self.invariants else False
+
+    def to_dict(self) -> dict:
+        return {
+            "scale_divisor": self.scale_divisor, "seed": self.seed, "host": self.host,
+            "python": self.python, "timestamp": self.timestamp,
+            "enrollment": self.enrollment, "verification": self.verification,
+            "write_latency_ms": vars(self.write_latency_ms),
+            "atlas_query_ms": self.atlas_query_ms, "invariants": self.invariants,
+            "scale_counts": self.scale_counts, "all_invariants_hold": self.all_invariants_hold,
+        }
+
+
+# The bounded Atlas aggregates, timed over the loaded data. `%s` is the window
+# start; each is executed fully with SELECT count(*).
+def _atlas_probes(since):
+    return [
+        ("atlas_volume_series", "SELECT count(*) FROM atlas_volume_series(%s, 24, 'verification')", (since,)),
+        ("atlas_breakdown", "SELECT count(*) FROM atlas_breakdown('agency', %s, 50, 'verification')", (since,)),
+        ("atlas_crosstab", "SELECT count(*) FROM atlas_crosstab('agency', 'outcome', %s, 50, 'verification')", (since,)),
+        ("atlas_geo_jurisdictions", "SELECT count(*) FROM atlas_geo_jurisdictions(%s, 500, 'verification')", (since,)),
+        ("atlas_hexbin", "SELECT count(*) FROM atlas_hexbin(-90, -180, 90, 180, 5.0, 5000, %s, 'verification')", (since,)),
+        ("atlas_records", "SELECT count(*) FROM atlas_records(%s, NULL, NULL, 60, 'verification')", (since,)),
+    ]
+
+
+def _time_ms(fn) -> float:
+    t = time.perf_counter()
+    fn()
+    return (time.perf_counter() - t) * 1000.0
+
+
+def time_atlas_queries(conn, since) -> dict:
+    out: dict = {}
+    with conn.cursor() as cur:
+        for name, sql, params in _atlas_probes(since):
+            out[name] = round(_time_ms(lambda: cur.execute(sql, params)), 2)
+    return out
+
+
+_LAT_SQL = ("INSERT INTO VerificationEvent "
+            "(token_id, requesting_agency_id, context_id, outcome, disclosure_level, "
+            " requestor_location, latitude, longitude, requesting_purpose_text) "
+            "VALUES (%s, %s, %s, 'SUCCESS', 'SELECTIVE', %s, %s, %s, 'latency probe')")
+
+
+def measure_write_latency(conn, pool, agency_ids, samples: int) -> Percentiles:
+    """Time `samples` individual verification writes (the operation the p95
+    target names), rolled back so they do not skew the throughput counts."""
+    if samples <= 0 or not pool or not agency_ids:
+        return Percentiles(0, 0, 0, 0)
+    import random
+    rng = random.Random(20240906)
+    times: list[float] = []
+    with conn.cursor() as cur:
+        cur.execute("SAVEPOINT lat")
+        for _ in range(samples):
+            ref = pool[rng.randrange(len(pool))]
+            lat0, lon0 = _events.reference.STATE_CENTROIDS.get(ref.jurisdiction, (39.0, -98.0))
+            args = (ref.token_id, agency_ids[rng.randrange(len(agency_ids))],
+                    1, _events.reference.STATE_NAMES.get(ref.jurisdiction, "United States"),
+                    round(lat0, 5), round(lon0, 5))
+            times.append(_time_ms(lambda: cur.execute(_LAT_SQL, args)))
+        cur.execute("ROLLBACK TO SAVEPOINT lat")
+    return Percentiles.of(times)
+
+
+def check_invariants(conn, purposes) -> dict:
+    """C3, C6 and the C1 append-only boundary must hold after the load."""
+    out: dict = {}
+    with conn.cursor() as cur:
+        # C3: one active token per person.
+        cur.execute("""SELECT COALESCE(max(c), 0) m FROM (
+            SELECT individual_id, count(*) c FROM IdentityToken WHERE status='ACTIVE'
+            GROUP BY individual_id) t""")
+        out["C3_one_active_token_per_person"] = (cur.fetchone()["m"] <= 1)
+
+        # C6 / C2: no zero-knowledge verification carries a token (constraint), and
+        # none of the simulation's ZK events carry a location.
+        cur.execute("SELECT count(*) c FROM VerificationEvent "
+                    "WHERE disclosure_level='ZERO_KNOWLEDGE' AND token_id IS NOT NULL")
+        no_token = cur.fetchone()["c"] == 0
+        cur.execute("SELECT count(*) c FROM VerificationEvent "
+                    "WHERE disclosure_level='ZERO_KNOWLEDGE' AND latitude IS NOT NULL "
+                    "AND requesting_purpose_text = ANY(%s)", (purposes,))
+        no_location = cur.fetchone()["c"] == 0
+        out["C6_zero_knowledge_never_located"] = (no_token and no_location)
+
+        # C1: the verification audit table is append-only (an UPDATE is refused).
+        cur.execute("SAVEPOINT c1")
+        try:
+            cur.execute("UPDATE VerificationEvent SET outcome='FAILURE' "
+                        "WHERE event_id = (SELECT event_id FROM VerificationEvent LIMIT 1)")
+            out["C1_verification_events_append_only"] = False   # should not reach here
+            cur.execute("ROLLBACK TO SAVEPOINT c1")
+        except Exception:
+            out["C1_verification_events_append_only"] = True    # the trigger blocked it
+            cur.execute("ROLLBACK TO SAVEPOINT c1")
+    return out
+
+
+def _scale_counts(conn) -> dict:
+    with conn.cursor() as cur:
+        cur.execute("""
+            SELECT (SELECT count(*) FROM VerificationEvent) AS verification_events,
+                   (SELECT count(*) FROM IdentityToken WHERE status='ACTIVE') AS active_tokens,
+                   (SELECT count(*) FROM Agency) AS agencies,
+                   (SELECT count(DISTINCT jurisdiction) FROM Individual) AS jurisdictions""")
+        r = cur.fetchone()
+    return {"verification_events": r["verification_events"], "active_tokens": r["active_tokens"],
+            "agencies": r["agencies"], "jurisdictions": r["jurisdictions"]}
+
+
+def run_benchmark(conn, *, scale_divisor: int, verifications: int, lifecycle: int = 0,
+                  seed: int = 42, window_hours: float = 24.0, latency_samples: int = 500,
+                  commit: bool = True, now: datetime.datetime | None = None) -> BenchmarkReport:
+    """Build, stream, then measure. With commit=False the whole run stays in one
+    transaction (a test rolls it back); the committed report is produced with
+    commit=True for honest, durable timings."""
+    if now is None:
+        now = datetime.datetime.now()
+    report = BenchmarkReport(
+        scale_divisor=scale_divisor, seed=seed, host=socket.gethostname(),
+        python=platform.python_version(), timestamp=now.replace(microsecond=0).isoformat())
+
+    # Phase 1: enrollment (S1).
+    plan = _nation.plan_nation(scale_divisor, seed)
+    t = time.perf_counter()
+    ls = _load.build_nation(conn, plan, commit=commit)
+    esec = time.perf_counter() - t
+    report.enrollment = {"people": ls.people, "seconds": round(esec, 3),
+                         "per_sec": round(ls.people / esec, 1) if esec else 0.0}
+
+    # Phase 2: the life-event stream (S2).
+    ss = _events.run_stream(conn, verifications=verifications, lifecycle=lifecycle,
+                            window_hours=window_hours, seed=seed, commit=commit, now=now)
+    report.verification = {"events": ss.verifications, "revocations": ss.revocations,
+                           "seconds": round(ss.seconds, 3), "per_sec": round(ss.rows_per_sec, 1),
+                           "by_disclosure": ss.by_disclosure}
+
+    # Phase 3: single-write latency.
+    pool, agencies, _ = _events.load_pools(conn, 2000)
+    report.write_latency_ms = measure_write_latency(conn, pool, agencies, latency_samples)
+
+    # Phase 4: the Atlas at scale.
+    since = now - datetime.timedelta(hours=window_hours * 2)
+    report.atlas_query_ms = time_atlas_queries(conn, since)
+
+    # Phase 5: invariants under load.
+    report.invariants = check_invariants(conn, list(_events._PURPOSES))
+    report.scale_counts = _scale_counts(conn)
+    return report
