@@ -1933,6 +1933,12 @@ def _atlas_cache_get(key):
     """Return the cached payload if fresh, else None. Thread-safe."""
     if _ATLAS_CACHE_TTL_SECONDS <= 0:
         return None
+    # Live simulation mode wants the console to update as events stream in, so it
+    # bypasses the 30 s aggregate cache (dev/demo only; the roll-ups are bounded
+    # and partition-pruned, so recomputing each refresh is cheap). Production is
+    # unaffected — SIM_MODE is force-off there.
+    if SIM_MODE:
+        return None
     now = _time.time()
     with _atlas_cache_lock:
         entry = _atlas_cache.get(key)

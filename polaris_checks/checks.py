@@ -5043,6 +5043,43 @@ def check_sim_mode_gated(root: pathlib.Path) -> list[Finding]:
                "(polaris_sim.assert_expendable, called by run_stream and build_nation) refuses production")
 
 
+def check_ui_drill(root: pathlib.Path) -> list[Finding]:
+    """Roadmap P2.14 S4 (v9.262): a headless-browser harness verifies the Atlas
+    live simulation actually STREAMS in a real browser — the JavaScript, the
+    fetches, the live DOM updates — not just its endpoint. It drives the Simulate
+    control and asserts the sim counter climbs AND the Overview aggregate grows,
+    capturing screenshots as evidence. And the live view is genuinely live:
+    SIM_MODE bypasses the 30 s aggregate cache so the charts refresh with the
+    stream (the lag the harness itself caught on its first run)."""
+    py = _read(root, "scripts/polaris-ui-drill.py")
+    sh = _read(root, "scripts/polaris-ui-drill.sh")
+    if not py or not sh:
+        return _fail("ui_drill", "scripts/polaris-ui-drill.py and scripts/polaris-ui-drill.sh (the "
+                     "headless-browser UI harness) must both exist")
+    for needle in ("playwright", "data-atlas-sim-toggle", "streamed", 'data-ov-kpi="volume"'):
+        if needle not in py:
+            return _fail("ui_drill", f"polaris-ui-drill.py must reference {needle!r}: it drives the sim "
+                         "control and reads the live Overview aggregate in a real browser")
+    # It must ASSERT growth (a real pass/fail), not merely screenshot.
+    if "last > first" not in py or "kpi_after > kpi_before" not in py:
+        return _fail("ui_drill", "polaris-ui-drill.py must ASSERT the counter climbs (last > first) AND the "
+                     "Overview aggregate grows (kpi_after > kpi_before), not just capture screenshots")
+    if "POLARIS_SIM_MODE=1" not in sh or "playwright install chromium" not in sh:
+        return _fail("ui_drill", "polaris-ui-drill.sh must boot the app with SIM_MODE on and install Chromium "
+                     "on demand (no standing dependency)")
+    # The live view is actually live: the aggregate cache is bypassed under SIM_MODE.
+    app = _read(root, "polaris_web/app.py")
+    cache_fn = app.split("def _atlas_cache_get", 1)
+    if len(cache_fn) != 2 or not re.search(r"if\s+SIM_MODE\s*:\s*\n\s*return None", cache_fn[1][:800]):
+        return _fail("ui_drill", "_atlas_cache_get must `return None` (bypass the aggregate cache) under "
+                     "SIM_MODE, so the live simulation's charts refresh with the stream")
+    return _ok("ui_drill",
+               "a headless-browser harness (polaris-ui-drill.py/.sh, Playwright + Chromium installed on "
+               "demand) drives the Atlas live simulation in a real browser and asserts the counter climbs "
+               "and the Overview aggregate grows; SIM_MODE bypasses the aggregate cache so the charts "
+               "refresh live")
+
+
 # ---------------------------------------------------------------------------
 # Image builds — every container image CI builds goes through
 # scripts/polaris-image-build.sh, which retries a build that failed on someone
@@ -5645,6 +5682,7 @@ CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
     check_verification_load_certified,
     check_atlas_rollups_prune,
     check_sim_mode_gated,
+    check_ui_drill,
     check_helm_reference_profile,
     check_local_clock_convention,
     check_c6_atlas_redacts_zk_location,

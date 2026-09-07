@@ -1,0 +1,153 @@
+#!/usr/bin/env python3
+"""
+polaris-ui-drill.py — headless-browser UI verification for the Atlas (v9.262).
+
+Drives the REAL Atlas in a bundled headless Chromium (Playwright), so a UI ship
+is verified end to end — the JavaScript, the fetches, the live DOM updates — not
+just its endpoints. It captures screenshots as evidence AND asserts on the DOM,
+so it is a real pass/fail test, not a screenshot dump. This is the instrument
+that closes the gap v9.261 shipped with: the live simulation mode's endpoint was
+tested, but its live UI had never been watched running.
+
+The drill (roadmap P2.14 S4, live simulation mode): log in, open the Atlas,
+confirm the Simulate control is present, click it, and confirm the console
+actually streams — the counter climbs — then stop and confirm it halts.
+
+Assumes the app is already serving with POLARIS_SIM_MODE on (scripts/
+polaris-ui-drill.sh boots it). Env:
+  POLARIS_UI_URL   base URL           (default http://127.0.0.1:5057)
+  POLARIS_UI_USER  operator username  (default admin)
+  POLARIS_UI_PASS  operator password  (default Admin@123!)
+  POLARIS_UI_OUT   screenshot dir     (default ./ui-drill-out)
+
+Exit 0 iff every assertion held; the screenshots land in POLARIS_UI_OUT either way.
+"""
+import os
+import pathlib
+import re
+import sys
+import time
+
+from playwright.sync_api import sync_playwright
+
+URL = os.environ.get("POLARIS_UI_URL", "http://127.0.0.1:5057").rstrip("/")
+USER = os.environ.get("POLARIS_UI_USER", "admin")
+PASS = os.environ.get("POLARIS_UI_PASS", "Admin@123!")
+OUT = pathlib.Path(os.environ.get("POLARIS_UI_OUT", "ui-drill-out"))
+
+
+def fail(msg):
+    print(f"::error::UI drill FAILED: {msg}", file=sys.stderr)
+    sys.exit(1)
+
+
+def _num(s):
+    """Parse a console number, honouring the 'k' thousands formatting."""
+    m = re.match(r"\s*([\d.,]+)\s*(k?)", s or "")
+    if not m:
+        return None
+    n = float(m.group(1).replace(",", ""))
+    return n * 1000 if m.group(2) == "k" else n
+
+
+def streamed_count(text):
+    """The leading number of the sim counter ('N streamed · M total')."""
+    m = re.search(r"([\d.,]+\s*k?)\s+streamed", text or "")
+    return _num(m.group(1)) if m else None
+
+
+def main():
+    OUT.mkdir(parents=True, exist_ok=True)
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page(viewport={"width": 1440, "height": 900},
+                                ignore_https_errors=True)
+
+        # --- log in -------------------------------------------------------
+        page.goto(URL + "/login", wait_until="domcontentloaded")
+        page.fill("input[name=username]", USER)
+        page.fill("input[name=password]", PASS)
+        page.click("button[type=submit], input[type=submit]")
+        page.wait_for_load_state("networkidle")
+
+        # --- open the Atlas ----------------------------------------------
+        page.goto(URL + "/atlas", wait_until="networkidle")
+        time.sleep(1.0)   # let the first Overview aggregates paint
+        page.screenshot(path=str(OUT / "01-atlas-baseline.png"))
+        if not page.query_selector("[data-atlas-sim]"):
+            fail("the Simulate control is not present (is POLARIS_SIM_MODE on?)")
+        toggle = page.query_selector("[data-atlas-sim-toggle]")
+        if not toggle:
+            fail("the Simulate toggle button is missing")
+        # The Overview 'Verifications' KPI is a live aggregate (not the sim
+        # counter); reading it before and after proves the CHARTS refresh with the
+        # stream, i.e. the sim cache-bypass works, not just the tick counter.
+        kpi_el = page.query_selector('[data-ov-kpi="volume"]')
+        kpi_before = _num(kpi_el.text_content() if kpi_el else "")
+
+        # --- start the simulation ----------------------------------------
+        toggle.click()
+        # The host gets .atlas-sim-on while running; the button reports pressed.
+        page.wait_for_selector(".atlas-sim.atlas-sim-on", timeout=5000)
+        if toggle.get_attribute("aria-pressed") != "true":
+            fail("the toggle did not report aria-pressed=true after starting")
+
+        # Let a few ticks land (each ~2.5s), reading the counter as it climbs.
+        first = None
+        last = None
+        for _ in range(6):
+            time.sleep(2.5)
+            ct = page.query_selector("[data-atlas-sim-count]")
+            txt = ct.text_content() if ct else ""
+            n = streamed_count(txt)
+            if n is not None:
+                if first is None:
+                    first = n
+                last = n
+        page.screenshot(path=str(OUT / "02-atlas-simulating.png"))
+
+        if first is None or last is None:
+            fail("the streamed counter never appeared while simulating")
+        if not (last > first):
+            fail(f"the streamed counter did not climb (first={first}, last={last}): "
+                 "the live loop is not actually streaming")
+        print(f"  streamed counter climbed {first:.0f} -> {last:.0f} across the run")
+
+        # The Overview 'Verifications' aggregate must have grown too — that proves
+        # the CHARTS refresh live with the stream (the sim cache-bypass), not just
+        # the tick counter.
+        kpi_el = page.query_selector('[data-ov-kpi="volume"]')
+        kpi_after = _num(kpi_el.text_content() if kpi_el else "")
+        if kpi_before is None or kpi_after is None:
+            fail("could not read the Overview 'Verifications' KPI")
+        if not (kpi_after > kpi_before):
+            fail(f"the Overview aggregate did not grow while simulating "
+                 f"(before={kpi_before:.0f}, after={kpi_after:.0f}): the charts are "
+                 "not refreshing live (is the sim cache-bypass working?)")
+        print(f"  Overview 'Verifications' aggregate grew {kpi_before:.0f} -> {kpi_after:.0f} "
+              "(the charts refresh live, not just the counter)")
+
+        # --- stop ---------------------------------------------------------
+        toggle.click()
+        page.wait_for_selector(".atlas-sim:not(.atlas-sim-on)", timeout=5000)
+        if toggle.get_attribute("aria-pressed") != "false":
+            fail("the toggle did not report aria-pressed=false after stopping")
+        # The counter must not keep climbing once stopped.
+        ct = page.query_selector("[data-atlas-sim-count]")
+        stopped_at = streamed_count(ct.text_content() if ct else "")
+        time.sleep(3.0)
+        ct = page.query_selector("[data-atlas-sim-count]")
+        after_stop = streamed_count(ct.text_content() if ct else "")
+        if stopped_at is not None and after_stop is not None and after_stop > stopped_at:
+            fail(f"the counter kept climbing after Stop ({stopped_at:.0f} -> {after_stop:.0f})")
+        page.screenshot(path=str(OUT / "03-atlas-stopped.png"))
+
+        browser.close()
+
+    print(f"UI drill PASSED. Evidence in {OUT}/ "
+          "(01-baseline, 02-simulating, 03-stopped).")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

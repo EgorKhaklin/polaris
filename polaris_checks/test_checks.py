@@ -275,6 +275,49 @@ def test_sim_mode_gated_check_discriminates(tmp_path):
     assert checks.check_sim_mode_gated(tmp_path)[0].level == "FAIL", "must FAIL when run_stream skips assert_expendable()"
 
 
+def test_ui_drill_check_discriminates(tmp_path):
+    # P2.14 S4 (v9.262): the headless-browser harness must drive the sim and
+    # ASSERT growth, and the live view must bypass the aggregate cache under
+    # SIM_MODE. The good fixture has all of it; each perturbation removes one.
+    PY = ("from playwright.sync_api import sync_playwright\n"
+          "toggle = page.query_selector('[data-atlas-sim-toggle]')\n"
+          "# read the sim counter (streamed) and the Overview aggregate\n"
+          "n = page.query_selector('[data-ov-kpi=\"volume\"]')\n"
+          "if not (last > first): fail('counter did not climb')\n"
+          "if not (kpi_after > kpi_before): fail('aggregate did not grow')\n")
+    SH = ('#!/usr/bin/env bash\n'
+          'POLARIS_SIM_MODE=1 python -m flask run &\n'
+          'python -m playwright install chromium\n')
+    APP = ("def _atlas_cache_get(key):\n"
+           "    if _ATLAS_CACHE_TTL_SECONDS <= 0:\n"
+           "        return None\n"
+           "    if SIM_MODE:\n"
+           "        return None\n"
+           "    return _atlas_cache.get(key)\n")
+    good = {"scripts/polaris-ui-drill.py": PY, "scripts/polaris-ui-drill.sh": SH,
+            "polaris_web/app.py": APP}
+
+    def write(overrides=None):
+        files = dict(good); files.update(overrides or {})
+        for rel, body in files.items():
+            f = tmp_path / rel; f.parent.mkdir(parents=True, exist_ok=True); f.write_text(body)
+
+    write()
+    assert checks.check_ui_drill(tmp_path)[0].level == "OK", "must PASS on the full harness fixture"
+    # the harness no longer uses a real browser
+    write({"scripts/polaris-ui-drill.py": PY.replace("playwright", "requests")})
+    assert checks.check_ui_drill(tmp_path)[0].level == "FAIL", "must FAIL without a real browser (playwright)"
+    # it screenshots but no longer asserts the counter climbs
+    write({"scripts/polaris-ui-drill.py": PY.replace("if not (last > first): fail('counter did not climb')\n", "")})
+    assert checks.check_ui_drill(tmp_path)[0].level == "FAIL", "must FAIL when it does not assert the counter climbs"
+    # the wrapper does not boot SIM_MODE
+    write({"scripts/polaris-ui-drill.sh": SH.replace("POLARIS_SIM_MODE=1 ", "")})
+    assert checks.check_ui_drill(tmp_path)[0].level == "FAIL", "must FAIL when the wrapper does not boot SIM_MODE"
+    # the live view no longer bypasses the aggregate cache under SIM_MODE
+    write({"polaris_web/app.py": APP.replace("    if SIM_MODE:\n        return None\n", "")})
+    assert checks.check_ui_drill(tmp_path)[0].level == "FAIL", "must FAIL when SIM_MODE does not bypass the aggregate cache"
+
+
 def test_signing_key_generation_check_discriminates(tmp_path):
     scripts = tmp_path / "scripts"
     scripts.mkdir()

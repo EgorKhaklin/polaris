@@ -5,6 +5,38 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.262 — 2026-09-07 (A headless-browser harness to watch the UI, and the live-sim cache fix it drove)
+
+v9.261 shipped the Atlas live simulation mode but with a gap: its endpoint was
+tested, its live UI never watched running. This closes that with an instrument
+that lets a UI ship be verified end to end in a real browser — and, on its first
+run, that instrument earned its keep.
+
+**The harness.** `scripts/polaris-ui-drill.py` drives the real Atlas in a bundled
+headless Chromium (Playwright), and `scripts/polaris-ui-drill.sh` boots the app
+with SIM_MODE on and runs it — installing Playwright + Chromium on demand (like
+the PKCS#11 drill installs Kryoptic), so there is no standing dependency. It logs
+in, opens the Atlas, clicks Simulate, and ASSERTS the console actually streams:
+the sim counter climbs AND the Overview 'Verifications' aggregate grows, with
+screenshots captured as evidence. A real pass/fail test of the JavaScript, the
+fetches and the live DOM — not a screenshot dump.
+
+**What it caught, and the fix.** On its first run the counter climbed to 288
+while the Overview KPI sat at 8: the 30 s aggregate cache was serving the
+pre-simulation state, so the charts lagged the stream badly. The live view is
+supposed to be live. Fixed by bypassing the aggregate cache under SIM_MODE
+(`_atlas_cache_get` returns None) — dev/demo only, and the roll-ups are bounded
+and partition-pruned (v9.260), so recomputing each refresh is cheap. Production
+is untouched: SIM_MODE is force-off there. The harness now asserts the aggregate
+grows, so the lag cannot come back unnoticed.
+
+`check_ui_drill` (invariant #130, was 129) pins the harness (a real browser, the
+sim control, the climb + growth assertions, the on-demand Chromium install) and
+the SIM_MODE cache bypass; the detection test removes each and confirms it turns
+red. Full suite green.
+
+---
+
 ## v9.261 — 2026-09-07 (Atlas live simulation mode)
 
 The national simulation could already load a synthetic nation and stream its
