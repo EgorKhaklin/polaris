@@ -86,6 +86,38 @@ def cmd_build(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_run(args: argparse.Namespace) -> int:
+    from . import events
+    conn = _connect()
+    try:
+        stats = events.run_stream(
+            conn, verifications=args.events, lifecycle=args.lifecycle,
+            window_hours=args.window, seed=args.seed, batch_size=args.batch_size)
+    except RuntimeError as e:
+        sys.stderr.write(f"{e}\n")
+        return 1
+    finally:
+        conn.close()
+
+    summary = {
+        "verifications": stats.verifications, "revocations": stats.revocations,
+        "window_hours": args.window, "seed": args.seed,
+        "seconds": round(stats.seconds, 3), "rows_per_sec": round(stats.rows_per_sec, 1),
+        "by_disclosure": stats.by_disclosure,
+    }
+    if args.json:
+        print(json.dumps(summary))
+    else:
+        print(f"Life-event stream over the last {args.window:g}h (seed {args.seed}):")
+        print(f"  verifications : {stats.verifications:,}")
+        for level in ("ZERO_KNOWLEDGE", "SELECTIVE", "FULL"):
+            print(f"      {level:<15}: {stats.by_disclosure.get(level, 0):,}")
+        print(f"  revocations   : {stats.revocations:,} (through uc8_revoke_token)")
+        print(f"  wall time     : {stats.seconds:.2f}s")
+        print(f"  throughput    : {stats.rows_per_sec:,.0f} verifications/s")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="polaris_sim",
                                 description="Polaris national simulation and benchmark harness.")
@@ -99,6 +131,18 @@ def build_parser() -> argparse.ArgumentParser:
     b.add_argument("--plan-only", action="store_true",
                    help="print the plan without touching the database")
     b.add_argument("--json", action="store_true", help="emit a JSON summary")
+
+    r = sub.add_parser("run", help="drive a life-event stream through the enrolled nation")
+    r.add_argument("--events", type=int, default=100000,
+                   help="verifications to generate (default 100000)")
+    r.add_argument("--lifecycle", type=int, default=0,
+                   help="token revocations through uc8_revoke_token (default 0)")
+    r.add_argument("--window", type=float, default=24.0,
+                   help="spread events over the last N hours (default 24)")
+    r.add_argument("--seed", type=int, default=42, help="deterministic seed (default 42)")
+    r.add_argument("--batch-size", type=int, default=10000,
+                   help="rows per COPY batch (default 10000)")
+    r.add_argument("--json", action="store_true", help="emit a JSON summary")
     return p
 
 
@@ -106,6 +150,8 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "build":
         return cmd_build(args)
+    if args.command == "run":
+        return cmd_run(args)
     build_parser().print_help()
     return 1
 

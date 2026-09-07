@@ -5,6 +5,54 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.255 — 2026-09-06 (National simulation, ship 2: the life-event stream)
+
+Roadmap P2.14, ship 2. The enrolled nation from ship 1 was static. This ship
+makes it alive: a realistic flow of national life-events, verifications and
+token revocations, written through the real system, so the nation is not a
+frozen roster but a running country.
+
+**Verifications, through the real path.** `polaris_sim/events.py` generates a
+stream of verifications spread over a time window and writes them with the same
+direct `INSERT INTO VerificationEvent` the application's verification route uses
+(there is no stored procedure for a verification). The database's disclosure
+constraint is the boundary: a zero-knowledge verification carries no token and
+no location (C6), a full-disclosure event carries a token, and a disclosing
+event is placed near its holder's state, so the activity falls where the
+population is. The mix is realistic, zero-knowledge dominant, success dominant,
+everyday contexts out-numbering rare ones.
+
+**Lifecycle, through the real procedures.** Token revocations go through the
+real `uc8_revoke_token`, which writes the REVOKED lifecycle row itself. Driving
+it surfaced exactly the kind of thing the simulation exists to exercise: a
+revocation above a rate bound requires a co-signer, and the co-signer must hold
+algorithm authorization, so the stream co-signs with a second authorized agency
+and wraps each call in a savepoint. It never writes a token or lifecycle row
+directly.
+
+**The Atlas comes alive.** Because the events are real rows, the existing Atlas
+(the Overview, the Breakdown, and the Map v2 regions and density) now shows a
+populated national picture, zero-knowledge counted by jurisdiction but never
+located, located activity spread across the states.
+
+**A benchmark point.** Five hundred thousand verifications over a 24-hour window
+wrote at roughly 20,000 verifications/s on the development host, with the
+disclosure mix landing on its target weights.
+
+**Use.** `python3 -m polaris_sim run --events 500000 --lifecycle 200 --window 24`.
+
+**Proven.** `check_national_simulation` now also pins that the event stream
+writes verifications to the real table and drives lifecycle through
+`uc8_revoke_token`, with no direct token or lifecycle writes, plus detection
+perturbations. Six new harness tests: the generator is deterministic and
+C6-correct (zero-knowledge events carry no token or location), and a
+database-backed test drives a stream over a small nation in a rolled-back
+transaction and asserts the verifications land, C6 holds, and the revocations
+wrote REVOKED lifecycle rows through the procedure. The check layer is 126; the
+app is 79 routes; schema unchanged.
+
+---
+
 ## v9.254 — 2026-09-06 (National simulation, ship 1: the synthetic nation)
 
 Roadmap P2.14, ship 1 of a new arc: a national-scale simulation of Polaris. The

@@ -3529,11 +3529,16 @@ def test_national_simulation_check_discriminates(tmp_path):
            "    rng = random.Random(seed)\n    return rng\n")
     LOAD = ("def build_nation(conn, plan):\n"
             "    cur.execute('CALL uc_bulk_issue(%s)', (b,))\n")
+    EVENTS = ("def write_verifications(conn, events):\n"
+              "    cur.copy_expert('COPY VerificationEvent (...) FROM STDIN', buf)\n"
+              "def revoke_tokens(conn, count, seed):\n"
+              "    cur.execute('CALL uc8_revoke_token(%s,%s,%s,%s,%s)', a)\n")
     COV = "run polaris_cli unittest test_cli\nrun polaris_sim unittest test_sim\n"
     good = {
         "polaris_sim/reference.py": REF,
         "polaris_sim/nation.py": NAT,
         "polaris_sim/load.py": LOAD,
+        "polaris_sim/events.py": EVENTS,
         "polaris_sim/test_sim.py": "import unittest\n",
         "scripts/polaris-coverage.sh": COV,
     }
@@ -3564,6 +3569,15 @@ def test_national_simulation_check_discriminates(tmp_path):
     # the suite is not wired into the coverage run
     write({"scripts/polaris-coverage.sh": "run polaris_cli unittest test_cli\n"})
     assert checks.check_national_simulation(tmp_path)[0].level == "FAIL", "must FAIL when the sim suite is not in coverage"
+    # S2: the event stream is missing
+    write({"polaris_sim/events.py": ""})
+    assert checks.check_national_simulation(tmp_path)[0].level == "FAIL", "must FAIL when the event stream is missing"
+    # the event stream drives lifecycle without the real procedure
+    write({"polaris_sim/events.py": EVENTS.replace("uc8_revoke_token", "some_other_thing")})
+    assert checks.check_national_simulation(tmp_path)[0].level == "FAIL", "must FAIL when lifecycle skips uc8_revoke_token"
+    # the event stream fabricates lifecycle rows directly (bypass)
+    write({"polaris_sim/events.py": EVENTS + "    cur.execute('INSERT INTO TokenLifecycleEvent (event_type) VALUES (%s)', ('REVOKED',))\n"})
+    assert checks.check_national_simulation(tmp_path)[0].level == "FAIL", "must FAIL when the stream writes lifecycle rows directly"
 
 
 def test_bulk_enrollment_check_discriminates(tmp_path):

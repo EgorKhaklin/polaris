@@ -72,6 +72,36 @@ US_STATES: list[tuple[str, str, int]] = [
 US_TOTAL_POPULATION: int = sum(pop for _, _, pop in US_STATES)
 
 
+# Approximate geographic centroid (lat, lon) per jurisdiction. A located
+# verification is placed near its holder's state centroid with a little jitter,
+# so the simulated activity falls where the population is, not on a single
+# point. Approximate on purpose: this is notional geography for a density map,
+# not a survey.
+STATE_CENTROIDS: dict[str, tuple[float, float]] = {
+    "US-AL": (32.8, -86.8), "US-AK": (64.0, -152.0), "US-AZ": (34.2, -111.7),
+    "US-AR": (34.9, -92.4), "US-CA": (37.2, -119.3), "US-CO": (39.0, -105.5),
+    "US-CT": (41.6, -72.7), "US-DE": (39.0, -75.5), "US-FL": (28.6, -82.4),
+    "US-GA": (32.6, -83.4), "US-HI": (20.3, -156.4), "US-ID": (44.4, -114.6),
+    "US-IL": (40.0, -89.2), "US-IN": (39.9, -86.3), "US-IA": (42.0, -93.5),
+    "US-KS": (38.5, -98.4), "US-KY": (37.5, -85.3), "US-LA": (31.0, -92.0),
+    "US-ME": (45.4, -69.2), "US-MD": (39.0, -76.8), "US-MA": (42.3, -71.8),
+    "US-MI": (44.3, -85.4), "US-MN": (46.3, -94.3), "US-MS": (32.7, -89.7),
+    "US-MO": (38.4, -92.5), "US-MT": (47.0, -109.6), "US-NE": (41.5, -99.8),
+    "US-NV": (39.3, -116.6), "US-NH": (43.7, -71.6), "US-NJ": (40.2, -74.7),
+    "US-NM": (34.4, -106.1), "US-NY": (42.9, -75.5), "US-NC": (35.6, -79.4),
+    "US-ND": (47.5, -100.3), "US-OH": (40.3, -82.8), "US-OK": (35.6, -97.5),
+    "US-OR": (44.0, -120.5), "US-PA": (40.9, -77.8), "US-RI": (41.7, -71.6),
+    "US-SC": (33.9, -80.9), "US-SD": (44.4, -100.2), "US-TN": (35.9, -86.4),
+    "US-TX": (31.5, -99.3), "US-UT": (39.3, -111.7), "US-VT": (44.0, -72.7),
+    "US-VA": (37.5, -78.9), "US-WA": (47.4, -120.5), "US-WV": (38.6, -80.6),
+    "US-WI": (44.6, -89.9), "US-WY": (43.0, -107.6), "US-DC": (38.9, -77.0),
+}
+
+# Name -> jurisdiction, for turning a jurisdiction code into a human location
+# label on a located event.
+STATE_NAMES: dict[str, str] = {code: name for code, name, _ in US_STATES}
+
+
 # Deterministic name pools. Small on purpose: the generator combines first +
 # last + a per-person disambiguator so a few dozen of each still yield unique,
 # non-repeating legal names across millions of synthetic people.

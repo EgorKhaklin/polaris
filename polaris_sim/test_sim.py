@@ -17,7 +17,7 @@ import os
 import re
 import unittest
 
-from polaris_sim import load, nation, reference
+from polaris_sim import events, load, nation, reference
 
 # ---------------------------------------------------------------------------
 # Pure generator tests (no database).
@@ -73,6 +73,40 @@ class NationPlanTests(unittest.TestCase):
     def test_scale_divisor_validation(self):
         with self.assertRaises(ValueError):
             nation.plan_nation(scale_divisor=0, seed=1)
+
+
+class EventStreamTests(unittest.TestCase):
+    """The life-event generator (pure, no database)."""
+
+    def test_verifications_are_c6_correct_and_deterministic(self):
+        pool = [events.TokenRef(1, "US-CA"), events.TokenRef(2, "US-TX"),
+                events.TokenRef(3, "US-NY")]
+        now = datetime.datetime(2026, 9, 6, 12, 0, 0)
+        a = list(events.iter_verifications(pool, [10, 11], 800, 24.0, 5, now))
+        b = list(events.iter_verifications(pool, [10, 11], 800, 24.0, 5, now))
+        self.assertEqual(a, b, "same inputs must give the same stream")
+        self.assertEqual(len(a), 800)
+        for e in a:
+            self.assertLessEqual(e.event_timestamp, now)
+            self.assertIn(e.outcome, ("SUCCESS", "FAILURE", "EXPIRED", "UNAUTHORIZED"))
+            if e.disclosure_level == "ZERO_KNOWLEDGE":
+                # C6: anonymous and unplaceable.
+                self.assertIsNone(e.token_id)
+                self.assertIsNone(e.latitude)
+                self.assertIsNone(e.longitude)
+                self.assertIsNone(e.requestor_location)
+            else:
+                # A disclosing event names a token and is located.
+                self.assertIsNotNone(e.token_id)
+                self.assertIsNotNone(e.latitude)
+                self.assertIsNotNone(e.longitude)
+        # Zero-knowledge is the plurality (the privacy default).
+        zk = sum(1 for e in a if e.disclosure_level == "ZERO_KNOWLEDGE")
+        self.assertGreater(zk, len(a) * 0.4)
+
+    def test_no_agencies_is_an_error(self):
+        with self.assertRaises(ValueError):
+            list(events.iter_verifications([], [], 1, 24.0, 1, datetime.datetime(2026, 9, 6)))
 
 
 # ---------------------------------------------------------------------------
@@ -162,6 +196,46 @@ class SubstrateLoadTests(unittest.TestCase):
               AND EXISTS (SELECT 1 FROM TokenLifecycleEvent e WHERE e.token_id=it.token_id AND e.event_type='ISSUED')
               AND EXISTS (SELECT 1 FROM TokenLifecycleEvent e WHERE e.token_id=it.token_id AND e.event_type='ACTIVATED')""")
         self.assertEqual(lifecycle_ok, plan.total_people)
+
+    def test_event_stream_runs_through_the_real_paths(self):
+        # Build a small nation, then drive a life-event stream over it, all in
+        # one rolled-back transaction.
+        plan = nation.plan_nation(scale_divisor=2_000_000, seed=3)
+        load.build_nation(self.conn, plan, batch_size=500, commit=False)
+        ve_before = self._count("SELECT count(*) n FROM VerificationEvent")
+        rev_before = self._count("SELECT count(*) n FROM TokenLifecycleEvent WHERE event_type='REVOKED'")
+
+        stats = events.run_stream(self.conn, verifications=3000, lifecycle=5,
+                                  window_hours=24.0, seed=9, sample=1000,
+                                  batch_size=1000, commit=False)
+
+        # Verifications were written through the real INSERT path.
+        self.assertEqual(stats.verifications, 3000)
+        self.assertEqual(self._count("SELECT count(*) n FROM VerificationEvent") - ve_before, 3000)
+
+        # C6: no simulated zero-knowledge verification carries a token or a
+        # location. (Scoped to the sim's rows by its purpose markers.)
+        purposes = list(events._PURPOSES)
+        zk_leak = self._count(
+            "SELECT count(*) n FROM VerificationEvent "
+            "WHERE disclosure_level='ZERO_KNOWLEDGE' "
+            "AND (token_id IS NOT NULL OR latitude IS NOT NULL OR longitude IS NOT NULL) "
+            "AND requesting_purpose_text = ANY(%s)", (purposes,))
+        self.assertEqual(zk_leak, 0, "a ZK verification must carry no token and no location (C6)")
+
+        # Disclosing verifications are located.
+        located = self._count(
+            "SELECT count(*) n FROM VerificationEvent "
+            "WHERE disclosure_level IN ('SELECTIVE','FULL') AND latitude IS NOT NULL "
+            "AND requesting_purpose_text = ANY(%s)", (purposes,))
+        self.assertGreater(located, 0, "disclosing verifications must be placed on the map")
+
+        # Lifecycle went through the real procedure: REVOKED rows appeared and
+        # the tokens are actually revoked.
+        self.assertEqual(stats.revocations, 5)
+        self.assertEqual(
+            self._count("SELECT count(*) n FROM TokenLifecycleEvent WHERE event_type='REVOKED'") - rev_before,
+            5, "each revocation must write a REVOKED lifecycle row via uc8_revoke_token")
 
     def test_every_bureau_is_created_and_authorized(self):
         # The loader must insert each bureau as an Agency AND grant it

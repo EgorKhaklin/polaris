@@ -5307,6 +5307,27 @@ def check_national_simulation(root: pathlib.Path) -> list[Finding]:
                          f"polaris_sim/load.py must not {bypass.lower()} directly; issuance goes "
                          "through uc_bulk_issue so the simulation exercises the real system (not a mock)")
 
+    # S2 (v9.255): the life-event stream writes verifications through the same
+    # direct VerificationEvent INSERT the app route uses (there is no procedure
+    # for a verification), and drives lifecycle through the real uc8_revoke_token
+    # procedure. It must never write IdentityToken / TokenLifecycleEvent directly
+    # (that would fabricate a token state the procedures gate).
+    ev = _read(root, "polaris_sim/events.py")
+    if not ev:
+        return _fail("national_simulation", "polaris_sim/events.py (the life-event stream) must exist")
+    if "VerificationEvent" not in ev:
+        return _fail("national_simulation",
+                     "events.py must write verifications to VerificationEvent (the real write path)")
+    if "uc8_revoke_token" not in ev:
+        return _fail("national_simulation",
+                     "events.py must drive lifecycle through the real procedure uc8_revoke_token, "
+                     "not a direct write")
+    for bypass in ("INSERT INTO IdentityToken", "INSERT INTO TokenLifecycleEvent"):
+        if re.search(bypass, ev, re.I):
+            return _fail("national_simulation",
+                         f"polaris_sim/events.py must not {bypass.lower()} directly; token state and "
+                         "lifecycle events come from the procedures the simulation is exercising")
+
     # The harness is tested, and the test rides in the coverage suite so CI runs it.
     if not _read(root, "polaris_sim/test_sim.py"):
         return _fail("national_simulation", "polaris_sim/test_sim.py (the harness tests) must exist")
@@ -5315,9 +5336,10 @@ def check_national_simulation(root: pathlib.Path) -> list[Finding]:
         return _fail("national_simulation",
                      "scripts/polaris-coverage.sh must run the polaris_sim suite so CI exercises it")
     return _ok("national_simulation",
-               "the national simulation covers all 51 jurisdictions, is deterministic (seeded), and "
-               "enrolls through the real bulk pipeline (uc_bulk_issue, no direct token writes); its "
-               "tests run in the coverage suite (roadmap P2.14)")
+               "the national simulation covers all 51 jurisdictions, is deterministic (seeded), enrolls "
+               "through the real bulk pipeline (uc_bulk_issue) and drives a life-event stream through the "
+               "real paths (VerificationEvent inserts + uc8_revoke_token, no direct token/lifecycle "
+               "writes); its tests run in the coverage suite (roadmap P2.14)")
 
 
 CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
