@@ -103,12 +103,21 @@ def test_pqc_wired_check_fails_when_issuance_bypasses_signing_module(tmp_path):
         "    SELECT token_id, 1, signature_bytes, signing_public_key_hex FROM BulkEnrollmentStaging WHERE batch_id=p_batch_id;\n"
         "END $$;\n")
     APP = ("import pqc_signing\n"
-           "sig = pqc_signing.signature_with_key_for_token(tv)\n")
+           "sig = pqc_signing.signature_with_key_for_token(tv)\n"
+           "@app.route('/api/tokens/<int:tok_id>/verify')\n"
+           "def api_token_verify(tok_id):\n"
+           "    ok = pqc_signing.verify_stored_signature(tv, sig, pk, witnesses='single')\n"
+           "    return jsonify(signature_valid=ok)\n")
     SCHEMA = ("CREATE TABLE IF NOT EXISTS BulkEnrollmentStaging (\n"
               "  staging_id BIGSERIAL PRIMARY KEY, batch_id INTEGER, token_value VARCHAR(128) NOT NULL,\n"
               "  signature_bytes BYTEA, signing_public_key_hex TEXT\n);\n")
+    # issuance two-witnesses before persisting; verify-at-use is single-witness.
+    PQC = ("def signature_with_key_for_token(tv):\n"
+           "    r = sign(tv)\n"
+           "    if not verify_both(tv, r.sig, r.pk): raise SigningError('two-witness self-verify failed')\n"
+           "    return r.sig, r.label, r.pk\n")
     good = {"polaris_sql/05_procedures.sql": PROC, "polaris_web/app.py": APP,
-            "polaris_sql/01_schema.sql": SCHEMA}
+            "polaris_sql/01_schema.sql": SCHEMA, "polaris_web/pqc_signing.py": PQC}
 
     def write(overrides=None):
         files = dict(good); files.update(overrides or {})
@@ -134,6 +143,15 @@ def test_pqc_wired_check_fails_when_issuance_bypasses_signing_module(tmp_path):
     # the staging table has no signature column
     write({"polaris_sql/01_schema.sql": SCHEMA.replace("signature_bytes BYTEA,", "")})
     assert checks.check_pqc_signing_wired(tmp_path)[0].level == "FAIL", "must FAIL when staging cannot carry a signature"
+    # v9.258: issuance weakened to a single witness (the strict self-check dropped)
+    write({"polaris_web/pqc_signing.py": PQC.replace("verify_both", "verify")})
+    assert checks.check_pqc_signing_wired(tmp_path)[0].level == "FAIL", "must FAIL when issuance stops two-witnessing"
+    # the verify-at-use endpoint is missing
+    write({"polaris_web/app.py": APP.replace("/api/tokens/<int:tok_id>/verify", "/api/tokens/<int:tok_id>/other")})
+    assert checks.check_pqc_signing_wired(tmp_path)[0].level == "FAIL", "must FAIL without the verify-at-use endpoint"
+    # the verify endpoint uses the slow two-witness path (not the throughput single-witness)
+    write({"polaris_web/app.py": APP.replace("witnesses='single'", "witnesses='both'")})
+    assert checks.check_pqc_signing_wired(tmp_path)[0].level == "FAIL", "must FAIL when verify-at-use is not single-witness"
 
 
 def test_signing_key_generation_check_discriminates(tmp_path):

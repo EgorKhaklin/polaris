@@ -287,6 +287,20 @@ class SubstrateLoadTests(unittest.TestCase):
         self.assertEqual(cv["verified"], cv["samples"], "every sampled token signature must verify")
         self.assertTrue(cv["all_verified"])
         self.assertGreater(cv["per_sec"], 0)
+        # v9.258: the report distinguishes the two-witness issuance-grade check
+        # from the single-witness verify-AT-USE path and projects a fleet rate.
+        self.assertGreater(cv["two_witness_per_sec"], 0)
+        self.assertGreater(cv["single_witness_per_sec"], 0)
+        # single-witness latency is a p50/p95/p99 distribution, like the write path
+        self.assertIn("p95", cv["single_witness_latency_ms"])
+        self.assertGreaterEqual(cv["cores"], 1)
+        # single-witness is the throughput path: it is at least as fast as the
+        # two-witness check (it drops the redundant second implementation).
+        self.assertGreaterEqual(cv["single_witness_per_sec"], cv["two_witness_per_sec"])
+        # the fleet projection is single-witness scaled by the core count.
+        self.assertAlmostEqual(
+            cv["projected_fleet_single_witness_per_sec"],
+            cv["single_witness_per_sec"] * cv["cores"], delta=1.0)
 
         # the invariants held under load (this is what makes it a certification),
         # including that the signatures actually verify (not placeholders).

@@ -5,6 +5,53 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.258 — 2026-09-07 (Single-witness verify-at-use: real PQ verification from hundreds to thousands/sec)
+
+The v9.257 benchmark established the honest cryptographic-verification number:
+real ML-DSA-65 at ~740/s on one core, because every check ran two witnesses
+(liboqs AND OpenSSL, both must agree). A national deployment needs thousands per
+second, sustained through failover and rolling deploys. This ship takes it there
+without weakening the guarantee that matters, and it is the first step of the
+national-deployment-readiness path (P2.9).
+
+**The two-witness cost belongs at issuance, not at every use.**
+`signature_with_key_for_token` already two-witnesses the signature it produces
+and refuses to persist it unless both implementations accept it, so a stored real
+signature is, by construction, known to verify under both. Verification *at use*
+therefore does not need to re-run both: one witness (liboqs) re-confirms
+authenticity and detects any tampering or substitution. A tampered or forged
+signature still fails single-witness verification; only the redundant second
+implementation of the same check is dropped on the throughput path.
+
+**`verify_stored_signature(..., witnesses="single")`** is the opt-in. The
+two-witness path stays the default and remains the strict display path, so
+nothing silently weakens. Measured on this machine: single-witness ~7,800/s vs
+two-witness ~740/s per core, ~10x. Because verification needs only the public
+key (no custody, no HSM, no private key) it is embarrassingly parallel: it fans
+out across gunicorn workers and HA replicas with no shared secret, ~62,000/s
+projected on an 8-core node before adding replicas.
+
+**`GET /api/tokens/<id>/verify`** (login-gated, replica-routed) is the
+throughput-oriented verification capability: it cryptographically verifies a
+token's active signature single-witness and returns whether the signature is
+authentic, whether the token is currently usable (valid AND ACTIVE), and the
+per-signature result, a seed of the roadmap's P3.4 relying-party API. The
+`docs/design/verification-scaling.md` note records the security rationale, the
+numbers, and the fan-out model; [BENCHMARK.md](docs/reference/BENCHMARK.md) and
+the `polaris_sim` benchmark now report both witness rates and the fleet
+projection.
+
+**Proven.** `check_pqc_signing_wired` now also pins that issuance two-witnesses
+(`verify_both`), that the verify-at-use endpoint exists, and that it uses
+`witnesses='single'`; the detection test perturbs each (issuance weakened to one
+witness, the endpoint removed, the endpoint switched back to two-witness) and
+confirms the check turns red. Under HA, failover and rolling deploys the verify
+path inherits the read-only replica-routed properties the existing drills prove;
+certifying the throughput specifically through an induced failover and a rolling
+deploy is the next step (closes P2.9).
+
+---
+
 ## v9.257 — 2026-09-07 (Bulk signatures are real; event vs cryptographic verification)
 
 Two integrity gaps were found in the scale work and are closed here. First, the

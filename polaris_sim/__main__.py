@@ -137,10 +137,12 @@ def cmd_benchmark(args: argparse.Namespace) -> int:
         print(f"  enrollment (issue+sign) : {e['people']:,} people @ {e['per_sec']:,.0f}/s")
         print(f"  verification EVENTS ingested (audit-row writes, NOT signature checks):")
         print(f"      {v['events']:,} @ {v['per_sec']:,.0f}/s  (+{v['revocations']} revocations)")
-        print(f"  CRYPTOGRAPHIC signature verification ({cv.get('algorithm','?')}):")
-        cvl = cv.get('latency_ms', {})
-        print(f"      {cv.get('verified',0):,}/{cv.get('samples',0):,} verified @ {cv.get('per_sec',0):,.0f}/s"
-              f"  (p95 {cvl.get('p95','?')} ms)")
+        print(f"  CRYPTOGRAPHIC signature verification ({cv.get('algorithm','?')}), "
+              f"{cv.get('verified',0):,}/{cv.get('samples',0):,} verified:")
+        print(f"      two-witness (issuance-grade)  : {cv.get('two_witness_per_sec',0):>8,.0f}/s per core")
+        print(f"      single-witness (verify-at-use): {cv.get('single_witness_per_sec',0):>8,.0f}/s per core")
+        print(f"      projected fleet ({cv.get('cores',1)} cores)      : "
+              f"{cv.get('projected_fleet_single_witness_per_sec',0):>8,.0f}/s single-witness")
         print(f"  event write latency : p50 {lat.p50} ms  p95 {lat.p95} ms  p99 {lat.p99} ms  (n={lat.n})")
         print(f"  Atlas at scale ({rep.scale_counts.get('verification_events', 0):,} events):")
         for name, ms in rep.atlas_query_ms.items():

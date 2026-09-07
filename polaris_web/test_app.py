@@ -7977,6 +7977,94 @@ class TokenExportTests(PolarisTestCase):
         self.assertEqual(self.client.get('/api/tokens/999999/export').status_code, 404)
 
 
+class TokenVerifyTests(PolarisTestCase):
+    """GET /api/tokens/<id>/verify cryptographically verifies a token's active
+    signature AT USE, single-witness (v9.258, the throughput path). It must
+    verify a freshly-issued token, name the single-witness mode, report
+    usability as (signature valid AND status ACTIVE), require login, and 404 a
+    missing token. See docs/design/verification-scaling.md."""
+
+    def _new_conn(self):
+        return psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+
+    def _issue_token(self, token_value):
+        """Issue a token through the real /uc1/issue route (which signs through
+        pqc_signing), then return its token_id. The stored signature is the
+        deterministic SHA3-256 placeholder of token_value, which verifies."""
+        r = self._post('/uc1/issue', data={
+            'legal_name': 'Verify AtUse Holder',
+            'date_of_birth': '1985-06-20',
+            'jurisdiction': 'US-OH',
+            'issuing_agency_id': '1',
+            'algorithm_id': '1',
+            'biometric_binding_type': 'IRIS',
+            'witness_agency_id': '2',
+            'liveness_check_type': 'MULTI_MODAL',
+            'token_value': token_value,
+            'physical_serial': 'SN-' + token_value,
+            'hardware_model': 'TitanQ-3',
+            'contexts': ['1'],
+        }, follow_redirects=True)
+        self.assertEqual(r.status_code, 200)
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("SELECT token_id FROM IdentityToken WHERE token_value=%s",
+                        (token_value,))
+            return cur.fetchone()['token_id']
+
+    def test_issued_token_verifies_single_witness_and_is_usable(self):
+        tok_id = self._issue_token('TKN-OH-VERIFY-0001')
+        data = self.client.get(f'/api/tokens/{tok_id}/verify').get_json()
+        self.assertEqual(data['token_id'], tok_id)
+        self.assertTrue(data['signature_valid'], "issued token's signature must verify")
+        self.assertEqual(data['status'], 'ACTIVE')
+        self.assertTrue(data['usable'])
+        # The load-bearing distinction of this endpoint: it is the single-witness
+        # verify-AT-USE path, not the two-witness issuance check.
+        self.assertEqual(data['witnesses'], 'single')
+        self.assertTrue(data['signatures'], "must report at least one signature")
+        sig = data['signatures'][0]
+        self.assertIn('algorithm', sig)
+        self.assertTrue(sig['valid'])
+        self.assertIn('real_signature', sig)
+
+    def test_usable_is_valid_AND_active(self):
+        """usable is signature-valid AND status ACTIVE, not merely signed. A
+        revoked token keeps a verifying signature but is no longer usable."""
+        tok_id = self._issue_token('TKN-OH-VERIFY-REVOKE-1')
+        before = self.client.get(f'/api/tokens/{tok_id}/verify').get_json()
+        self.assertTrue(before['signature_valid'] and before['usable'])
+        # Grant agency 1 a permissive bound and revoke through uc8_revoke_token.
+        with self._new_conn() as conn, conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO IssuerDiscretionPolicy
+                    (agency_id, max_revoke_percent, window_days,
+                     set_by_admin, justification)
+                VALUES (1, 90.00, 30, 'test_setup', 'TokenVerifyTests fixture')
+                ON CONFLICT (agency_id) DO UPDATE
+                  SET max_revoke_percent = EXCLUDED.max_revoke_percent
+            """)
+            cur.execute("CALL uc8_revoke_token(%s, %s, %s, %s, %s)",
+                        (tok_id, 1, 'ADMINISTRATIVE',
+                         'https://crl.idtoken.gov/test/uc8.crl', None))
+            conn.commit()
+        after = self.client.get(f'/api/tokens/{tok_id}/verify').get_json()
+        self.assertEqual(after['status'], 'REVOKED')
+        self.assertTrue(after['signature_valid'],
+                        "the signature itself is unchanged by revocation")
+        self.assertFalse(after['usable'],
+                         "a revoked token is not usable even though it is signed")
+
+    def test_verify_404_for_missing_token(self):
+        self.assertEqual(
+            self.client.get('/api/tokens/999999/verify').status_code, 404)
+
+    def test_verify_requires_login(self):
+        self._logout()
+        r = self.client.get('/api/tokens/2/verify')
+        self.assertEqual(r.status_code, 302)
+        self.assertIn('/login', r.headers.get('Location', ''))
+
+
 class UiLinkIntegrityTests(PolarisTestCase):
     DEFAULT_ROLE = None          # each test logs in as its own role
 

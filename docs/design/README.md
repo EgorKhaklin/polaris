@@ -27,6 +27,7 @@ and the posture documents see [reference/](../reference/README.md).
 | [retention.md](retention.md) | How long the record is kept, who decided that, and why the purge obeys it |
 | [partitioning.md](partitioning.md) | Why the event tables are monthly-partitioned, how C1 holds across attach and detach, and the online conversion |
 | [bulk-enrollment.md](bulk-enrollment.md) | How a whole population is issued set-based in one atomic transaction, every row still through the full constraint set |
+| [verification-scaling.md](verification-scaling.md) | Taking real ML-DSA-65 verification from hundreds to thousands/sec: single-witness verify-at-use, why it is sound, and how it fans out across workers and HA replicas |
 
 ## One mechanism each
 

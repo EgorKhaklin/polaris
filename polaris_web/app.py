@@ -4487,6 +4487,60 @@ def tokens_export(tok_id):
     return resp
 
 
+@app.route('/api/tokens/<int:tok_id>/verify')
+@security.login_required
+@replica_reads
+def api_token_verify(tok_id):
+    """Cryptographically verify a token's active signature AT USE (v9.258,
+    toward P2.9 / P3.4). This is the throughput verification path a national
+    deployment needs: single-witness ML-DSA-65 verification (~10x faster than the
+    two-witness issuance check). It is sound because issuance already
+    two-witnessed the signature before persisting it, so one witness at use
+    re-confirms authenticity; see docs/design/verification-scaling.md.
+
+    Verification uses only the PUBLIC key stored with the signature — no custody,
+    no HSM, no private key — so this route parallelizes across gunicorn workers
+    and HA replicas with no shared state. Replica-routed (a read).
+
+    Returns whether the signature is authentic, whether the token is currently
+    usable (signature valid AND status ACTIVE), and the per-signature results."""
+    rows = query("""
+        SELECT it.token_value, it.status,
+               ts.signature_bytes, ts.signing_public_key_hex, alg.name AS algorithm
+        FROM   IdentityToken it
+        JOIN   TokenSignature ts  ON ts.token_id = it.token_id AND ts.deprecation_date IS NULL
+        JOIN   CryptographicAlgorithm alg ON ts.algorithm_id = alg.algorithm_id
+        WHERE  it.token_id = %s
+    """, (tok_id,))
+    if not rows:
+        return jsonify(error='no such token, or it has no active signature'), 404
+
+    token_value = rows[0]['token_value']
+    status = rows[0]['status']
+    signatures = []
+    all_valid = True
+    for r in rows:
+        raw = r['signature_bytes']
+        sig = bytes(raw) if raw is not None else b''
+        ok = pqc_signing.verify_stored_signature(
+            token_value, sig, r['signing_public_key_hex'], witnesses='single')
+        signatures.append({
+            'algorithm': r['algorithm'],
+            'valid': bool(ok),
+            'real_signature': bool(r['signing_public_key_hex']),
+        })
+        all_valid = all_valid and ok
+
+    return jsonify(
+        token_id=tok_id,
+        signature_valid=all_valid,
+        status=status,
+        usable=(all_valid and status == 'ACTIVE'),
+        witnesses='single',
+        signatures=signatures,
+    )
+
+
 # ============================================================================
 # INVESTIGATE — Object Card UX (v9.19)
 # ============================================================================

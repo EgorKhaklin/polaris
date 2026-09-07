@@ -355,6 +355,7 @@ def verify_stored_signature(
     token_value: str,
     signature_bytes: bytes,
     signing_public_key_hex: Optional[str],
+    witnesses: str = "both",
 ) -> bool:
     """Verify a stored TokenSignature against its token using the public key
     stored WITH the signature — self-contained, no live trust-anchor lookup.
@@ -365,11 +366,26 @@ def verify_stored_signature(
     - ``signing_public_key_hex`` None/empty: the deterministic SHA3-256
       placeholder; an integrity recompute + constant-time compare (NOT an
       authenticity proof — there is no key).
+
+    ``witnesses`` selects the strength of the real-signature check:
+    - ``"both"`` (default): two independent verifiers (liboqs AND OpenSSL) must
+      agree — the issuance-grade check. Issuance always uses this before it will
+      persist a signature.
+    - ``"single"``: one witness (liboqs) only — the verify-AT-USE path, ~10x
+      faster. It is sound because a stored real signature was already
+      two-witnessed at issuance (both implementations accepted it), so a single
+      witness at use re-confirms authenticity at the throughput a national
+      deployment needs. See docs/design/verification-scaling.md.
+    The placeholder path is unaffected (it does no crypto).
     """
     if signing_public_key_hex:
         if not _OQS_AVAILABLE:
             return False
-        return verify_both(token_value.encode("utf-8"), signature_bytes.hex(), signing_public_key_hex)
+        message = token_value.encode("utf-8")
+        signature_hex = signature_bytes.hex()
+        if witnesses == "single":
+            return verify(message, signature_hex, signing_public_key_hex)
+        return verify_both(message, signature_hex, signing_public_key_hex)
     import hmac
     expected = hashlib.sha3_256(token_value.encode("utf-8")).digest()
     return hmac.compare_digest(signature_bytes, expected)

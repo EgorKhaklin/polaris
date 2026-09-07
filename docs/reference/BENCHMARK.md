@@ -28,7 +28,8 @@ because the honest numbers are an order of magnitude apart:
    audit rows. It is a database write. It does NOT verify a signature.
 2. **Cryptographic signature verification** is how fast the system actually
    verifies a token's ML-DSA-65 signature against its stored public key. This is
-   the real cryptographic throughput.
+   the real cryptographic throughput, reported at two grades: two-witness
+   (issuance) and single-witness (verify-at-use), ~10x apart.
 3. **Enrollment (issue + sign)** is how fast tokens are minted, and under real
    post-quantum signing it is signing-bound.
 
@@ -48,8 +49,12 @@ numbers.
   event carries no token and no location, C6). Recording a verification event is
   not a signature check, in the app or here.
 - **Cryptographic verification** samples issued tokens and verifies each stored
-  signature with `pqc_signing.verify_stored_signature` (two independent
-  witnesses under real PQC), timing each and asserting they all verify.
+  signature with `pqc_signing.verify_stored_signature`, timing each and asserting
+  they all verify. It measures two rates: **two-witness** (liboqs AND OpenSSL
+  must agree, the issuance-grade check) and **single-witness** (liboqs alone, the
+  verify-AT-USE throughput path, sound because issuance already two-witnessed the
+  signature before persisting it). See
+  [verification-scaling.md](../design/verification-scaling.md).
 - **The Atlas at scale** is each bounded aggregate executed fully over the events.
 - **Invariants under load** are checked after the load: C3, C6, the C1
   append-only boundary, and that the mass-issued signatures verify.
@@ -66,7 +71,9 @@ measurement instrument, not a production SLO.
 | Substrate | 33,117 people, 465 ID bureaus, 51 jurisdictions |
 | Enrollment (issue + real ML-DSA-65 sign) | ~372 tokens/s (signing-bound) |
 | Verification-EVENT ingestion (audit writes, NOT signature checks) | ~25,970 events/s |
-| **Cryptographic signature verification (ML-DSA-65)** | **~743 verifications/s** (2,000/2,000 verified, p95 1.37 ms) |
+| Cryptographic verification, two-witness (issuance-grade) | ~745 verifications/s per core (2,000/2,000 verified, p95 1.36 ms) |
+| **Cryptographic verification, single-witness (verify-at-use)** | **~7,848 verifications/s per core** (2,000/2,000 verified, p95 0.13 ms) |
+| Projected fleet, single-witness (8 cores, verify needs only the public key) | ~62,783 verifications/s |
 | Single event write latency | p50 0.14 ms, p95 0.19 ms, p99 0.23 ms (n=500) |
 | Event set measured | 200,010 verification events |
 
@@ -93,14 +100,20 @@ labeled as such.
 ## Findings (the hardening leads)
 
 1. **Event ingestion is not cryptographic verification.** ~26,000 audit-row
-   writes/s versus ~743 real ML-DSA-65 verifications/s is a ~35x gap. A claim
-   about "verification throughput" has to say which one it means; national
-   cryptographic verification at rate is a real-signing, likely multi-core or
-   batched-verify problem, not a database-write problem.
-2. **Real signing dominates enrollment.** At ~0.4 ms per ML-DSA-65 signature
+   writes/s versus ~745 two-witness ML-DSA-65 verifications/s is a ~35x gap. A
+   claim about "verification throughput" has to say which one it means.
+2. **Single-witness verify-at-use is the throughput lever (v9.258).** Moving the
+   redundant second witness off the hot path lifts one core from ~745 to ~7,848
+   verifications/s (~10.5x); because verification needs only the public key (no
+   custody, no private key) it fans out across cores and replicas, ~62,783/s
+   projected on this 8-core node. That takes real PQ verification from hundreds
+   to tens of thousands per second without weakening issuance, which still
+   two-witnesses every signature before it is persisted. This is what
+   [verification-scaling.md](../design/verification-scaling.md) certifies.
+3. **Real signing dominates enrollment.** At ~0.4 ms per ML-DSA-65 signature
    plus a two-witness self-check, mass enrollment is signing-bound (~372/s
    single-threaded here). Parallel signing across custody workers is the lever.
-3. **The scan-based Atlas roll-ups remain the read-side scaling front** (they
+4. **The scan-based Atlas roll-ups remain the read-side scaling front** (they
    grow with the event count while the keyset `atlas_records` stays flat), the
    first candidate for a materialized rollup or covering index.
 

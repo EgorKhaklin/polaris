@@ -17,6 +17,7 @@ it at an expendable database.
 from __future__ import annotations
 
 import datetime
+import os
 import platform
 import socket
 import time
@@ -143,6 +144,9 @@ def measure_crypto_verification(conn, samples: int) -> dict:
     if samples <= 0:
         return {"samples": 0, "verified": 0, "all_verified": True, "per_sec": 0.0,
                 "algorithm": _pqc.PLACEHOLDER_LABEL if not _pqc.is_enabled() else "ML-DSA-65",
+                "two_witness_per_sec": 0.0, "single_witness_per_sec": 0.0,
+                "cores": os.cpu_count() or 1, "projected_fleet_single_witness_per_sec": 0.0,
+                "single_witness_latency_ms": vars(Percentiles(0, 0, 0, 0)),
                 "latency_ms": vars(Percentiles(0, 0, 0, 0))}
     with conn.cursor() as cur:
         # Scope to the MASS-ISSUED tokens the simulation created (the subject of
@@ -157,26 +161,43 @@ def measure_crypto_verification(conn, samples: int) -> dict:
               AND it.token_value LIKE 'SIMTOK-%%'
             ORDER BY random() LIMIT %s""", (samples,))
         rows = cur.fetchall()
-    times: list[float] = []
-    verified = 0
-    real = False
-    for r in rows:
-        sig = bytes(r["signature_bytes"])
-        pk = r["signing_public_key_hex"]
-        if pk:
-            real = True
-        t = time.perf_counter()
-        ok = _pqc.verify_stored_signature(r["token_value"], sig, pk)
-        times.append((time.perf_counter() - t) * 1000.0)
-        if ok:
-            verified += 1
-    total_s = sum(times) / 1000.0
+    tvs = [r["token_value"] for r in rows]
+    sigs = [bytes(r["signature_bytes"]) for r in rows]
+    pks = [r["signing_public_key_hex"] for r in rows]
+    real = any(pks)
+
+    def serial(witnesses: str):
+        times: list[float] = []
+        verified = 0
+        for tv, sig, pk in zip(tvs, sigs, pks):
+            t = time.perf_counter()
+            ok = _pqc.verify_stored_signature(tv, sig, pk, witnesses=witnesses)
+            times.append((time.perf_counter() - t) * 1000.0)
+            if ok:
+                verified += 1
+        total_s = sum(times) / 1000.0
+        return verified, (len(times) / total_s if total_s > 0 else 0.0), Percentiles.of(times)
+
+    # Two-witness (issuance-grade) and single-witness (verify-at-use) per-core
+    # rates. Single-witness is the throughput path a national deployment uses;
+    # both must verify every sampled token. A verify-only fleet needs just the
+    # public key, so the service capacity is per-core x workers x replicas.
+    v_both, r_both, lat_both = serial("both")
+    v_single, r_single, lat_single = serial("single")
+    workers = os.cpu_count() or 1
     return {
-        "samples": len(rows), "verified": verified,
-        "all_verified": verified == len(rows),
-        "per_sec": round(len(rows) / total_s, 1) if total_s > 0 else 0.0,
+        "samples": len(rows),
+        "verified": v_both,
+        "all_verified": v_both == len(rows) and v_single == len(rows),
         "algorithm": "ML-DSA-65" if real else _pqc.PLACEHOLDER_LABEL,
-        "latency_ms": vars(Percentiles.of(times)),
+        "two_witness_per_sec": round(r_both, 1),
+        "single_witness_per_sec": round(r_single, 1),
+        "single_witness_latency_ms": vars(lat_single),
+        "cores": workers,
+        "projected_fleet_single_witness_per_sec": round(r_single * workers, 1),
+        # backward-compat: per_sec / latency_ms are the strict two-witness serial
+        "per_sec": round(r_both, 1),
+        "latency_ms": vars(lat_both),
     }
 
 

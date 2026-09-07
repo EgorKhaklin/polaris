@@ -439,6 +439,39 @@ never contains one.
 
 ---
 
+## Token verification
+
+### `GET /api/tokens/<id>/verify`
+
+**Login required; replica-routed.** Cryptographically verifies the token's
+active signature *at use* and reports whether it is authentic and whether the
+token is currently usable. This is the throughput-oriented verification path: it
+checks **single-witness** (liboqs alone), because issuance already established
+two-witness validity and refused to persist a signature both implementations did
+not accept (see
+[verification-scaling.md](../design/verification-scaling.md)). A tampered or
+forged signature still fails here; only the redundant second implementation is
+dropped at use. Single-witness runs ~10x the two-witness rate (~7,800/s vs
+~740/s per core), and because verification needs only the public key it fans out
+cleanly across workers and HA replicas.
+
+Returns JSON:
+
+| field | type | notes |
+|---|---|---|
+| `token_id` | int | echoes the path |
+| `signature_valid` | bool | the active signature verifies |
+| `status` | string | the token's lifecycle status |
+| `usable` | bool | `signature_valid` AND `status` is `ACTIVE` |
+| `witnesses` | string | always `single` for this endpoint |
+| `signatures` | array | per-signature `{algorithm, valid, real_signature}` |
+
+`404` if the token does not exist or has no active signature. The strict
+two-witness check remains on the `/tokens/<id>` display page, which verifies one
+signature per view.
+
+---
+
 ## Verification API (use cases UC-1 through UC-8)
 
 Each use case is reachable through the operator UI (HTML form) AND

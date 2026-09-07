@@ -311,6 +311,34 @@ class SecondWitnessTests(unittest.TestCase):
         self.assertTrue(report["second_witness_available"])
         self.assertIsNone(report["second_witness_error"])
 
+    # v9.258 — verify-AT-USE single-witness path (docs/design/verification-scaling.md).
+    def test_verify_stored_single_witness_accepts_genuine_rejects_tamper(self):
+        # The throughput path: single-witness verifies a genuine signature and
+        # still rejects a tampered one. liboqs alone catches the forgery; only
+        # the redundant second implementation of the same check is dropped.
+        tv = self._msg.decode()
+        sig = bytes.fromhex(self._sig_hex)
+        self.assertTrue(pqc_signing.verify_stored_signature(tv, sig, self._pk_hex, witnesses="single"))
+        self.assertTrue(pqc_signing.verify_stored_signature(tv, sig, self._pk_hex, witnesses="both"))
+        tampered = bytes([sig[0] ^ 0xFF]) + sig[1:]
+        self.assertFalse(pqc_signing.verify_stored_signature(tv, tampered, self._pk_hex, witnesses="single"))
+
+    def test_single_witness_consults_only_the_primary(self):
+        # The claim the throughput path rests on: single-witness does NOT run the
+        # second witness. Force the witness to DISAGREE; single-witness still
+        # accepts (it never asked it), while two-witness refuses on that same
+        # disagreement. So "both" is strictly stronger, and "single" is genuinely
+        # the ~10x-cheaper one-implementation check, not a silent alias for it.
+        tv = self._msg.decode()
+        sig = bytes.fromhex(self._sig_hex)
+        orig = pqc_signing._verify_second_witness
+        pqc_signing._verify_second_witness = lambda *a, **k: False
+        try:
+            self.assertTrue(pqc_signing.verify_stored_signature(tv, sig, self._pk_hex, witnesses="single"))
+            self.assertFalse(pqc_signing.verify_stored_signature(tv, sig, self._pk_hex, witnesses="both"))
+        finally:
+            pqc_signing._verify_second_witness = orig
+
 
 class SecondWitnessDegradationTests(unittest.TestCase):
     """The graceful-degradation contract is testable even without the witness
