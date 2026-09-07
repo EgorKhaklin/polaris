@@ -142,10 +142,27 @@ def main():
             fail(f"the counter kept climbing after Stop ({stopped_at:.0f} -> {after_stop:.0f})")
         page.screenshot(path=str(OUT / "03-atlas-stopped.png"))
 
+        # --- Trends tab (ship 7): the heatmap and the stacked series render ---
+        # The simulation above left a window of events, so both aggregates have
+        # data. This verifies the JS builds the SVG (168 heatmap cells, >=1
+        # stacked band, a legend) in a real browser.
+        tab = page.query_selector('[data-atlas-view-tab="trends"]')
+        if tab:
+            tab.click()
+            page.wait_for_selector('.trends-hm-cell', timeout=5000)
+            cells = len(page.query_selector_all('.trends-hm-cell'))
+            bands = len(page.query_selector_all('.trends-band'))
+            if cells != 168:
+                fail(f"the Trends heatmap rendered {cells} cells, expected 168 (7x24)")
+            if bands < 1:
+                fail("the Trends composition chart rendered no stacked bands")
+            print(f"  Trends tab: {cells} heatmap cells, {bands} stacked bands rendered")
+            page.screenshot(path=str(OUT / "04-atlas-trends.png"))
+
         browser.close()
 
     print(f"UI drill PASSED. Evidence in {OUT}/ "
-          "(01-baseline, 02-simulating, 03-stopped).")
+          "(01-baseline, 02-simulating, 03-stopped, 04-trends).")
     return 0
 
 

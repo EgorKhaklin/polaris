@@ -3919,6 +3919,9 @@ def test_atlas_console_check_discriminates(tmp_path):
     ATLAS = ('<button data-atlas-view-tab="overview" aria-selected="true" class="atlas-tab atlas-tab-active">Overview</button>\n'
              '<button data-atlas-view-tab="breakdown" aria-selected="false">Breakdown</button>\n'
              '<button data-atlas-view-tab="records" aria-selected="false">Records</button>\n'
+             '<button data-atlas-view-tab="trends" aria-selected="false">Trends</button>\n'
+             '<div data-trends-heatmap></div><div data-trends-stacked></div>'
+             '<button data-trends-dim="context">Context</button>\n'
              '<button data-atlas-view-tab="map" aria-selected="false">Map</button>\n'
              '<input data-bd-search><div class="bd-scroll"><div data-bd-ranked></div></div>\n'
              '<table data-rec-grid><tbody data-rec-body></tbody></table><button data-rec-more>Load more</button>\n'
@@ -3947,11 +3950,19 @@ def test_atlas_console_check_discriminates(tmp_path):
               "    jurisdiction TEXT, n_total BIGINT, n_zk BIGINT, n_located BIGINT,\n"
               "    centroid_lat DOUBLE PRECISION, centroid_lon DOUBLE PRECISION\n)\n"
               "LANGUAGE sql\nSTABLE\nAS $$ SELECT avg(ve.latitude) FILTER (WHERE ve.disclosure_level <> 'ZERO_KNOWLEDGE') $$;\n")
+    # Trends (v9.265): the heatmap + stacked series window on COALESCE(p_since)
+    # so the generic plan prunes the monthly partitions.
+    HEATMAP = ("CREATE OR REPLACE FUNCTION atlas_heatmap(\n    p_since TIMESTAMP\n) RETURNS TABLE (\n"
+               "    dow INTEGER, hour INTEGER, n BIGINT, n_failure BIGINT\n)\n"
+               "LANGUAGE sql\nSTABLE\nAS $$ SELECT 1 WHERE event_timestamp >= COALESCE(p_since, '-infinity'::timestamp) $$;\n")
+    STACKED = ("CREATE OR REPLACE FUNCTION atlas_series_stacked(\n    p_since TIMESTAMP, p_buckets INTEGER, p_dimension TEXT\n) RETURNS TABLE (\n"
+               "    bucket_ts TIMESTAMP, label TEXT, n BIGINT\n)\n"
+               "LANGUAGE sql\nSTABLE\nAS $$ SELECT 1 WHERE event_timestamp >= COALESCE(p_since, '-infinity'::timestamp) $$;\n")
     SQL = (sqlfn("atlas_volume_series", "    bucket_ts TIMESTAMP, n_total BIGINT, n_failure BIGINT, n_zk BIGINT")
            + sqlfn("atlas_breakdown", "    label TEXT, n_total BIGINT, n_failure BIGINT", ",\n    p_search TEXT DEFAULT NULL")
            + sqlfn("atlas_crosstab", "    row_label TEXT, col_label TEXT, n_total BIGINT")
            + sqlfn("atlas_agency_facet", "    agency_id INTEGER, name TEXT, n_total BIGINT")
-           + RECORDS + HEXBIN + GEOJUR)
+           + RECORDS + HEXBIN + GEOJUR + HEATMAP + STACKED)
     APP = ("_ATLAS_MAX_CLUSTERS=5000\n_ATLAS_MAX_POINTS=2000\n_ATLAS_MAX_EVENTS=500\n_ATLAS_MAX_CATEGORIES=50\n"
            "_ATLAS_BREAKDOWN_DIMENSIONS={'verification': ('agency',)}\n"
            "_ATLAS_CROSSTAB_ROWS={'verification': ('agency',)}\n"
@@ -3962,7 +3973,10 @@ def test_atlas_console_check_discriminates(tmp_path):
            "@app.route('/api/atlas/facet/agencies')\n@replica_reads\ndef api_atlas_facet_agencies():\n    pass\n"
            "@app.route('/api/atlas/records')\n@replica_reads\ndef api_atlas_records():\n    pass\n"
            "@app.route('/api/atlas/hexbin')\n@replica_reads\ndef api_atlas_hexbin():\n    pass\n"
-           "@app.route('/api/atlas/geo/jurisdictions')\n@replica_reads\ndef api_atlas_geo_jurisdictions():\n    pass\n")
+           "@app.route('/api/atlas/geo/jurisdictions')\n@replica_reads\ndef api_atlas_geo_jurisdictions():\n    pass\n"
+           "_ATLAS_STACK_DIMENSIONS={'verification': ('context',)}\n"
+           "@app.route('/api/atlas/heatmap')\n@replica_reads\ndef api_atlas_heatmap():\n    pass\n"
+           "@app.route('/api/atlas/stacked')\n@replica_reads\ndef api_atlas_stacked():\n    pass\n")
     good = {
         "polaris_web/templates/atlas.html": ATLAS,
         "polaris_web/static/atlas-console.js": "/* console */\n",
@@ -4064,6 +4078,21 @@ def test_atlas_console_check_discriminates(tmp_path):
     assert checks.check_atlas_console(tmp_path)[0].level == "FAIL", "must FAIL when the geo/jurisdictions endpoint is absent"
     write({"polaris_web/app.py": APP.replace("@app.route('/api/atlas/hexbin')\n@replica_reads", "@app.route('/api/atlas/hexbin')")})
     assert checks.check_atlas_console(tmp_path)[0].level == "FAIL", "must FAIL when api_atlas_hexbin is not @replica_reads"
+    # v9.265 (Trends): the Trends tab is absent
+    write({"polaris_web/templates/atlas.html": ATLAS.replace('data-atlas-view-tab="trends"', 'data-atlas-view-tab="nope"')})
+    assert checks.check_atlas_console(tmp_path)[0].level == "FAIL", "must FAIL when the Trends tab is absent"
+    # the heatmap aggregate is missing
+    write({"polaris_sql/11_atlas.sql": SQL.replace(HEATMAP, "")})
+    assert checks.check_atlas_console(tmp_path)[0].level == "FAIL", "must FAIL when atlas_heatmap is absent"
+    # the stacked series no longer prunes (windows on the wrong thing)
+    write({"polaris_sql/11_atlas.sql": SQL.replace("COALESCE(p_since, '-infinity'::timestamp)", "now()")})
+    assert checks.check_atlas_console(tmp_path)[0].level == "FAIL", "must FAIL when a Trends aggregate does not prune"
+    # the stacked endpoint is absent
+    write({"polaris_web/app.py": APP.replace("@app.route('/api/atlas/stacked')", "@app.route('/api/atlas/nope')")})
+    assert checks.check_atlas_console(tmp_path)[0].level == "FAIL", "must FAIL when the stacked Trends endpoint is absent"
+    # the stacked dimensions are not whitelisted
+    write({"polaris_web/app.py": APP.replace("_ATLAS_STACK_DIMENSIONS", "_NOPE")})
+    assert checks.check_atlas_console(tmp_path)[0].level == "FAIL", "must FAIL when the stacked dimensions are not whitelisted"
 
 
 def test_helm_reference_profile_check_discriminates(tmp_path):

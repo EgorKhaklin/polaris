@@ -26,6 +26,9 @@
                     id="atlas-tab-records" aria-selected="false"
                     data-atlas-view-tab="records" aria-controls="atlas-panel-records">Records</button>
             <button class="atlas-tab" type="button" role="tab"
+                    id="atlas-tab-trends" aria-selected="false"
+                    data-atlas-view-tab="trends" aria-controls="atlas-panel-trends">Trends</button>
+            <button class="atlas-tab" type="button" role="tab"
                     id="atlas-tab-map" aria-selected="false"
                     data-atlas-view-tab="map" aria-controls="atlas-panel-map">Map</button>
         </div>
@@ -246,6 +249,37 @@
             <button type="button" class="toolbar-chip" data-rec-retry>Retry</button>
         </div>
         <p class="ov-foot">Records match the global filter and are keyset-paginated newest-first, so the grid scales to millions of events without ever loading them all. Zero-knowledge verifications appear as activity but their subject and location are withheld (C6).</p>
+    </div>
+
+    {# ================= TRENDS (ship 7): temporal rhythm + composition ============= #}
+    <div class="atlas-view atlas-view-trends" id="atlas-panel-trends"
+         role="tabpanel" aria-labelledby="atlas-tab-trends" data-atlas-view-panel="trends" hidden>
+        <div class="ov-card trends-card">
+            <div class="ov-card-head">
+                <span class="ov-card-title">Temporal rhythm</span>
+                <span class="trends-sub">events by weekday x hour of day</span>
+            </div>
+            <div class="trends-heatmap" data-trends-heatmap aria-label="Weekday by hour heatmap"></div>
+            <p class="ov-foot">Bounded to 168 cells (7 x 24). Zero-knowledge verifications are counted in their cell but never located (C6).</p>
+        </div>
+        <div class="ov-card trends-card">
+            <div class="ov-card-head">
+                <span class="ov-card-title">Composition over time</span>
+                <div class="trends-dims" role="radiogroup" aria-label="Break out by">
+                    <button class="toolbar-chip toolbar-chip-active" type="button" role="radio" aria-checked="true" data-trends-dim="context">Context</button>
+                    <button class="toolbar-chip" type="button" role="radio" aria-checked="false" data-trends-dim="outcome">Outcome</button>
+                    <button class="toolbar-chip" type="button" role="radio" aria-checked="false" data-trends-dim="disclosure">Disclosure</button>
+                    <button class="toolbar-chip" type="button" role="radio" aria-checked="false" data-trends-dim="jurisdiction">Jurisdiction</button>
+                </div>
+            </div>
+            <div class="trends-stacked" data-trends-stacked aria-label="Stacked composition over time"></div>
+            <div class="trends-legend" data-trends-legend></div>
+            <p class="ov-foot">Top slices by volume; the rest folds into "Other". A stacked band widening or a context surging is visible at a glance. Bounded, non-geographic (C6/C8).</p>
+        </div>
+        <div class="ov-error" data-trends-error hidden>
+            <span data-trends-error-detail>Could not load trends.</span>
+            <button type="button" class="toolbar-chip" data-trends-retry>Retry</button>
+        </div>
     </div>
 
     {# ================= MAP (the former globe, now a tab) ================= #}

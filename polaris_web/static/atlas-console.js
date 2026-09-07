@@ -89,6 +89,7 @@
     // Reload the shown analytical view so a filter set on another tab applies.
     if (name === 'breakdown') loadBreakdown();
     else if (name === 'records') loadRecords(true);
+    else if (name === 'trends') loadTrends();
     else if (name === 'overview' && typeof loadOverview === 'function') loadOverview();
     try { history.replaceState(null, '', '#' + name); } catch (e) { /* ignore */ }
   }
@@ -855,6 +856,136 @@
     if (clear) clear.hidden = !any;
   }
 
+  // =========================================================================
+  // TRENDS (ship 7): temporal-rhythm heatmap + composition-over-time stack.
+  // Both are bounded server-side aggregates (atlas_heatmap / atlas_series_stacked),
+  // hand-rolled SVG so script-src 'self' stays strict (C5), non-geographic so a
+  // zero-knowledge verification is counted but never located (C6).
+  // =========================================================================
+  var trends = $('[data-atlas-view-panel="trends"]');
+  var trendsDim = 'context';
+  var trendsSeq = 0;
+  var DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  var STACK_COLORS = ['#5ac8fa', '#a78bfa', '#f5c451', '#ff6b6b', '#4ade80',
+                      '#f472b6', '#38bdf8', '#fb923c'];
+  var STACK_OTHER = '#64748b';
+
+  function stackColor(label, i) { return label === 'Other' ? STACK_OTHER : STACK_COLORS[i % STACK_COLORS.length]; }
+
+  function loadTrends() {
+    if (!trends) return;
+    var seq = ++trendsSeq;
+    var q = gfilterQuery();
+    var err = $('[data-trends-error]', trends);
+    if (err) err.hidden = true;
+    apiCall('/api/atlas/heatmap?' + q).then(function (data) {
+      if (seq !== trendsSeq) return;
+      renderHeatmap($('[data-trends-heatmap]', trends), data.cells || []);
+    }).catch(function (e) { if (seq === trendsSeq) showTrendsError('Heatmap failed: ' + e.message); });
+    apiCall('/api/atlas/stacked?' + q + '&dimension=' + trendsDim + '&buckets=48').then(function (data) {
+      if (seq !== trendsSeq) return;
+      renderStacked($('[data-trends-stacked]', trends), data);
+      renderTrendsLegend($('[data-trends-legend]', trends), data.labels || []);
+    }).catch(function (e) { if (seq === trendsSeq) showTrendsError('Composition failed: ' + e.message); });
+  }
+
+  function showTrendsError(msg) {
+    var err = $('[data-trends-error]', trends);
+    if (!err) return;
+    var d = $('[data-trends-error-detail]', err);
+    if (d) d.textContent = msg;
+    err.hidden = false;
+  }
+
+  function renderHeatmap(mount, cells) {
+    if (!mount) return;
+    mount.textContent = '';
+    if (!cells.length) { mount.appendChild(el('div', { class: 'ov-empty', text: 'No events in this window.' })); return; }
+    var grid = {}, maxN = 1;
+    cells.forEach(function (c) { grid[c.dow + ':' + c.hour] = c; if (c.n > maxN) maxN = c.n; });
+    var padL = 34, padT = 16, cw = 30, ch = 20, W = padL + 24 * cw + 8, H = padT + 7 * ch + 8;
+    var s = svg('svg', { viewBox: '0 0 ' + W + ' ' + H, class: 'trends-hm-svg', preserveAspectRatio: 'xMinYMin meet', role: 'img' });
+    for (var h = 0; h < 24; h += 3)
+      s.appendChild(svg('text', { x: padL + h * cw + cw / 2, y: padT - 4, class: 'ov-axis', 'text-anchor': 'middle' })).textContent = h + 'h';
+    for (var d = 1; d <= 7; d++) {
+      s.appendChild(svg('text', { x: padL - 6, y: padT + (d - 1) * ch + ch / 2 + 3, class: 'ov-axis', 'text-anchor': 'end' })).textContent = DOW[d - 1];
+      for (var hr = 0; hr < 24; hr++) {
+        var cell = grid[d + ':' + hr], n = cell ? cell.n : 0;
+        var r = svg('rect', {
+          x: padL + hr * cw + 1, y: padT + (d - 1) * ch + 1, width: cw - 2, height: ch - 2, rx: 2,
+          class: 'trends-hm-cell', fill: n ? '#79e6b3' : '#1b2733',
+          'fill-opacity': n ? (0.12 + 0.88 * (n / maxN)).toFixed(3) : 1
+        });
+        var tt = svg('title'); tt.textContent = DOW[d - 1] + ' ' + (hr < 10 ? '0' + hr : hr) + ':00 — ' + fmtInt(n) + ' event' + (n === 1 ? '' : 's') + (cell && cell.n_failure ? ' (' + fmtInt(cell.n_failure) + ' failed)' : '');
+        r.appendChild(tt); s.appendChild(r);
+      }
+    }
+    mount.appendChild(s);
+  }
+
+  function renderStacked(mount, data) {
+    if (!mount) return;
+    mount.textContent = '';
+    var labels = (data && data.labels) || [], points = (data && data.points) || [];
+    if (!labels.length || !points.length) { mount.appendChild(el('div', { class: 'ov-empty', text: 'No events in this window.' })); return; }
+    var W = 820, H = 240, padL = 8, padR = 8, padT = 12, padB = 22, iW = W - padL - padR, iH = H - padT - padB;
+    var totals = points.map(function (p) { var t = 0; labels.forEach(function (l) { t += (p.values[l] || 0); }); return t; });
+    var maxT = Math.max(1, Math.max.apply(null, totals));
+    var n = points.length;
+    function X(i) { return padL + (n === 1 ? iW / 2 : (i / (n - 1)) * iW); }
+    function Y(v) { return padT + iH - (v / maxT) * iH; }
+    var s = svg('svg', { viewBox: '0 0 ' + W + ' ' + H, class: 'ov-hero-svg', preserveAspectRatio: 'none', role: 'img' });
+    [0, 0.5, 1].forEach(function (f) {
+      var y = padT + iH - f * iH;
+      s.appendChild(svg('line', { x1: padL, y1: y, x2: W - padR, y2: y, class: 'ov-gridline' }));
+      s.appendChild(svg('text', { x: padL + 2, y: y - 3, class: 'ov-axis' })).textContent = f === 0 ? '' : fmtInt(Math.round(maxT * f));
+    });
+    // cumulative baselines, bottom band first, so each area sits on the last
+    var below = points.map(function () { return 0; });
+    labels.forEach(function (label, li) {
+      var top = points.map(function (p, i) { return below[i] + (p.values[label] || 0); });
+      var d = 'M ' + X(0) + ' ' + Y(top[0]);
+      for (var i = 1; i < n; i++) d += ' L ' + X(i) + ' ' + Y(top[i]);
+      for (var j = n - 1; j >= 0; j--) d += ' L ' + X(j) + ' ' + Y(below[j]);
+      d += ' Z';
+      s.appendChild(svg('path', { d: d, class: 'trends-band', fill: stackColor(label, li), 'fill-opacity': '0.82' }));
+      below = top;
+    });
+    mount.appendChild(s);
+    var range = el('div', { class: 'ov-hero-range' });
+    range.appendChild(el('span', { text: shortTs(points[0].ts) }));
+    range.appendChild(el('span', { text: shortTs(points[n - 1].ts) }));
+    mount.appendChild(range);
+  }
+
+  function renderTrendsLegend(mount, labels) {
+    if (!mount) return;
+    mount.textContent = '';
+    labels.forEach(function (label, i) {
+      var item = el('span', { class: 'trends-legend-item' });
+      // A tiny SVG swatch keeps the colour out of an inline style (strict CSP).
+      var box = svg('svg', { width: 10, height: 10, viewBox: '0 0 10 10', class: 'trends-legend-swatch' });
+      box.appendChild(svg('rect', { x: 0, y: 0, width: 10, height: 10, rx: 2, fill: stackColor(label, i) }));
+      item.appendChild(box);
+      item.appendChild(el('span', { class: 'trends-legend-label', text: prettyLabel(label) }));
+      mount.appendChild(item);
+    });
+  }
+
+  $$('[data-trends-dim]', trends || document).forEach(function (b) {
+    b.addEventListener('click', function () {
+      trendsDim = b.getAttribute('data-trends-dim');
+      $$('[data-trends-dim]', trends).forEach(function (o) {
+        var on = o === b;
+        o.classList.toggle('toolbar-chip-active', on);
+        o.setAttribute('aria-checked', on ? 'true' : 'false');
+      });
+      loadTrends();
+    });
+  });
+  var tRetry = $('[data-trends-retry]', trends || document);
+  if (tRetry) tRetry.addEventListener('click', loadTrends);
+
   // initial paint
   configureFacets();
   renderGfChips();
@@ -865,6 +996,7 @@
     if (document.hidden) return;
     if (!overview.hidden) loadOverview();
     else if (bd && !bd.hidden) loadBreakdown();
+    else if (trends && !trends.hidden) loadTrends();
   }, 60000);
 
   // =========================================================================
@@ -888,6 +1020,7 @@
     function refreshActive() {
       if (!overview.hidden) loadOverview();
       else if (bd && !bd.hidden) loadBreakdown();
+      else if (trends && !trends.hidden) loadTrends();
       else if (rec && !rec.hidden) loadRecords(true);
       // Nudge the map to repaint if it is the active view and booted.
       window.dispatchEvent(new CustomEvent('polaris:atlas-refresh'));

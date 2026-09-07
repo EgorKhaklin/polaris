@@ -5,6 +5,40 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.265 — 2026-09-07 (Atlas Trends: temporal rhythm + composition over time)
+
+Ship 7 of the Atlas rebuild (P2.3): a Trends tab that answers "when does the
+nation verify, and how is the activity composed" — two bounded, non-geographic
+aggregates, hand-rolled SVG (so script-src 'self' stays strict, C5), driven by
+the same global filter as the rest of the console.
+
+**Temporal-rhythm heatmap.** `atlas_heatmap` bins events by ISO weekday x hour of
+day into at most 7 x 24 = 168 cells (C8), rendered as a green-intensity grid.
+The business-hours ridge and the weekend trough are visible at a glance; a
+zero-knowledge verification is counted in its cell but never located (C6).
+
+**Composition over time.** `atlas_series_stacked` breaks volume out by one
+whitelisted dimension (context / outcome / disclosure / agency / jurisdiction),
+top-K by volume with the rest folded into a single 'Other' band, rendered as a
+stacked-area chart with a dimension selector. A band widening or a context
+surging shows immediately. Bounded to buckets x (K+1) (C8).
+
+Both window on `event_timestamp >= COALESCE(p_since, '-infinity')`, so a windowed
+query prunes the monthly partitions under the generic plan (the v9.260
+discipline); both are `@replica_reads` and cached; the endpoints
+(`GET /api/atlas/heatmap`, `GET /api/atlas/stacked`) reject a bad dimension or
+bucket count with 400.
+
+Verified in a real browser: the UI drill (v9.262-263) now also opens the Trends
+tab and asserts the heatmap renders 168 cells and the composition chart renders
+its stacked bands. `check_atlas_console` pins the two aggregates (bounded +
+partition-pruned), the two replica-routed endpoints, the whitelisted stacked
+dimensions, and the Trends tab's mounts; the detection test perturbs each. New
+DB tests cover the endpoint shapes, the C8 bounds, the C6 ZK counting, and the
+400s. `AtlasTrendsAPITests`. 83-route application (was 81). Full suite green.
+
+---
+
 ## v9.264 — 2026-09-07 (Two integrity fixes: issuance can't degrade to one witness; usable is decided on fresh state)
 
 Two soundness gaps in the verification claims, found in review, are closed here.

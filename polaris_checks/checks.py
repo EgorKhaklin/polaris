@@ -4857,7 +4857,7 @@ def check_atlas_console(root: pathlib.Path) -> list[Finding]:
         return _fail("atlas_console", "polaris_web/templates/atlas.html is missing")
     # Overview is the DEFAULT view (its tab is selected on first paint); the
     # Breakdown (v9.249), Records (v9.252) and Map tabs are the other views.
-    for tab in ('overview', 'breakdown', 'records', 'map'):
+    for tab in ('overview', 'breakdown', 'records', 'trends', 'map'):
         if f'data-atlas-view-tab="{tab}"' not in atlas:
             return _fail("atlas_console", f"atlas.html must have the {tab} view tab")
     m = re.search(r'data-atlas-view-tab="overview"[^>]*aria-selected="true"'
@@ -4968,6 +4968,30 @@ def check_atlas_console(root: pathlib.Path) -> list[Finding]:
         head = app.rsplit(f"@app.route('{route}')", 1)[-1].split(fn, 1)[0]
         if "@replica_reads" not in head:
             return _fail("atlas_console", f"{fn[4:]} must be @replica_reads")
+
+    # v9.265 (ship 7 — Trends): the temporal-rhythm heatmap and the
+    # composition-over-time stack. Both are bounded (168 cells / top-K + Other),
+    # partition-pruned (COALESCE(p_since, '-infinity')), and replica-read.
+    for fn_name in ("atlas_heatmap", "atlas_series_stacked"):
+        if f"FUNCTION {fn_name}(" not in sql:
+            return _fail("atlas_console", f"11_atlas.sql must define {fn_name} (a Trends aggregate)")
+        # windowed on the parameter so the generic plan prunes (v9.260 discipline)
+        if f"{fn_name}(" in sql and "COALESCE(p_since" not in sql:
+            return _fail("atlas_console", f"{fn_name} must window on event_timestamp >= COALESCE(p_since, "
+                         "'-infinity') so it prunes the monthly partitions")
+    for route, fn in (("/api/atlas/heatmap", "def api_atlas_heatmap"),
+                      ("/api/atlas/stacked", "def api_atlas_stacked")):
+        if f"@app.route('{route}')" not in app:
+            return _fail("atlas_console", f"app.py must expose {route} (a Trends endpoint)")
+        head = app.rsplit(f"@app.route('{route}')", 1)[-1].split(fn, 1)[0]
+        if "@replica_reads" not in head:
+            return _fail("atlas_console", f"{fn[4:]} must be @replica_reads")
+    if "_ATLAS_STACK_DIMENSIONS" not in app:
+        return _fail("atlas_console", "the stacked Trends dimensions must be whitelisted server-side "
+                     "(_ATLAS_STACK_DIMENSIONS)")
+    if "data-trends-heatmap" not in atlas or "data-trends-stacked" not in atlas or "data-trends-dim" not in atlas:
+        return _fail("atlas_console", "the Trends tab must mount a heatmap (data-trends-heatmap), a stacked "
+                     "series (data-trends-stacked), and a dimension selector (data-trends-dim)")
     return _ok("atlas_console",
                "the Atlas is a coordinated analytical console: a global faceted filter bar (with an "
                "agency typeahead) drives a bounded Overview, a searchable Breakdown of cross-tabs, a "

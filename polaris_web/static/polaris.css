@@ -2310,6 +2310,23 @@ textarea.sql {
 }
 @media (prefers-reduced-motion: reduce) { .atlas-sim-on .atlas-sim-dot { animation: none; } }
 
+/* Trends (ship 7): temporal-rhythm heatmap + composition-over-time stack. */
+.atlas-view-trends { display: flex; flex-direction: column; gap: 16px; }
+.trends-card .ov-card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.trends-sub { font-family: 'SF Mono', 'Berkeley Mono', Monaco, Consolas, monospace; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; color: rgba(150, 162, 180, 0.7); }
+.trends-heatmap { width: 100%; overflow-x: auto; margin-top: 8px; }
+.trends-hm-svg { width: 100%; min-width: 760px; height: auto; }
+.trends-hm-cell { transition: fill-opacity 0.15s ease; }
+.trends-hm-cell:hover { stroke: rgba(126, 232, 167, 0.9); stroke-width: 1.5; }
+.trends-dims { display: inline-flex; gap: 6px; flex-wrap: wrap; }
+.trends-stacked { width: 100%; overflow-x: auto; margin-top: 8px; }
+.trends-band { transition: fill-opacity 0.15s ease; }
+.trends-band:hover { fill-opacity: 1 !important; }
+.trends-legend { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 8px; padding: 0 2px; }
+.trends-legend-item { display: inline-flex; align-items: center; gap: 5px; }
+.trends-legend-swatch { flex: none; }
+.trends-legend-label { font-size: 11px; color: rgba(200, 208, 220, 0.85); }
+
 /* Anomaly counts in HUD: failed verifs (red) · full-disclosure (gold).
    Sized to match .hud-value-small so the anomaly pair carries weight
    alongside the active-token number to its left. */

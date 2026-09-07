@@ -958,6 +958,166 @@ COMMENT ON FUNCTION atlas_crosstab IS
 
 
 -- ----------------------------------------------------------------------------
+-- atlas_heatmap  (roadmap P2.3 ship 7, v9.264 — the Trends view)
+--
+-- The temporal-rhythm view: events binned by ISO weekday (1=Mon..7=Sun) x hour
+-- of day (0..23), so an operator reads WHEN the nation verifies (business-hours
+-- ridge, weekend trough, an off-hours anomaly). Bounded by construction to at
+-- most 7 x 24 = 168 cells per kind (C8). Non-geographic, so a zero-knowledge
+-- verification is counted in its weekday/hour cell but never located (C6).
+-- Windows on event_timestamp >= COALESCE(p_since, '-infinity') so a concrete
+-- window prunes the monthly partitions under the generic plan (v9.260).
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION atlas_heatmap(
+    p_since      TIMESTAMP,
+    p_kind       TEXT      DEFAULT 'verification',
+    p_outcomes   TEXT      DEFAULT NULL,
+    p_disclosure TEXT      DEFAULT NULL,
+    p_contexts   TEXT      DEFAULT NULL,
+    p_agencies   TEXT      DEFAULT NULL
+) RETURNS TABLE (
+    dow         INTEGER,
+    hour        INTEGER,
+    n           BIGINT,
+    n_failure   BIGINT
+)
+LANGUAGE sql
+STABLE
+AS $$
+    SELECT
+        EXTRACT(ISODOW FROM ve.event_timestamp)::INTEGER            AS dow,
+        EXTRACT(HOUR   FROM ve.event_timestamp)::INTEGER            AS hour,
+        count(*)                                                    AS n,
+        count(*) FILTER (WHERE ve.outcome <> 'SUCCESS')             AS n_failure
+    FROM VerificationEvent ve
+    LEFT JOIN VerificationContext vc ON ve.context_id = vc.context_id
+    WHERE p_kind = 'verification'
+      AND (ve.event_timestamp >= COALESCE(p_since, '-infinity'::timestamp))
+      AND (p_outcomes   IS NULL OR ve.outcome          = ANY(string_to_array(p_outcomes, ',')))
+      AND (p_disclosure IS NULL OR ve.disclosure_level = ANY(string_to_array(p_disclosure, ',')))
+      AND (p_contexts   IS NULL OR vc.context_type      = ANY(string_to_array(p_contexts, ',')))
+      AND (p_agencies   IS NULL OR ve.requesting_agency_id::text = ANY(string_to_array(p_agencies, ',')))
+    GROUP BY 1, 2
+    UNION ALL
+    SELECT
+        EXTRACT(ISODOW FROM le.event_timestamp)::INTEGER,
+        EXTRACT(HOUR   FROM le.event_timestamp)::INTEGER,
+        count(*),
+        count(*) FILTER (WHERE le.event_type IN ('REVOKED', 'LOST'))
+    FROM TokenLifecycleEvent le
+    WHERE p_kind = 'lifecycle'
+      AND (le.event_timestamp >= COALESCE(p_since, '-infinity'::timestamp))
+      AND (p_agencies IS NULL OR le.actor_agency_id::text = ANY(string_to_array(p_agencies, ',')))
+    GROUP BY 1, 2;
+$$;
+
+COMMENT ON FUNCTION atlas_heatmap IS
+  'Roadmap P2.3 ship 7 (Trends): events binned by ISO weekday x hour of day, the '
+  'temporal-rhythm view. Bounded to 7x24=168 cells per kind (C8); non-geographic '
+  'so zero-knowledge events are counted in their cell, never located (C6).';
+
+
+-- ----------------------------------------------------------------------------
+-- atlas_series_stacked  (roadmap P2.3 ship 7, v9.264 — the Trends view)
+--
+-- Volume over time BROKEN OUT by one dimension: for each time bucket, the count
+-- per category, but only for the top-K categories by total volume; everything
+-- else folds into a single 'Other' band. So a stacked-area chart shows how the
+-- composition of activity shifts over the window (a context surging, a failure
+-- band widening) without unbounded series. Bounded to p_buckets x (p_limit + 1)
+-- rows (C8). Non-geographic (C6). Windows via COALESCE(p_since, '-infinity') and
+-- references the parameter directly in the WHERE so the generic plan prunes.
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION atlas_series_stacked(
+    p_since      TIMESTAMP,
+    p_buckets    INTEGER,
+    p_dimension  TEXT,       -- context | outcome | disclosure | agency | jurisdiction
+    p_kind       TEXT      DEFAULT 'verification',
+    p_limit      INTEGER   DEFAULT 6,
+    p_outcomes   TEXT      DEFAULT NULL,
+    p_disclosure TEXT      DEFAULT NULL,
+    p_contexts   TEXT      DEFAULT NULL,
+    p_agencies   TEXT      DEFAULT NULL
+) RETURNS TABLE (
+    bucket_ts   TIMESTAMP,
+    label       TEXT,
+    n           BIGINT
+)
+LANGUAGE sql
+STABLE
+AS $$
+    WITH params AS (
+        SELECT (extract(epoch FROM (CURRENT_TIMESTAMP - p_since))
+                / GREATEST(p_buckets, 1))::DOUBLE PRECISION AS bucket_secs
+    ),
+    base AS (
+        SELECT
+            (p_since
+                + (floor(extract(epoch FROM (ve.event_timestamp - p_since))
+                         / NULLIF(params.bucket_secs, 0)) * params.bucket_secs
+                  ) * INTERVAL '1 second'
+            )::TIMESTAMP                                            AS bt,
+            CASE p_dimension
+                WHEN 'context'      THEN vc.context_type::TEXT
+                WHEN 'outcome'      THEN ve.outcome::TEXT
+                WHEN 'disclosure'   THEN ve.disclosure_level::TEXT
+                WHEN 'agency'       THEN ag.name::TEXT
+                WHEN 'jurisdiction' THEN ag.jurisdiction::TEXT
+                ELSE ve.outcome::TEXT
+            END                                                     AS cat
+        FROM VerificationEvent ve
+        JOIN      Agency              ag ON ve.requesting_agency_id = ag.agency_id
+        JOIN      VerificationContext vc ON ve.context_id           = vc.context_id,
+             params
+        WHERE p_kind = 'verification'
+          AND ve.event_timestamp >= COALESCE(p_since, '-infinity'::timestamp)
+          AND ve.event_timestamp <  CURRENT_TIMESTAMP
+          AND (p_outcomes   IS NULL OR ve.outcome          = ANY(string_to_array(p_outcomes, ',')))
+          AND (p_disclosure IS NULL OR ve.disclosure_level = ANY(string_to_array(p_disclosure, ',')))
+          AND (p_contexts   IS NULL OR vc.context_type      = ANY(string_to_array(p_contexts, ',')))
+          AND (p_agencies   IS NULL OR ve.requesting_agency_id::text = ANY(string_to_array(p_agencies, ',')))
+        UNION ALL
+        SELECT
+            (p_since
+                + (floor(extract(epoch FROM (le.event_timestamp - p_since))
+                         / NULLIF(params.bucket_secs, 0)) * params.bucket_secs
+                  ) * INTERVAL '1 second'
+            )::TIMESTAMP                                            AS bt,
+            CASE p_dimension
+                WHEN 'agency'     THEN COALESCE(ag.name::TEXT, 'System / device')
+                WHEN 'event_type' THEN le.event_type::TEXT
+                ELSE le.event_type::TEXT
+            END                                                     AS cat
+        FROM TokenLifecycleEvent le
+        LEFT JOIN Agency ag ON le.actor_agency_id = ag.agency_id,
+             params
+        WHERE p_kind = 'lifecycle'
+          AND le.event_timestamp >= COALESCE(p_since, '-infinity'::timestamp)
+          AND le.event_timestamp <  CURRENT_TIMESTAMP
+          AND (p_agencies IS NULL OR le.actor_agency_id::text = ANY(string_to_array(p_agencies, ',')))
+    ),
+    top_cats AS (
+        SELECT cat FROM base WHERE cat IS NOT NULL
+        GROUP BY cat ORDER BY count(*) DESC, cat ASC LIMIT GREATEST(p_limit, 1)
+    )
+    SELECT
+        b.bt                                                        AS bucket_ts,
+        CASE WHEN tc.cat IS NOT NULL THEN b.cat ELSE 'Other' END    AS label,
+        count(*)                                                    AS n
+    FROM base b
+    LEFT JOIN top_cats tc ON b.cat = tc.cat
+    WHERE b.cat IS NOT NULL
+    GROUP BY b.bt, CASE WHEN tc.cat IS NOT NULL THEN b.cat ELSE 'Other' END
+    ORDER BY b.bt, label;
+$$;
+
+COMMENT ON FUNCTION atlas_series_stacked IS
+  'Roadmap P2.3 ship 7 (Trends): volume over time broken out by one dimension, '
+  'top-K categories with the rest folded into Other, for a stacked-area chart. '
+  'Bounded to p_buckets x (p_limit + 1) rows (C8); non-geographic (C6).';
+
+
+-- ----------------------------------------------------------------------------
 -- atlas_agency_facet  (roadmap P2.3, v9.251 — the global faceted filter)
 --
 -- The agency facet needs (agency_id, name, count): the id to drive the filter

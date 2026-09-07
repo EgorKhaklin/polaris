@@ -5863,6 +5863,60 @@ class AtlasConsoleAPITests(PolarisTestCase):
         self.assertLess(failtot, alltot, "an outcome filter must narrow the Regions layer")
 
 
+class AtlasTrendsAPITests(PolarisTestCase):
+    """v9.265 (roadmap P2.3 ship 7 — Trends): two bounded, non-geographic
+    aggregates behind the Trends tab.
+    - /api/atlas/heatmap: events by ISO weekday x hour of day, at most 7x24=168
+      cells (C8), counting zero-knowledge events in their cell without a
+      location (C6).
+    - /api/atlas/stacked: volume over time broken out by one whitelisted
+      dimension (top-K + 'Other'), for a stacked-area chart; ZK counted, never
+      located (C6). A bad dimension or bucket count is 400.
+    """
+
+    def test_heatmap_shape_bounds_and_counts_zk(self):
+        r = self.client.get('/api/atlas/heatmap?window=all&kind=verification')
+        self.assertEqual(r.status_code, 200)
+        cells = r.get_json()['cells']
+        self.assertLessEqual(len(cells), 168, "bounded to 7x24 cells (C8)")
+        total = 0
+        for c in cells:
+            self.assertIn(c['dow'], range(1, 8))
+            self.assertIn(c['hour'], range(0, 24))
+            self.assertGreaterEqual(c['n'], c['n_failure'])
+            self.assertNotIn('lat', c)          # C6: no location
+            self.assertNotIn('lon', c)
+            total += c['n']
+        # C6: every event is counted (ZK included). The heatmap total must equal
+        # the series total, which the console test already proves counts ZK.
+        series = self.client.get('/api/atlas/series?window=all&kind=verification&buckets=24').get_json()
+        self.assertEqual(total, sum(p['n_total'] for p in series['points']),
+                         "the heatmap must count every event, ZK included (C6)")
+
+    def test_stacked_shape_and_other_folding(self):
+        r = self.client.get('/api/atlas/stacked?window=all&kind=verification&dimension=context&buckets=24')
+        self.assertEqual(r.status_code, 200)
+        data = r.get_json()
+        self.assertIn('labels', data)
+        self.assertIn('points', data)
+        # top-K (6) + at most one 'Other' band => bounded label set (C8)
+        self.assertLessEqual(len(data['labels']), 7)
+        if 'Other' in data['labels']:
+            self.assertEqual(data['labels'][-1], 'Other', "'Other' is always the last band")
+        for p in data['points']:
+            self.assertIn('ts', p)
+            self.assertIsInstance(p['values'], dict)
+
+    def test_stacked_counts_zk_in_disclosure(self):
+        data = self.client.get('/api/atlas/stacked?window=all&kind=verification&dimension=disclosure&buckets=24').get_json()
+        self.assertIn('ZERO_KNOWLEDGE', data['labels'],
+                      "zero-knowledge must appear in the disclosure composition (C6: counted, never located)")
+
+    def test_stacked_rejects_bad_dimension_and_buckets(self):
+        self.assertEqual(self.client.get('/api/atlas/stacked?dimension=evil').status_code, 400)
+        self.assertEqual(self.client.get('/api/atlas/stacked?dimension=context&buckets=9999').status_code, 400)
+
+
 class AtlasPartitionPruningTests(PolarisTestCase):
     """v9.260 (roadmap P2.14 S5, benchmark-driven): the Atlas roll-ups filter the
     monthly-partitioned event table by event_timestamp, so a windowed query must

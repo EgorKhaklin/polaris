@@ -2528,6 +2528,116 @@ def api_atlas_series():
     return jsonify(payload)
 
 
+# The dimensions the stacked Trends series can break a stream out by (whitelisted
+# before the SQL CASE, same discipline as the breakdown dimensions).
+_ATLAS_STACK_DIMENSIONS = {
+    'verification': ('context', 'outcome', 'disclosure', 'agency', 'jurisdiction'),
+    'lifecycle':    ('agency', 'event_type'),
+}
+
+
+@app.route('/api/atlas/heatmap')
+@security.login_required
+@replica_reads
+def api_atlas_heatmap():
+    """Trends: events by ISO weekday (1=Mon..7=Sun) x hour of day (0..23), the
+    temporal-rhythm view. Returns `cells: [{dow, hour, n, n_failure}]`, at most
+    7x24=168 cells (C8), counting zero-knowledge events in their cell without a
+    location (C6). Honors the same filters as the rest of the Atlas."""
+    try:
+        kind = request.args.get('kind', 'verification')
+        if kind not in ('verification', 'lifecycle'):
+            raise ValueError("kind must be 'verification' or 'lifecycle'")
+        f = _parse_atlas_filters(request.args)
+    except ValueError as e:
+        return jsonify(error=str(e)), 400
+
+    since = f['since']
+    if since is None:
+        col = 'VerificationEvent' if kind == 'verification' else 'TokenLifecycleEvent'
+        row = query(f"SELECT min(event_timestamp) AS t FROM {col}", fetch='one')
+        since = (row and row['t']) or (datetime.now() - _ATLAS_TIME_WINDOWS['30d'])
+
+    cache_key = ('heatmap', kind, _filter_cache_key(f))
+    cached = _atlas_cache_get(cache_key)
+    if cached is not None:
+        return jsonify(cached)
+
+    rows = query("""
+        SELECT dow, hour, n, n_failure
+        FROM atlas_heatmap(%s, %s, %s, %s, %s, %s)
+        ORDER BY dow, hour
+    """, (since, kind, f['outcomes'], f['disclosure'], f['contexts'], f['agencies']))
+
+    payload = dict(
+        window=f['window'], kind=kind,
+        cells=[{'dow': int(r['dow']), 'hour': int(r['hour']),
+                'n': int(r['n']), 'n_failure': int(r['n_failure'])} for r in rows],
+    )
+    _atlas_cache_set(cache_key, payload)
+    return jsonify(payload)
+
+
+@app.route('/api/atlas/stacked')
+@security.login_required
+@replica_reads
+def api_atlas_stacked():
+    """Trends: volume over time broken out by one dimension (top-K categories,
+    the rest folded into 'Other'), for a stacked-area chart. Returns ordered
+    `labels` and `points: [{ts, values: {label: n}}]`, bounded to
+    buckets x (K+1) (C8); zero-knowledge events are counted, never located (C6)."""
+    try:
+        buckets = int(request.args.get('buckets', '48'))
+        if buckets <= 0 or buckets > 240:
+            raise ValueError("buckets must be in (0, 240]")
+        kind = request.args.get('kind', 'verification')
+        if kind not in ('verification', 'lifecycle'):
+            raise ValueError("kind must be 'verification' or 'lifecycle'")
+        dimension = request.args.get('dimension', 'context')
+        if dimension not in _ATLAS_STACK_DIMENSIONS.get(kind, ()):
+            raise ValueError("dimension is not valid for this stream")
+        f = _parse_atlas_filters(request.args)
+    except ValueError as e:
+        return jsonify(error=str(e)), 400
+
+    since = f['since']
+    if since is None:
+        col = 'VerificationEvent' if kind == 'verification' else 'TokenLifecycleEvent'
+        row = query(f"SELECT min(event_timestamp) AS t FROM {col}", fetch='one')
+        since = (row and row['t']) or (datetime.now() - _ATLAS_TIME_WINDOWS['30d'])
+
+    top_k = 6
+    cache_key = ('stacked', kind, buckets, dimension, _filter_cache_key(f))
+    cached = _atlas_cache_get(cache_key)
+    if cached is not None:
+        return jsonify(cached)
+
+    rows = query("""
+        SELECT to_char(bucket_ts, 'YYYY-MM-DD"T"HH24:MI:SS') AS ts, label, n
+        FROM atlas_series_stacked(%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        ORDER BY bucket_ts, label
+    """, (since, buckets, dimension, kind, top_k,
+          f['outcomes'], f['disclosure'], f['contexts'], f['agencies']))
+
+    # Pivot to per-bucket {label: n}, and an ordered label list (by total volume,
+    # 'Other' always last) so the client stacks the bands consistently.
+    by_ts, totals = {}, {}
+    for r in rows:
+        by_ts.setdefault(r['ts'], {})[r['label']] = int(r['n'])
+        totals[r['label']] = totals.get(r['label'], 0) + int(r['n'])
+    labels = sorted((lbl for lbl in totals if lbl != 'Other'),
+                    key=lambda lbl: (-totals[lbl], lbl))
+    if 'Other' in totals:
+        labels.append('Other')
+    payload = dict(
+        window=f['window'], kind=kind, dimension=dimension, buckets=buckets,
+        labels=labels,
+        points=[{'ts': ts, 'values': by_ts[ts]} for ts in sorted(by_ts)],
+    )
+    _atlas_cache_set(cache_key, payload)
+    return jsonify(payload)
+
+
 # The dimensions each stream can be broken down by (whitelisted here so a
 # malformed ?dimension= can never reach the SQL CASE as anything but a known
 # value). Jurisdiction is the REQUESTING agency's, so it covers ZK too.

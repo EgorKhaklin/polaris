@@ -425,6 +425,29 @@ investigator cannot place them (constraint C6).
 
 ---
 
+## Trends
+
+### `GET /api/atlas/heatmap`
+
+**Login required; replica-routed.** Events by ISO weekday (1=Mon..7=Sun) x hour
+of day (0..23) — the temporal-rhythm view behind the Trends tab. Returns
+`{cells: [{dow, hour, n, n_failure}]}`, at most **7 x 24 = 168 cells** (C8),
+honouring the same `window`/`kind`/facet filters as the rest of the Atlas.
+Non-geographic: a zero-knowledge verification is counted in its weekday/hour cell
+but never located (C6).
+
+### `GET /api/atlas/stacked`
+
+**Login required; replica-routed.** Volume over time broken out by one
+dimension, for a stacked-area chart. Params: `dimension` (whitelisted per stream:
+verification = `context|outcome|disclosure|agency|jurisdiction`; lifecycle =
+`agency|event_type`), `buckets` (<=240), plus the shared filters. Returns ordered
+`labels` (top-K by volume, `Other` last) and `points: [{ts, values: {label: n}}]`,
+bounded to `buckets x (K+1)` (C8). A bad `dimension` or `buckets` is `400`. ZK is
+counted, never located (C6).
+
+---
+
 ## Live simulation (dev/demo only)
 
 ### `POST /api/sim/tick`
