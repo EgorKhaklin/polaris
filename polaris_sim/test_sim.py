@@ -18,6 +18,7 @@ import re
 import unittest
 
 from polaris_sim import benchmark, events, load, nation, reference
+from polaris_web import pqc_signing
 
 # ---------------------------------------------------------------------------
 # Pure generator tests (no database).
@@ -107,6 +108,31 @@ class EventStreamTests(unittest.TestCase):
     def test_no_agencies_is_an_error(self):
         with self.assertRaises(ValueError):
             list(events.iter_verifications([], [], 1, 24.0, 1, datetime.datetime(2026, 9, 6)))
+
+
+class SignatureTests(unittest.TestCase):
+    """The simulation issues tokens through the real signing path, and its
+    verifications through the real verify path. These lock in the property that
+    makes that meaningful: a real (or placeholder) signature verifies, and a
+    FABRICATED one does not. This is what the benchmark's
+    'signatures_cryptographically_verify' invariant relies on to catch a
+    mass-issued token that only looks signed."""
+
+    def test_real_signature_verifies_and_a_fabricated_one_does_not(self):
+        tv = "SIMTOK-000000000001"
+        real_sig, _label, real_pk = pqc_signing.signature_with_key_for_token(tv)
+        self.assertTrue(
+            pqc_signing.verify_stored_signature(tv, real_sig, real_pk),
+            "the signature the simulation stages must verify")
+        # The literal the bulk path used to fabricate (BULK_ISSUE_<id>) is not a
+        # signature of token_value; it must NOT verify, with or without a key.
+        fake = b"BULK_ISSUE_1"
+        self.assertFalse(
+            pqc_signing.verify_stored_signature(tv, fake, None),
+            "a fabricated placeholder literal must not verify (C2)")
+        self.assertFalse(
+            pqc_signing.verify_stored_signature(tv, fake, real_pk),
+            "a fabricated literal must not verify against a real key either")
 
 
 # ---------------------------------------------------------------------------
@@ -242,7 +268,7 @@ class SubstrateLoadTests(unittest.TestCase):
         # report and, crucially, certify that the invariants still hold.
         rep = benchmark.run_benchmark(
             self.conn, scale_divisor=2_000_000, verifications=2000, lifecycle=3,
-            seed=4, latency_samples=50, commit=False)
+            seed=4, latency_samples=50, verify_samples=50, commit=False)
 
         self.assertEqual(rep.verification["events"], 2000)
         self.assertGreater(rep.enrollment["people"], 0)
@@ -254,10 +280,20 @@ class SubstrateLoadTests(unittest.TestCase):
         for fn in ("atlas_volume_series", "atlas_breakdown", "atlas_crosstab",
                    "atlas_geo_jurisdictions", "atlas_hexbin", "atlas_records"):
             self.assertIn(fn, rep.atlas_query_ms)
-        # the invariants held under load (this is what makes it a certification)
+        # the REAL cryptographic verification path ran and every mass-issued
+        # token verified (the distinction the benchmark must make honestly).
+        cv = rep.crypto_verification
+        self.assertGreater(cv["samples"], 0, "the crypto-verification phase must actually run")
+        self.assertEqual(cv["verified"], cv["samples"], "every sampled token signature must verify")
+        self.assertTrue(cv["all_verified"])
+        self.assertGreater(cv["per_sec"], 0)
+
+        # the invariants held under load (this is what makes it a certification),
+        # including that the signatures actually verify (not placeholders).
         self.assertTrue(rep.invariants["C3_one_active_token_per_person"])
         self.assertTrue(rep.invariants["C6_zero_knowledge_never_located"])
         self.assertTrue(rep.invariants["C1_verification_events_append_only"])
+        self.assertTrue(rep.invariants["signatures_cryptographically_verify"])
         self.assertTrue(rep.all_invariants_hold)
         self.assertGreaterEqual(rep.scale_counts["jurisdictions"], 20)
 

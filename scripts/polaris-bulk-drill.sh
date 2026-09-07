@@ -47,12 +47,19 @@ echo "== bulk drill against $DB ($ROWS rows, floor ${FLOOR} rows/s) =="
 CSV="$(mktemp -t polaris-bulk.XXXXXX.csv)"
 trap 'rm -f "$CSV"' EXIT
 python3 - "$ROWS" "$CSV" <<'PY'
-import sys
+import sys, hashlib
 n = int(sys.argv[1]); path = sys.argv[2]
 with open(path, "w") as f:
     for g in range(1, n + 1):
-        # legal_name|dob|jurisdiction|biometric_binding_type|token_value|physical_serial|permitted_contexts
-        f.write(f"Bulk Enrollee {g}|1990-01-01|US-PA|FINGERPRINT|BULKDRILL-TOK-{g}|BULKDRILL-SER-{g}|{{}}\n")
+        tok = f"BULKDRILL-TOK-{g}"
+        # v9.257: bulk issuance stores a REAL signature the caller staged.
+        # In the default config that is the deterministic sha3-256 of token_value
+        # (exactly what pqc_signing.signature_with_key_for_token returns when
+        # POLARIS_USE_REAL_PQC is unset), with a NULL public key. uc_bulk_issue
+        # refuses an unsigned row, so a placeholder LITERAL can never reach it.
+        sig = hashlib.sha3_256(tok.encode()).hexdigest()
+        # name|dob|juris|biometric|token|serial|contexts|signature(bytea \x..)|pubkey(NULL)
+        f.write(f"Bulk Enrollee {g}|1990-01-01|US-PA|FINGERPRINT|{tok}|BULKDRILL-SER-{g}|{{}}|\\x{sig}|\n")
 PY
 
 # ---------------------------------------------------------------------------
@@ -66,11 +73,12 @@ BEGIN;
 INSERT INTO BulkEnrollmentBatch (issuing_agency_id, algorithm_id, note)
   VALUES (1, 1, 'bulkdrill-perf') RETURNING batch_id \gset
 CREATE TEMP TABLE bulk_in (legal_name text, date_of_birth date, jurisdiction text,
-  biometric_binding_type text, token_value text, physical_serial text, permitted_contexts int[]);
+  biometric_binding_type text, token_value text, physical_serial text, permitted_contexts int[],
+  signature_bytes bytea, signing_public_key_hex text);
 \copy bulk_in FROM '__CSV__' WITH (FORMAT csv, DELIMITER '|')
 INSERT INTO BulkEnrollmentStaging
-  (batch_id, legal_name, date_of_birth, jurisdiction, biometric_binding_type, token_value, physical_serial, permitted_contexts)
-  SELECT :batch_id, legal_name, date_of_birth, jurisdiction, biometric_binding_type, token_value, physical_serial, permitted_contexts
+  (batch_id, legal_name, date_of_birth, jurisdiction, biometric_binding_type, token_value, physical_serial, permitted_contexts, signature_bytes, signing_public_key_hex)
+  SELECT :batch_id, legal_name, date_of_birth, jurisdiction, biometric_binding_type, token_value, physical_serial, permitted_contexts, signature_bytes, signing_public_key_hex
     FROM bulk_in;
 DO $$
 DECLARE v_b int; t0 timestamptz; secs float8; n int; a int; sg int; ev int; iss int;
@@ -123,10 +131,11 @@ DO $$
 DECLARE v_b int; v_n int;
 BEGIN
   INSERT INTO BulkEnrollmentBatch (issuing_agency_id, algorithm_id, note) VALUES (1, 1, 'atomic') RETURNING batch_id INTO v_b;
-  INSERT INTO BulkEnrollmentStaging (batch_id, legal_name, date_of_birth, jurisdiction, biometric_binding_type, token_value, physical_serial, permitted_contexts)
+  INSERT INTO BulkEnrollmentStaging (batch_id, legal_name, date_of_birth, jurisdiction, biometric_binding_type, token_value, physical_serial, permitted_contexts, signature_bytes, signing_public_key_hex)
   SELECT v_b, 'Atom '||g, '1990-01-01', 'US-PA', 'FINGERPRINT', 'ATOMD-TOK-'||g,
          CASE WHEN g = 4 THEN 'ATOMD-SER-3' ELSE 'ATOMD-SER-'||g END,  -- row 4 collides with row 3
-         '{}' FROM generate_series(1, 6) g;
+         '{}', '\x00'::bytea, NULL   -- a non-null stand-in; this test exercises atomicity and rolls back
+    FROM generate_series(1, 6) g;
   BEGIN
     CALL uc_bulk_issue(v_b, v_n);
     RAISE EXCEPTION 'DRILL FAIL: a batch with a duplicate physical_serial was issued';
@@ -146,9 +155,9 @@ DECLARE v_b int; v_i int; v_n int;
 BEGIN
   INSERT INTO Individual (legal_name, date_of_birth, jurisdiction) VALUES ('C3 Target', '1985-05-05', 'US-CA') RETURNING individual_id INTO v_i;
   INSERT INTO BulkEnrollmentBatch (issuing_agency_id, algorithm_id, note) VALUES (1, 1, 'c3') RETURNING batch_id INTO v_b;
-  INSERT INTO BulkEnrollmentStaging (batch_id, legal_name, date_of_birth, jurisdiction, biometric_binding_type, token_value, physical_serial, permitted_contexts, individual_id)
-  VALUES (v_b, 'C3 Target', '1985-05-05', 'US-CA', 'FINGERPRINT', 'C3D-TOK-A', 'C3D-SER-A', '{}', v_i),
-         (v_b, 'C3 Target', '1985-05-05', 'US-CA', 'FINGERPRINT', 'C3D-TOK-B', 'C3D-SER-B', '{}', v_i);
+  INSERT INTO BulkEnrollmentStaging (batch_id, legal_name, date_of_birth, jurisdiction, biometric_binding_type, token_value, physical_serial, permitted_contexts, individual_id, signature_bytes, signing_public_key_hex)
+  VALUES (v_b, 'C3 Target', '1985-05-05', 'US-CA', 'FINGERPRINT', 'C3D-TOK-A', 'C3D-SER-A', '{}', v_i, '\x00'::bytea, NULL),
+         (v_b, 'C3 Target', '1985-05-05', 'US-CA', 'FINGERPRINT', 'C3D-TOK-B', 'C3D-SER-B', '{}', v_i, '\x00'::bytea, NULL);
   BEGIN
     CALL uc_bulk_issue(v_b, v_n);
     RAISE EXCEPTION 'DRILL FAIL: two active tokens for one person were issued (C3 breached)';
@@ -167,8 +176,8 @@ DO $$
 DECLARE v_b int; v_n int;
 BEGIN
   INSERT INTO BulkEnrollmentBatch (issuing_agency_id, algorithm_id, note) VALUES (1, 1, 'twice') RETURNING batch_id INTO v_b;
-  INSERT INTO BulkEnrollmentStaging (batch_id, legal_name, date_of_birth, jurisdiction, biometric_binding_type, token_value, physical_serial, permitted_contexts)
-  VALUES (v_b, 'Twice', '1990-01-01', 'US-PA', 'FINGERPRINT', 'TWICE-TOK-1', 'TWICE-SER-1', '{}');
+  INSERT INTO BulkEnrollmentStaging (batch_id, legal_name, date_of_birth, jurisdiction, biometric_binding_type, token_value, physical_serial, permitted_contexts, signature_bytes, signing_public_key_hex)
+  VALUES (v_b, 'Twice', '1990-01-01', 'US-PA', 'FINGERPRINT', 'TWICE-TOK-1', 'TWICE-SER-1', '{}', '\x00'::bytea, NULL);
   CALL uc_bulk_issue(v_b, v_n);
   BEGIN
     CALL uc_bulk_issue(v_b, v_n);
@@ -185,8 +194,8 @@ DO $$
 DECLARE v_b int; v_n int;
 BEGIN
   INSERT INTO BulkEnrollmentBatch (issuing_agency_id, algorithm_id, note) VALUES (4, 1, 'unauth') RETURNING batch_id INTO v_b;
-  INSERT INTO BulkEnrollmentStaging (batch_id, legal_name, date_of_birth, jurisdiction, biometric_binding_type, token_value, physical_serial, permitted_contexts)
-  VALUES (v_b, 'Unauth', '1990-01-01', 'US-PA', 'FINGERPRINT', 'UNAUTH-TOK-1', 'UNAUTH-SER-1', '{}');
+  INSERT INTO BulkEnrollmentStaging (batch_id, legal_name, date_of_birth, jurisdiction, biometric_binding_type, token_value, physical_serial, permitted_contexts, signature_bytes, signing_public_key_hex)
+  VALUES (v_b, 'Unauth', '1990-01-01', 'US-PA', 'FINGERPRINT', 'UNAUTH-TOK-1', 'UNAUTH-SER-1', '{}', '\x00'::bytea, NULL);
   BEGIN
     CALL uc_bulk_issue(v_b, v_n);
     RAISE EXCEPTION 'DRILL FAIL: an agency without ISSUE minted a batch';
@@ -214,13 +223,34 @@ BEGIN
   END;
 END $$;
 ROLLBACK;
+
+-- 7. UNSIGNED ROW: a staged row with no signature is refused (v9.257). A
+--    mass-issued token can never claim a signature it does not have.
+BEGIN;
+DO $$
+DECLARE v_b int; v_n int;
+BEGIN
+  INSERT INTO BulkEnrollmentBatch (issuing_agency_id, algorithm_id, note) VALUES (1, 1, 'unsigned') RETURNING batch_id INTO v_b;
+  INSERT INTO BulkEnrollmentStaging (batch_id, legal_name, date_of_birth, jurisdiction, biometric_binding_type, token_value, physical_serial, permitted_contexts, signature_bytes)
+  VALUES (v_b, 'Unsigned', '1990-01-01', 'US-PA', 'FINGERPRINT', 'UNSIGNED-TOK-1', 'UNSIGNED-SER-1', '{}', NULL);
+  BEGIN
+    CALL uc_bulk_issue(v_b, v_n);
+    RAISE EXCEPTION 'DRILL FAIL: an UNSIGNED token was bulk-issued (signature bypass)';
+  EXCEPTION WHEN invalid_parameter_value THEN
+    IF EXISTS (SELECT 1 FROM IdentityToken WHERE token_value LIKE 'UNSIGNED-TOK-%') THEN
+      RAISE EXCEPTION 'DRILL FAIL: an unsigned batch left tokens behind';
+    END IF;
+    RAISE NOTICE 'OK: an unsigned staged row is refused (%)', SQLSTATE;
+  END;
+END $$;
+ROLLBACK;
 SQL
 )"
 RC=$?
 set -e
 [ $RC -eq 0 ] || fail "invariant block errored (rc=$RC): $INV"
 OKN="$(echo "$INV" | grep -c 'OK:')"
-[ "$OKN" -eq 5 ] || fail "expected 5 invariant confirmations, got $OKN: $INV"
+[ "$OKN" -eq 6 ] || fail "expected 6 invariant confirmations, got $OKN: $INV"
 echo "$INV" | grep 'OK:' | sed 's/NOTICE:  //; s/^/  /'
 
-echo "== BULK DRILL PASSED: set-based issuance at ${RATE} rows/s, atomic all-or-none, C3 across the batch, and the issue/auth/empty refusals =="
+echo "== BULK DRILL PASSED: set-based issuance at ${RATE} rows/s, atomic all-or-none, C3 across the batch, and the issue/auth/empty/unsigned refusals =="

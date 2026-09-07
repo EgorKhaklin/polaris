@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 from . import events as _events
 from . import load as _load
 from . import nation as _nation
+from polaris_web import pqc_signing as _pqc
 
 
 @dataclass
@@ -55,6 +56,7 @@ class BenchmarkReport:
     timestamp: str
     enrollment: dict = field(default_factory=dict)
     verification: dict = field(default_factory=dict)
+    crypto_verification: dict = field(default_factory=dict)
     write_latency_ms: Percentiles = field(default_factory=lambda: Percentiles(0, 0, 0, 0))
     atlas_query_ms: dict = field(default_factory=dict)
     invariants: dict = field(default_factory=dict)
@@ -69,6 +71,7 @@ class BenchmarkReport:
             "scale_divisor": self.scale_divisor, "seed": self.seed, "host": self.host,
             "python": self.python, "timestamp": self.timestamp,
             "enrollment": self.enrollment, "verification": self.verification,
+            "crypto_verification": self.crypto_verification,
             "write_latency_ms": vars(self.write_latency_ms),
             "atlas_query_ms": self.atlas_query_ms, "invariants": self.invariants,
             "scale_counts": self.scale_counts, "all_invariants_hold": self.all_invariants_hold,
@@ -129,6 +132,54 @@ def measure_write_latency(conn, pool, agency_ids, samples: int) -> Percentiles:
     return Percentiles.of(times)
 
 
+def measure_crypto_verification(conn, samples: int) -> dict:
+    """Actually verify the cryptographic signatures of a sample of issued tokens
+    (pqc_signing.verify_stored_signature), timing each. This is the REAL
+    cryptographic-verification rate, and it is a different number from the
+    verification-EVENT ingestion rate: ingestion writes an audit row, this runs
+    the ML-DSA-65 (or placeholder) verification against the stored public key.
+    Also returns whether every sampled token verified, which proves mass-issued
+    tokens are cryptographically valid, not placeholders a check merely believes."""
+    if samples <= 0:
+        return {"samples": 0, "verified": 0, "all_verified": True, "per_sec": 0.0,
+                "algorithm": _pqc.PLACEHOLDER_LABEL if not _pqc.is_enabled() else "ML-DSA-65",
+                "latency_ms": vars(Percentiles(0, 0, 0, 0))}
+    with conn.cursor() as cur:
+        # Scope to the MASS-ISSUED tokens the simulation created (the subject of
+        # the certification: "are mass-issued identities cryptographically
+        # valid?"). Pre-existing seed/demo tokens carry legacy placeholder
+        # signatures and are shown as unverified elsewhere; they are not what
+        # this run issued, so they are not what it certifies.
+        cur.execute("""
+            SELECT it.token_value, ts.signature_bytes, ts.signing_public_key_hex
+            FROM IdentityToken it JOIN TokenSignature ts ON ts.token_id = it.token_id
+            WHERE it.status = 'ACTIVE' AND ts.deprecation_date IS NULL
+              AND it.token_value LIKE 'SIMTOK-%%'
+            ORDER BY random() LIMIT %s""", (samples,))
+        rows = cur.fetchall()
+    times: list[float] = []
+    verified = 0
+    real = False
+    for r in rows:
+        sig = bytes(r["signature_bytes"])
+        pk = r["signing_public_key_hex"]
+        if pk:
+            real = True
+        t = time.perf_counter()
+        ok = _pqc.verify_stored_signature(r["token_value"], sig, pk)
+        times.append((time.perf_counter() - t) * 1000.0)
+        if ok:
+            verified += 1
+    total_s = sum(times) / 1000.0
+    return {
+        "samples": len(rows), "verified": verified,
+        "all_verified": verified == len(rows),
+        "per_sec": round(len(rows) / total_s, 1) if total_s > 0 else 0.0,
+        "algorithm": "ML-DSA-65" if real else _pqc.PLACEHOLDER_LABEL,
+        "latency_ms": vars(Percentiles.of(times)),
+    }
+
+
 def check_invariants(conn, purposes) -> dict:
     """C3, C6 and the C1 append-only boundary must hold after the load."""
     out: dict = {}
@@ -177,7 +228,8 @@ def _scale_counts(conn) -> dict:
 
 def run_benchmark(conn, *, scale_divisor: int, verifications: int, lifecycle: int = 0,
                   seed: int = 42, window_hours: float = 24.0, latency_samples: int = 500,
-                  commit: bool = True, now: datetime.datetime | None = None) -> BenchmarkReport:
+                  verify_samples: int = 1000, commit: bool = True,
+                  now: datetime.datetime | None = None) -> BenchmarkReport:
     """Build, stream, then measure. With commit=False the whole run stays in one
     transaction (a test rolls it back); the committed report is produced with
     commit=True for honest, durable timings."""
@@ -206,11 +258,18 @@ def run_benchmark(conn, *, scale_divisor: int, verifications: int, lifecycle: in
     pool, agencies, _ = _events.load_pools(conn, 2000)
     report.write_latency_ms = measure_write_latency(conn, pool, agencies, latency_samples)
 
-    # Phase 4: the Atlas at scale.
+    # Phase 4: real cryptographic signature verification (distinct from the
+    # verification-EVENT ingestion measured in Phase 2).
+    report.crypto_verification = measure_crypto_verification(conn, verify_samples)
+
+    # Phase 5: the Atlas at scale.
     since = now - datetime.timedelta(hours=window_hours * 2)
     report.atlas_query_ms = time_atlas_queries(conn, since)
 
-    # Phase 5: invariants under load.
+    # Phase 6: invariants under load, including that mass-issued signatures
+    # actually verify (not placeholders the schema merely accepts).
     report.invariants = check_invariants(conn, list(_events._PURPOSES))
+    report.invariants["signatures_cryptographically_verify"] = \
+        report.crypto_verification.get("all_verified", False)
     report.scale_counts = _scale_counts(conn)
     return report

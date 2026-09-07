@@ -124,19 +124,24 @@ def cmd_benchmark(args: argparse.Namespace) -> int:
     try:
         rep = benchmark.run_benchmark(
             conn, scale_divisor=args.scale, verifications=args.events,
-            lifecycle=args.lifecycle, seed=args.seed, latency_samples=args.latency_samples)
+            lifecycle=args.lifecycle, seed=args.seed, latency_samples=args.latency_samples,
+            verify_samples=args.verify_samples)
     finally:
         conn.close()
 
     if args.json:
         print(json.dumps(rep.to_dict()))
     else:
-        e, v, lat = rep.enrollment, rep.verification, rep.write_latency_ms
+        e, v, lat, cv = rep.enrollment, rep.verification, rep.write_latency_ms, rep.crypto_verification
         print(f"Polaris benchmark  scale 1:{rep.scale_divisor}  seed {rep.seed}  {rep.host}  {rep.timestamp}")
-        print(f"  enrollment    : {e['people']:,} people @ {e['per_sec']:,.0f}/s")
-        print(f"  verifications : {v['events']:,} @ {v['per_sec']:,.0f}/s "
-              f"(+{v['revocations']} revocations)")
-        print(f"  write latency : p50 {lat.p50} ms  p95 {lat.p95} ms  p99 {lat.p99} ms  (n={lat.n})")
+        print(f"  enrollment (issue+sign) : {e['people']:,} people @ {e['per_sec']:,.0f}/s")
+        print(f"  verification EVENTS ingested (audit-row writes, NOT signature checks):")
+        print(f"      {v['events']:,} @ {v['per_sec']:,.0f}/s  (+{v['revocations']} revocations)")
+        print(f"  CRYPTOGRAPHIC signature verification ({cv.get('algorithm','?')}):")
+        cvl = cv.get('latency_ms', {})
+        print(f"      {cv.get('verified',0):,}/{cv.get('samples',0):,} verified @ {cv.get('per_sec',0):,.0f}/s"
+              f"  (p95 {cvl.get('p95','?')} ms)")
+        print(f"  event write latency : p50 {lat.p50} ms  p95 {lat.p95} ms  p99 {lat.p99} ms  (n={lat.n})")
         print(f"  Atlas at scale ({rep.scale_counts.get('verification_events', 0):,} events):")
         for name, ms in rep.atlas_query_ms.items():
             print(f"      {name:<26}: {ms:>8.1f} ms")
@@ -188,6 +193,8 @@ def build_parser() -> argparse.ArgumentParser:
     m.add_argument("--seed", type=int, default=42, help="deterministic seed (default 42)")
     m.add_argument("--latency-samples", type=int, default=500,
                    help="single-write latency samples (default 500)")
+    m.add_argument("--verify-samples", type=int, default=1000,
+                   help="token signatures to cryptographically verify (default 1000)")
     m.add_argument("--report", metavar="PATH", help="write the JSON report to PATH")
     m.add_argument("--json", action="store_true", help="emit the JSON report to stdout")
     return p

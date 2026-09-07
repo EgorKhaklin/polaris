@@ -17,6 +17,12 @@ from typing import Callable, Iterable
 
 from . import nation as _nation
 
+# The simulation issues tokens through the real bulk pipeline, so it signs each
+# token_value through the same signing module single issuance uses. Real
+# ML-DSA-65 when POLARIS_USE_REAL_PQC=1 (+ liboqs), a deterministic verifiable
+# sha3-256 placeholder otherwise; never a fabricated placeholder literal.
+from polaris_web import pqc_signing as _pqc
+
 # Every synthetic token is permitted in all seven verification contexts (ids
 # 1..7 as seeded), so the enrolled population is usable everywhere the later
 # event-stream ship will exercise.
@@ -85,15 +91,20 @@ def _issue_batch(cur, agency_id: int, algorithm_id: int,
         bio = _BIO_TYPES[seq % len(_BIO_TYPES)]
         token_value = f"SIMTOK-{seq:012d}"
         serial = f"SIMSER-{seq:012d}"
-        # batch_id | legal_name | dob | jurisdiction | biometric | token | serial | contexts
+        # Sign the token_value the same way single issuance does; stage the real
+        # signature + public key so uc_bulk_issue stores them (it refuses NULL).
+        sig, _label, pubkey = _pqc.signature_with_key_for_token(token_value)
+        sig_field = "\\x" + sig.hex()          # CSV bytea hex input
+        pk_field = pubkey if pubkey else ""    # empty -> NULL (placeholder has no key)
+        # batch_id | legal_name | dob | jurisdiction | biometric | token | serial | contexts | sig | pubkey
         buf.write("|".join((
             str(batch_id), p.legal_name, p.date_of_birth.isoformat(), p.jurisdiction,
-            bio, token_value, serial, _ALL_CONTEXTS)) + "\n")
+            bio, token_value, serial, _ALL_CONTEXTS, sig_field, pk_field)) + "\n")
     buf.seek(0)
     cur.copy_expert(
         "COPY BulkEnrollmentStaging "
         "(batch_id, legal_name, date_of_birth, jurisdiction, biometric_binding_type, "
-        " token_value, physical_serial, permitted_contexts) "
+        " token_value, physical_serial, permitted_contexts, signature_bytes, signing_public_key_hex) "
         "FROM STDIN WITH (FORMAT csv, DELIMITER '|')", buf)
     cur.execute("CALL uc_bulk_issue(%s)", (batch_id,))
     return seq

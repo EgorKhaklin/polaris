@@ -2151,8 +2151,21 @@ BEGIN
         FROM BulkEnrollmentStaging WHERE batch_id = p_batch_id;
     -- (FKs, CHECKs, and the token_value/physical_serial UNIQUE constraints hold per row)
 
+    -- v9.257: bulk issuance stores the REAL signature the caller staged (signed
+    -- through the pqc_signing module, exactly like single issuance). It no longer
+    -- fabricates a placeholder literal keyed on the token id: an unsigned staged
+    -- row is REFUSED, so a mass-issued token can never claim a signature it does
+    -- not have. (The deterministic-placeholder mode still stages a verifiable
+    -- sha3-256 of token_value with a NULL key; only real ML-DSA-65 carries a key.)
+    IF EXISTS (SELECT 1 FROM BulkEnrollmentStaging
+               WHERE batch_id = p_batch_id AND signature_bytes IS NULL) THEN
+        RAISE EXCEPTION 'bulk issuance requires a signature for every staged token: a row has '
+                        'signature_bytes NULL. Sign each token_value through the signing module '
+                        'before staging (pqc_signing.signature_with_key_for_token).'
+            USING ERRCODE = 'invalid_parameter_value';
+    END IF;
     INSERT INTO TokenSignature (token_id, algorithm_id, signature_bytes, signing_public_key_hex)
-      SELECT token_id, v_algo, ('BULK_ISSUE_' || token_id::TEXT)::BYTEA, NULL
+      SELECT token_id, v_algo, signature_bytes, signing_public_key_hex
         FROM BulkEnrollmentStaging WHERE batch_id = p_batch_id;
     -- (enforce_token_has_active_signature is satisfied: every token gets a signature)
 

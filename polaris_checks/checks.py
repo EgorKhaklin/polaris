@@ -327,8 +327,30 @@ def check_pqc_signing_wired(root: pathlib.Path) -> list[Finding]:
         return _fail("pqc_wired",
                      "uc6 still writes a hardcoded UC6_OPERATOR_MIGRATE signature; route the "
                      "migration signature through pqc_signing like issuance")
+    # v9.257: BULK issuance must sign for real too. uc_bulk_issue must not
+    # fabricate a 'BULK_ISSUE_<id>' placeholder literal; it must store the
+    # signature the caller staged and REFUSE any unsigned row, so a mass-issued
+    # token can never carry a signature that verifies against nothing. This is
+    # the gap that let 331k simulated tokens look signed while being placeholders.
+    if re.search(r"'BULK_ISSUE_'\s*\|\|", proc):
+        return _fail("pqc_wired",
+                     "uc_bulk_issue still fabricates a placeholder signature literal keyed on the "
+                     "token id; bulk issuance must store the real signature the caller staged "
+                     "(through pqc_signing), exactly like single issuance")
+    bulk = re.search(r"CREATE OR REPLACE PROCEDURE uc_bulk_issue\(.*?\$\$;", proc, re.S)
+    if not bulk or "signature_bytes IS NULL" not in bulk.group(0):
+        return _fail("pqc_wired",
+                     "uc_bulk_issue must REFUSE a staged row with no signature (signature_bytes "
+                     "IS NULL); otherwise an unsigned token is mass-issued and merely believed signed")
+    schema = _read(root, "polaris_sql/01_schema.sql")
+    staging = re.search(r"CREATE TABLE IF NOT EXISTS BulkEnrollmentStaging \(.*?\n\);", schema, re.S)
+    if not staging or "signature_bytes" not in staging.group(0):
+        return _fail("pqc_wired",
+                     "BulkEnrollmentStaging must carry signature_bytes so the bulk caller stages a "
+                     "real per-token signature (the loader signs each token_value before staging)")
     return _ok("pqc_wired",
-               "issuance + uc6 migration signatures route through the pqc_signing module")
+               "single, bulk, and uc6-migration signatures all route through the pqc_signing module; "
+               "bulk stores a staged real signature and refuses an unsigned row (no placeholder literal)")
 
 
 # ---------------------------------------------------------------------------
@@ -5301,6 +5323,13 @@ def check_national_simulation(root: pathlib.Path) -> list[Finding]:
         return _fail("national_simulation",
                      "polaris_sim/load.py must enroll through uc_bulk_issue (the real "
                      "pipeline), so every synthetic person passes the full constraint set")
+    # v9.257: the loader SIGNS each token through the real module before staging,
+    # so mass-issued tokens carry a real signature, not a placeholder literal.
+    if "signature_with_key_for_token" not in ld:
+        return _fail("national_simulation",
+                     "polaris_sim/load.py must sign each token_value through pqc_signing "
+                     "(signature_with_key_for_token) so mass-issued tokens are cryptographically "
+                     "signed, not fabricated placeholders")
     for bypass in ("INSERT INTO IdentityToken", "INSERT INTO TokenLifecycleEvent"):
         if re.search(bypass, ld, re.I):
             return _fail("national_simulation",
@@ -5339,6 +5368,14 @@ def check_national_simulation(root: pathlib.Path) -> list[Finding]:
                      "benchmark.py must certify the invariants under load (check_invariants): a "
                      "benchmark that does not prove C1-C10 still hold is a throughput number, not a "
                      "load certification")
+    # v9.257: the benchmark must exercise the REAL signature-verification path
+    # (distinct from event ingestion) so its crypto-verification number is honest
+    # and it certifies that mass-issued tokens actually verify.
+    if "measure_crypto_verification" not in bench:
+        return _fail("national_simulation",
+                     "benchmark.py must measure real cryptographic signature verification "
+                     "(measure_crypto_verification), distinct from verification-event ingestion, and "
+                     "certify that mass-issued signatures verify")
     if not _read(root, "docs/reference/BENCHMARK.md"):
         return _fail("national_simulation",
                      "docs/reference/BENCHMARK.md (the committed load certification) must exist")

@@ -5,6 +5,48 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.257 — 2026-09-07 (Bulk signatures are real; event vs cryptographic verification)
+
+Two integrity gaps were found in the scale work and are closed here. First, the
+bulk pipeline stored a `BULK_ISSUE_<id>` placeholder literal with no public key:
+the database believed a signature existed while the token was cryptographically
+unsigned, so the national simulation's mass-issued identities were not actually
+valid. Second, the benchmark's "verifications/s" measured verification-EVENT
+ingestion (audit-row writes), not cryptographic signature verification, and the
+two are an order of magnitude apart. Neither should be claimed as more than it
+is.
+
+**Bulk enrollment signs for real.** `BulkEnrollmentStaging` gains
+`signature_bytes` + `signing_public_key_hex`; every bulk caller (the simulator's
+loader, the `bulk-enroll` CLI, the drill) now signs each token_value through the
+same `pqc_signing` path single issuance uses, and `uc_bulk_issue` stores the
+staged signature and REFUSES any unsigned row. It no longer fabricates a
+placeholder literal. Real ML-DSA-65 under `POLARIS_USE_REAL_PQC=1` (verified
+against the stored key), a deterministic verifiable sha3-256 placeholder
+otherwise, exactly like single issuance. A migration adds the columns and
+redefines the procedure; the down reverts.
+
+**The benchmark exercises the real verify path and names its numbers honestly.**
+It now measures three distinct things, no longer conflated: enrollment (issue +
+sign, signing-bound under real PQC), verification-event ingestion (audit writes),
+and cryptographic signature verification (`verify_stored_signature`, two
+witnesses). A new invariant, `signatures_cryptographically_verify`, samples the
+mass-issued tokens and fails the run if any does not verify. The certified
+numbers are recorded in [docs/reference/BENCHMARK.md](docs/reference/BENCHMARK.md):
+at 1:10000 with real ML-DSA-65, enrollment ~372 tokens/s, event ingestion
+~25,970/s, and cryptographic verification ~743/s, a ~35x gap that the old
+wording hid. This corrects the wording committed in v9.256.
+
+**Proven, including a red-team injection.** `check_pqc_signing_wired` now also
+pins that `uc_bulk_issue` stores a staged signature and refuses an unsigned row
+(no placeholder literal), with detection perturbations that inject a fabricated
+bulk signature and confirm the check turns red; `check_national_simulation` pins
+that the loader signs and the benchmark measures crypto verification; the drill
+gains an "unsigned row is refused" case; and a test proves a fabricated
+signature does not verify while a real one does. Check layer 126; app 79 routes.
+
+---
+
 ## v9.256 — 2026-09-06 (National simulation, ship 3: benchmark and load certification)
 
 Roadmap P2.14, ship 3, and the roadmap's P2.9 load certification. A benchmark is

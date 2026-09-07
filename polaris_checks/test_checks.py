@@ -89,21 +89,51 @@ def test_debug_artifact_check_fails(tmp_path):
 
 
 def test_pqc_wired_check_fails_when_issuance_bypasses_signing_module(tmp_path):
-    (tmp_path / "polaris_sql").mkdir()
-    (tmp_path / "polaris_web").mkdir()
-    # Procedure accepts the param, but the app never routes through the module.
-    (tmp_path / "polaris_sql" / "05_procedures.sql").write_text(
-        "CREATE FUNCTION uc1_issue_and_activate(p_signature_bytes BYTEA) ...\n")
-    (tmp_path / "polaris_web" / "app.py").write_text(
-        "import pqc_signing  # imported but never used for issuance\n")
-    out = checks.check_pqc_signing_wired(tmp_path)
-    assert out[0].level == "FAIL", "must FAIL when the app never calls signature_bytes_for_token"
+    # Single issuance accepts the signature; bulk issuance stores a STAGED
+    # signature and refuses an unsigned row (v9.257); the app routes through the
+    # signing module.
+    PROC = (
+        "CREATE OR REPLACE FUNCTION uc1_issue_and_activate(p_token_value VARCHAR, "
+        "p_signature_bytes BYTEA DEFAULT NULL) RETURNS INTEGER AS $$ SELECT 1 $$;\n"
+        "CREATE OR REPLACE PROCEDURE uc_bulk_issue(p_batch_id INTEGER)\n"
+        "LANGUAGE plpgsql AS $$\nBEGIN\n"
+        "  IF EXISTS (SELECT 1 FROM BulkEnrollmentStaging WHERE batch_id=p_batch_id AND signature_bytes IS NULL) THEN\n"
+        "    RAISE EXCEPTION 'unsigned' USING ERRCODE='invalid_parameter_value'; END IF;\n"
+        "  INSERT INTO TokenSignature (token_id, algorithm_id, signature_bytes, signing_public_key_hex)\n"
+        "    SELECT token_id, 1, signature_bytes, signing_public_key_hex FROM BulkEnrollmentStaging WHERE batch_id=p_batch_id;\n"
+        "END $$;\n")
+    APP = ("import pqc_signing\n"
+           "sig = pqc_signing.signature_with_key_for_token(tv)\n")
+    SCHEMA = ("CREATE TABLE IF NOT EXISTS BulkEnrollmentStaging (\n"
+              "  staging_id BIGSERIAL PRIMARY KEY, batch_id INTEGER, token_value VARCHAR(128) NOT NULL,\n"
+              "  signature_bytes BYTEA, signing_public_key_hex TEXT\n);\n")
+    good = {"polaris_sql/05_procedures.sql": PROC, "polaris_web/app.py": APP,
+            "polaris_sql/01_schema.sql": SCHEMA}
 
-    # And it must FAIL when the procedure hardcodes the signature (no param).
-    (tmp_path / "polaris_sql" / "05_procedures.sql").write_text(
-        "CREATE FUNCTION uc1_issue_and_activate(p_token_value VARCHAR) ...\n")
-    out2 = checks.check_pqc_signing_wired(tmp_path)
-    assert out2[0].level == "FAIL", "must FAIL when the procedure does not accept p_signature_bytes"
+    def write(overrides=None):
+        files = dict(good); files.update(overrides or {})
+        for rel, body in files.items():
+            f = tmp_path / rel; f.parent.mkdir(parents=True, exist_ok=True); f.write_text(body)
+
+    write()
+    assert checks.check_pqc_signing_wired(tmp_path)[0].level == "OK", "must PASS on the good fixture"
+    # single issuance drops the signature param
+    write({"polaris_sql/05_procedures.sql": PROC.replace("p_signature_bytes BYTEA DEFAULT NULL", "")})
+    assert checks.check_pqc_signing_wired(tmp_path)[0].level == "FAIL", "must FAIL without p_signature_bytes"
+    # the app never routes issuance through the module
+    write({"polaris_web/app.py": "import pqc_signing  # imported, never used\n"})
+    assert checks.check_pqc_signing_wired(tmp_path)[0].level == "FAIL", "must FAIL when the app never signs"
+    # bulk FABRICATES a placeholder signature instead of storing the staged one
+    write({"polaris_sql/05_procedures.sql": PROC.replace(
+        "SELECT token_id, 1, signature_bytes, signing_public_key_hex FROM BulkEnrollmentStaging WHERE batch_id=p_batch_id;",
+        "SELECT token_id, 1, ('BULK_ISSUE_' || token_id::TEXT)::BYTEA, NULL FROM BulkEnrollmentStaging;")})
+    assert checks.check_pqc_signing_wired(tmp_path)[0].level == "FAIL", "must FAIL when bulk fabricates a placeholder signature"
+    # bulk does not refuse an unsigned row
+    write({"polaris_sql/05_procedures.sql": PROC.replace("AND signature_bytes IS NULL", "AND 1=0")})
+    assert checks.check_pqc_signing_wired(tmp_path)[0].level == "FAIL", "must FAIL when bulk does not refuse unsigned rows"
+    # the staging table has no signature column
+    write({"polaris_sql/01_schema.sql": SCHEMA.replace("signature_bytes BYTEA,", "")})
+    assert checks.check_pqc_signing_wired(tmp_path)[0].level == "FAIL", "must FAIL when staging cannot carry a signature"
 
 
 def test_signing_key_generation_check_discriminates(tmp_path):
@@ -3528,12 +3558,14 @@ def test_national_simulation_check_discriminates(tmp_path):
            "def plan_nation(scale_divisor, seed):\n"
            "    rng = random.Random(seed)\n    return rng\n")
     LOAD = ("def build_nation(conn, plan):\n"
+            "    sig = pqc.signature_with_key_for_token(tv)\n"
             "    cur.execute('CALL uc_bulk_issue(%s)', (b,))\n")
     EVENTS = ("def write_verifications(conn, events):\n"
               "    cur.copy_expert('COPY VerificationEvent (...) FROM STDIN', buf)\n"
               "def revoke_tokens(conn, count, seed):\n"
               "    cur.execute('CALL uc8_revoke_token(%s,%s,%s,%s,%s)', a)\n")
     BENCH = ("def check_invariants(conn, purposes):\n    return {'C3': True}\n"
+             "def measure_crypto_verification(conn, n):\n    return {'all_verified': True}\n"
              "def run_benchmark(conn, **kw):\n    return None\n")
     COV = "run polaris_cli unittest test_cli\nrun polaris_sim unittest test_sim\n"
     good = {
@@ -3591,6 +3623,12 @@ def test_national_simulation_check_discriminates(tmp_path):
     # the committed load-certification report is missing
     write({"docs/reference/BENCHMARK.md": ""})
     assert checks.check_national_simulation(tmp_path)[0].level == "FAIL", "must FAIL when the committed report is missing"
+    # v9.257: the loader does not sign (mass-issued tokens would be unsigned/placeholder)
+    write({"polaris_sim/load.py": LOAD.replace("signature_with_key_for_token", "something_else")})
+    assert checks.check_national_simulation(tmp_path)[0].level == "FAIL", "must FAIL when the loader does not sign through pqc_signing"
+    # the benchmark does not measure real cryptographic verification
+    write({"polaris_sim/benchmark.py": BENCH.replace("measure_crypto_verification", "measure_event_ingestion_only")})
+    assert checks.check_national_simulation(tmp_path)[0].level == "FAIL", "must FAIL when the benchmark skips crypto verification"
 
 
 def test_bulk_enrollment_check_discriminates(tmp_path):

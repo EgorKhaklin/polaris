@@ -1353,6 +1353,25 @@ _BULK_STAGING_COLS = (
 )
 
 
+def _load_signer():
+    """Import the real signing module. Bulk enrollment SIGNS every token_value
+    through the same path single issuance uses; it must never store an unsigned
+    or placeholder-literal token, so if the module is unreachable we refuse the
+    whole operation rather than fall back to something unverifiable."""
+    try:
+        repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        pw = os.path.join(repo_root, "polaris_web")
+        if pw not in sys.path:
+            sys.path.insert(0, pw)
+        import pqc_signing
+        return pqc_signing
+    except Exception as e:  # pragma: no cover - environment-dependent
+        sys.stderr.write(red(
+            "Bulk enrollment requires the signing module (polaris_web/pqc_signing) so every "
+            f"token is really signed; it is not importable here: {e}\n"))
+        sys.exit(2)
+
+
 def cmd_bulk_enroll(args):
     if not os.path.isfile(args.csv):
         sys.stderr.write(red(f"No such extract file: {args.csv}\n"))
@@ -1382,17 +1401,31 @@ def cmd_bulk_enroll(args):
                     f"COPY _bulk_in ({cols}) FROM STDIN WITH (FORMAT csv, DELIMITER '|')",
                     fh,
                 )
-            cur.execute(f"SELECT count(*) AS n FROM _bulk_in")
-            staged = cur.fetchone()["n"]
+            cur.execute(f"SELECT {cols} FROM _bulk_in")
+            in_rows = cur.fetchall()
+            staged = len(in_rows)
             if staged == 0:
                 conn.rollback()
                 sys.stderr.write(red("The extract staged zero rows; nothing to issue.\n"))
                 sys.exit(1)
-            cur.execute(
-                f"INSERT INTO BulkEnrollmentStaging (batch_id, {cols}) "
-                f"SELECT %s, {cols} FROM _bulk_in",
-                (batch_id,),
-            )
+            # Sign each token_value through the real module, then stage the row
+            # WITH its signature + public key. uc_bulk_issue refuses any unsigned
+            # row, so a mass-issued token can never claim a signature it lacks.
+            import psycopg2 as _pg
+            from psycopg2.extras import execute_values as _ev
+            signer = _load_signer()
+            values = []
+            for r in in_rows:
+                sig, _label, pubkey = signer.signature_with_key_for_token(r["token_value"])
+                values.append((
+                    batch_id, r["legal_name"], r["date_of_birth"], r["jurisdiction"],
+                    r["biometric_binding_type"], r["token_value"], r["physical_serial"],
+                    r["permitted_contexts"], _pg.Binary(sig), pubkey))
+            _ev(cur,
+                "INSERT INTO BulkEnrollmentStaging "
+                "(batch_id, legal_name, date_of_birth, jurisdiction, biometric_binding_type, "
+                " token_value, physical_serial, permitted_contexts, signature_bytes, signing_public_key_hex) "
+                "VALUES %s", values)
             if args.dry_run:
                 conn.rollback()
                 print(green(f"✓ Dry run: {staged} rows staged and validated for batch #{batch_id}; rolled back, nothing issued."))

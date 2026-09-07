@@ -1503,7 +1503,14 @@ CREATE TABLE IF NOT EXISTS BulkEnrollmentStaging (
     hardware_model         VARCHAR(50),
     permitted_contexts     INTEGER[] NOT NULL DEFAULT '{}',
     individual_id          INTEGER,   -- COPY leaves NULL = new person; set it to correlate a re-card to an existing individual
-    token_id               INTEGER
+    token_id               INTEGER,
+    -- v9.257: the caller SIGNS each token_value (through the pqc_signing module,
+    -- the same path single issuance uses) and stages the result here, so
+    -- uc_bulk_issue stores a REAL, verifiable signature instead of a placeholder.
+    -- signing_public_key_hex is NULL only for the deterministic placeholder
+    -- (POLARIS_USE_REAL_PQC unset); a real ML-DSA-65 signature carries its key.
+    signature_bytes        BYTEA,
+    signing_public_key_hex TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_bulkstaging_batch ON BulkEnrollmentStaging(batch_id);
 
