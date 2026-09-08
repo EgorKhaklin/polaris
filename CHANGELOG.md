@@ -5,6 +5,41 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.268 — 2026-09-07 (Public claim pass: precise zero-knowledge, no "certification")
+
+P1.18 item 1, the claim-and-proof season's first step: fix the nouns before
+adding features. The system's public claims now say exactly what the
+implementation proves, no more.
+
+**Zero-knowledge, split into three precise things.** The README title and the
+site drop the umbrella phrase "post-quantum, zero-knowledge ... system" (which
+reads as general anonymous credentials) for "post-quantum, unlinkable-by-default,
+compulsion-resistant." The body states the boundary explicitly: (1) *unlinkable
+verification records* — a default zero-knowledge-mode verification stores no
+token identifier, so the verification graph cannot be rebuilt from the database
+(C2); (2) a *Merkle-membership proof* (a Plonky2 SNARK) that proves a token was
+in a published ledger and nothing else; and Polaris is **not** a general
+selective-disclosure or anonymous-credential system, and does not claim to be.
+The "Where Polaris sits" comparison relabels its column "Unlinkable verification
+default" and corrects the W3C VC row to method-dependent. `check_zk_claim_precise`
+(with a detection test) keeps the umbrella from creeping back and requires the
+boundary sentence to stay.
+
+**Extrapolation is no longer called "certification."** P2.9 is renamed "10M-
+profile capacity model (single-node measured, multi-node projected)"; its verbs
+soften from "certifies" to "demonstrates," matching the row's existing honesty
+that the 10M multi-node figure is extrapolated from single-node numbers. The FIPS
+/ 800-63 external-certification uses of the word are untouched — those are real
+certifications, granted by others.
+
+137 checks (was 136). The README was already clean of mythology and national-
+rollout framing above the fold (the v9.194-v9.205 rework), so no narrative
+surgery was needed here. The rest of the season (schema quarantine, the
+constitutional split, the verify-API and two-witness contracts, one measured HA
+report, the proof-of-life artifacts, the external-review packet) is tracked under
+ROADMAP P1.18.
+
+
 ## v9.267 — 2026-09-07 (Athena console: the authority-and-constitution surface)
 
 The operator-facing console for the v9.266 Athena layer (roadmap P6.8's next

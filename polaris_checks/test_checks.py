@@ -5348,3 +5348,21 @@ def test_athena_console_check_discriminates(tmp_path):
     # a tab mount is dropped
     write(tpl=TPL.replace('<button data-athena-tab="trust"></button><section data-athena-panel="trust"></section>\n', ""))
     assert checks.check_athena_console(tmp_path)[0].level == "FAIL", "must FAIL when a tab mount is missing"
+
+
+def test_zk_claim_precise_check_discriminates(tmp_path):
+    # The public ZK claim must stay precise: no umbrella tagline, boundary stated.
+    GOOD = ("# POLARIS\n\n"
+            "**A post-quantum, unlinkable-by-default, compulsion-resistant identity system.**\n\n"
+            "The default is unlinkable. Polaris is not a general selective-disclosure or "
+            "anonymous-credential system, and does not claim to be.\n")
+    (tmp_path / "README.md").write_text(GOOD)
+    assert checks.check_zk_claim_precise(tmp_path)[0].level == "OK", "must PASS the precise claim"
+    # the umbrella tagline is back
+    (tmp_path / "README.md").write_text(
+        GOOD.replace("post-quantum, unlinkable-by-default,", "post-quantum, zero-knowledge,"))
+    assert checks.check_zk_claim_precise(tmp_path)[0].level == "FAIL", "must FAIL on the umbrella tagline"
+    # the boundary disclaimer is gone
+    (tmp_path / "README.md").write_text(
+        "# POLARIS\n\n**A post-quantum, unlinkable-by-default identity system.**\n\nNo boundary stated.\n")
+    assert checks.check_zk_claim_precise(tmp_path)[0].level == "FAIL", "must FAIL without the boundary sentence"

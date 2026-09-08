@@ -7,7 +7,7 @@ fresh session, read this first.
 
 ## What Polaris is
 
-A working reference implementation of a post-quantum, zero-knowledge,
+A working reference implementation of a post-quantum, unlinkable-by-default,
 compulsion-resistant national identity-token system. Educational; notional data
 only. The real system:
 

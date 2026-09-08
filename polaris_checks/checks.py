@@ -5961,7 +5961,40 @@ def check_athena_console(root: pathlib.Path) -> list[Finding]:
                "person-free Athena layer, and renders CSP-safe via createElement")
 
 
+# ---------------------------------------------------------------------------
+# P1.18 item 1 (v9.268) — the public zero-knowledge claim stays precise.
+# ---------------------------------------------------------------------------
+def check_zk_claim_precise(root: pathlib.Path) -> list[Finding]:
+    """The public claim about zero-knowledge must not overclaim. The README
+    title/tagline may not headline "post-quantum, zero-knowledge ... system" as
+    an umbrella (which reads as general anonymous credentials), and the README
+    must state the boundary explicitly: unlinkable verification records + a
+    Merkle-membership proof, and NOT a general selective-disclosure / anonymous-
+    credential system. Detection: test_checks restores the umbrella tagline and
+    removes the boundary sentence."""
+    readme = _read(root, "README.md")
+    if not readme:
+        return _fail("zk_claim", "README.md is missing")
+    # strip markdown emphasis so a bolded **not** or a **zero-knowledge** tagline
+    # is matched the same as plain text.
+    plain = readme.replace("*", "").replace("_", "")
+    head = plain[:1600]  # the title + tagline block, above the fold
+    if re.search(r"post-quantum,\s*zero.knowledge", head, re.I):
+        return _fail("zk_claim",
+                     "the README tagline headlines 'post-quantum, zero-knowledge ...' as an umbrella; there "
+                     "'zero-knowledge' reads as general anonymous credentials. Name the precise property "
+                     "(unlinkable-by-default) in the tagline and keep the zero-knowledge detail in the body")
+    if not re.search(r"not a general (selective.disclosure|anonymous.credential)", plain, re.I):
+        return _fail("zk_claim",
+                     "the README must state the boundary: Polaris is NOT a general selective-disclosure / "
+                     "anonymous-credential system (only unlinkable verification records + a Merkle-membership proof)")
+    return _ok("zk_claim",
+               "the public zero-knowledge claim is precise: no umbrella in the tagline, and the README states "
+               "the boundary (unlinkable verification records + a Merkle-membership proof, not anonymous credentials)")
+
+
 CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
+    check_zk_claim_precise,
     check_athena_console,
     check_athena_no_person,
     check_athena_read_only,
