@@ -17,6 +17,7 @@ are assessor-facing material and were filed where an assessor would not look.
 | [presentation-plan.md](presentation-plan.md) | The sub-roadmap for the presentation pass: every ship, its status, and the ordered changes it carries |
 | [athena-ontology-assessment.md](athena-ontology-assessment.md) | The adversarial assessment of an operational ontology (Athena): model power and rules, never a graph of people; verdict, constraints, MVP, and kill criteria (roadmap P6.8) |
 | [operational-learning-assessment-brief.md](operational-learning-assessment-brief.md) | A captured, NOT-STARTED brief for a future assessment: an advisory ML subsystem that learns Polaris itself (never natural persons); central hypothesis, hard boundary, constitutional candidate, invariants, MVP, and a naming note (proposed "Metis", not "Prometheus") |
+| [production-readiness-review.md](production-readiness-review.md) | Assessment of an external model's ~35 pre-deployment suggestions: what the tree already does, what to adopt, what to push back on, mapped to the P1.18 consolidation arc (claim honesty, constitution layering, dead-schema removal, external validation, honest scale/detection testing) |
 
 ## Where does something new go
 
