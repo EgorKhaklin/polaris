@@ -1,0 +1,146 @@
+{# Athena — the authority-and-constitution console (v9.266, roadmap P6.8).
+   Read-only operator surface for polaris_sql/16_athena.sql. The Constitution
+   and Trust tabs are server-rendered from the Athena views; the Authority and
+   Proof tabs drive the four Athena functions via /api/athena/* fetches in
+   athena-console.js. Inline <script> is blocked by CSP (C5); all logic is
+   external. No person data reaches this page. #}
+{% extends "base.html" %}
+{% block title %}Athena{% endblock %}
+{% block body_class %} body-athena{% endblock %}
+{% block content %}
+<div class="athena-shell">
+  <header class="athena-head">
+    <div class="athena-head-titles">
+      <h1>Athena</h1>
+      <p class="athena-sub">The authority-and-constitution layer. Read-only:
+        why authority exists, what enforces each constitutional rule, and what
+        breaks if a key or algorithm is retired.</p>
+    </div>
+    <div class="athena-stats">
+      <div class="athena-stat"><span class="athena-stat-n">{{ rules|length }}</span><span class="athena-stat-l">rules</span></div>
+      <div class="athena-stat"><span class="athena-stat-n">{{ agencies|length }}</span><span class="athena-stat-l">agencies</span></div>
+      <div class="athena-stat"><span class="athena-stat-n">{{ algorithms|length }}</span><span class="athena-stat-l">algorithms</span></div>
+      <div class="athena-stat"><span class="athena-stat-n">{{ trust|length }}</span><span class="athena-stat-l">trust edges</span></div>
+    </div>
+  </header>
+
+  <nav class="athena-tabs" role="tablist" aria-label="Athena views">
+    <button data-athena-tab="constitution" class="athena-tab athena-tab-active" role="tab" aria-selected="true" type="button">Constitution</button>
+    <button data-athena-tab="authority" class="athena-tab" role="tab" aria-selected="false" type="button">Authority</button>
+    <button data-athena-tab="proof" class="athena-tab" role="tab" aria-selected="false" type="button">Proof policy</button>
+    <button data-athena-tab="trust" class="athena-tab" role="tab" aria-selected="false" type="button">Trust graph</button>
+  </nav>
+
+  {# ---- Constitution: C1-C10 + the Vocation, each with its live mechanisms ---- #}
+  <section data-athena-panel="constitution" class="athena-panel" role="tabpanel">
+    <p class="athena-help">Each constitutional rule below is a queryable row, linked to the exact live mechanism that enforces it. If a named mechanism ever disappears from the tree, the build fails (<code>check_athena_rule_enforcement_resolves</code>).</p>
+    <div class="athena-rules">
+      {% for r in rules %}
+      <article class="athena-rule athena-rule-{{ r.kind|lower }}">
+        <div class="athena-rule-head">
+          <span class="athena-rule-code">{{ r.rule_code }}</span>
+          <h3 class="athena-rule-title">{{ r.title }}</h3>
+          <span class="athena-rule-kind">{{ r.kind }}</span>
+        </div>
+        <p class="athena-rule-statement">{{ r.statement }}</p>
+        <div class="athena-mechs">
+          {% for m in r.mechanisms %}
+          <span class="athena-mech athena-mech-{{ m.mechanism_kind|lower }}" title="{{ m.note }}">
+            <span class="athena-mech-kind">{{ m.mechanism_kind|replace('_', ' ')|lower }}</span>
+            <code class="athena-mech-name">{{ m.mechanism_name }}</code>
+          </span>
+          {% endfor %}
+        </div>
+      </article>
+      {% endfor %}
+    </div>
+  </section>
+
+  {# ---- Authority: the authority chain + the deprecation blast radius ---- #}
+  <section data-athena-panel="authority" class="athena-panel" role="tabpanel" hidden>
+    <div class="athena-cols">
+      <div class="athena-card">
+        <h3>Why may an agency issue?</h3>
+        <p class="athena-help">Resolve the authority chain: an agency and an algorithm to the issuance grant that permits it. A missing grant means it may not issue.</p>
+        <div class="athena-controls">
+          <label>Agency
+            <select data-athena-agency>
+              {% for a in agencies %}<option value="{{ a.agency_id }}">{{ a.name }} ({{ a.jurisdiction }})</option>{% endfor %}
+            </select>
+          </label>
+          <label>Algorithm
+            <select data-athena-algorithm>
+              {% for al in algorithms %}<option value="{{ al.algorithm_id }}">{{ al.name }}{% if al.is_deprecated %} — deprecated{% endif %}</option>{% endfor %}
+            </select>
+          </label>
+          <button data-athena-chain-run type="button" class="athena-run">Explain</button>
+        </div>
+        <div data-athena-chain class="athena-result" aria-live="polite"></div>
+      </div>
+
+      <div class="athena-card">
+        <h3>Blast radius of a deprecation</h3>
+        <p class="athena-help">If this algorithm is retired: which agencies are authorized on it, which contexts it currently serves, and its post-quantum successors. Authority-only — no token or event data.</p>
+        <div class="athena-controls">
+          <label>Algorithm
+            <select data-athena-blast-algorithm>
+              {% for al in algorithms %}<option value="{{ al.algorithm_id }}">{{ al.name }}{% if al.is_deprecated %} — deprecated{% endif %}</option>{% endfor %}
+            </select>
+          </label>
+          <button data-athena-blast-run type="button" class="athena-run">Blast radius</button>
+        </div>
+        <div data-athena-blast class="athena-result" aria-live="polite"></div>
+      </div>
+    </div>
+  </section>
+
+  {# ---- Proof policy: what a context requires + its disclosure levels ---- #}
+  <section data-athena-panel="proof" class="athena-panel" role="tabpanel" hidden>
+    <div class="athena-card">
+      <h3>Proof and disclosure policy</h3>
+      <p class="athena-help">What a verification context requires of a proof, and the C6-enforced disclosure levels it may request. A zero-knowledge verification leaves only an aggregate count.</p>
+      <div class="athena-controls">
+        <label>Context
+          <select data-athena-context>
+            {% for c in contexts %}<option value="{{ c.context_id }}">{{ c.context_type }}</option>{% endfor %}
+          </select>
+        </label>
+        <button data-athena-proof-run type="button" class="athena-run">Explain proof</button>
+      </div>
+      <div data-athena-proof class="athena-result" aria-live="polite"></div>
+    </div>
+  </section>
+
+  {# ---- Trust graph: current attestations (revoked/expired excluded) ---- #}
+  <section data-athena-panel="trust" class="athena-panel" role="tabpanel" hidden>
+    <div class="athena-card">
+      <h3>Current trust graph</h3>
+      <p class="athena-help">Which agency relies on which, per context. Current attestations only; revoked and expired edges are excluded server-side.</p>
+      {% if trust %}
+      <div class="athena-table-wrap">
+        <table class="athena-table">
+          <thead><tr><th>Relying agency</th><th></th><th>Trusted agency</th><th>Context</th><th>Valid until</th></tr></thead>
+          <tbody>
+            {% for t in trust %}
+            <tr>
+              <td>{{ t.from_agency_name }}</td>
+              <td class="athena-arrow">relies on</td>
+              <td>{{ t.to_agency_name }}</td>
+              <td><span class="athena-ctx">{{ t.context_type }}</span></td>
+              <td class="athena-muted">{{ t.valid_until }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="athena-empty">No current trust attestations.</p>
+      {% endif %}
+    </div>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+  <script src="{{ url_for('static', filename='athena-console.js') }}?v={{ polaris_version }}"></script>
+{% endblock %}

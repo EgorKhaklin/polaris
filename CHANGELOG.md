@@ -5,6 +5,32 @@ ship-by-ship history is preserved in the git log.
 
 ---
 
+## v9.267 — 2026-09-07 (Athena console: the authority-and-constitution surface)
+
+The operator-facing console for the v9.266 Athena layer (roadmap P6.8's next
+step). `/athena` is a read-only, four-tab surface that turns the SQL layer into
+something an operator clicks. `docs/design/athena.md`.
+
+**Constitution** (server-rendered): C1-C10 and the Vocation as cards, each with
+its live enforcement mechanisms shown as kind-badged chips (trigger / index /
+CHECK / check_* / procedure). **Authority**: pick an agency and an algorithm and
+"Explain" resolves the authority chain (a red "Not authorized to issue" when no
+`may_issue` grant exists); pick an algorithm and see the deprecation blast radius
+(authorized agencies, served contexts, post-quantum successors). **Proof policy**:
+a context's requirements and the three C6-enforced disclosure levels.
+**Trust graph**: the current attestations (revoked and expired excluded).
+
+Three drill-down endpoints (`/api/athena/authority-chain`,
+`/api/athena/affected-by-algorithm`, `/api/athena/explain-proof`), all
+login-gated and replica-routed. The console reads only the person-free Athena
+layer — no Individual, token, or event table — and renders every result with
+`createElement` (never `innerHTML` with markup), so `script-src 'self'` stays
+strict (C5). `check_athena_console` pins all of that with an adversarial
+detection test, and the headless-browser UI drill now opens `/athena` and asserts
+the 11 rules, their 18 live mechanisms, and a resolving authority chain in a real
+browser. 87 routes (was 83); 136 checks (was 135). Full suite green.
+
+
 ## v9.266 — 2026-09-07 (Athena: the authority-and-constitution layer)
 
 Roadmap P6.8, the constrained ontology the assessment endorsed. Athena is a

@@ -3803,3 +3803,123 @@ textarea.sql {
     background: linear-gradient(90deg, #0d2233 0%, #134a63 25%, #1f7fa6 50%, #39b6d8 75%, #8ef0ff 100%);
     border: 1px solid rgba(142, 240, 255, 0.3);
 }
+
+/* ========================================================================
+   Athena — the authority-and-constitution console (v9.266). Operational-
+   intelligence density: server-rendered constitution + trust, interactive
+   authority/proof drill-downs. Reuses the analytics tokens and the .atlas-tab
+   idiom. No animation (keeps the CSP-safe, static-render discipline). */
+.athena-shell { max-width: 1200px; margin: 0 auto; padding: 0 4px 48px; }
+.athena-head {
+  display: flex; justify-content: space-between; align-items: flex-start;
+  gap: 24px; flex-wrap: wrap; margin: 8px 0 4px;
+}
+.athena-head-titles h1 { margin: 0 0 4px; }
+.athena-sub { color: var(--ink-dim); max-width: 60ch; margin: 0; font-size: 14px; }
+.athena-stats { display: flex; gap: 22px; }
+.athena-stat { text-align: right; }
+.athena-stat-n { display: block; font-family: var(--font-mono); font-size: 22px; color: var(--gold-bright); line-height: 1.1; }
+.athena-stat-l { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-faint); }
+
+.athena-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: 14px 0 18px; }
+.athena-tab {
+  background: none; border: 0; border-bottom: 2px solid transparent;
+  color: var(--ink-dim); font-family: var(--font-ui); font-size: 14px;
+  padding: 9px 16px; cursor: pointer;
+}
+.athena-tab:hover { color: var(--ink); }
+.athena-tab-active { color: var(--gold-bright); border-bottom-color: var(--gold); }
+
+.athena-panel { margin-top: 4px; }
+.athena-help { color: var(--ink-dim); font-size: 13px; max-width: 78ch; margin: 0 0 16px; }
+.athena-help code { color: var(--cyan); }
+
+/* ---- Constitution ---- */
+.athena-rules { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; }
+.athena-rule {
+  background: var(--bg1); border: 1px solid var(--line); border-left: 3px solid var(--steel);
+  border-radius: 4px; padding: 14px 16px;
+}
+.athena-rule-vocation { border-left-color: var(--gold); background: var(--gold-tint); }
+.athena-rule-head { display: flex; align-items: baseline; gap: 10px; }
+.athena-rule-code {
+  font-family: var(--font-mono); font-weight: 700; font-size: 13px; color: var(--void);
+  background: var(--gold); border-radius: 3px; padding: 1px 7px; letter-spacing: .04em;
+}
+.athena-rule-title { margin: 0; font-size: 15px; flex: 1; }
+.athena-rule-kind { font-size: 10px; text-transform: uppercase; letter-spacing: .07em; color: var(--ink-faint); }
+.athena-rule-statement { color: var(--ink-dim); font-size: 13px; line-height: 1.5; margin: 8px 0 12px; }
+.athena-mechs { display: flex; flex-wrap: wrap; gap: 6px; }
+.athena-mech {
+  display: inline-flex; align-items: center; gap: 6px; font-size: 11px;
+  background: var(--bg2); border: 1px solid var(--line); border-radius: 3px; padding: 2px 7px;
+}
+.athena-mech-kind { text-transform: uppercase; letter-spacing: .05em; font-size: 9px; color: var(--ink-faint); }
+.athena-mech-name { font-family: var(--font-mono); color: var(--ink); font-size: 11px; }
+.athena-mech-trigger        { border-left: 2px solid var(--red); }
+.athena-mech-index          { border-left: 2px solid var(--cyan); }
+.athena-mech-check_constraint { border-left: 2px solid var(--amber); }
+.athena-mech-check_function { border-left: 2px solid var(--green); }
+.athena-mech-procedure      { border-left: 2px solid var(--gold); }
+
+/* ---- cards / controls (Authority, Proof) ---- */
+.athena-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 16px; }
+.athena-card { background: var(--bg1); border: 1px solid var(--line); border-radius: 4px; padding: 18px 20px; }
+.athena-card h3 { margin: 0 0 6px; font-size: 16px; }
+.athena-controls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; margin: 14px 0; }
+.athena-controls label { display: flex; flex-direction: column; gap: 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-faint); }
+.athena-controls select { min-width: 180px; }
+.athena-run {
+  background: var(--gold); color: var(--void); border: 0; border-radius: 3px;
+  font-family: var(--font-ui); font-weight: 600; font-size: 13px; padding: 8px 18px; cursor: pointer;
+}
+.athena-run:hover { background: var(--gold-bright); }
+.athena-result { margin-top: 8px; min-height: 24px; }
+.athena-busy { color: var(--ink-faint); font-size: 13px; }
+.athena-error { color: var(--red); font-size: 13px; }
+.athena-empty { color: var(--ink-faint); font-size: 13px; font-style: italic; }
+
+/* ---- authority chain ---- */
+.athena-verdict { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; margin-bottom: 10px; }
+.athena-verdict-dot { width: 9px; height: 9px; border-radius: 50%; }
+.athena-verdict-yes { color: var(--green); }
+.athena-verdict-yes .athena-verdict-dot { background: var(--green); }
+.athena-verdict-no { color: var(--red); }
+.athena-verdict-no .athena-verdict-dot { background: var(--red); }
+.athena-chain { list-style: none; margin: 0; padding: 0; counter-reset: step; }
+.athena-chain-step { display: grid; grid-template-columns: 110px 1fr auto; gap: 10px; align-items: baseline; padding: 7px 0; border-top: 1px solid var(--line); }
+.athena-chain-rel { font-family: var(--font-mono); font-size: 12px; color: var(--cyan); }
+.athena-chain-detail { font-size: 13px; color: var(--ink); }
+.athena-chain-src { font-size: 10px; color: var(--ink-faint); text-transform: uppercase; letter-spacing: .04em; }
+
+/* ---- blast radius ---- */
+.athena-blast-group { margin-bottom: 16px; }
+.athena-blast-title { display: flex; align-items: center; gap: 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-dim); margin: 0 0 6px; }
+.athena-count { font-family: var(--font-mono); background: var(--bg2); border: 1px solid var(--line); border-radius: 10px; padding: 0 8px; font-size: 11px; color: var(--gold-bright); }
+.athena-blast-list { list-style: none; margin: 0; padding: 0; }
+.athena-blast-list li { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; border-top: 1px solid var(--line); }
+.athena-blast-ref { font-size: 13px; color: var(--ink); }
+.athena-blast-detail { font-family: var(--font-mono); font-size: 12px; color: var(--ink-faint); }
+
+/* ---- proof / disclosure ---- */
+.athena-proof-req { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.athena-chip { background: var(--bg2); border: 1px solid var(--line); border-radius: 3px; padding: 3px 10px; font-size: 12px; color: var(--ink); }
+.athena-disclosures { display: flex; flex-direction: column; gap: 8px; }
+.athena-disclosure { display: grid; grid-template-columns: 150px 1fr; gap: 12px; align-items: baseline; padding: 8px 12px; border: 1px solid var(--line); border-left-width: 3px; border-radius: 3px; background: var(--bg1); }
+.athena-disclosure-level { font-family: var(--font-mono); font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
+.athena-disclosure-note { font-size: 13px; color: var(--ink-dim); }
+.athena-disclosure-zero_knowledge { border-left-color: var(--green); }
+.athena-disclosure-zero_knowledge .athena-disclosure-level { color: var(--green); }
+.athena-disclosure-selective { border-left-color: var(--amber); }
+.athena-disclosure-selective .athena-disclosure-level { color: var(--amber); }
+.athena-disclosure-full { border-left-color: var(--red); }
+.athena-disclosure-full .athena-disclosure-level { color: var(--red); }
+
+/* ---- trust table ---- */
+.athena-table-wrap { overflow-x: auto; }
+.athena-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.athena-table th { text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--ink-faint); padding: 6px 10px; border-bottom: 1px solid var(--line-strong); }
+.athena-table td { padding: 7px 10px; border-bottom: 1px solid var(--line); }
+.athena-arrow { color: var(--ink-faint); font-family: var(--font-mono); font-size: 11px; }
+.athena-ctx { font-family: var(--font-mono); font-size: 12px; color: var(--cyan); }
+.athena-muted { color: var(--ink-faint); }

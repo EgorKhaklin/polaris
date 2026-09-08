@@ -1770,6 +1770,123 @@ def _dashboard_model():
 
 
 # ============================================================================
+# ATHENA — the authority-and-constitution console (v9.266 layer, roadmap P6.8)
+#
+# The operator-facing surface for polaris_sql/16_athena.sql. Read-only: it
+# renders the constitution-as-data and the authority rosters, and calls the four
+# Athena functions from the interactive tabs. It reads ONLY the person-free
+# Athena/authority surface and never an Individual, token, or event table
+# (check_athena_console pins that).
+# ============================================================================
+
+# C1..C10 in numeric order, then the Vocation last.
+_ATHENA_RULE_ORDER = ("CASE WHEN rule_code = 'VOCATION' THEN 999 "
+                      "ELSE CAST(substring(rule_code FROM 2) AS INTEGER) END")
+
+
+@app.route('/athena')
+@security.login_required
+@replica_reads
+def athena_console():
+    """Athena: the authority-and-constitution console. Read-only. Renders the
+    constitution (C1-C10 + the Vocation, each with the live mechanism that
+    enforces it), the agency / algorithm / context rosters, and the current
+    trust graph, and drives the four Athena functions from the interactive tabs.
+    It reads only the person-free Athena layer (16_athena.sql) and the authority
+    tables it sits over; no Individual, token, or event table is touched."""
+    rules = query(
+        "SELECT rule_code, title, statement, kind FROM athena_constitutional_rule "
+        "ORDER BY " + _ATHENA_RULE_ORDER)
+    enf = query(
+        "SELECT rule_code, mechanism_kind, mechanism_name, note "
+        "FROM athena_rule_enforcement ORDER BY rule_code, mechanism_kind, mechanism_name")
+    by_rule = {}
+    for e in enf:
+        by_rule.setdefault(e['rule_code'], []).append(e)
+    rules = [dict(r, mechanisms=by_rule.get(r['rule_code'], [])) for r in rules]
+
+    agencies = query("SELECT agency_id, name, agency_type, jurisdiction "
+                     "FROM v_athena_agency ORDER BY name")
+    algorithms = query("SELECT algorithm_id, name, family, security_level_bits, "
+                       "is_deprecated FROM v_athena_algorithm ORDER BY algorithm_id")
+    contexts = query("SELECT context_id, context_type, min_security_level, "
+                     "requires_biometric FROM v_athena_relying_party_class "
+                     "ORDER BY context_type")
+    trust = query("SELECT from_agency_name, to_agency_name, context_type, valid_until "
+                  "FROM v_athena_relies_on ORDER BY from_agency_name, to_agency_name "
+                  "LIMIT 500")
+
+    return render_template('athena.html', rules=rules, agencies=agencies,
+                           algorithms=algorithms, contexts=contexts, trust=trust)
+
+
+@app.route('/api/athena/authority-chain')
+@security.login_required
+@replica_reads
+def api_athena_authority_chain():
+    """Why may this agency issue under this algorithm? Returns the resolved
+    chain (agency -> algorithm -> may_issue grant); a missing may_issue step
+    means the agency is not authorized to issue it."""
+    try:
+        agency = int(request.args['agency'])
+        algorithm = int(request.args['algorithm'])
+    except (KeyError, ValueError):
+        return jsonify(error="agency and algorithm must be integers"), 400
+    rows = query("SELECT step, relation, detail, source "
+                 "FROM athena_authority_chain(%s, %s) ORDER BY step",
+                 (agency, algorithm))
+    return jsonify(agency_id=agency, algorithm_id=algorithm,
+                   steps=[dict(r) for r in rows],
+                   authorized=any(r['relation'] == 'may_issue' for r in rows))
+
+
+@app.route('/api/athena/affected-by-algorithm')
+@security.login_required
+@replica_reads
+def api_athena_affected_by_algorithm():
+    """The blast radius of deprecating an algorithm: authorized agencies, the
+    contexts it currently serves, and its post-quantum successors. Authority-only
+    (no token, signature, or event data)."""
+    try:
+        algorithm = int(request.args['algorithm'])
+    except (KeyError, ValueError):
+        return jsonify(error="algorithm must be an integer"), 400
+    rows = query("SELECT impact_kind, ref_id, ref_label, detail, source "
+                 "FROM athena_affected_by_algorithm(%s) ORDER BY impact_kind, ref_id",
+                 (algorithm,))
+    grouped = {}
+    for r in rows:
+        grouped.setdefault(r['impact_kind'], []).append(dict(r))
+    return jsonify(algorithm_id=algorithm, impacts=grouped)
+
+
+@app.route('/api/athena/explain-proof')
+@security.login_required
+@replica_reads
+def api_athena_explain_proof():
+    """What proof / disclosure policy bounds this verification context? Returns
+    the context requirements and the three C6-enforced disclosure levels."""
+    try:
+        context = int(request.args['context'])
+    except (KeyError, ValueError):
+        return jsonify(error="context must be an integer"), 400
+    rows = query("SELECT context_type, min_security_level, requires_biometric, "
+                 "disclosure_level, disclosure_note FROM athena_explain_proof(%s) "
+                 "ORDER BY CASE disclosure_level WHEN 'ZERO_KNOWLEDGE' THEN 1 "
+                 "WHEN 'SELECTIVE' THEN 2 ELSE 3 END", (context,))
+    if not rows:
+        return jsonify(context_id=context, found=False, disclosures=[])
+    first = rows[0]
+    return jsonify(
+        context_id=context, found=True,
+        context_type=first['context_type'],
+        min_security_level=first['min_security_level'],
+        requires_biometric=first['requires_biometric'],
+        disclosures=[{'level': r['disclosure_level'], 'note': r['disclosure_note']}
+                     for r in rows])
+
+
+# ============================================================================
 # ATLAS — Operational investigation surface (Gotham-style)
 # ============================================================================
 

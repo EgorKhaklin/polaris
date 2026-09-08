@@ -159,10 +159,33 @@ def main():
             print(f"  Trends tab: {cells} heatmap cells, {bands} stacked bands rendered")
             page.screenshot(path=str(OUT / "04-atlas-trends.png"))
 
+        # --- Athena console (v9.266): the constitution renders and an
+        # interactive drill-down resolves in a real browser. ---------------
+        page.goto(URL + "/athena", wait_until="networkidle")
+        page.wait_for_selector('.athena-rule', timeout=5000)
+        rules = len(page.query_selector_all('.athena-rule'))
+        if rules < 11:
+            fail(f"Athena constitution rendered {rules} rules, expected >= 11 (C1-C10 + Vocation)")
+        # every rule must show at least one enforcement mechanism (the map is live)
+        mechs = len(page.query_selector_all('.athena-mech'))
+        if mechs < rules:
+            fail(f"Athena rendered {mechs} enforcement mechanisms for {rules} rules; "
+                 "every rule must resolve to at least one live mechanism")
+        # interactive: switch to Authority, run the chain, assert a verdict renders
+        page.query_selector('[data-athena-tab="authority"]').click()
+        page.wait_for_selector('[data-athena-chain-run]', timeout=5000)
+        page.query_selector('[data-athena-chain-run]').click()
+        page.wait_for_selector('.athena-verdict', timeout=5000)
+        if not page.query_selector('.athena-chain-step'):
+            fail("the Athena authority chain resolved no steps")
+        print(f"  Athena console: {rules} constitution rules, {mechs} live mechanisms, "
+              "authority chain resolved")
+        page.screenshot(path=str(OUT / "05-athena-console.png"))
+
         browser.close()
 
     print(f"UI drill PASSED. Evidence in {OUT}/ "
-          "(01-baseline, 02-simulating, 03-stopped, 04-trends).")
+          "(01-baseline, 02-simulating, 03-stopped, 04-trends, 05-athena).")
     return 0
 
 

@@ -5303,3 +5303,48 @@ def test_athena_rule_enforcement_resolves_check_discriminates(tmp_path):
                                "  ('C1','Audit','append only','CONSTRAINT','MISSION.md C1'),\n"
                                "  ('C2','ZK','zero knowledge','CONSTRAINT','MISSION.md C2')\n"))
     assert checks.check_athena_rule_enforcement_resolves(tmp_path)[0].level == "FAIL", "must FAIL on an unenforced rule"
+
+
+def test_athena_console_check_discriminates(tmp_path):
+    # The console must be login-gated, person-free, and render CSP-safe.
+    APP = (
+        "@app.route('/athena')\n@security.login_required\n@replica_reads\n"
+        "def athena_console():\n"
+        "    rules = query(\"SELECT rule_code FROM athena_constitutional_rule\")\n"
+        "    return render_template('athena.html', rules=rules)\n\n"
+        "@app.route('/api/athena/authority-chain')\n@security.login_required\n"
+        "def api_athena_authority_chain():\n"
+        "    return jsonify(steps=query(\"SELECT step FROM athena_authority_chain(%s,%s)\", (1, 1)))\n\n"
+        "@app.route('/api/athena/affected-by-algorithm')\n@security.login_required\n"
+        "def api_athena_affected_by_algorithm():\n"
+        "    return jsonify(impacts=query(\"SELECT impact_kind FROM athena_affected_by_algorithm(%s)\", (1,)))\n\n"
+        "@app.route('/api/athena/explain-proof')\n@security.login_required\n"
+        "def api_athena_explain_proof():\n"
+        "    return jsonify(rows=query(\"SELECT disclosure_level FROM athena_explain_proof(%s)\", (1,)))\n"
+    )
+    JS = "function el(){ var n = document.createElement('div'); n.textContent = 'x'; return n; }\n"
+    TPL = "".join(
+        '<button data-athena-tab="%s"></button><section data-athena-panel="%s"></section>\n' % (t, t)
+        for t in ("constitution", "authority", "proof", "trust")
+    ) + '<script src="/static/athena-console.js"></script>\n'
+
+    def write(app=APP, js=JS, tpl=TPL):
+        _athena_write(tmp_path, "polaris_web/app.py", app)
+        _athena_write(tmp_path, "polaris_web/static/athena-console.js", js)
+        _athena_write(tmp_path, "polaris_web/templates/athena.html", tpl)
+
+    write()
+    assert checks.check_athena_console(tmp_path)[0].level == "OK", "must PASS the good console"
+    # login gate removed from the page route
+    write(app=APP.replace("@app.route('/athena')\n@security.login_required\n", "@app.route('/athena')\n"))
+    assert checks.check_athena_console(tmp_path)[0].level == "FAIL", "must FAIL when a route is not login-gated"
+    # a person table reaches the console
+    write(app=APP.replace("FROM athena_constitutional_rule",
+                          "FROM athena_constitutional_rule JOIN Individual USING (individual_id)"))
+    assert checks.check_athena_console(tmp_path)[0].level == "FAIL", "must FAIL on a person query"
+    # unsafe innerHTML rendering
+    write(js="function r(m, s){ m.innerHTML = '<b>' + s + '</b>'; }\n")
+    assert checks.check_athena_console(tmp_path)[0].level == "FAIL", "must FAIL on innerHTML rendering"
+    # a tab mount is dropped
+    write(tpl=TPL.replace('<button data-athena-tab="trust"></button><section data-athena-panel="trust"></section>\n', ""))
+    assert checks.check_athena_console(tmp_path)[0].level == "FAIL", "must FAIL when a tab mount is missing"

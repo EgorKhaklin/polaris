@@ -9600,3 +9600,63 @@ class AthenaOntologyTests(PolarisTestCase):
                         f"{r['rule_code']} names {kind} `{name}`, absent from the live catalog")
         finally:
             conn.close()
+
+
+class AthenaConsoleAPITests(PolarisTestCase):
+    """v9.267 (roadmap P6.8): the operator-facing Athena console and its three
+    read-only drill-down endpoints. Login-gated, person-free, bounded, and 400 on
+    a non-integer id."""
+
+    def _ids(self):
+        conn = psycopg2.connect(cursor_factory=RealDictCursor, **DB_CONFIG)
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT agency_id, algorithm_id FROM AgencyAlgorithmAuth "
+                            "WHERE authorization_type IN ('ISSUE','BOTH') LIMIT 1")
+                grant = cur.fetchone()
+                cur.execute("SELECT algorithm_id FROM CryptographicAlgorithm "
+                            "WHERE deprecation_date IS NOT NULL LIMIT 1")
+                dep = cur.fetchone()
+                cur.execute("SELECT context_id FROM VerificationContext LIMIT 1")
+                ctx = cur.fetchone()
+                return grant, dep, ctx
+        finally:
+            conn.close()
+
+    def test_console_page_renders_the_constitution(self):
+        r = self.client.get('/athena')
+        self.assertEqual(r.status_code, 200)
+        body = r.get_data(as_text=True)
+        self.assertIn('athena-rule', body)          # constitution cards
+        self.assertIn('C1', body)                    # a rule code
+        self.assertIn('athena-console.js', body)     # external JS (C5)
+
+    def test_authority_chain_resolves_and_validates(self):
+        grant, _, _ = self._ids()
+        self.assertIsNotNone(grant, "seed must hold an issuance grant")
+        r = self.client.get(f"/api/athena/authority-chain?agency={grant['agency_id']}"
+                            f"&algorithm={grant['algorithm_id']}")
+        self.assertEqual(r.status_code, 200)
+        data = r.get_json()
+        self.assertTrue(data['authorized'], "an authorized pair must resolve to may_issue")
+        self.assertIn('may_issue', [s['relation'] for s in data['steps']])
+        # a non-integer id is a 400
+        self.assertEqual(self.client.get('/api/athena/authority-chain?agency=x&algorithm=1').status_code, 400)
+
+    def test_affected_by_algorithm_groups_impacts(self):
+        _, dep, _ = self._ids()
+        if dep:
+            r = self.client.get(f"/api/athena/affected-by-algorithm?algorithm={dep['algorithm_id']}")
+            self.assertEqual(r.status_code, 200)
+            self.assertIn('successor_algorithm', r.get_json()['impacts'])
+        self.assertEqual(self.client.get('/api/athena/affected-by-algorithm?algorithm=x').status_code, 400)
+
+    def test_explain_proof_returns_disclosure_levels(self):
+        _, _, ctx = self._ids()
+        r = self.client.get(f"/api/athena/explain-proof?context={ctx['context_id']}")
+        self.assertEqual(r.status_code, 200)
+        data = r.get_json()
+        self.assertTrue(data['found'])
+        levels = {d['level'] for d in data['disclosures']}
+        self.assertEqual(levels, {'ZERO_KNOWLEDGE', 'SELECTIVE', 'FULL'})
+        self.assertEqual(self.client.get('/api/athena/explain-proof?context=x').status_code, 400)

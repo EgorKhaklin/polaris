@@ -5887,7 +5887,82 @@ def check_athena_rule_enforcement_resolves(root: pathlib.Path) -> list[Finding]:
                f"{len(declared)} constitutional rules is enforced (constitution cannot drift from code)")
 
 
+# ---------------------------------------------------------------------------
+# Athena console (v9.266) — the operator-facing surface for the authority-and-
+# constitution layer must stay login-gated, person-free, and CSP-safe.
+# ---------------------------------------------------------------------------
+_ATHENA_CONSOLE_ROUTES = [
+    ("/athena", "athena_console"),
+    ("/api/athena/authority-chain", "api_athena_authority_chain"),
+    ("/api/athena/affected-by-algorithm", "api_athena_affected_by_algorithm"),
+    ("/api/athena/explain-proof", "api_athena_explain_proof"),
+]
+
+
+def _athena_py_strip_docstrings(code: str) -> str:
+    """Drop triple-quoted docstrings and # comments but KEEP single-line query
+    strings, so a person table inside a real query() is still caught while the
+    route's own prose ("no Individual table is touched") is not."""
+    code = re.sub(r'"""(?:.|\n)*?"""', '', code)
+    code = re.sub(r"'''(?:.|\n)*?'''", '', code)
+    code = re.sub(r"#[^\n]*", "", code)
+    return code
+
+
+def _athena_route_decorators(app: str, route: str) -> str:
+    m = re.search(re.escape("@app.route('" + route + "')") + r"(.*?)\ndef ", app, re.S)
+    return m.group(1) if m else ""
+
+
+def check_athena_console(root: pathlib.Path) -> list[Finding]:
+    """v9.266 (roadmap P6.8): the operator-facing Athena console. The page and its
+    three drill-down endpoints must be login-gated, must read ONLY the person-free
+    Athena/authority surface (never Individual / token / event), and must render
+    CSP-safe (createElement, never innerHTML with markup, C5). The four tabs
+    (Constitution / Authority / Proof / Trust) and the external JS must be wired.
+    Detection: test_checks removes login_required, adds a person query, assigns
+    innerHTML, and drops a tab mount."""
+    app = _read(root, "polaris_web/app.py")
+    js = _read(root, "polaris_web/static/athena-console.js")
+    tpl = _read(root, "polaris_web/templates/athena.html")
+    if not app or not js or not tpl:
+        return _fail("athena_console", "the Athena console (app route / JS / template) is missing")
+
+    person = ("Individual", "individual_id", "IdentityToken", "VerificationEvent",
+              "TokenLifecycleEvent", "TokenPermission", "token_id", "token_value")
+    for route, fn in _ATHENA_CONSOLE_ROUTES:
+        if "@app.route('" + route + "')" not in app:
+            return _fail("athena_console", f"the {route} route is missing from app.py")
+        if "login_required" not in _athena_route_decorators(app, route):
+            return _fail("athena_console", f"the {route} route is not @login_required")
+        body = _athena_py_strip_docstrings(_fn_body(app, fn))
+        if not body:
+            return _fail("athena_console", f"{fn}() is missing")
+        for bad in person:
+            if re.search(r"\b" + re.escape(bad) + r"\b", body):
+                return _fail("athena_console",
+                             f"{fn}() references the person surface `{bad}`; the Athena console must "
+                             "read only the person-free Athena layer")
+
+    if re.search(r"innerHTML\s*=", js):
+        return _fail("athena_console", "athena-console.js assigns innerHTML; build the DOM with "
+                                       "createElement/textContent so script-src 'self' stays strict (C5)")
+    if "createElement" not in js:
+        return _fail("athena_console", "athena-console.js must build the DOM with createElement (C5-safe)")
+
+    for tab in ("constitution", "authority", "proof", "trust"):
+        if ('data-athena-tab="' + tab + '"') not in tpl or ('data-athena-panel="' + tab + '"') not in tpl:
+            return _fail("athena_console", f"the '{tab}' tab/panel mount is missing from athena.html")
+    if "athena-console.js" not in tpl:
+        return _fail("athena_console", "athena.html does not include the external athena-console.js")
+
+    return _ok("athena_console",
+               "the Athena console (4 tabs, 1 page + 3 drill-down routes) is login-gated, reads only the "
+               "person-free Athena layer, and renders CSP-safe via createElement")
+
+
 CHECKS: list[Callable[[pathlib.Path], list[Finding]]] = [
+    check_athena_console,
     check_athena_no_person,
     check_athena_read_only,
     check_athena_functions_bounded,

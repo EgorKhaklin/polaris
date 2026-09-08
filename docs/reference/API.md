@@ -448,6 +448,34 @@ counted, never located (C6).
 
 ---
 
+## Athena (authority and constitution)
+
+The read-only surface for the Athena layer (`polaris_sql/16_athena.sql`), behind
+the `/athena` operator console. Every endpoint is login-gated, replica-routed,
+and reads only the person-free authority tables.
+
+### `GET /api/athena/authority-chain`
+
+**Login required; replica-routed.** Why may an agency issue under an algorithm?
+Params: `agency`, `algorithm` (both integer ids; 400 otherwise). Returns
+`{agency_id, algorithm_id, steps: [{step, relation, detail, source}], authorized}`
+— the resolved chain; `authorized` is false and the `may_issue` step is absent
+when no issuance grant exists.
+
+### `GET /api/athena/affected-by-algorithm`
+
+**Login required; replica-routed.** The blast radius of deprecating an algorithm.
+Param: `algorithm` (integer id; 400 otherwise). Returns `{algorithm_id, impacts}`
+where `impacts` groups by kind: `authorized_agency`, `served_context`,
+`successor_algorithm`. Authority-only — no token, signature, or event data.
+
+### `GET /api/athena/explain-proof`
+
+**Login required; replica-routed.** What proof and disclosure policy bounds a
+verification context? Param: `context` (integer id; 400 otherwise). Returns
+`{context_id, found, context_type, min_security_level, requires_biometric,
+disclosures: [{level, note}]}` — the three C6-enforced disclosure levels.
+
 ## Live simulation (dev/demo only)
 
 ### `POST /api/sim/tick`
